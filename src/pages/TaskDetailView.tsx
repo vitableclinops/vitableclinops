@@ -73,7 +73,7 @@ const TaskDetailView = () => {
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-4">
               <StatusBadge status={task.status} />
-              <LicenseTypeBadge type={task.licenseType} />
+              {task.licenseType && <LicenseTypeBadge type={task.licenseType} />}
               <Badge variant="secondary">{state.abbreviation}</Badge>
             </div>
             

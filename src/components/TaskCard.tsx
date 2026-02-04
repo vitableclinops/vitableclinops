@@ -1,7 +1,7 @@
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LicenseTypeBadge } from '@/components/LicenseTypeBadge';
+import { CategoryBadge } from '@/components/CategoryBadge';
 import { cn } from '@/lib/utils';
 import type { Task } from '@/types';
 import { 
@@ -39,7 +39,8 @@ export function TaskCard({ task, stateName, showState = false, onClick, classNam
             {/* Header */}
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <StatusBadge status={task.status} size="sm" />
-              <LicenseTypeBadge type={task.licenseType} />
+              <CategoryBadge category={task.category} size="sm" />
+              {task.licenseType && <LicenseTypeBadge type={task.licenseType} />}
               {showState && stateName && (
                 <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded">
                   {stateName}
