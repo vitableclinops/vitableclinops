@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -14,6 +15,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { providers, states } from '@/data/mockData';
 import { 
   Search,
@@ -23,12 +30,17 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
-  Shield
+  Shield,
+  MoreHorizontal,
+  Edit,
+  Eye,
+  UserPlus
 } from 'lucide-react';
 import type { Provider } from '@/types';
 import { cn } from '@/lib/utils';
 
 const ProvidersListPage = () => {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'ready' | 'blocked' | 'pending'>('all');
 
@@ -93,7 +105,8 @@ const ProvidersListPage = () => {
                 View and manage provider licensure status across all states.
               </p>
             </div>
-            <Button>
+            <Button onClick={() => navigate('/onboarding?mode=admin')}>
+              <UserPlus className="h-4 w-4 mr-2" />
               Add Provider
             </Button>
           </div>
@@ -263,7 +276,23 @@ const ProvidersListPage = () => {
                           )}
                         </TableCell>
                         <TableCell>
-                          <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => navigate(`/onboarding?mode=admin&providerId=${provider.id}`)}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit Provider
+                              </DropdownMenuItem>
+                              <DropdownMenuItem>
+                                <Eye className="h-4 w-4 mr-2" />
+                                View Details
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );
