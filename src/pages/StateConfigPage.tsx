@@ -7,6 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { states } from '@/data/mockData';
 import { 
   Search,
@@ -22,22 +29,43 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
-  Info
+  Info,
+  X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { State, DemandTag } from '@/types';
+
+type FPAFilter = 'all' | 'fpa' | 'no-fpa';
+type CAFilter = 'all' | 'ca-required' | 'no-ca';
 
 const StateConfigPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedState, setSelectedState] = useState<State | null>(null);
   const [filterDemand, setFilterDemand] = useState<DemandTag | 'all'>('all');
+  const [filterFPA, setFilterFPA] = useState<FPAFilter>('all');
+  const [filterCA, setFilterCA] = useState<CAFilter>('all');
 
   const filteredStates = states.filter(state => {
     const matchesSearch = state.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       state.abbreviation.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesDemand = filterDemand === 'all' || state.demandTag === filterDemand;
-    return matchesSearch && matchesDemand;
+    const matchesFPA = filterFPA === 'all' || 
+      (filterFPA === 'fpa' && state.hasFPA) || 
+      (filterFPA === 'no-fpa' && !state.hasFPA);
+    const matchesCA = filterCA === 'all' || 
+      (filterCA === 'ca-required' && state.requiresCollaborativeAgreement) || 
+      (filterCA === 'no-ca' && !state.requiresCollaborativeAgreement);
+    return matchesSearch && matchesDemand && matchesFPA && matchesCA;
   });
+
+  const activeFiltersCount = [filterDemand !== 'all', filterFPA !== 'all', filterCA !== 'all'].filter(Boolean).length;
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setFilterDemand('all');
+    setFilterFPA('all');
+    setFilterCA('all');
+  };
 
   // Group states by demand tag
   const criticalStates = states.filter(s => s.demandTag === 'critical');
@@ -108,41 +136,73 @@ const StateConfigPage = () => {
           <div className="grid gap-8 lg:grid-cols-3">
             {/* States list */}
             <div className="lg:col-span-2">
-              {/* Filters */}
-              <div className="flex items-center gap-4 mb-6">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="Search states..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
+            {/* Filters */}
+              <div className="space-y-4 mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Search states..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                  {activeFiltersCount > 0 && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={clearAllFilters}
+                      className="text-muted-foreground"
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Clear filters ({activeFiltersCount})
+                    </Button>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant={filterDemand === 'all' ? 'secondary' : 'ghost'} 
-                    size="sm"
-                    onClick={() => setFilterDemand('all')}
-                  >
-                    All
-                  </Button>
-                  <Button 
-                    variant={filterDemand === 'critical' ? 'secondary' : 'ghost'} 
-                    size="sm"
-                    onClick={() => setFilterDemand('critical')}
-                    className="text-destructive"
-                  >
-                    Critical
-                  </Button>
-                  <Button 
-                    variant={filterDemand === 'at_risk' ? 'secondary' : 'ghost'} 
-                    size="sm"
-                    onClick={() => setFilterDemand('at_risk')}
-                    className="text-warning"
-                  >
-                    At Risk
-                  </Button>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Demand Tag Filter */}
+                  <Select value={filterDemand} onValueChange={(v) => setFilterDemand(v as DemandTag | 'all')}>
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue placeholder="Demand" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Demand</SelectItem>
+                      <SelectItem value="critical">Critical</SelectItem>
+                      <SelectItem value="at_risk">At Risk</SelectItem>
+                      <SelectItem value="watch">Watch</SelectItem>
+                      <SelectItem value="stable">Stable</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* FPA Filter */}
+                  <Select value={filterFPA} onValueChange={(v) => setFilterFPA(v as FPAFilter)}>
+                    <SelectTrigger className="w-[170px]">
+                      <SelectValue placeholder="FPA Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All FPA Status</SelectItem>
+                      <SelectItem value="fpa">FPA Available</SelectItem>
+                      <SelectItem value="no-fpa">No FPA</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* CA Filter */}
+                  <Select value={filterCA} onValueChange={(v) => setFilterCA(v as CAFilter)}>
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="CA Requirements" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All CA Status</SelectItem>
+                      <SelectItem value="ca-required">CA Required</SelectItem>
+                      <SelectItem value="no-ca">No CA Required</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <span className="text-sm text-muted-foreground ml-2">
+                    {filteredStates.length} of {states.length} states
+                  </span>
                 </div>
               </div>
 
