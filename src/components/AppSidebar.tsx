@@ -1,8 +1,17 @@
 import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { 
   LayoutDashboard, 
   MapPin, 
@@ -16,9 +25,12 @@ import {
   BarChart3,
   Shield,
   BookOpen,
-  UserPlus
+  UserPlus,
+  User,
+  ChevronDown
 } from 'lucide-react';
 import type { UserRole } from '@/types';
+import { useAuth } from '@/hooks/useAuth';
 
 interface AppSidebarProps {
   userRole: UserRole;
@@ -117,8 +129,15 @@ const navItems: NavItem[] = [
 export function AppSidebar({ userRole, userName, userEmail }: AppSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut, roles } = useAuth();
 
   const filteredNavItems = navItems.filter(item => item.roles.includes(userRole));
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth');
+  };
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
@@ -178,24 +197,72 @@ export function AppSidebar({ userRole, userName, userEmail }: AppSidebarProps) {
           })}
         </nav>
 
-        {/* User section */}
+        {/* User section with dropdown */}
         <div className="border-t border-sidebar-border p-4">
-          <div className={cn(
-            'flex items-center gap-3',
-            collapsed && 'justify-center'
-          )}>
-            <Avatar className="h-9 w-9 shrink-0">
-              <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
-                {getInitials(userName)}
-              </AvatarFallback>
-            </Avatar>
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-sidebar-foreground truncate">{userName}</p>
-                <p className="text-xs text-sidebar-muted truncate capitalize">{userRole}</p>
-              </div>
-            )}
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={cn(
+                  'flex items-center gap-3 w-full rounded-lg p-2 hover:bg-sidebar-accent transition-colors',
+                  collapsed && 'justify-center'
+                )}
+              >
+                <Avatar className="h-9 w-9 shrink-0">
+                  <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
+                    {getInitials(userName)}
+                  </AvatarFallback>
+                </Avatar>
+                {!collapsed && (
+                  <>
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className="text-sm font-medium text-sidebar-foreground truncate">{userName}</p>
+                      <p className="text-xs text-sidebar-muted truncate">{userEmail}</p>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-sidebar-muted shrink-0" />
+                  </>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent 
+              align={collapsed ? "center" : "end"} 
+              side="top" 
+              className="w-64"
+            >
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-2">
+                  <p className="text-sm font-medium">{userName}</p>
+                  <p className="text-xs text-muted-foreground">{userEmail}</p>
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {roles.map(role => (
+                      <Badge 
+                        key={role} 
+                        variant="secondary" 
+                        className="text-xs capitalize"
+                      >
+                        {role}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={() => navigate('/onboarding?mode=edit')}
+                className="cursor-pointer"
+              >
+                <User className="mr-2 h-4 w-4" />
+                Edit Profile
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={handleSignOut}
+                className="cursor-pointer text-destructive focus:text-destructive"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </aside>
