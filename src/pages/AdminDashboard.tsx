@@ -37,11 +37,17 @@ import {
 } from 'lucide-react';
 import type { Task, TaskStatus, Provider, TaskCategory } from '@/types';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 
 const AdminDashboard = () => {
+  const { profile, roles } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('review');
   const [categoryFilter, setCategoryFilter] = useState<TaskCategory | 'all'>('all');
+  
+  const userRole = roles[0] || 'admin';
+  const userName = profile?.full_name || profile?.email || 'Admin User';
+  const userEmail = profile?.email || '';
   
   // Calculate admin stats
   const allTasks = getAllTasks();
@@ -97,9 +103,9 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar 
-        userRole="admin"
-        userName="Sarah Chen"
-        userEmail="sarah.chen@example.com"
+        userRole={userRole as any}
+        userName={userName}
+        userEmail={userEmail}
       />
       
       <main className="pl-64 transition-all duration-300">
