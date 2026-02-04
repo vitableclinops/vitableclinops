@@ -19,6 +19,7 @@ import PhysicianPortal from "./pages/PhysicianPortal";
 import KnowledgeBasePage from "./pages/KnowledgeBasePage";
 import ProviderOnboardingPage from "./pages/ProviderOnboardingPage";
 import UserRolesPage from "./pages/UserRolesPage";
+import ProfileSettingsPage from "./pages/ProfileSettingsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -95,6 +96,11 @@ const App = () => (
             <Route path="/admin/roles" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <UserRolesPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/profile/settings" element={
+              <ProtectedRoute>
+                <ProfileSettingsPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

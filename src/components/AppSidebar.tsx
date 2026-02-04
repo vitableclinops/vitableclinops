@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -36,6 +36,7 @@ interface AppSidebarProps {
   userRole: UserRole;
   userName: string;
   userEmail: string;
+  userAvatarUrl?: string;
 }
 
 interface NavItem {
@@ -126,7 +127,7 @@ const navItems: NavItem[] = [
   },
 ];
 
-export function AppSidebar({ userRole, userName, userEmail }: AppSidebarProps) {
+export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: AppSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -208,6 +209,7 @@ export function AppSidebar({ userRole, userName, userEmail }: AppSidebarProps) {
                 )}
               >
                 <Avatar className="h-9 w-9 shrink-0">
+                  <AvatarImage src={userAvatarUrl} alt={userName} />
                   <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
                     {getInitials(userName)}
                   </AvatarFallback>
@@ -247,11 +249,11 @@ export function AppSidebar({ userRole, userName, userEmail }: AppSidebarProps) {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem 
-                onClick={() => navigate('/onboarding?mode=edit')}
+                onClick={() => navigate('/profile/settings')}
                 className="cursor-pointer"
               >
-                <User className="mr-2 h-4 w-4" />
-                Edit Profile
+                <Settings className="mr-2 h-4 w-4" />
+                Profile Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem 
