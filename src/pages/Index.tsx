@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { cn } from '@/lib/utils';
+import { states, providers, taskTemplates } from '@/data/mockData';
 
 const roles: { 
   id: UserRole; 
@@ -154,21 +155,21 @@ const Index = () => {
             <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
               <Users className="h-5 w-5" />
             </div>
-            <p className="text-3xl font-bold text-foreground">3</p>
+            <p className="text-3xl font-bold text-foreground">{providers.length}</p>
             <p className="text-sm text-muted-foreground">Active Providers</p>
           </div>
           <div>
             <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
               <MapPin className="h-5 w-5" />
             </div>
-            <p className="text-3xl font-bold text-foreground">8</p>
+            <p className="text-3xl font-bold text-foreground">{states.length}</p>
             <p className="text-sm text-muted-foreground">States Configured</p>
           </div>
           <div>
             <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
               <ClipboardList className="h-5 w-5" />
             </div>
-            <p className="text-3xl font-bold text-foreground">6</p>
+            <p className="text-3xl font-bold text-foreground">{taskTemplates.length}</p>
             <p className="text-sm text-muted-foreground">Task Templates</p>
           </div>
         </div>
