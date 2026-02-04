@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AppSidebar } from '@/components/AppSidebar';
 import { DemandTagBadge } from '@/components/DemandTagBadge';
+import { StateImportDialog } from '@/components/StateImportDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { states } from '@/data/mockData';
+import { states as initialStates } from '@/data/mockData';
 import { 
   Search,
   MapPin,
@@ -31,20 +32,24 @@ import {
   ChevronRight,
   Info,
   X,
-  Download
+  Download,
+  Upload
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { State, DemandTag } from '@/types';
+import { toast } from 'sonner';
 
 type FPAFilter = 'all' | 'fpa' | 'no-fpa';
 type CAFilter = 'all' | 'ca-required' | 'no-ca';
 
 const StateConfigPage = () => {
+  const [states, setStates] = useState<State[]>(initialStates);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedState, setSelectedState] = useState<State | null>(null);
   const [filterDemand, setFilterDemand] = useState<DemandTag | 'all'>('all');
   const [filterFPA, setFilterFPA] = useState<FPAFilter>('all');
   const [filterCA, setFilterCA] = useState<CAFilter>('all');
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   const filteredStates = states.filter(state => {
     const matchesSearch = state.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -115,6 +120,24 @@ const StateConfigPage = () => {
     document.body.removeChild(link);
   };
 
+  const handleImport = (importedStates: Partial<State>[]) => {
+    setStates(prevStates => {
+      const newStates = [...prevStates];
+      importedStates.forEach(imported => {
+        const existingIndex = newStates.findIndex(
+          s => s.abbreviation.toLowerCase() === imported.abbreviation?.toLowerCase()
+        );
+        if (existingIndex >= 0) {
+          newStates[existingIndex] = { ...newStates[existingIndex], ...imported } as State;
+        } else {
+          newStates.push(imported as State);
+        }
+      });
+      return newStates;
+    });
+    toast.success(`Successfully imported ${importedStates.length} states`);
+  };
+
   // Group states by demand tag
   const criticalStates = states.filter(s => s.demandTag === 'critical');
   const atRiskStates = states.filter(s => s.demandTag === 'at_risk');
@@ -140,6 +163,10 @@ const StateConfigPage = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                <Upload className="h-4 w-4 mr-2" />
+                Import CSV
+              </Button>
               <Button variant="outline" onClick={exportToCSV}>
                 <Download className="h-4 w-4 mr-2" />
                 Export CSV
@@ -149,6 +176,13 @@ const StateConfigPage = () => {
                 Add State
               </Button>
             </div>
+
+            <StateImportDialog
+              open={importDialogOpen}
+              onOpenChange={setImportDialogOpen}
+              onImport={handleImport}
+              existingStates={states}
+            />
           </div>
 
           {/* Priority states alerts */}
