@@ -14,7 +14,302 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      agreement_notifications: {
+        Row: {
+          agreement_id: string
+          created_at: string
+          delivered: boolean | null
+          error_message: string | null
+          id: string
+          notification_type: Database["public"]["Enums"]["notification_type"]
+          recipient_email: string
+          recipient_name: string | null
+          resend_message_id: string | null
+          sent_at: string | null
+          subject: string
+        }
+        Insert: {
+          agreement_id: string
+          created_at?: string
+          delivered?: boolean | null
+          error_message?: string | null
+          id?: string
+          notification_type: Database["public"]["Enums"]["notification_type"]
+          recipient_email: string
+          recipient_name?: string | null
+          resend_message_id?: string | null
+          sent_at?: string | null
+          subject: string
+        }
+        Update: {
+          agreement_id?: string
+          created_at?: string
+          delivered?: boolean | null
+          error_message?: string | null
+          id?: string
+          notification_type?: Database["public"]["Enums"]["notification_type"]
+          recipient_email?: string
+          recipient_name?: string | null
+          resend_message_id?: string | null
+          sent_at?: string | null
+          subject?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agreement_notifications_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agreement_providers: {
+        Row: {
+          agreement_id: string
+          box_sign_signer_id: string | null
+          created_at: string
+          id: string
+          is_active: boolean | null
+          provider_email: string
+          provider_id: string | null
+          provider_name: string
+          provider_npi: string | null
+          removed_at: string | null
+          removed_reason: string | null
+          signature_status: string | null
+          signed_at: string | null
+        }
+        Insert: {
+          agreement_id: string
+          box_sign_signer_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          provider_email: string
+          provider_id?: string | null
+          provider_name: string
+          provider_npi?: string | null
+          removed_at?: string | null
+          removed_reason?: string | null
+          signature_status?: string | null
+          signed_at?: string | null
+        }
+        Update: {
+          agreement_id?: string
+          box_sign_signer_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          provider_email?: string
+          provider_id?: string | null
+          provider_name?: string
+          provider_npi?: string | null
+          removed_at?: string | null
+          removed_reason?: string | null
+          signature_status?: string | null
+          signed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agreement_providers_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agreement_workflow_steps: {
+        Row: {
+          agreement_id: string
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          started_at: string | null
+          status: string
+          step_description: string | null
+          step_name: string
+          step_number: number
+        }
+        Insert: {
+          agreement_id: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          started_at?: string | null
+          status?: string
+          step_description?: string | null
+          step_name: string
+          step_number: number
+        }
+        Update: {
+          agreement_id?: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          started_at?: string | null
+          status?: string
+          step_description?: string | null
+          step_name?: string
+          step_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agreement_workflow_steps_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collaborative_agreements: {
+        Row: {
+          agreement_document_url: string | null
+          box_sign_request_id: string | null
+          box_sign_status: string | null
+          chart_review_frequency: string | null
+          chart_review_required: boolean | null
+          created_at: string
+          created_by: string | null
+          end_date: string | null
+          id: string
+          meeting_cadence: string | null
+          next_renewal_date: string | null
+          physician_email: string
+          physician_id: string | null
+          physician_name: string
+          physician_npi: string | null
+          physician_signed_at: string | null
+          renewal_cadence: string | null
+          start_date: string | null
+          state_abbreviation: string
+          state_id: string
+          state_name: string
+          terminated_at: string | null
+          terminated_by: string | null
+          termination_document_url: string | null
+          termination_reason: string | null
+          updated_at: string
+          workflow_status: Database["public"]["Enums"]["agreement_workflow_status"]
+        }
+        Insert: {
+          agreement_document_url?: string | null
+          box_sign_request_id?: string | null
+          box_sign_status?: string | null
+          chart_review_frequency?: string | null
+          chart_review_required?: boolean | null
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          meeting_cadence?: string | null
+          next_renewal_date?: string | null
+          physician_email: string
+          physician_id?: string | null
+          physician_name: string
+          physician_npi?: string | null
+          physician_signed_at?: string | null
+          renewal_cadence?: string | null
+          start_date?: string | null
+          state_abbreviation: string
+          state_id: string
+          state_name: string
+          terminated_at?: string | null
+          terminated_by?: string | null
+          termination_document_url?: string | null
+          termination_reason?: string | null
+          updated_at?: string
+          workflow_status?: Database["public"]["Enums"]["agreement_workflow_status"]
+        }
+        Update: {
+          agreement_document_url?: string | null
+          box_sign_request_id?: string | null
+          box_sign_status?: string | null
+          chart_review_frequency?: string | null
+          chart_review_required?: boolean | null
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          meeting_cadence?: string | null
+          next_renewal_date?: string | null
+          physician_email?: string
+          physician_id?: string | null
+          physician_name?: string
+          physician_npi?: string | null
+          physician_signed_at?: string | null
+          renewal_cadence?: string | null
+          start_date?: string | null
+          state_abbreviation?: string
+          state_id?: string
+          state_name?: string
+          terminated_at?: string | null
+          terminated_by?: string | null
+          termination_document_url?: string | null
+          termination_reason?: string | null
+          updated_at?: string
+          workflow_status?: Database["public"]["Enums"]["agreement_workflow_status"]
+        }
+        Relationships: []
+      }
+      supervision_meetings: {
+        Row: {
+          agreement_id: string
+          completed_at: string | null
+          created_at: string
+          duration_minutes: number | null
+          id: string
+          location: string | null
+          meeting_type: string | null
+          notes: string | null
+          scheduled_date: string
+          status: string | null
+          video_link: string | null
+        }
+        Insert: {
+          agreement_id: string
+          completed_at?: string | null
+          created_at?: string
+          duration_minutes?: number | null
+          id?: string
+          location?: string | null
+          meeting_type?: string | null
+          notes?: string | null
+          scheduled_date: string
+          status?: string | null
+          video_link?: string | null
+        }
+        Update: {
+          agreement_id?: string
+          completed_at?: string | null
+          created_at?: string
+          duration_minutes?: number | null
+          id?: string
+          location?: string | null
+          meeting_type?: string | null
+          notes?: string | null
+          scheduled_date?: string
+          status?: string | null
+          video_link?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supervision_meetings_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +318,24 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      agreement_workflow_status:
+        | "draft"
+        | "pending_signatures"
+        | "awaiting_physician_signature"
+        | "awaiting_provider_signatures"
+        | "fully_executed"
+        | "active"
+        | "pending_renewal"
+        | "termination_initiated"
+        | "terminated"
+      notification_type:
+        | "agreement_initiated"
+        | "signature_requested"
+        | "signature_reminder"
+        | "agreement_executed"
+        | "meeting_scheduled"
+        | "termination_initiated"
+        | "termination_complete"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +462,27 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      agreement_workflow_status: [
+        "draft",
+        "pending_signatures",
+        "awaiting_physician_signature",
+        "awaiting_provider_signatures",
+        "fully_executed",
+        "active",
+        "pending_renewal",
+        "termination_initiated",
+        "terminated",
+      ],
+      notification_type: [
+        "agreement_initiated",
+        "signature_requested",
+        "signature_reminder",
+        "agreement_executed",
+        "meeting_scheduled",
+        "termination_initiated",
+        "termination_complete",
+      ],
+    },
   },
 } as const
