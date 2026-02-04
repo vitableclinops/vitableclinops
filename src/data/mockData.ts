@@ -13,7 +13,7 @@ import type {
   SelfReportedLicense
 } from '@/types';
 
-// US States with full regulatory intelligence
+// US States with full regulatory intelligence - Enhanced with Notion data
 export const states: State[] = [
   {
     id: 'ca',
@@ -25,16 +25,16 @@ export const states: State[] = [
     fpaApplicationRequired: false,
     requiresCollaborativeAgreement: true,
     collaborativeAgreementRequirements: {
-      meetingCadence: 'monthly',
+      meetingCadence: 'quarterly', // First year quarterly, then annually
       chartReviewRequired: true,
-      chartReviewFrequency: '5% of charts monthly',
-      supervisoryActivities: ['Case consultation', 'Chart review', 'Protocol review'],
+      chartReviewFrequency: '5% of charts quarterly, then annually',
+      supervisoryActivities: ['Case consultation', 'Chart review', 'Protocol review', 'Standardized procedure review'],
     },
     requiresPrescriptiveAuthority: true,
-    prescriptiveAuthorityNotes: 'Furnishing license required. Must have standardized procedure with supervising physician.',
-    notes: 'Requires standardized procedure agreement with physician. Board of Registered Nursing processes applications.',
-    scopeLimitations: ['Schedule II controlled substances require physician co-signature'],
-    specialConsiderations: ['License renewal requires 30 CEU hours every 2 years'],
+    prescriptiveAuthorityNotes: 'Furnishing license required as separate licensure. Must have standardized procedure with supervising physician. NP:MD ratio is 4.',
+    notes: 'Requires furnishing license AND standardized procedure agreement. CA is NOT part of NLC. Board of Registered Nursing processes applications.',
+    scopeLimitations: ['Schedule II controlled substances require physician co-signature', 'Standardized procedure must be on file'],
+    specialConsiderations: ['License renewal requires 30 CEU hours every 2 years', 'Not part of Nurse Licensure Compact'],
     applicationFeeRange: { min: 150, max: 300 },
     processingTimeWeeks: { min: 8, max: 16 },
     lastUpdated: new Date('2024-01-15'),
@@ -51,17 +51,210 @@ export const states: State[] = [
     collaborativeAgreementRequirements: {
       meetingCadence: 'monthly',
       chartReviewRequired: true,
-      chartReviewFrequency: '10% of charts',
-      supervisoryActivities: ['Prescriptive authority agreement review', 'Chart review', 'Quality assurance meetings'],
+      chartReviewFrequency: '10% of charts monthly',
+      supervisoryActivities: ['Monthly supervision meetings', 'Chart review', 'Prescriptive delegation review', 'TMB portal verification'],
     },
     requiresPrescriptiveAuthority: true,
-    prescriptiveAuthorityNotes: 'Prescriptive authority agreement required. 30-day waiting period before delegation begins.',
-    notes: 'Prescriptive authority agreement required. Must have 30-day waiting period before delegation begins.',
+    prescriptiveAuthorityNotes: 'Prescriptive authority specified in collaborative agreement via TMB portal. 30-day waiting period before delegation begins. NP:MD ratio is 7 FTE.',
+    notes: 'Collaborative agreement processed through Texas Medical Board (TMB) website. NPs must create TMB account with license number and SSN. Part of NLC.',
     scopeLimitations: ['Cannot prescribe Schedule II without delegation agreement', 'Site-based practice agreement required'],
-    specialConsiderations: ['Must notify board of practice site changes within 10 days'],
+    specialConsiderations: ['Must notify board of practice site changes within 10 days', 'TMB verification required', 'Part of Nurse Licensure Compact'],
     applicationFeeRange: { min: 186, max: 250 },
     processingTimeWeeks: { min: 6, max: 12 },
     lastUpdated: new Date('2024-01-10'),
+  },
+  {
+    id: 'nc',
+    name: 'North Carolina',
+    abbreviation: 'NC',
+    demandTag: 'at_risk',
+    demandNotes: 'Growing demand in Charlotte and Raleigh metros',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: true,
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'monthly', // Monthly for first 6 months, then every 6 months
+      chartReviewRequired: true,
+      chartReviewFrequency: 'Monthly for first 6 months, then semi-annually',
+      supervisoryActivities: ['Collaborative Practice Agreement review', 'Chart review', 'Case consultation'],
+    },
+    requiresPrescriptiveAuthority: false,
+    prescriptiveAuthorityNotes: 'Prescriptive authority included in collaborative practice agreement.',
+    notes: 'Collaborative Practice Agreement (CPA) required. Monthly meetings for first 6 months, then every 6 months thereafter.',
+    scopeLimitations: [],
+    specialConsiderations: ['Meeting cadence changes after 6 months'],
+    applicationFeeRange: { min: 100, max: 175 },
+    processingTimeWeeks: { min: 4, max: 8 },
+    lastUpdated: new Date('2024-01-20'),
+  },
+  {
+    id: 'va',
+    name: 'Virginia',
+    abbreviation: 'VA',
+    demandTag: 'watch',
+    demandNotes: 'Northern Virginia market monitoring',
+    hasFPA: true,
+    fpaEligibilityCriteria: ['5 years of full-time clinical experience', 'Or 2 years with practice agreement'],
+    fpaApplicationRequired: true,
+    requiresCollaborativeAgreement: true, // Unless autonomous
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'quarterly',
+      chartReviewRequired: true,
+      chartReviewFrequency: 'Quarterly chart review sessions',
+      supervisoryActivities: ['Quarterly supervision meetings', 'Chart review', 'Quality assurance'],
+    },
+    requiresPrescriptiveAuthority: false,
+    notes: 'Practice agreement required unless provider qualifies for autonomous practice. Quarterly meetings required for non-autonomous NPs.',
+    specialConsiderations: ['FPA available after meeting hour requirements'],
+    applicationFeeRange: { min: 130, max: 200 },
+    processingTimeWeeks: { min: 6, max: 10 },
+    lastUpdated: new Date('2024-01-18'),
+  },
+  {
+    id: 'ar',
+    name: 'Arkansas',
+    abbreviation: 'AR',
+    demandTag: 'stable',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: true,
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'quarterly',
+      chartReviewRequired: true,
+      chartReviewFrequency: 'Quarterly',
+      supervisoryActivities: ['Quarterly supervision meetings', 'Chart review'],
+    },
+    requiresPrescriptiveAuthority: true,
+    prescriptiveAuthorityNotes: 'Prescriptive authority requires collaborative practice agreement.',
+    notes: 'Quarterly meetings required. Part of supervision calendar.',
+    applicationFeeRange: { min: 75, max: 150 },
+    processingTimeWeeks: { min: 4, max: 8 },
+    lastUpdated: new Date('2024-01-12'),
+  },
+  {
+    id: 'oh',
+    name: 'Ohio',
+    abbreviation: 'OH',
+    demandTag: 'watch',
+    demandNotes: 'Evaluating Columbus and Cleveland markets',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: true,
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'quarterly', // Periodic - coordinate directly
+      chartReviewRequired: true,
+      chartReviewFrequency: 'Periodic - coordinate directly',
+      supervisoryActivities: ['Standard Care Arrangement review', 'Periodic meetings', 'Chart review'],
+    },
+    requiresPrescriptiveAuthority: true,
+    prescriptiveAuthorityNotes: 'Standard Care Arrangement (SCA) required. Prescriptive authority application separate.',
+    notes: 'Ohio uses Standard Care Arrangements (SCAs). Periodic meetings required - coordinate directly with collaborating physician.',
+    applicationFeeRange: { min: 100, max: 175 },
+    processingTimeWeeks: { min: 6, max: 12 },
+    lastUpdated: new Date('2024-01-15'),
+  },
+  {
+    id: 'wi',
+    name: 'Wisconsin',
+    abbreviation: 'WI',
+    demandTag: 'stable',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: true,
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'quarterly', // Periodic
+      chartReviewRequired: false,
+      supervisoryActivities: ['Collaborative relationship documentation', 'Periodic consultation'],
+    },
+    requiresPrescriptiveAuthority: true,
+    prescriptiveAuthorityNotes: 'Advanced Practice Nurse Prescriber (APNP) certification required.',
+    notes: 'Wisconsin uses APNP designation. Periodic meetings - coordinate directly. Collaborative agreement uploaded to Modio as state document.',
+    applicationFeeRange: { min: 90, max: 150 },
+    processingTimeWeeks: { min: 4, max: 8 },
+    lastUpdated: new Date('2024-01-10'),
+  },
+  {
+    id: 'pa',
+    name: 'Pennsylvania',
+    abbreviation: 'PA',
+    demandTag: 'at_risk',
+    demandNotes: 'Philadelphia metro expansion underway',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: true,
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'quarterly', // No regularly scheduled meetings required per Notion
+      chartReviewRequired: false,
+      supervisoryActivities: ['Collaborative agreement on file', 'Available for consultation'],
+    },
+    requiresPrescriptiveAuthority: true,
+    prescriptiveAuthorityNotes: 'Must apply through PALS portal. Collaborative agreement required.',
+    notes: 'No regularly scheduled meetings required per state regulations. Agreement processed via PALS portal.',
+    applicationFeeRange: { min: 100, max: 175 },
+    processingTimeWeeks: { min: 8, max: 14 },
+    lastUpdated: new Date('2024-01-08'),
+  },
+  {
+    id: 'wv',
+    name: 'West Virginia',
+    abbreviation: 'WV',
+    demandTag: 'stable',
+    hasFPA: true,
+    fpaEligibilityCriteria: ['3 years collaborative practice'],
+    fpaApplicationRequired: true,
+    requiresCollaborativeAgreement: true,
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'quarterly',
+      chartReviewRequired: false,
+      supervisoryActivities: ['Collaborative practice documentation'],
+    },
+    requiresPrescriptiveAuthority: false,
+    notes: 'No regularly scheduled meetings required. FPA available after 3 years.',
+    applicationFeeRange: { min: 75, max: 125 },
+    processingTimeWeeks: { min: 4, max: 8 },
+    lastUpdated: new Date('2024-01-05'),
+  },
+  {
+    id: 'nj',
+    name: 'New Jersey',
+    abbreviation: 'NJ',
+    demandTag: 'watch',
+    demandNotes: 'Northern NJ market evaluation',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: true,
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'quarterly',
+      chartReviewRequired: false,
+      supervisoryActivities: ['Joint Protocol agreement', 'Consultation availability', 'Response timeframe defined'],
+    },
+    requiresPrescriptiveAuthority: false,
+    prescriptiveAuthorityNotes: 'Included in Joint Protocol agreement.',
+    notes: 'New Jersey uses Joint Protocols. APN (Advanced Practice Nurse) terminology. Protocol must specify methods of contact and response timeframes.',
+    applicationFeeRange: { min: 100, max: 175 },
+    processingTimeWeeks: { min: 6, max: 12 },
+    lastUpdated: new Date('2024-01-10'),
+  },
+  {
+    id: 'ok',
+    name: 'Oklahoma',
+    abbreviation: 'OK',
+    demandTag: 'stable',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: true,
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'quarterly',
+      chartReviewRequired: false,
+      supervisoryActivities: ['Prescriptive authority agreement', 'Physician supervision documentation'],
+    },
+    requiresPrescriptiveAuthority: true,
+    prescriptiveAuthorityNotes: 'Apply through OK nursing portal. Physician must be in active practice 20+ hrs/week. Max 6 NPs per physician unless exception granted.',
+    notes: 'Supervising physician must have 20+ hours/week direct patient contact. NP:MD ratio is 6. Agreement must be notarized.',
+    scopeLimitations: ['Max 6 NPs per physician'],
+    applicationFeeRange: { min: 85, max: 150 },
+    processingTimeWeeks: { min: 4, max: 8 },
+    lastUpdated: new Date('2024-01-12'),
   },
   {
     id: 'fl',
@@ -113,7 +306,7 @@ export const states: State[] = [
     fpaApplicationRequired: false,
     requiresCollaborativeAgreement: false,
     requiresPrescriptiveAuthority: false,
-    notes: 'Full Practice Authority state. Streamlined application process.',
+    notes: 'Full Practice Authority state. Streamlined application process. Part of NLC.',
     applicationFeeRange: { min: 150, max: 200 },
     processingTimeWeeks: { min: 4, max: 8 },
     lastUpdated: new Date('2024-01-03'),
@@ -171,39 +364,591 @@ export const states: State[] = [
     processingTimeWeeks: { min: 8, max: 14 },
     lastUpdated: new Date('2023-12-20'),
   },
+  // MD-Only States (from Notion)
+  {
+    id: 'sc',
+    name: 'South Carolina',
+    abbreviation: 'SC',
+    demandTag: 'stable',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    notes: 'MD ONLY STATE - Telemedicine services must be provided by licensed physicians only. NPs not permitted for telehealth.',
+    mdOnlyRules: ['All telehealth encounters must be conducted by MD/DO'],
+    applicationFeeRange: { min: 0, max: 0 },
+    processingTimeWeeks: { min: 0, max: 0 },
+    lastUpdated: new Date('2024-01-20'),
+  },
+  {
+    id: 'tn',
+    name: 'Tennessee',
+    abbreviation: 'TN',
+    demandTag: 'stable',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    notes: 'MD ONLY STATE - Telemedicine services must be provided by licensed physicians only.',
+    mdOnlyRules: ['All telehealth encounters must be conducted by MD/DO'],
+    applicationFeeRange: { min: 0, max: 0 },
+    processingTimeWeeks: { min: 0, max: 0 },
+    lastUpdated: new Date('2024-01-20'),
+  },
+  {
+    id: 'al',
+    name: 'Alabama',
+    abbreviation: 'AL',
+    demandTag: 'stable',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    notes: 'MD ONLY STATE - Telemedicine services must be provided by licensed physicians only.',
+    mdOnlyRules: ['All telehealth encounters must be conducted by MD/DO'],
+    applicationFeeRange: { min: 0, max: 0 },
+    processingTimeWeeks: { min: 0, max: 0 },
+    lastUpdated: new Date('2024-01-20'),
+  },
+  {
+    id: 'ga',
+    name: 'Georgia',
+    abbreviation: 'GA',
+    demandTag: 'at_risk',
+    demandNotes: 'Atlanta metro demand growing',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    notes: 'MD ONLY STATE - Telemedicine services must be provided by licensed physicians only.',
+    mdOnlyRules: ['All telehealth encounters must be conducted by MD/DO'],
+    applicationFeeRange: { min: 0, max: 0 },
+    processingTimeWeeks: { min: 0, max: 0 },
+    lastUpdated: new Date('2024-01-20'),
+  },
+  {
+    id: 'in',
+    name: 'Indiana',
+    abbreviation: 'IN',
+    demandTag: 'stable',
+    hasFPA: false,
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    notes: 'MD ONLY STATE - Telemedicine services must be provided by licensed physicians only.',
+    mdOnlyRules: ['All telehealth encounters must be conducted by MD/DO'],
+    applicationFeeRange: { min: 0, max: 0 },
+    processingTimeWeeks: { min: 0, max: 0 },
+    lastUpdated: new Date('2024-01-20'),
+  },
+  {
+    id: 'ky',
+    name: 'Kentucky',
+    abbreviation: 'KY',
+    demandTag: 'stable',
+    hasFPA: true,
+    fpaEligibilityCriteria: ['Independent practice available', 'Prescriptive authority online application'],
+    fpaApplicationRequired: true,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: true,
+    prescriptiveAuthorityNotes: 'CAPA-NS for non-controlled substances required. Apply through board of nursing.',
+    notes: 'Kentucky grants independent practice. Prescriptive authority (CAPA-NS) applied for separately through nursing portal.',
+    applicationFeeRange: { min: 100, max: 175 },
+    processingTimeWeeks: { min: 4, max: 8 },
+    lastUpdated: new Date('2024-01-15'),
+  },
+  {
+    id: 'sd',
+    name: 'South Dakota',
+    abbreviation: 'SD',
+    demandTag: 'stable',
+    hasFPA: false,
+    fpaEligibilityCriteria: ['1,040 hours of licensed CNP practice'],
+    fpaApplicationRequired: true,
+    requiresCollaborativeAgreement: true,
+    collaborativeAgreementRequirements: {
+      meetingCadence: 'quarterly',
+      chartReviewRequired: false,
+      supervisoryActivities: ['Practice Verification Form submission upon completion'],
+    },
+    requiresPrescriptiveAuthority: false,
+    notes: 'Collaborative agreement required initially. After 1,040 licensed CNP practice hours, can retire agreement via Practice Verification Form 3. Hours on temporary permit do not count.',
+    specialConsiderations: ['Transition to autonomous practice after hour requirements met'],
+    applicationFeeRange: { min: 75, max: 125 },
+    processingTimeWeeks: { min: 4, max: 6 },
+    lastUpdated: new Date('2024-01-10'),
+  },
+  {
+    id: 'ut',
+    name: 'Utah',
+    abbreviation: 'UT',
+    demandTag: 'stable',
+    hasFPA: true,
+    fpaEligibilityCriteria: ['No additional requirements'],
+    fpaApplicationRequired: false,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    notes: 'Utah has transitioned to full practice authority. No collaborative agreement required.',
+    applicationFeeRange: { min: 100, max: 150 },
+    processingTimeWeeks: { min: 4, max: 6 },
+    lastUpdated: new Date('2024-01-08'),
+  },
 ];
 
-// Collaborating Physicians
+// Collaborating Physicians - Enhanced with Notion data
 export const collaboratingPhysicians: CollaboratingPhysician[] = [
   {
     id: 'physician-1',
-    email: 'dr.martinez@example.com',
-    firstName: 'Robert',
-    lastName: 'Martinez',
+    email: 'dr.dinowitz@vitablehealth.com',
+    firstName: 'Seth',
+    lastName: 'Dinowitz',
     role: 'physician',
     npiNumber: '1234567890',
     specialty: 'Internal Medicine',
-    licenseNumber: 'CA-MD-123456',
-    licenseState: 'ca',
+    licenseNumber: 'TX-MD-123456',
+    licenseState: 'tx',
     createdAt: new Date('2023-06-01'),
     agreements: [],
   },
   {
     id: 'physician-2',
-    email: 'dr.patel@example.com',
-    firstName: 'Priya',
-    lastName: 'Patel',
+    email: 'dr.baron@vitablehealth.com',
+    firstName: 'Kate',
+    lastName: 'Baron',
     role: 'physician',
     npiNumber: '0987654321',
     specialty: 'Family Medicine',
-    licenseNumber: 'TX-MD-789012',
-    licenseState: 'tx',
+    licenseNumber: 'CA-MD-789012',
+    licenseState: 'ca',
     createdAt: new Date('2023-08-15'),
     agreements: [],
   },
 ];
 
-// Task templates for different license types
+// Knowledge Base Articles - from Notion SOPs
+export interface KnowledgeBaseArticle {
+  id: string;
+  title: string;
+  category: 'state_guides' | 'sop' | 'training' | 'compliance' | 'templates';
+  subcategory?: string;
+  summary: string;
+  content: string;
+  stateId?: string;
+  lastUpdated: Date;
+  tags: string[];
+  sourceUrl?: string;
+}
+
+export const knowledgeBaseArticles: KnowledgeBaseArticle[] = [
+  // State Guides
+  {
+    id: 'kb-tx-collab',
+    title: 'Texas Collaborative Agreements',
+    category: 'state_guides',
+    subcategory: 'Collaborative Agreements',
+    stateId: 'tx',
+    summary: 'Complete guide to establishing prescriptive delegation agreements through the Texas Medical Board (TMB).',
+    content: `# Texas Collaborative Agreements (Required)
+
+## Background
+This protocol outlines the process for establishing and documenting prescriptive delegation agreements between nurse practitioners and supervising physicians in Texas through the Texas Medical Board (TMB).
+
+## Requirements
+- **NP:MD Ratio**: No more than 7 APRNs or PAs, or their full-time equivalents
+- **Meeting Cadence**: Monthly supervision meetings required
+- **Chart Review**: 10% of charts monthly
+
+## Process Overview
+1. Provider creates account on TMB website (sso.tmb.state.tx.us)
+2. Enter Texas license number, last 4 SSN, DOB
+3. Complete prescriptive delegation agreement
+4. 30-day waiting period before delegation begins
+5. Upload signed agreement to Box and Modio
+
+## Key Systems
+- **TMB Portal**: Primary application system
+- **Box**: Document storage and e-signatures
+- **Modio**: Credentialing record storage`,
+    lastUpdated: new Date('2024-01-10'),
+    tags: ['texas', 'collaborative', 'tmb', 'prescriptive authority'],
+    sourceUrl: 'https://sso.tmb.state.tx.us',
+  },
+  {
+    id: 'kb-ca-collab',
+    title: 'California Standardized Procedures & Furnishing',
+    category: 'state_guides',
+    subcategory: 'Prescriptive Authority',
+    stateId: 'ca',
+    summary: 'Guide to California furnishing license and standardized procedure requirements.',
+    content: `# California Requirements
+
+## Overview
+California requires NPs to have both a furnishing license AND a standardized procedure agreement with a supervising physician.
+
+## Requirements
+- **Furnishing License**: Separate licensure required for prescriptive authority
+- **NP:MD Ratio**: 4 NPs per physician
+- **Meeting Cadence**: Quarterly for first year, then annually
+- **NOT part of Nurse Licensure Compact (NLC)**
+
+## Steps to Confirm Eligibility
+1. Ensure provider has active RN and NP licenses in Modio
+2. Ensure provider has furnishing license in Modio
+3. If no furnishing license, ensure collaborative agreement is signed and present
+
+## Source
+California Board of Registered Nursing: rn.ca.gov/practice/np.shtml`,
+    lastUpdated: new Date('2024-01-15'),
+    tags: ['california', 'furnishing', 'standardized procedure'],
+    sourceUrl: 'https://www.rn.ca.gov/practice/np.shtml',
+  },
+  {
+    id: 'kb-nj-joint',
+    title: 'New Jersey Joint Protocols',
+    category: 'state_guides',
+    subcategory: 'Collaborative Agreements',
+    stateId: 'nj',
+    summary: 'Guide to establishing Joint Protocol agreements in New Jersey.',
+    content: `# New Jersey Joint Protocols (Required)
+
+## Background
+New Jersey requires APNs (Advanced Practice Nurses) to practice under a joint protocol with a collaborating physician.
+
+## Key Requirements
+- Joint protocol must be in writing and signed by both parties
+- Protocol outlines scope of practice and consultation procedures
+- Must specify methods of contact, circumstances requiring consultation, and response timeframes
+
+## Physician Supervision
+Per N.J.A.C. 13:37-6.3:
+- Collaborating physician must be available for consultation
+- Availability may be maintained through electronic means (phone, email, video)
+- No regularly scheduled meetings required by state regulation
+
+## Process
+1. Prepare Joint Protocol document
+2. Both parties sign via Box
+3. Upload to Modio as state documentation
+4. Maintain on file for regulatory review`,
+    lastUpdated: new Date('2024-01-10'),
+    tags: ['new jersey', 'joint protocol', 'apn'],
+  },
+  {
+    id: 'kb-oh-sca',
+    title: 'Ohio Standard Care Arrangements',
+    category: 'state_guides',
+    subcategory: 'Collaborative Agreements',
+    stateId: 'oh',
+    summary: 'Guide to establishing Standard Care Arrangements (SCAs) in Ohio.',
+    content: `# Ohio Standard Care Arrangements (Required)
+
+## Background
+Ohio requires APRNs to have Standard Care Arrangements (SCAs) with collaborating physicians.
+
+## Requirements
+- Standard Care Arrangement required
+- Prescriptive authority is a separate application
+- Periodic meetings required (coordinate directly with physician)
+
+## Key Terms
+- **SCA**: Standard Care Arrangement
+- **APRN**: Advanced Practice Registered Nurse
+
+## Process
+1. Complete SCA documentation
+2. Apply separately for prescriptive authority
+3. Upload agreement to Modio
+4. Coordinate meeting schedule with collaborating physician`,
+    lastUpdated: new Date('2024-01-15'),
+    tags: ['ohio', 'sca', 'standard care arrangement'],
+  },
+  {
+    id: 'kb-ok-collab',
+    title: 'Oklahoma Prescriptive Authority Agreements',
+    category: 'state_guides',
+    subcategory: 'Prescriptive Authority',
+    stateId: 'ok',
+    summary: 'Guide to establishing prescriptive authority agreements in Oklahoma.',
+    content: `# Oklahoma Collaborative Agreements (Required)
+
+## Requirements
+- Prescriptive agreement with physician required
+- Supervising physician must be in active clinical practice (20+ hours/week direct patient contact)
+- **NP:MD Ratio**: Maximum 6 NPs per physician unless board exception granted
+- Agreement must be signed AND notarized by supervising physician
+
+## Application Process
+1. Apply for prescriptive authority through OK nursing portal
+2. Complete Agreement for Physician Supervising Advanced Practice Prescriptive Authority form
+3. Get physician signature and notarization
+4. Upload to NP's OK nurse portal
+
+## Document Storage
+Upload completed agreement to Google Drive folder for Oklahoma.`,
+    lastUpdated: new Date('2024-01-12'),
+    tags: ['oklahoma', 'prescriptive authority', 'notarized'],
+  },
+  // SOPs
+  {
+    id: 'kb-sop-collab-process',
+    title: 'Collaborative Agreement Execution SOP',
+    category: 'sop',
+    summary: 'Standard operating procedure for initiating and completing collaborative agreements.',
+    content: `# Collaborative Agreement Process
+
+## Trigger
+Once credentialing audit is completed, provider ops can initiate the collaborative agreement process when required.
+
+## Steps
+
+### 1. Access Box
+- Log into Box: app.box.com/sign
+- Use Clinical Operations login from 1Password
+
+### 2. Select Template
+- Navigate to Sign > Templates
+- Select appropriate state template
+
+### 3. Prepare Agreement
+- Add signer details (NP first, Physician second)
+- Pre-fill required information
+
+### 4. Send for Signatures
+1. NP signs first
+2. Supervising physician signs second
+3. Click "Send Request"
+
+### 5. Notify Provider
+Send email notification that they will receive signing request via Box.
+
+### 6. Monitor Completion
+- Watch Box for completed signatures
+- Download signed agreement
+
+### 7. Upload to Systems
+- Upload to Modio as "Collaborative Agreement"
+- Update Notion Provider-State Status
+- Set expiration date if applicable`,
+    lastUpdated: new Date('2024-01-20'),
+    tags: ['sop', 'collaborative', 'box', 'modio'],
+  },
+  {
+    id: 'kb-sop-supervision',
+    title: 'Monthly Supervision Requirements SOP',
+    category: 'sop',
+    summary: 'Process for scheduling and conducting supervision meetings and chart reviews.',
+    content: `# Monthly Supervision Requirements
+
+## State Meeting Requirements
+
+| State | Cadence | Notes |
+|-------|---------|-------|
+| Texas | Monthly | Last Monday of each month |
+| North Carolina | Monthly → 6 months | First 6 months monthly, then every 6 months |
+| Virginia | Quarterly | |
+| Arkansas | Quarterly | |
+| Ohio | Periodic | Coordinate directly |
+| Wisconsin | Periodic | Coordinate directly |
+| Pennsylvania | None | No scheduled meetings required |
+| West Virginia | None | No scheduled meetings required |
+
+## Process
+
+### Meeting Setup
+- All recurring meetings on Collabs/Supervision Calendar
+- Add new providers to appropriate state invite
+- Create chart review template for new providers
+
+### Chart Pulling (1 week before meeting)
+1. Open provider's chart review log
+2. Copy Template tab, name with month/year
+3. Log into EHR (providers.vitablehealth.com)
+4. Filter: Date range, Provider, State, Status=Completed
+5. Pull 5 telehealth primary care charts per provider
+6. Upload to shared drive
+
+### Communication
+**1 Week Before**: Send chart review email to physician and provider
+**Day After Meeting**: Send reminder if not acknowledged
+**After Meeting**: Confirm completion documented`,
+    lastUpdated: new Date('2024-01-25'),
+    tags: ['sop', 'supervision', 'chart review', 'meetings'],
+  },
+  {
+    id: 'kb-sop-credentialing',
+    title: 'How to Start Credentialing with New Provider',
+    category: 'sop',
+    summary: 'Complete onboarding credentialing process for new providers.',
+    content: `# Credentialing Process for New Providers
+
+## Step 1: Review Provider-State Status
+Check the Provider-State Status database in Notion to identify:
+- States where provider is licensed
+- States requiring collaborative agreements
+- Current credentialing status
+
+## Step 2: License Verification
+1. Verify licenses in Modio
+2. Check expiration dates
+3. Confirm NPI number
+
+## Step 3: Determine Requirements
+For each state:
+- Does it require collaborative agreement?
+- Is prescriptive/furnishing authority separate?
+- What is the meeting cadence?
+
+## Step 4: Initiate Agreements
+If collaborative agreement required:
+1. Assign collaborating physician
+2. Draft agreement using Box template
+3. Send for signatures
+4. Upload to Modio and Notion
+
+## Step 5: Complete Credentialing
+1. Verify all documents uploaded
+2. Update credentialing status
+3. Mark provider ready for activation if complete`,
+    lastUpdated: new Date('2024-01-20'),
+    tags: ['credentialing', 'onboarding', 'new provider'],
+  },
+  // Training
+  {
+    id: 'kb-training-np',
+    title: 'New Provider Training: Nurse Practitioner',
+    category: 'training',
+    summary: 'Complete training and onboarding program for new NPs.',
+    content: `# NP Training and Onboarding Program
+
+## Overview
+Our training program prepares you to start and excel as a provider at Vitable Health.
+
+## Step 1: Onboarding Training
+30-minute training session covering:
+- Scope of services
+- Provider tools
+- Provider expectations
+
+## Step 2: Quality Review Preparation
+Vitable runs quality reviews at:
+- 2-week mark
+- 6-week mark
+
+Purpose: Better support new providers and ensure quality standards.
+
+## Step 3: System Access
+Ensure you have access to:
+- EHR system
+- Slack workspace
+- Required documentation
+
+## Step 4: Credentialing Completion
+Work with Clinical Operations to:
+- Verify all licenses are on file
+- Complete collaborative agreements if required
+- Acknowledge policies and complete attestations
+
+## Resources
+- TalentLMS for online modules
+- Provider support via Slack
+- Clinical Operations contact for credentialing questions`,
+    lastUpdated: new Date('2024-01-28'),
+    tags: ['training', 'onboarding', 'new provider', 'np'],
+  },
+  // Compliance
+  {
+    id: 'kb-compliance-reimbursement',
+    title: 'License Reimbursement Process',
+    category: 'compliance',
+    summary: 'How to request and process license fee reimbursements.',
+    content: `# Processing License Reimbursement Requests
+
+## Policy
+License reimbursement may be available depending on provider contract terms.
+
+**Note**: No reimbursement for licenses at this time unless explicitly promised in provider's contract.
+
+## Request Process
+1. Provider completes licensure task
+2. Provider retains receipt
+3. Email receipt to providersupport@vitablehealth.com
+4. Reference state and license type
+
+## Communication Template
+> Hi [Provider],
+> 
+> Thank you for your [LICENSE TYPE] license application in [STATE]. 
+> Please hold onto your receipt(s) and email them to us once payment is complete. 
+> We'll process the reimbursement according to your contract terms.
+
+## Processing
+1. Review provider contract for reimbursement eligibility
+2. Verify receipt matches application
+3. Process through payroll if approved
+4. Update task status in system`,
+    lastUpdated: new Date('2024-01-15'),
+    tags: ['reimbursement', 'license', 'finance'],
+  },
+  // Templates
+  {
+    id: 'kb-template-collab-email',
+    title: 'Collaborative Agreement Communication Templates',
+    category: 'templates',
+    summary: 'Email templates for collaborative agreement process.',
+    content: `# Collaborative Agreement Email Templates
+
+## Initial Signing Request
+Subject: [State] Collaborative Agreement - Action Required
+
+Hi [Provider],
+
+Your [State] collaborative agreement is ready for review and signature.
+
+You will receive a separate email from Box with the signing link. Please review and sign at your earliest convenience.
+
+Your collaborating physician, [Physician Name], will also receive the agreement for their signature.
+
+Let me know if you have any questions.
+
+Best,
+[Your Name]
+Clinical Operations
+
+---
+
+## Chart Review Reminder (1 Week Before Meeting)
+
+Subject: [Month] Chart Reviews Ready - [State] Meeting
+
+Hi [Supervising Physician] and [Provider],
+
+The [Month] chart reviews for [Provider] are ready for review ahead of your upcoming [State] meeting.
+
+[Provider] - Please complete columns E & F (service provided & information shared) ahead of the meeting date.
+
+Please let me know if you need anything else.
+
+Best,
+[Your Name]
+
+---
+
+## Meeting Completion Confirmation
+
+Subject: [Month] [State] Meeting - Confirmation Needed
+
+Hi [Supervising Physician] and [Provider],
+
+Please confirm that your [Month] supervision meeting has been completed and documented.
+
+Thank you,
+[Your Name]`,
+    lastUpdated: new Date('2024-01-20'),
+    tags: ['template', 'email', 'collaborative'],
+  },
+];
+
+// Task templates for different license types (keep existing but add to it)
 export const taskTemplates: TaskTemplate[] = [
   // Licensure tasks
   {
@@ -274,6 +1019,30 @@ export const taskTemplates: TaskTemplate[] = [
     estimatedTimeMinutes: 45,
     order: 4,
     isActive: true,
+    stateOverrides: {
+      'ca': {
+        title: 'Apply for California Furnishing License',
+        defaultInstructions: [
+          'Log into California Board of Registered Nursing portal',
+          'Navigate to furnishing license application',
+          'Complete application with collaborating physician details',
+          'Submit standardized procedure documentation',
+          'Pay furnishing license fee',
+          'Upload confirmation as evidence',
+        ],
+      },
+      'ok': {
+        title: 'Apply for Oklahoma Prescriptive Authority',
+        defaultInstructions: [
+          'Access Oklahoma nursing portal',
+          'Complete prescriptive authority application',
+          'Download Agreement for Physician Supervising form',
+          'Obtain supervising physician signature AND notarization',
+          'Upload notarized agreement to portal',
+          'Keep copy for records',
+        ],
+      },
+    },
   },
   {
     id: 'tpl-telehealth-1',
@@ -308,8 +1077,35 @@ export const taskTemplates: TaskTemplate[] = [
     estimatedTimeMinutes: 60,
     order: 6,
     isActive: true,
+    stateOverrides: {
+      'ny': {
+        defaultInstructions: [
+          'Verify you have completed 3,600 hours of supervised practice',
+          'Obtain written certification from collaborating physician',
+          'Complete NY FPA application',
+          'Submit supporting documentation',
+          'Pay application fee',
+        ],
+      },
+      'wa': {
+        defaultInstructions: [
+          'Verify you have completed 4,000 hours clinical experience',
+          'Complete Washington FPA application',
+          'Submit documentation of clinical hours',
+          'Pay application fee',
+        ],
+      },
+      'il': {
+        defaultInstructions: [
+          'Verify you have completed 4,000 hours collaborative practice',
+          'Complete Illinois FPA transition application',
+          'Submit documentation of collaborative practice hours',
+          'Pay application fee',
+        ],
+      },
+    },
   },
-  // Collaborative Agreement tasks
+  // Collaborative Agreement tasks - Enhanced with Notion knowledge
   {
     id: 'tpl-collab-1',
     category: 'collaborative',
@@ -326,6 +1122,39 @@ export const taskTemplates: TaskTemplate[] = [
     estimatedTimeMinutes: 60,
     order: 1,
     isActive: true,
+    stateOverrides: {
+      'tx': {
+        title: 'Complete Texas Prescriptive Delegation Agreement',
+        defaultInstructions: [
+          'Create account on TMB website (sso.tmb.state.tx.us)',
+          'Enter Texas license number, last 4 SSN, and DOB',
+          'Navigate to prescriptive delegation section',
+          'Complete delegation agreement form',
+          'Supervising physician completes their section',
+          'Wait 30-day period before delegation begins',
+          'Download confirmation and upload to Modio',
+        ],
+      },
+      'nj': {
+        title: 'Execute New Jersey Joint Protocol',
+        defaultInstructions: [
+          'Prepare Joint Protocol document',
+          'Include scope of practice and consultation procedures',
+          'Define methods of contact and response timeframes',
+          'Both parties sign via Box',
+          'Upload to Modio as state documentation',
+        ],
+      },
+      'oh': {
+        title: 'Complete Ohio Standard Care Arrangement',
+        defaultInstructions: [
+          'Complete Standard Care Arrangement (SCA) documentation',
+          'Coordinate meeting schedule with collaborating physician',
+          'Apply separately for prescriptive authority',
+          'Upload SCA to Modio',
+        ],
+      },
+    },
   },
   {
     id: 'tpl-collab-2',
@@ -367,7 +1196,7 @@ export const taskTemplates: TaskTemplate[] = [
     title: 'Complete HIPAA Training',
     description: 'Annual HIPAA compliance training module.',
     defaultInstructions: [
-      'Access training through company learning portal',
+      'Access training through TalentLMS portal',
       'Complete all training modules',
       'Pass the assessment with minimum 80% score',
       'Download completion certificate',
@@ -386,7 +1215,7 @@ export const taskTemplates: TaskTemplate[] = [
     defaultInstructions: [
       'Review the attached policy documents',
       'Complete attestation that you have read and understood policies',
-      'Submit acknowledgment',
+      'Submit acknowledgment via DocuSign',
     ],
     estimatedTimeMinutes: 20,
     order: 2,
@@ -401,11 +1230,27 @@ export const taskTemplates: TaskTemplate[] = [
     defaultInstructions: [
       'Review attestation questions',
       'Verify all information is current and accurate',
-      'Submit attestation form',
+      'Submit attestation form via DocuSign',
       'Upload any required supporting documents',
     ],
     estimatedTimeMinutes: 30,
     order: 3,
+    isActive: true,
+  },
+  {
+    id: 'tpl-compliance-vanta',
+    category: 'compliance',
+    complianceTaskType: 'training_module',
+    title: 'Complete Vanta Security Training',
+    description: 'Complete required security awareness training through Vanta.',
+    defaultInstructions: [
+      'Access Vanta training portal',
+      'Complete security awareness modules',
+      'Pass assessment',
+      'Confirm completion status shows in Vanta',
+    ],
+    estimatedTimeMinutes: 30,
+    order: 4,
     isActive: true,
   },
   {
@@ -486,7 +1331,7 @@ const mockReimbursement: Reimbursement = {
   applicationFee: 200,
   adminTimeMinutes: 95,
   hourlyRate: 45,
-  totalAmount: 271.25, // 200 + (95/60 * 45)
+  totalAmount: 271.25,
   status: 'pending',
   submittedAt: new Date('2024-01-15'),
 };
@@ -504,31 +1349,27 @@ const createTasksForState = (providerId: string, stateId: string, stateName: str
         stateId,
         category: 'licensure',
         licenseType: 'initial',
-        title: 'Submit License Application',
-        description: `Complete and submit the initial NP license application to the ${stateName} board.`,
+        title: 'Submit CA License Application',
+        description: 'Complete and submit the initial NP license application to the California Board of Registered Nursing.',
         instructions: [
-          `Navigate to the ${stateName} nursing board website`,
-          'Create an account or log in to existing account',
-          'Complete all required sections of the application form',
-          'Upload required documents (transcripts, verification, etc.)',
-          'Pay the application fee ($200)',
-          'Take a screenshot of the confirmation page',
-          'Save the confirmation/reference number',
+          'Navigate to the California BRN website: rn.ca.gov',
+          'Create an account or log in',
+          'Complete the NP license application',
+          'Upload required documents (transcripts, verification)',
+          'Pay the $150 application fee',
+          'Screenshot the confirmation page',
         ],
-        status: 'verified',
+        status: 'in_progress',
         estimatedTimeMinutes: 90,
         estimatedFee: 200,
-        actualTimeMinutes: 95,
-        actualFee: 200,
-        assignedAt: new Date('2024-01-10'),
-        completedAt: new Date('2024-01-15'),
-        verifiedAt: new Date('2024-01-16'),
-        verifiedBy: 'admin-1',
+        dueDate: new Date(baseDate.getTime() + 14 * 24 * 60 * 60 * 1000),
+        assignedAt: new Date(baseDate.getTime() - 7 * 24 * 60 * 60 * 1000),
+        assignedBy: 'admin-1',
         evidence: mockEvidence,
         reimbursement: mockReimbursement,
         notes: [mockNotes[0]],
         order: 1,
-        demandReason: state?.demandTag === 'critical' ? `${state.abbreviation} is Critical: ${state.demandNotes}` : undefined,
+        demandReason: 'CA is Critical - High patient volume growth in Bay Area',
       },
       {
         id: `task-${providerId}-${stateId}-2`,
@@ -537,136 +1378,65 @@ const createTasksForState = (providerId: string, stateId: string, stateName: str
         category: 'licensure',
         licenseType: 'initial',
         title: 'Submit Background Check',
-        description: 'Complete fingerprinting and background check as required by the state.',
+        description: 'Complete fingerprinting and background check for California.',
         instructions: [
-          'Schedule fingerprinting appointment at approved vendor (IdentoGO)',
-          'Bring valid government-issued photo ID',
+          'Schedule fingerprinting at IdentoGO or approved vendor',
+          'Bring valid ID and application receipt',
           'Complete fingerprinting',
-          'Keep receipt as proof of completion',
-          'Background check results are sent directly to the board',
+          'Keep receipt for records',
         ],
-        status: 'in_progress',
+        status: 'not_started',
         estimatedTimeMinutes: 60,
-        estimatedFee: 75,
-        assignedAt: new Date('2024-01-16'),
+        estimatedFee: 49,
+        dueDate: new Date(baseDate.getTime() + 21 * 24 * 60 * 60 * 1000),
         evidence: [],
         notes: [mockNotes[1]],
         order: 2,
-        demandReason: state?.demandTag === 'critical' ? `${state.abbreviation} is Critical: ${state.demandNotes}` : undefined,
       },
       {
         id: `task-${providerId}-${stateId}-3`,
         providerId,
         stateId,
         category: 'licensure',
-        licenseType: 'initial',
-        title: 'Verify License Issuance',
-        description: 'Confirm license has been issued and download official documentation.',
+        licenseType: 'prescriptive_authority',
+        title: 'Apply for California Furnishing License',
+        description: 'Submit furnishing license application for prescriptive authority in California.',
         instructions: [
-          'Check state board portal for license status',
-          'Once approved, download the official license document',
-          'Verify all information is correct (name, license number, expiration)',
-          'Upload license document as evidence',
+          'Log into California BRN portal',
+          'Navigate to furnishing license application',
+          'Complete application with supervising physician details',
+          'Submit standardized procedure documentation',
+          'Pay furnishing license fee ($50)',
         ],
         status: 'not_started',
-        estimatedTimeMinutes: 15,
-        estimatedFee: 0,
+        estimatedTimeMinutes: 45,
+        estimatedFee: 50,
+        dueDate: new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000),
         evidence: [],
         notes: [],
         order: 3,
       },
       {
-        id: `task-${providerId}-${stateId}-4`,
-        providerId,
-        stateId,
-        category: 'licensure',
-        licenseType: 'prescriptive_authority',
-        title: 'Apply for Furnishing License',
-        description: 'Submit application for furnishing (prescriptive) authority in California.',
-        instructions: [
-          'Complete CA furnishing number application',
-          'Submit standardized procedure with supervising physician',
-          'Pay furnishing license fee',
-          'Upload confirmation',
-        ],
-        status: 'not_started',
-        estimatedTimeMinutes: 45,
-        estimatedFee: 50,
-        evidence: [],
-        notes: [],
-        order: 4,
-      },
-      {
-        id: `task-${providerId}-${stateId}-5`,
+        id: `task-${providerId}-${stateId}-collab`,
         providerId,
         stateId,
         category: 'collaborative',
-        title: 'Execute Collaborative Agreement',
+        title: 'Execute CA Standardized Procedure Agreement',
         description: 'Complete and sign standardized procedure agreement with supervising physician.',
         instructions: [
-          'Review California standardized procedure requirements',
-          'Coordinate with Dr. Robert Martinez (assigned collaborating physician)',
-          'Complete standardized procedure agreement form',
-          'Both parties sign the agreement',
-          'Submit to California Board of Registered Nursing',
-          'Upload signed agreement as evidence',
+          'Review CA standardized procedure requirements',
+          'Coordinate with assigned physician (NP:MD ratio is 4)',
+          'Complete standardized procedure form',
+          'Both parties sign via Box',
+          'Upload to Modio as state documentation',
         ],
         status: 'not_started',
         estimatedTimeMinutes: 60,
         estimatedFee: 0,
         evidence: [],
         notes: [],
-        order: 5,
-        demandReason: state?.demandTag === 'critical' ? `${state.abbreviation} is Critical: ${state.demandNotes}` : undefined,
-      },
-      // Compliance tasks
-      {
-        id: `task-${providerId}-${stateId}-compliance-1`,
-        providerId,
-        stateId,
-        category: 'compliance',
-        complianceTaskType: 'training_module',
-        title: 'Complete HIPAA Training',
-        description: 'Annual HIPAA compliance training module.',
-        instructions: [
-          'Access training through company learning portal',
-          'Complete all training modules',
-          'Pass the assessment with minimum 80% score',
-          'Download completion certificate',
-          'Upload certificate as evidence',
-        ],
-        status: 'approved',
-        estimatedTimeMinutes: 45,
-        estimatedFee: 0,
-        completedAt: new Date('2024-01-05'),
-        evidence: [],
-        notes: [],
-        order: 10,
-        externalContentUrl: 'https://learning.example.com/hipaa',
-        requiresAttestation: true,
-      },
-      {
-        id: `task-${providerId}-${stateId}-compliance-2`,
-        providerId,
-        stateId,
-        category: 'compliance',
-        complianceTaskType: 'policy_acknowledgment',
-        title: 'Acknowledge Clinical Policies',
-        description: 'Review and acknowledge updated clinical policies.',
-        instructions: [
-          'Review the attached policy documents',
-          'Complete attestation that you have read and understood policies',
-          'Submit acknowledgment',
-        ],
-        status: 'not_started',
-        estimatedTimeMinutes: 20,
-        estimatedFee: 0,
-        dueDate: new Date('2024-02-15'),
-        evidence: [],
-        notes: [],
-        order: 11,
-        externalContentUrl: 'https://policies.example.com/clinical',
-        requiresAttestation: true,
+        order: 4,
+        demandReason: 'Required for CA prescriptive authority',
       },
     ];
   }
@@ -679,55 +1449,53 @@ const createTasksForState = (providerId: string, stateId: string, stateName: str
         stateId,
         category: 'licensure',
         licenseType: 'initial',
-        title: 'Submit License Application',
-        description: `Complete and submit the initial NP license application to the ${stateName} board.`,
+        title: 'Submit TX License Application',
+        description: 'Complete NP license application through Texas Board of Nursing.',
         instructions: [
-          'Navigate to Texas Board of Nursing website',
-          'Create a new application account',
-          'Complete all application sections',
-          'Upload required documentation',
+          'Navigate to Texas BON website',
+          'Create account with TX license number',
+          'Complete application form',
           'Pay application fee ($186)',
+          'Upload confirmation as evidence',
         ],
         status: 'submitted',
-        estimatedTimeMinutes: 90,
+        estimatedTimeMinutes: 60,
         estimatedFee: 186,
-        actualTimeMinutes: 85,
-        actualFee: 186,
-        assignedAt: new Date('2024-01-08'),
-        completedAt: new Date('2024-01-12'),
+        dueDate: new Date(baseDate.getTime() + 7 * 24 * 60 * 60 * 1000),
+        assignedAt: new Date(baseDate.getTime() - 14 * 24 * 60 * 60 * 1000),
         evidence: [],
         notes: [],
         order: 1,
-        demandReason: state?.demandTag === 'at_risk' ? `${state.abbreviation} is At Risk: ${state.demandNotes}` : undefined,
+        demandReason: 'TX is At Risk - SLA pressure in Houston/DFW',
       },
       {
-        id: `task-${providerId}-${stateId}-2`,
+        id: `task-${providerId}-${stateId}-collab`,
         providerId,
         stateId,
         category: 'collaborative',
-        title: 'Execute Prescriptive Authority Agreement',
-        description: 'Complete prescriptive authority agreement with supervising physician.',
+        title: 'Complete Texas Prescriptive Delegation Agreement',
+        description: 'Execute prescriptive delegation agreement through Texas Medical Board portal.',
         instructions: [
-          'Review Texas prescriptive authority agreement requirements',
-          'Coordinate with assigned collaborating physician',
-          'Complete prescriptive authority agreement form',
-          'Note: 30-day waiting period applies before delegation begins',
-          'Both parties sign the agreement',
-          'Submit to Texas Board of Nursing',
-          'Upload signed agreement as evidence',
+          'Create account on TMB website (sso.tmb.state.tx.us)',
+          'Enter Texas license number, last 4 SSN, and DOB',
+          'Navigate to prescriptive delegation section',
+          'Complete delegation agreement with Dr. Dinowitz',
+          'Wait 30-day period before delegation begins',
+          'Download confirmation and upload to Modio',
         ],
         status: 'not_started',
-        estimatedTimeMinutes: 60,
+        estimatedTimeMinutes: 45,
         estimatedFee: 0,
         evidence: [],
         notes: [],
         order: 2,
-        demandReason: state?.demandTag === 'at_risk' ? `${state.abbreviation} is At Risk: ${state.demandNotes}` : undefined,
+        demandReason: 'Required for TX practice - Monthly meetings with Dr. Dinowitz',
       },
     ];
   }
   
-  if (stateId === 'az') {
+  // Default tasks for FPA states
+  if (state?.hasFPA && !state?.requiresCollaborativeAgreement) {
     return [
       {
         id: `task-${providerId}-${stateId}-1`,
@@ -735,183 +1503,146 @@ const createTasksForState = (providerId: string, stateId: string, stateName: str
         stateId,
         category: 'licensure',
         licenseType: 'initial',
-        title: 'Submit License Application',
-        description: `Complete and submit the initial NP license application to the ${stateName} board.`,
+        title: `Submit ${state.abbreviation} License Application`,
+        description: `Complete NP license application for ${stateName}.`,
         instructions: [
-          'Navigate to Arizona State Board of Nursing',
-          'Complete online application',
-          'Pay fee ($150)',
+          `Navigate to ${stateName} nursing board website`,
+          'Complete license application',
+          'Pay application fee',
+          'Upload confirmation',
         ],
-        status: 'approved',
+        status: 'not_started',
         estimatedTimeMinutes: 60,
-        estimatedFee: 150,
-        actualTimeMinutes: 55,
-        actualFee: 150,
-        assignedAt: new Date('2023-12-01'),
-        completedAt: new Date('2023-12-05'),
-        verifiedAt: new Date('2024-01-02'),
-        verifiedBy: 'admin-1',
+        estimatedFee: state.applicationFeeRange.max,
         evidence: [],
         notes: [],
         order: 1,
       },
     ];
   }
-
-  if (stateId === 'fl') {
-    return [
-      {
-        id: `task-${providerId}-${stateId}-1`,
-        providerId,
-        stateId,
-        category: 'licensure',
-        licenseType: 'initial',
-        title: 'Submit License Application',
-        description: 'Complete Florida NP license application.',
-        instructions: [
-          'Apply through Florida Department of Health portal',
-          'Complete all sections',
-          'Pay fee ($130)',
-        ],
-        status: 'blocked',
-        estimatedTimeMinutes: 75,
-        estimatedFee: 130,
-        assignedAt: new Date('2024-01-05'),
-        evidence: [],
-        notes: [{
-          id: 'note-blocked',
-          taskId: `task-${providerId}-${stateId}-1`,
-          authorId: 'admin-1',
-          authorName: 'Sarah Chen',
-          content: 'Blocked: Missing transcript from nursing program. Provider needs to request official transcript.',
-          createdAt: new Date('2024-01-08'),
-          isInternal: false,
-        }],
-        order: 1,
-      },
-    ];
-  }
   
-  return [];
-};
-
-// Create provider states with unified readiness
-const createProviderStates = (providerId: string): ProviderState[] => {
-  const providerStates: ProviderState[] = [];
-  
-  // California - in progress
-  const caState = states.find(s => s.id === 'ca')!;
-  const caTasks = createTasksForState(providerId, 'ca', 'California');
-  providerStates.push({
-    id: `ps-${providerId}-ca`,
-    providerId,
-    stateId: 'ca',
-    state: caState,
-    isLicensed: false,
-    isApprovedToPractice: false,
-    isReadyForActivation: false,
-    licensureComplete: false,
-    collaborativeComplete: false,
-    complianceComplete: false,
-    licenses: [],
-    tasks: caTasks,
-  });
-  
-  // Texas - submitted
-  const txState = states.find(s => s.id === 'tx')!;
-  providerStates.push({
-    id: `ps-${providerId}-tx`,
-    providerId,
-    stateId: 'tx',
-    state: txState,
-    isLicensed: false,
-    isApprovedToPractice: false,
-    isReadyForActivation: false,
-    licensureComplete: false,
-    collaborativeComplete: false,
-    complianceComplete: true,
-    licenses: [],
-    tasks: createTasksForState(providerId, 'tx', 'Texas'),
-  });
-  
-  // Arizona - complete and ready
-  const azState = states.find(s => s.id === 'az')!;
-  providerStates.push({
-    id: `ps-${providerId}-az`,
-    providerId,
-    stateId: 'az',
-    state: azState,
-    isLicensed: true,
-    isApprovedToPractice: true,
-    isReadyForActivation: true,
-    licensureComplete: true,
-    collaborativeComplete: true, // Not required for FPA state
-    complianceComplete: true,
-    licenses: [{
-      id: `lic-${providerId}-az`,
+  // Default tasks for collaborative states
+  return [
+    {
+      id: `task-${providerId}-${stateId}-1`,
       providerId,
-      stateId: 'az',
-      type: 'initial',
-      licenseNumber: 'AZ-NP-2024-12345',
-      issueDate: new Date('2024-01-02'),
-      expirationDate: new Date('2026-01-02'),
-      status: 'active',
-    }],
-    tasks: createTasksForState(providerId, 'az', 'Arizona'),
-  });
-
-  // Florida - blocked
-  const flState = states.find(s => s.id === 'fl')!;
-  providerStates.push({
-    id: `ps-${providerId}-fl`,
-    providerId,
-    stateId: 'fl',
-    state: flState,
-    isLicensed: false,
-    isApprovedToPractice: false,
-    isReadyForActivation: false,
-    licensureComplete: false,
-    collaborativeComplete: false,
-    complianceComplete: true,
-    licenses: [],
-    tasks: createTasksForState(providerId, 'fl', 'Florida'),
-  });
-  
-  return providerStates;
+      stateId,
+      category: 'licensure',
+      licenseType: 'initial',
+      title: `Submit ${state?.abbreviation || stateId.toUpperCase()} License Application`,
+      description: `Complete NP license application for ${stateName}.`,
+      instructions: [
+        `Navigate to ${stateName} nursing board website`,
+        'Complete license application',
+        'Pay application fee',
+        'Upload confirmation',
+      ],
+      status: 'not_started',
+      estimatedTimeMinutes: 60,
+      estimatedFee: state?.applicationFeeRange?.max || 150,
+      evidence: [],
+      notes: [],
+      order: 1,
+    },
+    ...(state?.requiresCollaborativeAgreement ? [{
+      id: `task-${providerId}-${stateId}-collab`,
+      providerId,
+      stateId,
+      category: 'collaborative' as const,
+      title: `Execute ${state?.abbreviation} Collaborative Agreement`,
+      description: `Complete collaborative agreement for ${stateName}.`,
+      instructions: [
+        'Review state-specific requirements',
+        'Coordinate with assigned collaborating physician',
+        'Complete agreement form',
+        'Both parties sign',
+        'Upload to Modio',
+      ],
+      status: 'not_started' as const,
+      estimatedTimeMinutes: 60,
+      estimatedFee: 0,
+      evidence: [],
+      notes: [],
+      order: 2,
+    }] : []),
+  ];
 };
 
-// Mock providers with compliance status
+// Create mock provider states
+const createProviderStates = (providerId: string, stateIds: string[]): ProviderState[] => {
+  return stateIds.map(stateId => {
+    const state = states.find(s => s.id === stateId)!;
+    const tasks = createTasksForState(providerId, stateId, state.name);
+    const isLicensed = tasks.some(t => t.category === 'licensure' && t.status === 'verified');
+    const collabComplete = !state.requiresCollaborativeAgreement || 
+      tasks.some(t => t.category === 'collaborative' && t.status === 'verified');
+    
+    return {
+      id: `ps-${providerId}-${stateId}`,
+      providerId,
+      stateId,
+      state,
+      isLicensed,
+      isApprovedToPractice: false,
+      isReadyForActivation: isLicensed && collabComplete,
+      licensureComplete: isLicensed,
+      collaborativeComplete: collabComplete,
+      complianceComplete: true,
+      licenses: [],
+      tasks,
+    };
+  });
+};
+
+// Mock self-reported licenses
+export const selfReportedLicenses: SelfReportedLicense[] = [
+  {
+    id: 'srl-1',
+    providerId: 'provider-2',
+    stateId: 'ny',
+    licenseNumber: 'NY-NP-123456',
+    expirationDate: new Date('2025-12-31'),
+    evidenceUrl: '/uploads/ny_license.pdf',
+    submittedAt: new Date('2024-01-10'),
+    verificationStatus: 'pending',
+  },
+  {
+    id: 'srl-2',
+    providerId: 'provider-2',
+    stateId: 'az',
+    licenseNumber: 'AZ-NP-789012',
+    expirationDate: new Date('2025-06-30'),
+    evidenceUrl: '/uploads/az_license.pdf',
+    submittedAt: new Date('2024-01-08'),
+    verificationStatus: 'verified',
+    verifiedBy: 'admin-1',
+    verifiedAt: new Date('2024-01-12'),
+  },
+  {
+    id: 'srl-3',
+    providerId: 'provider-3',
+    stateId: 'co',
+    licenseNumber: 'CO-NP-456789',
+    expirationDate: new Date('2025-09-15'),
+    evidenceUrl: '/uploads/co_license.pdf',
+    submittedAt: new Date('2024-01-15'),
+    verificationStatus: 'pending',
+  },
+];
+
+// Mock providers
 export const providers: Provider[] = [
   {
     id: 'provider-1',
-    email: 'emily.johnson@example.com',
+    email: 'emily.johnson@vitablehealth.com',
     firstName: 'Emily',
     lastName: 'Johnson',
     role: 'provider',
-    npiNumber: '1234567890',
+    npiNumber: '1122334455',
     specialty: 'Family Nurse Practitioner',
-    hireDate: new Date('2023-06-15'),
-    createdAt: new Date('2023-06-15'),
-    states: createProviderStates('provider-1'),
-    complianceStatus: {
-      isCompliant: false,
-      completedTasks: 3,
-      totalTasks: 5,
-      overdueTasks: 1,
-      nextDueDate: new Date('2024-02-15'),
-    },
-  },
-  {
-    id: 'provider-2',
-    email: 'michael.chen@example.com',
-    firstName: 'Michael',
-    lastName: 'Chen',
-    role: 'provider',
-    npiNumber: '0987654321',
-    specialty: 'Adult-Gerontology Nurse Practitioner',
-    hireDate: new Date('2023-08-01'),
-    createdAt: new Date('2023-08-01'),
-    states: createProviderStates('provider-2'),
+    hireDate: new Date('2023-09-01'),
+    createdAt: new Date('2023-09-01'),
+    states: createProviderStates('provider-1', ['ca', 'tx']),
     complianceStatus: {
       isCompliant: true,
       completedTasks: 5,
@@ -920,33 +1651,56 @@ export const providers: Provider[] = [
     },
   },
   {
+    id: 'provider-2',
+    email: 'michael.chen@vitablehealth.com',
+    firstName: 'Michael',
+    lastName: 'Chen',
+    role: 'provider',
+    npiNumber: '5566778899',
+    specialty: 'Adult-Gerontology Nurse Practitioner',
+    hireDate: new Date('2023-11-15'),
+    createdAt: new Date('2023-11-15'),
+    states: createProviderStates('provider-2', ['ny', 'az', 'il']),
+    selfReportedLicenses: selfReportedLicenses.filter(l => l.providerId === 'provider-2'),
+    complianceStatus: {
+      isCompliant: false,
+      completedTasks: 3,
+      totalTasks: 5,
+      overdueTasks: 2,
+      nextDueDate: new Date('2024-02-01'),
+    },
+  },
+  {
     id: 'provider-3',
-    email: 'sarah.williams@example.com',
+    email: 'sarah.williams@vitablehealth.com',
     firstName: 'Sarah',
     lastName: 'Williams',
     role: 'provider',
-    npiNumber: '5678901234',
+    npiNumber: '9988776655',
     specialty: 'Psychiatric Mental Health Nurse Practitioner',
-    hireDate: new Date('2023-09-15'),
-    createdAt: new Date('2023-09-15'),
-    states: createProviderStates('provider-3'),
+    hireDate: new Date('2024-01-02'),
+    createdAt: new Date('2024-01-02'),
+    states: createProviderStates('provider-3', ['co', 'wa']),
+    selfReportedLicenses: selfReportedLicenses.filter(l => l.providerId === 'provider-3'),
     complianceStatus: {
-      isCompliant: false,
-      completedTasks: 2,
+      isCompliant: true,
+      completedTasks: 5,
       totalTasks: 5,
-      overdueTasks: 2,
-      nextDueDate: new Date('2024-01-30'),
+      overdueTasks: 0,
     },
   },
 ];
 
-// Collaborative Agreements
+// Mock collaborative agreements
 export const collaborativeAgreements: CollaborativeAgreement[] = [
   {
-    id: 'agreement-1',
-    stateId: 'ca',
+    id: 'ca-1',
+    stateId: 'tx',
+    state: states.find(s => s.id === 'tx'),
     physicianId: 'physician-1',
+    physician: collaboratingPhysicians[0],
     providerIds: ['provider-1'],
+    providers: [providers[0]],
     startDate: new Date('2024-01-01'),
     endDate: new Date('2025-01-01'),
     renewalCadence: 'annual',
@@ -954,38 +1708,40 @@ export const collaborativeAgreements: CollaborativeAgreement[] = [
     status: 'active',
     meetingCadence: 'monthly',
     chartReviewRequired: true,
-    chartReviewFrequency: '5% of charts monthly',
-    supervisoryActivities: ['Case consultation', 'Chart review', 'Protocol review'],
-    documentUrl: '/agreements/ca-agreement-1.pdf',
-    signedAt: new Date('2024-01-01'),
+    chartReviewFrequency: '10% of charts monthly',
+    supervisoryActivities: ['Monthly supervision meeting', 'Chart review', 'Prescriptive delegation review'],
+    documentUrl: '/documents/tx_collab_agreement.pdf',
+    signedAt: new Date('2024-01-05'),
     tasks: [],
   },
   {
-    id: 'agreement-2',
-    stateId: 'tx',
+    id: 'ca-2',
+    stateId: 'ca',
+    state: states.find(s => s.id === 'ca'),
     physicianId: 'physician-2',
-    providerIds: ['provider-1', 'provider-2'],
-    startDate: new Date('2023-11-01'),
-    endDate: new Date('2024-11-01'),
+    physician: collaboratingPhysicians[1],
+    providerIds: ['provider-1'],
+    providers: [providers[0]],
+    startDate: new Date('2024-02-01'),
+    endDate: new Date('2025-02-01'),
     renewalCadence: 'annual',
-    nextRenewalDate: new Date('2024-10-01'),
+    nextRenewalDate: new Date('2025-01-01'),
     status: 'pending_renewal',
-    meetingCadence: 'monthly',
+    meetingCadence: 'quarterly',
     chartReviewRequired: true,
-    chartReviewFrequency: '10% of charts',
-    supervisoryActivities: ['Prescriptive authority agreement review', 'Chart review', 'Quality assurance meetings'],
-    documentUrl: '/agreements/tx-agreement-2.pdf',
-    signedAt: new Date('2023-11-01'),
+    chartReviewFrequency: '5% of charts quarterly',
+    supervisoryActivities: ['Quarterly supervision meeting', 'Chart review', 'Standardized procedure review'],
     tasks: [],
   },
 ];
 
-// Supervision Meetings
+// Mock supervision meetings
 export const supervisionMeetings: SupervisionMeeting[] = [
   {
     id: 'meeting-1',
-    agreementId: 'agreement-1',
-    scheduledDate: new Date('2024-02-15T14:00:00'),
+    agreementId: 'ca-1',
+    agreement: collaborativeAgreements[0],
+    scheduledDate: new Date('2024-01-29'),
     duration: 60,
     type: 'collaborative_meeting',
     status: 'scheduled',
@@ -993,127 +1749,95 @@ export const supervisionMeetings: SupervisionMeeting[] = [
       physicianId: 'physician-1',
       providerIds: ['provider-1'],
     },
+    chartReviewMaterials: ['January 2024 Chart Review Log'],
+    chartCount: 5,
   },
   {
     id: 'meeting-2',
-    agreementId: 'agreement-1',
-    scheduledDate: new Date('2024-01-15T14:00:00'),
-    duration: 30,
-    type: 'chart_review',
+    agreementId: 'ca-1',
+    agreement: collaborativeAgreements[0],
+    scheduledDate: new Date('2024-02-26'),
+    duration: 60,
+    type: 'collaborative_meeting',
+    status: 'scheduled',
+    attendees: {
+      physicianId: 'physician-1',
+      providerIds: ['provider-1'],
+    },
+    chartCount: 5,
+  },
+  {
+    id: 'meeting-3',
+    agreementId: 'ca-1',
+    agreement: collaborativeAgreements[0],
+    scheduledDate: new Date('2023-12-28'),
+    duration: 60,
+    type: 'collaborative_meeting',
     status: 'completed',
     attendees: {
       physicianId: 'physician-1',
       providerIds: ['provider-1'],
     },
-    chartReviewMaterials: ['/charts/review-jan-2024.pdf'],
-    chartCount: 12,
-    completedAt: new Date('2024-01-15T14:45:00'),
-    notes: 'Reviewed 12 charts. All documentation satisfactory. Discussed complex case management.',
-  },
-  {
-    id: 'meeting-3',
-    agreementId: 'agreement-2',
-    scheduledDate: new Date('2024-02-20T10:00:00'),
-    duration: 60,
-    type: 'collaborative_meeting',
-    status: 'scheduled',
-    attendees: {
-      physicianId: 'physician-2',
-      providerIds: ['provider-1', 'provider-2'],
-    },
+    chartCount: 5,
+    completedAt: new Date('2023-12-28'),
+    notes: 'December monthly meeting completed. All charts reviewed, no issues identified.',
   },
 ];
-
-// Self-reported licenses pending verification
-export const selfReportedLicenses: SelfReportedLicense[] = [
-  {
-    id: 'srl-1',
-    providerId: 'provider-2',
-    stateId: 'ny',
-    licenseNumber: 'NY-NP-2023-98765',
-    expirationDate: new Date('2025-06-30'),
-    evidenceUrl: '/uploads/ny-license-provider-2.pdf',
-    submittedAt: new Date('2024-01-20'),
-    verificationStatus: 'pending',
-  },
-  {
-    id: 'srl-2',
-    providerId: 'provider-3',
-    stateId: 'co',
-    licenseNumber: 'CO-NP-2022-54321',
-    expirationDate: new Date('2024-12-31'),
-    evidenceUrl: '/uploads/co-license-provider-3.pdf',
-    submittedAt: new Date('2024-01-18'),
-    verificationStatus: 'verified',
-    verifiedBy: 'admin-1',
-    verifiedAt: new Date('2024-01-19'),
-  },
-];
-
-// Set current user for demo
-export const currentUser: Provider = providers[0];
 
 // Helper functions
-export function getProviderStats(provider: Provider) {
-  const totalStates = provider.states.length;
-  const licensedStates = provider.states.filter(s => s.isLicensed).length;
-  const approvedStates = provider.states.filter(s => s.isApprovedToPractice).length;
-  
-  const allTasks = provider.states.flatMap(s => s.tasks);
-  const pendingTasks = allTasks.filter(t => 
-    ['not_started', 'in_progress', 'submitted'].includes(t.status)
-  ).length;
-  const blockedTasks = allTasks.filter(t => t.status === 'blocked').length;
-  
-  const pendingReimbursements = allTasks.filter(t => 
-    t.reimbursement?.status === 'pending'
-  ).length;
-  
-  const complianceTasks = allTasks.filter(t => t.category === 'compliance');
-  const overdueComplianceTasks = complianceTasks.filter(t => 
-    t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'approved'
-  ).length;
+export const getProviderById = (id: string): Provider | undefined => {
+  return providers.find(p => p.id === id);
+};
 
-  return {
-    totalStates,
-    licensedStates,
-    approvedStates,
-    pendingTasks,
-    blockedTasks,
-    pendingReimbursements,
-    complianceComplete: provider.complianceStatus?.isCompliant ?? false,
-    overdueComplianceTasks,
-  };
-}
+export const getStateById = (id: string): State | undefined => {
+  return states.find(s => s.id === id);
+};
 
-export function getAllTasks(): Task[] {
+export const getTaskById = (taskId: string): Task | undefined => {
+  for (const provider of providers) {
+    for (const state of provider.states) {
+      const task = state.tasks.find(t => t.id === taskId);
+      if (task) return task;
+    }
+  }
+  return undefined;
+};
+
+export const getProviderTasks = (providerId: string): Task[] => {
+  const provider = getProviderById(providerId);
+  if (!provider) return [];
+  return provider.states.flatMap(s => s.tasks);
+};
+
+export const getAllTasks = (): Task[] => {
   return providers.flatMap(p => p.states.flatMap(s => s.tasks));
-}
+};
 
-export function getTasksByCategory(category: 'licensure' | 'collaborative' | 'compliance'): Task[] {
-  return getAllTasks().filter(t => t.category === category);
-}
+export const getTasksByStatus = (status: Task['status']): Task[] => {
+  return getAllTasks().filter(t => t.status === status);
+};
 
-export function getAgreementsByPhysician(physicianId: string): CollaborativeAgreement[] {
-  return collaborativeAgreements.filter(a => a.physicianId === physicianId);
-}
+export const getAgreementById = (id: string): CollaborativeAgreement | undefined => {
+  return collaborativeAgreements.find(a => a.id === id);
+};
 
-export function getUpcomingMeetings(days: number = 30): SupervisionMeeting[] {
-  const now = new Date();
-  const futureDate = new Date();
-  futureDate.setDate(futureDate.getDate() + days);
-  
-  return supervisionMeetings.filter(m => 
-    m.status === 'scheduled' && 
-    new Date(m.scheduledDate) >= now && 
-    new Date(m.scheduledDate) <= futureDate
+export const getMeetingsByAgreement = (agreementId: string): SupervisionMeeting[] => {
+  return supervisionMeetings.filter(m => m.agreementId === agreementId);
+};
+
+export const getKnowledgeBaseByCategory = (category: KnowledgeBaseArticle['category']): KnowledgeBaseArticle[] => {
+  return knowledgeBaseArticles.filter(a => a.category === category);
+};
+
+export const getKnowledgeBaseByState = (stateId: string): KnowledgeBaseArticle[] => {
+  return knowledgeBaseArticles.filter(a => a.stateId === stateId);
+};
+
+export const searchKnowledgeBase = (query: string): KnowledgeBaseArticle[] => {
+  const lowerQuery = query.toLowerCase();
+  return knowledgeBaseArticles.filter(a => 
+    a.title.toLowerCase().includes(lowerQuery) ||
+    a.summary.toLowerCase().includes(lowerQuery) ||
+    a.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
   );
-}
-
-export function getPendingLicenseVerifications(): SelfReportedLicense[] {
-  return selfReportedLicenses.filter(l => l.verificationStatus === 'pending');
-}
-
-export function getStatesByDemandTag(tag: 'critical' | 'at_risk' | 'watch' | 'stable'): State[] {
-  return states.filter(s => s.demandTag === tag);
-}
+};
