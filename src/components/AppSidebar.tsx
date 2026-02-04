@@ -14,7 +14,8 @@ import {
   LogOut,
   Receipt,
   BarChart3,
-  Shield
+  Shield,
+  BookOpen
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 
@@ -91,6 +92,12 @@ const navItems: NavItem[] = [
     icon: BarChart3, 
     href: '/reports', 
     roles: ['admin', 'leadership'] 
+  },
+  { 
+    label: 'Knowledge Base', 
+    icon: BookOpen, 
+    href: '/knowledge', 
+    roles: ['provider', 'admin', 'leadership'] 
   },
 ];
 
