@@ -15,7 +15,8 @@ import {
   Receipt,
   BarChart3,
   Shield,
-  BookOpen
+  BookOpen,
+  UserPlus
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 
@@ -98,6 +99,12 @@ const navItems: NavItem[] = [
     icon: BookOpen, 
     href: '/knowledge', 
     roles: ['provider', 'admin', 'leadership'] 
+  },
+  { 
+    label: 'Update My Info', 
+    icon: UserPlus, 
+    href: '/onboarding?mode=edit', 
+    roles: ['provider'] 
   },
 ];
 
