@@ -30,7 +30,8 @@ import {
   CheckCircle2,
   ChevronRight,
   Info,
-  X
+  X,
+  Download
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { State, DemandTag } from '@/types';
@@ -67,6 +68,53 @@ const StateConfigPage = () => {
     setFilterCA('all');
   };
 
+  const exportToCSV = () => {
+    const headers = [
+      'State',
+      'Abbreviation',
+      'Demand Tag',
+      'Has FPA',
+      'Requires Collaborative Agreement',
+      'Meeting Cadence',
+      'Chart Review Required',
+      'Requires Prescriptive Authority',
+      'Min Application Fee',
+      'Max Application Fee',
+      'Min Processing Weeks',
+      'Max Processing Weeks'
+    ];
+
+    const rows = filteredStates.map(state => [
+      state.name,
+      state.abbreviation,
+      state.demandTag || '',
+      state.hasFPA ? 'Yes' : 'No',
+      state.requiresCollaborativeAgreement ? 'Yes' : 'No',
+      state.collaborativeAgreementRequirements?.meetingCadence || '',
+      state.collaborativeAgreementRequirements?.chartReviewRequired ? 'Yes' : 'No',
+      state.requiresPrescriptiveAuthority ? 'Yes' : 'No',
+      state.applicationFeeRange.min,
+      state.applicationFeeRange.max,
+      state.processingTimeWeeks.min,
+      state.processingTimeWeeks.max
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `state-compliance-data-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Group states by demand tag
   const criticalStates = states.filter(s => s.demandTag === 'critical');
   const atRiskStates = states.filter(s => s.demandTag === 'at_risk');
@@ -91,10 +139,16 @@ const StateConfigPage = () => {
                 Centralized regulatory intelligence for all U.S. states.
               </p>
             </div>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add State
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button variant="outline" onClick={exportToCSV}>
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add State
+              </Button>
+            </div>
           </div>
 
           {/* Priority states alerts */}
