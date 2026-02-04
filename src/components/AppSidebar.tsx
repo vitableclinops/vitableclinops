@@ -63,13 +63,25 @@ const navItems: NavItem[] = [
     roles: ['admin', 'leadership'] 
   },
   { 
-    label: 'All Tasks', 
-    icon: ClipboardList, 
-    href: '/admin/tasks', 
+    label: 'Provider Intake', 
+    icon: Users, 
+    href: '/admin/intake', 
     roles: ['admin'] 
   },
   { 
-    label: 'State Config', 
+    label: 'Agreements', 
+    icon: Shield, 
+    href: '/admin/agreements', 
+    roles: ['admin'] 
+  },
+  { 
+    label: 'Compliance', 
+    icon: ClipboardList, 
+    href: '/admin/compliance', 
+    roles: ['admin'] 
+  },
+  { 
+    label: 'State Directory', 
     icon: MapPin, 
     href: '/admin/states', 
     roles: ['admin'] 
