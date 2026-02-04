@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import type { LicenseType } from '@/types';
-import { FileText, Wifi, Award, RefreshCw } from 'lucide-react';
+import { FileText, Wifi, Award, RefreshCw, Pill } from 'lucide-react';
 
 interface LicenseTypeBadgeProps {
   type: LicenseType;
@@ -31,6 +31,11 @@ const typeConfig: Record<LicenseType, {
     label: 'Renewal',
     icon: RefreshCw,
     className: 'bg-warning/10 text-warning',
+  },
+  prescriptive_authority: {
+    label: 'Prescriptive Authority',
+    icon: Pill,
+    className: 'bg-secondary/80 text-secondary-foreground',
   },
 };
 

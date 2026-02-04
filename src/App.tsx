@@ -9,6 +9,10 @@ import AdminDashboard from "./pages/AdminDashboard";
 import TaskDetailView from "./pages/TaskDetailView";
 import ProvidersListPage from "./pages/ProvidersListPage";
 import StateConfigPage from "./pages/StateConfigPage";
+import CollaborativeAgreementsPage from "./pages/CollaborativeAgreementsPage";
+import CompliancePage from "./pages/CompliancePage";
+import ProviderIntakePage from "./pages/ProviderIntakePage";
+import PhysicianPortal from "./pages/PhysicianPortal";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +30,10 @@ const App = () => (
           <Route path="/task/:taskId" element={<TaskDetailView />} />
           <Route path="/providers" element={<ProvidersListPage />} />
           <Route path="/admin/states" element={<StateConfigPage />} />
+          <Route path="/admin/agreements" element={<CollaborativeAgreementsPage />} />
+          <Route path="/admin/compliance" element={<CompliancePage />} />
+          <Route path="/admin/intake" element={<ProviderIntakePage />} />
+          <Route path="/physician" element={<PhysicianPortal />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
