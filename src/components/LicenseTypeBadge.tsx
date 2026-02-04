@@ -3,7 +3,7 @@ import type { LicenseType } from '@/types';
 import { FileText, Wifi, Award, RefreshCw, Pill } from 'lucide-react';
 
 interface LicenseTypeBadgeProps {
-  type: LicenseType;
+  type?: LicenseType;
   className?: string;
 }
 
@@ -40,6 +40,11 @@ const typeConfig: Record<LicenseType, {
 };
 
 export function LicenseTypeBadge({ type, className }: LicenseTypeBadgeProps) {
+  // Guard against undefined or invalid license types
+  if (!type || !typeConfig[type]) {
+    return null;
+  }
+
   const config = typeConfig[type];
   const Icon = config.icon;
 
