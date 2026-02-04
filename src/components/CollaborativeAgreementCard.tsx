@@ -9,7 +9,7 @@ import {
   ChevronRight,
   AlertTriangle,
   Clock,
-  CheckCircle2
+  XCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { CollaborativeAgreement } from '@/types';
@@ -18,6 +18,7 @@ import { states, collaboratingPhysicians, providers } from '@/data/mockData';
 interface CollaborativeAgreementCardProps {
   agreement: CollaborativeAgreement;
   onClick?: () => void;
+  onTerminate?: () => void;
   className?: string;
 }
 
@@ -29,7 +30,12 @@ const statusConfig = {
   terminated: { label: 'Terminated', className: 'bg-destructive/10 text-destructive' },
 };
 
-export function CollaborativeAgreementCard({ agreement, onClick, className }: CollaborativeAgreementCardProps) {
+export function CollaborativeAgreementCard({ 
+  agreement, 
+  onClick, 
+  onTerminate,
+  className 
+}: CollaborativeAgreementCardProps) {
   const state = states.find(s => s.id === agreement.stateId);
   const physician = collaboratingPhysicians.find(p => p.id === agreement.physicianId);
   const agreementProviders = providers.filter(p => agreement.providerIds.includes(p.id));
@@ -39,6 +45,12 @@ export function CollaborativeAgreementCard({ agreement, onClick, className }: Co
     (new Date(agreement.nextRenewalDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
   );
   const needsRenewal = daysUntilRenewal <= 30;
+  const canTerminate = agreement.status !== 'terminated' && agreement.status !== 'expired';
+
+  const handleTerminate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onTerminate?.();
+  };
 
   return (
     <Card 
@@ -73,7 +85,19 @@ export function CollaborativeAgreementCard({ agreement, onClick, className }: Co
               </div>
             </div>
           </div>
-          <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center gap-1">
+            {canTerminate && onTerminate && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                onClick={handleTerminate}
+              >
+                <XCircle className="h-4 w-4" />
+              </Button>
+            )}
+            <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
