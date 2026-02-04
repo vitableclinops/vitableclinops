@@ -1,17 +1,18 @@
-import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, Check, User, MapPin, FileCheck, ClipboardCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, User, MapPin, FileCheck, ClipboardCheck, UserCog } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StateSelectionStep } from './StateSelectionStep';
 import { LicenseReportingStep } from './LicenseReportingStep';
 import { ReviewStep } from './ReviewStep';
 import { WelcomeStep } from './WelcomeStep';
-import type { Provider } from '@/types';
+import { ProviderTypeStep } from './ProviderTypeStep';
+import { PROVIDER_TYPE_CONFIG, type Provider, type ProviderType } from '@/types';
 
 export interface OnboardingData {
   providerId?: string;
+  providerType: ProviderType | null;
   providerName: string;
   providerEmail: string;
   npiNumber: string;
@@ -22,7 +23,7 @@ export interface OnboardingData {
 export interface ReportedLicense {
   id: string;
   state: string;
-  licenseType: 'RN' | 'APRN' | 'Prescriptive Authority' | 'DEA' | 'State Controlled Substance';
+  licenseType: string;
   licenseNumber: string;
   expirationDate: string;
   evidenceUploaded: boolean;
@@ -36,30 +37,29 @@ interface OnboardingWizardProps {
   onCancel: () => void;
 }
 
-const STEPS = [
-  { id: 'welcome', label: 'Welcome', icon: User },
-  { id: 'states', label: 'Select States', icon: MapPin },
-  { id: 'licenses', label: 'Report Licenses', icon: FileCheck },
-  { id: 'review', label: 'Review & Submit', icon: ClipboardCheck },
-];
+interface Step {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
 
 export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel }: OnboardingWizardProps) {
-  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [data, setData] = useState<OnboardingData>(() => {
     if (existingProvider) {
       const fullName = `${existingProvider.firstName} ${existingProvider.lastName}`;
       return {
         providerId: existingProvider.id,
+        providerType: existingProvider.providerType,
         providerName: fullName,
         providerEmail: existingProvider.email,
-        npiNumber: existingProvider.npiNumber,
+        npiNumber: existingProvider.npiNumber || '',
         selectedStates: existingProvider.states.map(s => s.state.abbreviation),
         reportedLicenses: existingProvider.states.flatMap(s => 
           s.licenses.map(l => ({
             id: `${s.state.abbreviation}-${l.type}`,
             state: s.state.abbreviation,
-            licenseType: 'APRN' as ReportedLicense['licenseType'], // Default mapping
+            licenseType: 'APRN',
             licenseNumber: l.licenseNumber || '',
             expirationDate: l.expirationDate ? new Date(l.expirationDate).toISOString().split('T')[0] : '',
             evidenceUploaded: false,
@@ -69,6 +69,7 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
       };
     }
     return {
+      providerType: null,
       providerName: '',
       providerEmail: '',
       npiNumber: '',
@@ -77,12 +78,32 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
     };
   });
 
+  // Dynamic steps based on provider type
+  const steps: Step[] = useMemo(() => {
+    const baseSteps: Step[] = [
+      { id: 'type', label: 'Provider Type', icon: UserCog },
+      { id: 'welcome', label: 'Your Info', icon: User },
+    ];
+
+    // If provider type requires licensure, add state and license steps
+    if (data.providerType && PROVIDER_TYPE_CONFIG[data.providerType].requiresLicensure) {
+      baseSteps.push(
+        { id: 'states', label: 'Select States', icon: MapPin },
+        { id: 'licenses', label: 'Report Licenses', icon: FileCheck }
+      );
+    }
+
+    baseSteps.push({ id: 'review', label: 'Review & Submit', icon: ClipboardCheck });
+
+    return baseSteps;
+  }, [data.providerType]);
+
   const updateData = useCallback((updates: Partial<OnboardingData>) => {
     setData(prev => ({ ...prev, ...updates }));
   }, []);
 
   const handleNext = () => {
-    if (currentStep < STEPS.length - 1) {
+    if (currentStep < steps.length - 1) {
       setCurrentStep(prev => prev + 1);
     }
   };
@@ -98,8 +119,14 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
   };
 
   const canProceed = () => {
-    switch (STEPS[currentStep].id) {
+    const currentStepId = steps[currentStep]?.id;
+    switch (currentStepId) {
+      case 'type':
+        return data.providerType !== null;
       case 'welcome':
+        if (data.providerType && PROVIDER_TYPE_CONFIG[data.providerType].requiresNPI) {
+          return data.providerName.trim() !== '' && data.providerEmail.trim() !== '' && data.npiNumber.trim() !== '';
+        }
         return data.providerName.trim() !== '' && data.providerEmail.trim() !== '';
       case 'states':
         return data.selectedStates.length > 0;
@@ -126,16 +153,25 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
   const getModeDescription = () => {
     switch (mode) {
       case 'new':
-        return 'Welcome! Let\'s get you set up to practice in your states.';
+        return 'Welcome! Let\'s get you set up to practice.';
       case 'edit':
-        return 'Update your state selections and license information.';
+        return 'Update your information and license details.';
       case 'admin':
         return 'Review and update provider information.';
     }
   };
 
   const renderStep = () => {
-    switch (STEPS[currentStep].id) {
+    const currentStepId = steps[currentStep]?.id;
+    switch (currentStepId) {
+      case 'type':
+        return (
+          <ProviderTypeStep
+            mode={mode}
+            selectedType={data.providerType}
+            onSelect={(type) => updateData({ providerType: type })}
+          />
+        );
       case 'welcome':
         return (
           <WelcomeStep
@@ -149,6 +185,7 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
           <StateSelectionStep
             selectedStates={data.selectedStates}
             onUpdate={(states) => updateData({ selectedStates: states })}
+            providerType={data.providerType}
           />
         );
       case 'licenses':
@@ -157,6 +194,7 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
             selectedStates={data.selectedStates}
             reportedLicenses={data.reportedLicenses}
             onUpdate={(licenses) => updateData({ reportedLicenses: licenses })}
+            providerType={data.providerType}
           />
         );
       case 'review':
@@ -183,7 +221,7 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
         {/* Progress */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
-            {STEPS.map((step, index) => {
+            {steps.map((step, index) => {
               const Icon = step.icon;
               const isCompleted = index < currentStep;
               const isCurrent = index === currentStep;
@@ -193,7 +231,7 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
                   key={step.id}
                   className={cn(
                     'flex items-center gap-2',
-                    index < STEPS.length - 1 && 'flex-1'
+                    index < steps.length - 1 && 'flex-1'
                   )}
                 >
                   <div
@@ -210,7 +248,7 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
                       <Icon className="h-5 w-5" />
                     )}
                   </div>
-                  {index < STEPS.length - 1 && (
+                  {index < steps.length - 1 && (
                     <div
                       className={cn(
                         'h-0.5 flex-1 mx-2',
@@ -223,7 +261,7 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
             })}
           </div>
           <div className="flex justify-between text-xs text-muted-foreground">
-            {STEPS.map((step, index) => (
+            {steps.map((step, index) => (
               <span
                 key={step.id}
                 className={cn(
@@ -254,7 +292,7 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
             {currentStep === 0 ? 'Cancel' : 'Back'}
           </Button>
 
-          {currentStep === STEPS.length - 1 ? (
+          {currentStep === steps.length - 1 ? (
             <Button onClick={handleComplete}>
               <Check className="h-4 w-4 mr-2" />
               {mode === 'new' ? 'Complete Setup' : 'Save Changes'}

@@ -21,39 +21,41 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FileCheck, Plus, Trash2, FileText, AlertCircle } from 'lucide-react';
-import { states } from '@/data/mockData';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { allUSStatesSorted } from '@/data/allStates';
+import { PROVIDER_TYPE_CONFIG, type ProviderType } from '@/types';
 import type { ReportedLicense } from './OnboardingWizard';
 
 interface LicenseReportingStepProps {
   selectedStates: string[];
   reportedLicenses: ReportedLicense[];
   onUpdate: (licenses: ReportedLicense[]) => void;
+  providerType?: ProviderType | null;
 }
 
-const LICENSE_TYPES = [
-  { value: 'RN', label: 'RN License' },
-  { value: 'APRN', label: 'APRN License' },
-  { value: 'Prescriptive Authority', label: 'Prescriptive Authority / Furnishing' },
-  { value: 'DEA', label: 'DEA Registration' },
-  { value: 'State Controlled Substance', label: 'State Controlled Substance License' },
-] as const;
+const DEFAULT_LICENSE_TYPES = ['RN', 'APRN', 'Prescriptive Authority', 'DEA', 'State Controlled Substance'];
 
-export function LicenseReportingStep({ selectedStates, reportedLicenses, onUpdate }: LicenseReportingStepProps) {
+export function LicenseReportingStep({ selectedStates, reportedLicenses, onUpdate, providerType }: LicenseReportingStepProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingLicense, setEditingLicense] = useState<ReportedLicense | null>(null);
   const [formData, setFormData] = useState<Partial<ReportedLicense>>({
     state: '',
-    licenseType: 'APRN',
+    licenseType: '',
     licenseNumber: '',
     expirationDate: '',
     evidenceUploaded: false,
     notes: '',
   });
 
+  // Get license types based on provider type
+  const availableLicenseTypes = providerType 
+    ? PROVIDER_TYPE_CONFIG[providerType].licenseTypes 
+    : DEFAULT_LICENSE_TYPES;
+
   const resetForm = () => {
     setFormData({
       state: '',
-      licenseType: 'APRN',
+      licenseType: '',
       licenseNumber: '',
       expirationDate: '',
       evidenceUploaded: false,
@@ -78,7 +80,7 @@ export function LicenseReportingStep({ selectedStates, reportedLicenses, onUpdat
     const newLicense: ReportedLicense = {
       id: editingLicense?.id || `${formData.state}-${formData.licenseType}-${Date.now()}`,
       state: formData.state!,
-      licenseType: formData.licenseType as ReportedLicense['licenseType'],
+      licenseType: formData.licenseType || '',
       licenseNumber: formData.licenseNumber || '',
       expirationDate: formData.expirationDate || '',
       evidenceUploaded: formData.evidenceUploaded || false,
@@ -121,23 +123,17 @@ export function LicenseReportingStep({ selectedStates, reportedLicenses, onUpdat
         </p>
       </div>
 
-      <Card className="border-blue-200 bg-blue-50">
-        <CardContent className="p-4 flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
-          <div className="text-sm text-blue-800">
-            <p className="font-medium">Self-Reported Licenses</p>
-            <p className="mt-1">
-              Licenses you report here will be verified by Clinical Operations. 
-              You can upload supporting documentation or add it later.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          This step is optional. You can skip it and add licenses later, or Clinical Operations will create licensure tasks for states where you need new licenses.
+        </AlertDescription>
+      </Alert>
 
       {/* Licenses by state */}
       <div className="space-y-4">
         {selectedStates.map(stateAbbr => {
-          const state = states.find(s => s.abbreviation === stateAbbr);
+          const state = allUSStatesSorted.find(s => s.abbreviation === stateAbbr);
           const licenses = licensesByState[stateAbbr] || [];
 
           return (
@@ -247,9 +243,9 @@ export function LicenseReportingStep({ selectedStates, reportedLicenses, onUpdat
                 <SelectTrigger>
                   <SelectValue placeholder="Select state" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-[200px]">
                   {selectedStates.map(stateAbbr => {
-                    const state = states.find(s => s.abbreviation === stateAbbr);
+                    const state = allUSStatesSorted.find(s => s.abbreviation === stateAbbr);
                     return (
                       <SelectItem key={stateAbbr} value={stateAbbr}>
                         {state?.name || stateAbbr}
@@ -264,16 +260,14 @@ export function LicenseReportingStep({ selectedStates, reportedLicenses, onUpdat
               <Label>License Type</Label>
               <Select
                 value={formData.licenseType}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, licenseType: value as ReportedLicense['licenseType'] }))}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, licenseType: value }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select license type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {LICENSE_TYPES.map(type => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
+                  {availableLicenseTypes.map(type => (
+                    <SelectItem key={type} value={type}>{type}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

@@ -2,6 +2,76 @@
 
 export type UserRole = 'provider' | 'admin' | 'leadership' | 'physician';
 
+// Provider type defines the credential/license category
+export type ProviderType = 
+  | 'nurse_practitioner'    // NP - Full licensure and collaborative requirements
+  | 'registered_nurse'      // RN - Nursing license, no prescriptive authority
+  | 'physician'             // MD/DO - Full independent practice
+  | 'licensed_counselor'    // LPC - Mental health licensure
+  | 'mental_health_coach';  // Unlicensed - compliance only, no licensure
+
+export const PROVIDER_TYPE_CONFIG: Record<ProviderType, {
+  label: string;
+  shortLabel: string;
+  requiresLicensure: boolean;
+  requiresNPI: boolean;
+  requiresCollaborativeAgreement: boolean;
+  requiresPrescriptiveAuthority: boolean;
+  licenseTypes: string[];
+  description: string;
+}> = {
+  nurse_practitioner: {
+    label: 'Nurse Practitioner',
+    shortLabel: 'NP',
+    requiresLicensure: true,
+    requiresNPI: true,
+    requiresCollaborativeAgreement: true, // State-dependent
+    requiresPrescriptiveAuthority: true,  // State-dependent
+    licenseTypes: ['RN', 'APRN', 'Prescriptive Authority', 'DEA', 'State Controlled Substance'],
+    description: 'Advanced practice registered nurse with prescriptive authority',
+  },
+  registered_nurse: {
+    label: 'Registered Nurse',
+    shortLabel: 'RN',
+    requiresLicensure: true,
+    requiresNPI: false,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    licenseTypes: ['RN'],
+    description: 'Licensed registered nurse',
+  },
+  physician: {
+    label: 'Physician',
+    shortLabel: 'MD/DO',
+    requiresLicensure: true,
+    requiresNPI: true,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false, // Inherent to license
+    licenseTypes: ['MD/DO', 'DEA', 'State Controlled Substance'],
+    description: 'Licensed physician (MD or DO)',
+  },
+  licensed_counselor: {
+    label: 'Licensed Professional Counselor',
+    shortLabel: 'LPC',
+    requiresLicensure: true,
+    requiresNPI: true,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    licenseTypes: ['LPC', 'LMHC', 'LCPC'],
+    description: 'Licensed mental health counselor',
+  },
+  mental_health_coach: {
+    label: 'Mental Health Coach',
+    shortLabel: 'Coach',
+    requiresLicensure: false,
+    requiresNPI: false,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    licenseTypes: [],
+    description: 'Unlicensed mental health coach - compliance requirements only',
+  },
+};
+
 export interface User {
   id: string;
   email: string;
@@ -14,8 +84,9 @@ export interface User {
 
 export interface Provider extends User {
   role: 'provider';
-  npiNumber: string;
-  specialty: string;
+  providerType: ProviderType;
+  npiNumber?: string; // Not required for coaches
+  specialty?: string;
   hireDate: Date;
   states: ProviderState[];
   selfReportedLicenses?: SelfReportedLicense[];

@@ -1,8 +1,9 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { User, Mail, Hash, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { PROVIDER_TYPE_CONFIG } from '@/types';
 import type { OnboardingData } from './OnboardingWizard';
 
 interface WelcomeStepProps {
@@ -12,7 +13,8 @@ interface WelcomeStepProps {
 }
 
 export function WelcomeStep({ mode, data, onUpdate }: WelcomeStepProps) {
-  const isReadOnly = mode === 'edit'; // Existing providers can't change their basic info
+  const isReadOnly = mode === 'edit';
+  const requiresNPI = data.providerType && PROVIDER_TYPE_CONFIG[data.providerType].requiresNPI;
 
   return (
     <div className="space-y-6">
@@ -21,11 +23,11 @@ export function WelcomeStep({ mode, data, onUpdate }: WelcomeStepProps) {
           <User className="h-8 w-8 text-primary" />
         </div>
         <h2 className="text-xl font-semibold text-foreground">
-          {mode === 'new' ? 'Let\'s Get Started' : 'Confirm Your Information'}
+          {mode === 'new' ? 'Your Information' : 'Confirm Your Information'}
         </h2>
         <p className="text-muted-foreground mt-2">
           {mode === 'new' 
-            ? 'First, we need some basic information about you.'
+            ? 'Tell us a bit about yourself.'
             : 'Please verify your information is correct before continuing.'}
         </p>
       </div>
@@ -47,7 +49,7 @@ export function WelcomeStep({ mode, data, onUpdate }: WelcomeStepProps) {
           </Label>
           <Input
             id="providerName"
-            placeholder="Dr. Jane Smith, NP"
+            placeholder="Jane Smith"
             value={data.providerName}
             onChange={(e) => onUpdate({ providerName: e.target.value })}
             disabled={isReadOnly}
@@ -71,35 +73,46 @@ export function WelcomeStep({ mode, data, onUpdate }: WelcomeStepProps) {
           />
         </div>
 
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="npiNumber" className="flex items-center gap-2">
-            <Hash className="h-4 w-4 text-muted-foreground" />
-            NPI Number
-          </Label>
-          <Input
-            id="npiNumber"
-            placeholder="1234567890"
-            value={data.npiNumber}
-            onChange={(e) => onUpdate({ npiNumber: e.target.value })}
-            disabled={isReadOnly}
-            className={isReadOnly ? 'bg-muted' : 'max-w-xs'}
-            maxLength={10}
-          />
-          <p className="text-xs text-muted-foreground">
-            Your 10-digit National Provider Identifier
-          </p>
-        </div>
+        {requiresNPI && (
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="npiNumber" className="flex items-center gap-2">
+              <Hash className="h-4 w-4 text-muted-foreground" />
+              NPI Number
+            </Label>
+            <Input
+              id="npiNumber"
+              placeholder="1234567890"
+              value={data.npiNumber}
+              onChange={(e) => onUpdate({ npiNumber: e.target.value })}
+              disabled={isReadOnly}
+              className={isReadOnly ? 'bg-muted' : 'max-w-xs'}
+              maxLength={10}
+            />
+            <p className="text-xs text-muted-foreground">
+              Your 10-digit National Provider Identifier
+            </p>
+          </div>
+        )}
       </div>
 
-      {mode === 'new' && (
+      {mode === 'new' && data.providerType && (
         <Card className="bg-muted/50 border-dashed">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">What happens next?</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-2">
-            <p>1. <strong>Select your states</strong> — Choose the states where you want to practice</p>
-            <p>2. <strong>Report existing licenses</strong> — Tell us about licenses you already hold</p>
-            <p>3. <strong>Review and submit</strong> — Clinical Operations will verify your information</p>
+            {PROVIDER_TYPE_CONFIG[data.providerType].requiresLicensure ? (
+              <>
+                <p>1. <strong>Select your states</strong> — Choose the states where you want to practice</p>
+                <p>2. <strong>Report existing licenses</strong> — Tell us about licenses you already hold</p>
+                <p>3. <strong>Review and submit</strong> — Clinical Operations will verify your information</p>
+              </>
+            ) : (
+              <>
+                <p>1. <strong>Review your info</strong> — Confirm everything looks correct</p>
+                <p>2. <strong>Complete onboarding</strong> — You'll be assigned compliance training</p>
+              </>
+            )}
           </CardContent>
         </Card>
       )}
