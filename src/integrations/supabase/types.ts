@@ -260,6 +260,36 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       supervision_meetings: {
         Row: {
           agreement_id: string
@@ -310,12 +340,39 @@ export type Database = {
           },
         ]
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       agreement_workflow_status:
@@ -328,6 +385,7 @@ export type Database = {
         | "pending_renewal"
         | "termination_initiated"
         | "terminated"
+      app_role: "admin" | "provider" | "physician" | "leadership"
       notification_type:
         | "agreement_initiated"
         | "signature_requested"
@@ -474,6 +532,7 @@ export const Constants = {
         "termination_initiated",
         "terminated",
       ],
+      app_role: ["admin", "provider", "physician", "leadership"],
       notification_type: [
         "agreement_initiated",
         "signature_requested",

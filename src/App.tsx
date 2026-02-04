@@ -3,7 +3,10 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/hooks/useAuth";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
+import AuthPage from "./pages/AuthPage";
 import ProviderDashboard from "./pages/ProviderDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import TaskDetailView from "./pages/TaskDetailView";
@@ -21,28 +24,79 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/provider" element={<ProviderDashboard />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/task/:taskId" element={<TaskDetailView />} />
-          <Route path="/providers" element={<ProvidersListPage />} />
-          <Route path="/admin/states" element={<StateConfigPage />} />
-          <Route path="/admin/agreements" element={<CollaborativeAgreementsPage />} />
-          <Route path="/admin/compliance" element={<CompliancePage />} />
-          <Route path="/admin/intake" element={<ProviderIntakePage />} />
-          <Route path="/physician" element={<PhysicianPortal />} />
-          <Route path="/knowledge" element={<KnowledgeBasePage />} />
-          <Route path="/onboarding" element={<ProviderOnboardingPage />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/auth" element={<AuthPage />} />
+            <Route path="/" element={
+              <ProtectedRoute>
+                <Index />
+              </ProtectedRoute>
+            } />
+            <Route path="/provider" element={
+              <ProtectedRoute>
+                <ProviderDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <AdminDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/task/:taskId" element={
+              <ProtectedRoute>
+                <TaskDetailView />
+              </ProtectedRoute>
+            } />
+            <Route path="/providers" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <ProvidersListPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/states" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <StateConfigPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/agreements" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <CollaborativeAgreementsPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/compliance" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <CompliancePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/intake" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <ProviderIntakePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/physician" element={
+              <ProtectedRoute requiredRoles={['physician']}>
+                <PhysicianPortal />
+              </ProtectedRoute>
+            } />
+            <Route path="/knowledge" element={
+              <ProtectedRoute>
+                <KnowledgeBasePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/onboarding" element={
+              <ProtectedRoute>
+                <ProviderOnboardingPage />
+              </ProtectedRoute>
+            } />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 
