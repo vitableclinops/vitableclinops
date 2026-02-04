@@ -3,6 +3,7 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { CollaborativeAgreementCard } from '@/components/CollaborativeAgreementCard';
 import { SupervisionCalendar } from '@/components/SupervisionCalendar';
 import { StatCard } from '@/components/StatCard';
+import { AgreementWizard } from '@/components/agreements/AgreementWizard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +30,7 @@ import {
 const CollaborativeAgreementsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('agreements');
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const activeAgreements = collaborativeAgreements.filter(a => a.status === 'active');
   const pendingRenewal = collaborativeAgreements.filter(a => a.status === 'pending_renewal');
@@ -57,11 +59,20 @@ const CollaborativeAgreementsPage = () => {
                 Manage physician collaborations, supervision schedules, and renewals.
               </p>
             </div>
-            <Button>
+            <Button onClick={() => setWizardOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               New Agreement
             </Button>
           </div>
+
+          {/* Agreement Wizard */}
+          <AgreementWizard 
+            open={wizardOpen} 
+            onOpenChange={setWizardOpen}
+            onSuccess={() => {
+              // Refresh data would happen here with real data
+            }}
+          />
 
           {/* Stats Grid */}
           <div className="grid gap-4 md:grid-cols-4 mb-8">
