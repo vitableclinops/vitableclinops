@@ -106,6 +106,12 @@ const navItems: NavItem[] = [
     href: '/onboarding?mode=edit', 
     roles: ['provider'] 
   },
+  { 
+    label: 'Manage Roles', 
+    icon: Shield, 
+    href: '/admin/roles', 
+    roles: ['admin'] 
+  },
 ];
 
 export function AppSidebar({ userRole, userName, userEmail }: AppSidebarProps) {
