@@ -1841,3 +1841,40 @@ export const searchKnowledgeBase = (query: string): KnowledgeBaseArticle[] => {
     a.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
   );
 };
+
+// Current user for Provider Dashboard (mock logged in user)
+export const currentUser = providers[0];
+
+// Provider stats helper
+export const getProviderStats = (provider: Provider) => {
+  const allTasks = provider.states.flatMap(s => s.tasks);
+  const licensedStates = provider.states.filter(s => s.isLicensed).length;
+  const totalStates = provider.states.length;
+  const pendingTasks = allTasks.filter(t => 
+    t.status === 'not_started' || t.status === 'in_progress' || t.status === 'submitted'
+  ).length;
+  const blockedTasks = allTasks.filter(t => t.status === 'blocked').length;
+  const complianceTasks = allTasks.filter(t => t.category === 'compliance');
+  const overdueComplianceTasks = complianceTasks.filter(t => 
+    t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'approved'
+  ).length;
+  const complianceComplete = overdueComplianceTasks === 0;
+  const pendingReimbursements = allTasks.filter(t => 
+    t.reimbursement?.status === 'pending'
+  ).length;
+
+  return {
+    licensedStates,
+    totalStates,
+    pendingTasks,
+    blockedTasks,
+    complianceComplete,
+    overdueComplianceTasks,
+    pendingReimbursements,
+  };
+};
+
+// Pending license verifications helper
+export const getPendingLicenseVerifications = (): SelfReportedLicense[] => {
+  return selfReportedLicenses.filter(l => l.verificationStatus === 'pending');
+};

@@ -234,7 +234,7 @@ export default function KnowledgeBasePage() {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar userRole="admin" />
+        <AppSidebar userRole="admin" userName="Sarah Chen" userEmail="sarah.chen@example.com" />
         <main className="flex-1 p-6 overflow-auto">
           <div className="max-w-6xl mx-auto space-y-6">
             {selectedArticle ? (
