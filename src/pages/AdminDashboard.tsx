@@ -106,6 +106,7 @@ const AdminDashboard = () => {
         userRole={userRole as any}
         userName={userName}
         userEmail={userEmail}
+        userAvatarUrl={profile?.avatar_url || undefined}
       />
       
       <main className="pl-64 transition-all duration-300">
