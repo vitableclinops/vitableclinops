@@ -545,56 +545,86 @@ const CollaborativeAgreementsPage = () => {
 
             <TabsContent value="physicians">
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {collaboratingPhysicians.map(physician => {
-                  const physicianAgreements = collaborativeAgreements.filter(
-                    a => a.physicianId === physician.id
-                  );
-                  const supervisedProviders = providers.filter(p =>
-                    physicianAgreements.some(a => a.providerIds.includes(p.id))
-                  );
+                {(() => {
+                  // Group agreements by physician
+                  const physicianMap = new Map<string, {
+                    name: string;
+                    email: string;
+                    npi: string | null;
+                    agreements: DbAgreement[];
+                    providerCount: number;
+                    states: string[];
+                  }>();
 
-                  return (
-                    <Card key={physician.id} className="card-interactive cursor-pointer">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                            <span className="text-lg font-semibold text-primary">
-                              {physician.firstName[0]}{physician.lastName[0]}
-                            </span>
+                  dbAgreements.forEach(agreement => {
+                    const existing = physicianMap.get(agreement.physician_email);
+                    const agreementProviders = dbProviders.filter(p => p.agreement_id === agreement.id);
+                    
+                    if (existing) {
+                      existing.agreements.push(agreement);
+                      existing.providerCount += agreementProviders.length;
+                      if (!existing.states.includes(agreement.state_abbreviation)) {
+                        existing.states.push(agreement.state_abbreviation);
+                      }
+                    } else {
+                      physicianMap.set(agreement.physician_email, {
+                        name: agreement.physician_name,
+                        email: agreement.physician_email,
+                        npi: agreement.physician_npi,
+                        agreements: [agreement],
+                        providerCount: agreementProviders.length,
+                        states: [agreement.state_abbreviation]
+                      });
+                    }
+                  });
+
+                  return Array.from(physicianMap.values())
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(physician => (
+                      <Card key={physician.email} className="card-interactive cursor-pointer">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-lg font-semibold text-primary">
+                                {physician.name.split(' ').map(n => n[0]).join('')}
+                              </span>
+                            </div>
+                            <div>
+                              <CardTitle className="text-base">
+                                Dr. {physician.name}
+                              </CardTitle>
+                              <p className="text-sm text-muted-foreground">
+                                {physician.email}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <CardTitle className="text-base">
-                              Dr. {physician.firstName} {physician.lastName}
-                            </CardTitle>
-                            <p className="text-sm text-muted-foreground">
-                              {physician.specialty}
-                            </p>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {physician.npi && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <span className="font-medium">NPI:</span>
+                              <span>{physician.npi}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <FileText className="h-4 w-4" />
+                            <span>{physician.agreements.length} agreement{physician.agreements.length !== 1 ? 's' : ''}</span>
                           </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <FileText className="h-4 w-4" />
-                          <span>{physicianAgreements.length} agreement{physicianAgreements.length !== 1 ? 's' : ''}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Users className="h-4 w-4" />
-                          <span>{supervisedProviders.length} provider{supervisedProviders.length !== 1 ? 's' : ''} supervised</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {physicianAgreements.map(a => {
-                            const state = states.find(s => s.id === a.stateId);
-                            return (
-                              <Badge key={a.id} variant="secondary" className="text-xs">
-                                {state?.abbreviation}
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Users className="h-4 w-4" />
+                            <span>{physician.providerCount} provider{physician.providerCount !== 1 ? 's' : ''} supervised</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {physician.states.sort().map(state => (
+                              <Badge key={state} variant="secondary" className="text-xs">
+                                {state}
                               </Badge>
-                            );
-                          })}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ));
+                })()}
               </div>
             </TabsContent>
 
