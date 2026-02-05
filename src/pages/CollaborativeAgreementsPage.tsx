@@ -6,6 +6,7 @@ import { AgreementWizard } from '@/components/agreements/AgreementWizard';
 import { TerminationDialog } from '@/components/agreements/TerminationDialog';
 import { NotificationQueue } from '@/components/agreements/NotificationQueue';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
+import { StateComplianceGrid } from '@/components/agreements/StateComplianceGrid';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useStateCompliance } from '@/hooks/useStateCompliance';
 import { supervisionMeetings } from '@/data/mockData';
 import { 
   Users, 
@@ -1002,93 +1004,7 @@ const CollaborativeAgreementsPage = () => {
 
             {/* By State Tab */}
             <TabsContent value="by-state">
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {stateData.map((state) => {
-                  const hasComplianceRisk = state.agreements.some(
-                    a => a.workflow_status === 'active' && !a.medallion_document_url && !a.agreement_document_url
-                  );
-                  
-                  return (
-                    <Card key={state.abbreviation} className="card-interactive">
-                      <CardHeader className="pb-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
-                              <span className="text-xl font-bold text-primary">
-                                {state.abbreviation}
-                              </span>
-                            </div>
-                            <div>
-                              <CardTitle className="text-lg">{state.name}</CardTitle>
-                              <CardDescription>
-                                {state.physicians.length} physician{state.physicians.length !== 1 ? 's' : ''}
-                              </CardDescription>
-                            </div>
-                          </div>
-                          {hasComplianceRisk && (
-                            <Badge variant="destructive" className="gap-1">
-                              <AlertCircle className="h-3 w-3" />
-                              Risk
-                            </Badge>
-                          )}
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        {/* Provider count */}
-                        <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
-                          <div className="flex items-center gap-2">
-                            <Users className="h-5 w-5 text-muted-foreground" />
-                            <span className="font-medium">Active Providers</span>
-                          </div>
-                          <span className="text-2xl font-bold text-success">
-                            {state.activeProviders.length}
-                          </span>
-                        </div>
-                        
-                        {/* Supervising physicians */}
-                        <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-2">
-                            Supervising Physicians
-                          </p>
-                          <div className="space-y-2">
-                            {state.physicians.map(physician => {
-                              const agreement = state.agreements.find(a => a.physician_name === physician);
-                              const providerCount = state.activeProviders.filter(
-                                p => p.agreement_id === agreement?.id
-                              ).length;
-                              
-                              return (
-                                <div 
-                                  key={physician} 
-                                  className="flex items-center justify-between p-3 rounded-lg border"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <Shield className="h-4 w-4 text-primary" />
-                                    <span className="text-sm font-medium">Dr. {physician}</span>
-                                  </div>
-                                  <span className="text-sm text-muted-foreground">
-                                    {providerCount} provider{providerCount !== 1 ? 's' : ''}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        
-                        {/* Provider names preview */}
-                        {state.activeProviders.length > 0 && (
-                          <div className="pt-2 border-t">
-                            <p className="text-xs text-muted-foreground">
-                              {state.activeProviders.slice(0, 3).map(p => p.provider_name).join(', ')}
-                              {state.activeProviders.length > 3 && ` +${state.activeProviders.length - 3} more`}
-                            </p>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
+              <StateComplianceGrid stateData={stateData} />
             </TabsContent>
 
             {/* Calendar Tab */}

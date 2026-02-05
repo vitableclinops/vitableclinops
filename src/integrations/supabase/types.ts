@@ -494,6 +494,57 @@ export type Database = {
           },
         ]
       }
+      state_compliance_requirements: {
+        Row: {
+          ca_meeting_cadence: string | null
+          ca_required: boolean | null
+          created_at: string | null
+          fpa_status: string | null
+          id: string
+          knowledge_base_url: string | null
+          licenses: string | null
+          nlc: boolean | null
+          np_md_ratio: string | null
+          rxr_required: boolean | null
+          state_abbreviation: string
+          state_name: string
+          steps_to_confirm_eligibility: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          ca_meeting_cadence?: string | null
+          ca_required?: boolean | null
+          created_at?: string | null
+          fpa_status?: string | null
+          id?: string
+          knowledge_base_url?: string | null
+          licenses?: string | null
+          nlc?: boolean | null
+          np_md_ratio?: string | null
+          rxr_required?: boolean | null
+          state_abbreviation: string
+          state_name: string
+          steps_to_confirm_eligibility?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          ca_meeting_cadence?: string | null
+          ca_required?: boolean | null
+          created_at?: string | null
+          fpa_status?: string | null
+          id?: string
+          knowledge_base_url?: string | null
+          licenses?: string | null
+          nlc?: boolean | null
+          np_md_ratio?: string | null
+          rxr_required?: boolean | null
+          state_abbreviation?: string
+          state_name?: string
+          steps_to_confirm_eligibility?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       supervision_meetings: {
         Row: {
           agreement_id: string
