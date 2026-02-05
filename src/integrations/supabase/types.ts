@@ -272,6 +272,7 @@ export type Database = {
           birthday: string | null
           board_certificates: string | null
           caqh_number: string | null
+          collaborative_physician: string | null
           created_at: string
           credentials: string | null
           email: string
@@ -287,11 +288,15 @@ export type Database = {
           has_collaborative_agreements: boolean | null
           home_address: string | null
           id: string
+          languages: string | null
           last_name: string | null
           medallion_id: string | null
           middle_name: string | null
+          min_patient_age: string | null
+          notes: string | null
           npi_number: string | null
           patient_age_preference: string | null
+          personal_email: string | null
           phone_number: string | null
           postal_code: string | null
           practice_restrictions: string | null
@@ -301,6 +306,7 @@ export type Database = {
           pronoun: string | null
           secondary_contact_email: string | null
           service_offerings: string | null
+          services_offered: string | null
           updated_at: string
           user_id: string | null
         }
@@ -315,6 +321,7 @@ export type Database = {
           birthday?: string | null
           board_certificates?: string | null
           caqh_number?: string | null
+          collaborative_physician?: string | null
           created_at?: string
           credentials?: string | null
           email: string
@@ -330,11 +337,15 @@ export type Database = {
           has_collaborative_agreements?: boolean | null
           home_address?: string | null
           id?: string
+          languages?: string | null
           last_name?: string | null
           medallion_id?: string | null
           middle_name?: string | null
+          min_patient_age?: string | null
+          notes?: string | null
           npi_number?: string | null
           patient_age_preference?: string | null
+          personal_email?: string | null
           phone_number?: string | null
           postal_code?: string | null
           practice_restrictions?: string | null
@@ -344,6 +355,7 @@ export type Database = {
           pronoun?: string | null
           secondary_contact_email?: string | null
           service_offerings?: string | null
+          services_offered?: string | null
           updated_at?: string
           user_id?: string | null
         }
@@ -358,6 +370,7 @@ export type Database = {
           birthday?: string | null
           board_certificates?: string | null
           caqh_number?: string | null
+          collaborative_physician?: string | null
           created_at?: string
           credentials?: string | null
           email?: string
@@ -373,11 +386,15 @@ export type Database = {
           has_collaborative_agreements?: boolean | null
           home_address?: string | null
           id?: string
+          languages?: string | null
           last_name?: string | null
           medallion_id?: string | null
           middle_name?: string | null
+          min_patient_age?: string | null
+          notes?: string | null
           npi_number?: string | null
           patient_age_preference?: string | null
+          personal_email?: string | null
           phone_number?: string | null
           postal_code?: string | null
           practice_restrictions?: string | null
@@ -387,6 +404,7 @@ export type Database = {
           pronoun?: string | null
           secondary_contact_email?: string | null
           service_offerings?: string | null
+          services_offered?: string | null
           updated_at?: string
           user_id?: string | null
         }
