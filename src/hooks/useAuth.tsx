@@ -11,6 +11,7 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   roles: AppRole[];
+  rolesHydrated: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
   hasRole: (role: AppRole) => boolean;
@@ -23,6 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [rolesHydrated, setRolesHydrated] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const cancelledRef = useRef(false);
@@ -31,44 +33,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     cancelledRef.current = false;
 
     const fetchProfileAndRoles = async (userId: string) => {
-      const [profileResult, rolesResult] = await Promise.all([
-        supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle(),
-        supabase.from('user_roles').select('role').eq('user_id', userId),
-      ]);
-
       if (cancelledRef.current) return;
 
-      if (profileResult.error) {
-        console.error('Error fetching profile:', profileResult.error);
-      }
-      if (rolesResult.error) {
-        console.error('Error fetching roles:', rolesResult.error);
-      }
+      setRolesHydrated(false);
 
-      setProfile(profileResult.data ?? null);
-      setRoles((rolesResult.data ?? []).map((r) => r.role as AppRole));
+      // Safety: never let profile/role fetching block the whole app forever.
+      const timeoutId = window.setTimeout(() => {
+        if (!cancelledRef.current) {
+          console.warn('Timed out fetching profile/roles; continuing.');
+          setRolesHydrated(true);
+        }
+      }, 4000);
+
+      try {
+        const [profileResult, rolesResult] = await Promise.all([
+          supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle(),
+          supabase.from('user_roles').select('role').eq('user_id', userId),
+        ]);
+
+        if (cancelledRef.current) return;
+
+        if (profileResult.error) {
+          console.error('Error fetching profile:', profileResult.error);
+        }
+        if (rolesResult.error) {
+          console.error('Error fetching roles:', rolesResult.error);
+        }
+
+        setProfile(profileResult.data ?? null);
+        setRoles((rolesResult.data ?? []).map((r) => r.role as AppRole));
+      } catch (error) {
+        console.error('Unexpected error fetching profile/roles:', error);
+      } finally {
+        window.clearTimeout(timeoutId);
+        if (!cancelledRef.current) setRolesHydrated(true);
+      }
     };
 
-    const applySession = async (nextSession: Session | null) => {
+    const applySession = (nextSession: Session | null) => {
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
 
       if (nextSession?.user) {
-        await fetchProfileAndRoles(nextSession.user.id);
+        void fetchProfileAndRoles(nextSession.user.id);
       } else {
         if (cancelledRef.current) return;
         setProfile(null);
         setRoles([]);
+        setRolesHydrated(true);
       }
     };
 
     // Listen first (covers OAuth redirects), but also proactively hydrate from getSession
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       try {
         setLoading(true);
-        await applySession(nextSession);
+        applySession(nextSession);
       } finally {
         if (!cancelledRef.current) setLoading(false);
       }
@@ -78,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data, error } = await supabase.auth.getSession();
         if (error) console.error('Error getting session:', error);
-        await applySession(data.session);
+        applySession(data.session);
       } finally {
         if (!cancelledRef.current) setLoading(false);
       }
@@ -90,19 +112,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
     setProfile(null);
     setRoles([]);
+    setRolesHydrated(true);
   };
 
   const hasRole = (role: AppRole) => roles.includes(role);
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, roles, loading, signOut, hasRole }}>
+    <AuthContext.Provider
+      value={{ user, session, profile, roles, rolesHydrated, loading, signOut, hasRole }}
+    >
       {children}
     </AuthContext.Provider>
   );
