@@ -280,39 +280,58 @@ export type Database = {
       }
       meeting_attendees: {
         Row: {
+          assigned_slot: string | null
           attendance_status: string | null
           confirmed_at: string | null
           created_at: string
+          has_rsvped: boolean | null
           id: string
           meeting_id: string
           notes: string | null
           provider_email: string
           provider_id: string
           provider_name: string
+          rsvp_at: string | null
+          rsvp_slot: string | null
         }
         Insert: {
+          assigned_slot?: string | null
           attendance_status?: string | null
           confirmed_at?: string | null
           created_at?: string
+          has_rsvped?: boolean | null
           id?: string
           meeting_id: string
           notes?: string | null
           provider_email: string
           provider_id: string
           provider_name: string
+          rsvp_at?: string | null
+          rsvp_slot?: string | null
         }
         Update: {
+          assigned_slot?: string | null
           attendance_status?: string | null
           confirmed_at?: string | null
           created_at?: string
+          has_rsvped?: boolean | null
           id?: string
           meeting_id?: string
           notes?: string | null
           provider_email?: string
           provider_id?: string
           provider_name?: string
+          rsvp_at?: string | null
+          rsvp_slot?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "meeting_attendees_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meeting_notification_emails"
+            referencedColumns: ["meeting_id"]
+          },
           {
             foreignKeyName: "meeting_attendees_meeting_id_fkey"
             columns: ["meeting_id"]
@@ -596,7 +615,9 @@ export type Database = {
           created_at: string
           duration_minutes: number | null
           id: string
+          is_company_wide: boolean | null
           location: string | null
+          meeting_month: string | null
           meeting_type: string | null
           notes: string | null
           scheduled_date: string
@@ -612,7 +633,9 @@ export type Database = {
           created_at?: string
           duration_minutes?: number | null
           id?: string
+          is_company_wide?: boolean | null
           location?: string | null
+          meeting_month?: string | null
           meeting_type?: string | null
           notes?: string | null
           scheduled_date: string
@@ -628,7 +651,9 @@ export type Database = {
           created_at?: string
           duration_minutes?: number | null
           id?: string
+          is_company_wide?: boolean | null
           location?: string | null
+          meeting_month?: string | null
           meeting_type?: string | null
           notes?: string | null
           scheduled_date?: string
@@ -671,6 +696,23 @@ export type Database = {
       }
     }
     Views: {
+      meeting_notification_emails: {
+        Row: {
+          assigned_slot: string | null
+          attendance_status: string | null
+          has_rsvped: boolean | null
+          is_company_wide: boolean | null
+          meeting_id: string | null
+          meeting_month: string | null
+          provider_email: string | null
+          provider_id: string | null
+          provider_name: string | null
+          rsvp_slot: string | null
+          scheduled_date: string | null
+          time_slot: string | null
+        }
+        Relationships: []
+      }
       provider_directory_public: {
         Row: {
           avatar_url: string | null

@@ -25,10 +25,13 @@ export interface ScheduledMeeting {
   notes: string | null;
   completed_at: string | null;
   created_at: string;
-  // New state-based fields
+  // State-based fields
   state_abbreviation: string | null;
   state_name: string | null;
   time_slot: string | null;
+  // Company-wide meeting fields
+  is_company_wide: boolean | null;
+  meeting_month: string | null;
   // Attendees (loaded separately)
   attendees?: MeetingAttendee[];
 }
@@ -61,6 +64,8 @@ export const useScheduledMeetings = () => {
         state_abbreviation: (m as any).state_abbreviation || null,
         state_name: (m as any).state_name || null,
         time_slot: (m as any).time_slot || null,
+        is_company_wide: (m as any).is_company_wide || null,
+        meeting_month: (m as any).meeting_month || null,
       })) as ScheduledMeeting[];
       
       setMeetings(meetingsData);
