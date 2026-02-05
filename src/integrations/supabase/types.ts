@@ -262,67 +262,130 @@ export type Database = {
       }
       profiles: {
         Row: {
+          actively_licensed_states: string | null
+          address_city: string | null
+          address_line_1: string | null
+          address_line_2: string | null
+          address_state: string | null
+          auto_renew_licenses: boolean | null
           avatar_url: string | null
           birthday: string | null
+          board_certificates: string | null
+          caqh_number: string | null
           created_at: string
           credentials: string | null
           email: string
           emergency_contact_name: string | null
           emergency_contact_phone: string | null
           employment_end_date: string | null
+          employment_offer_date: string | null
           employment_start_date: string | null
           employment_status: string | null
+          first_name: string | null
           full_name: string | null
+          has_caqh_management: boolean | null
+          has_collaborative_agreements: boolean | null
           home_address: string | null
           id: string
+          last_name: string | null
+          medallion_id: string | null
+          middle_name: string | null
           npi_number: string | null
           patient_age_preference: string | null
           phone_number: string | null
+          postal_code: string | null
+          practice_restrictions: string | null
           preferred_name: string | null
+          primary_specialty: string | null
+          profession: string | null
+          pronoun: string | null
+          secondary_contact_email: string | null
           service_offerings: string | null
           updated_at: string
           user_id: string | null
         }
         Insert: {
+          actively_licensed_states?: string | null
+          address_city?: string | null
+          address_line_1?: string | null
+          address_line_2?: string | null
+          address_state?: string | null
+          auto_renew_licenses?: boolean | null
           avatar_url?: string | null
           birthday?: string | null
+          board_certificates?: string | null
+          caqh_number?: string | null
           created_at?: string
           credentials?: string | null
           email: string
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
           employment_end_date?: string | null
+          employment_offer_date?: string | null
           employment_start_date?: string | null
           employment_status?: string | null
+          first_name?: string | null
           full_name?: string | null
+          has_caqh_management?: boolean | null
+          has_collaborative_agreements?: boolean | null
           home_address?: string | null
           id?: string
+          last_name?: string | null
+          medallion_id?: string | null
+          middle_name?: string | null
           npi_number?: string | null
           patient_age_preference?: string | null
           phone_number?: string | null
+          postal_code?: string | null
+          practice_restrictions?: string | null
           preferred_name?: string | null
+          primary_specialty?: string | null
+          profession?: string | null
+          pronoun?: string | null
+          secondary_contact_email?: string | null
           service_offerings?: string | null
           updated_at?: string
           user_id?: string | null
         }
         Update: {
+          actively_licensed_states?: string | null
+          address_city?: string | null
+          address_line_1?: string | null
+          address_line_2?: string | null
+          address_state?: string | null
+          auto_renew_licenses?: boolean | null
           avatar_url?: string | null
           birthday?: string | null
+          board_certificates?: string | null
+          caqh_number?: string | null
           created_at?: string
           credentials?: string | null
           email?: string
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
           employment_end_date?: string | null
+          employment_offer_date?: string | null
           employment_start_date?: string | null
           employment_status?: string | null
+          first_name?: string | null
           full_name?: string | null
+          has_caqh_management?: boolean | null
+          has_collaborative_agreements?: boolean | null
           home_address?: string | null
           id?: string
+          last_name?: string | null
+          medallion_id?: string | null
+          middle_name?: string | null
           npi_number?: string | null
           patient_age_preference?: string | null
           phone_number?: string | null
+          postal_code?: string | null
+          practice_restrictions?: string | null
           preferred_name?: string | null
+          primary_specialty?: string | null
+          profession?: string | null
+          pronoun?: string | null
+          secondary_contact_email?: string | null
           service_offerings?: string | null
           updated_at?: string
           user_id?: string | null
@@ -474,9 +537,12 @@ export type Database = {
           credentials: string | null
           employment_status: string | null
           full_name: string | null
+          home_state: string | null
           id: string | null
           npi_number: string | null
           preferred_name: string | null
+          primary_specialty: string | null
+          profession: string | null
           states: string | null
         }
         Insert: {
@@ -484,20 +550,26 @@ export type Database = {
           credentials?: string | null
           employment_status?: string | null
           full_name?: string | null
+          home_state?: string | null
           id?: string | null
           npi_number?: string | null
           preferred_name?: string | null
-          states?: never
+          primary_specialty?: string | null
+          profession?: string | null
+          states?: string | null
         }
         Update: {
           avatar_url?: string | null
           credentials?: string | null
           employment_status?: string | null
           full_name?: string | null
+          home_state?: string | null
           id?: string | null
           npi_number?: string | null
           preferred_name?: string | null
-          states?: never
+          primary_specialty?: string | null
+          profession?: string | null
+          states?: string | null
         }
         Relationships: []
       }
