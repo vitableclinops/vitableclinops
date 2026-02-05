@@ -1,14 +1,18 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, Check, User, MapPin, FileCheck, ClipboardCheck, UserCog } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, User, MapPin, FileCheck, ClipboardCheck, UserCog, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 import { StateSelectionStep } from './StateSelectionStep';
 import { LicenseReportingStep } from './LicenseReportingStep';
 import { ReviewStep } from './ReviewStep';
 import { WelcomeStep } from './WelcomeStep';
 import { ProviderTypeStep } from './ProviderTypeStep';
+import { CollaborationConsentStep } from './CollaborationConsentStep';
 import { PROVIDER_TYPE_CONFIG, type Provider, type ProviderType } from '@/types';
+import { useToast } from '@/hooks/use-toast';
+import { useAgreementTasks } from '@/hooks/useAgreementTasks';
 
 export interface OnboardingData {
   providerId?: string;
@@ -33,6 +37,7 @@ export interface ReportedLicense {
 interface OnboardingWizardProps {
   mode: 'new' | 'edit' | 'admin';
   existingProvider?: Provider;
+  userId?: string;
   onComplete: (data: OnboardingData) => void;
   onCancel: () => void;
 }
@@ -43,8 +48,14 @@ interface Step {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel }: OnboardingWizardProps) {
+export function OnboardingWizard({ mode, existingProvider, userId, onComplete, onCancel }: OnboardingWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
+  const { generateAgreementTasks } = useAgreementTasks();
+  const [collaborationConsent, setCollaborationConsent] = useState(false);
+  const [statesRequiringCollab, setStatesRequiringCollab] = useState<string[]>([]);
+  
   const [data, setData] = useState<OnboardingData>(() => {
     if (existingProvider) {
       const fullName = `${existingProvider.firstName} ${existingProvider.lastName}`;
@@ -78,6 +89,33 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
     };
   });
 
+  // Fetch state compliance to detect collab requirements
+  useEffect(() => {
+    const detectCollaborationStates = async () => {
+      if (!data.selectedStates.length) {
+        setStatesRequiringCollab([]);
+        return;
+      }
+
+      try {
+        const { data: complianceData } = await supabase
+          .from('state_compliance_requirements')
+          .select('state_abbreviation, ca_required')
+          .in('state_abbreviation', data.selectedStates);
+
+        const requireCollab = (complianceData || [])
+          .filter(s => s.ca_required === true)
+          .map(s => s.state_abbreviation);
+
+        setStatesRequiringCollab(requireCollab);
+      } catch (error) {
+        console.error('Error detecting collaboration states:', error);
+      }
+    };
+
+    detectCollaborationStates();
+  }, [data.selectedStates]);
+
   // Dynamic steps based on provider type
   const steps: Step[] = useMemo(() => {
     const baseSteps: Step[] = [
@@ -93,10 +131,15 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
       );
     }
 
+    // Add collaboration consent step if states require it
+    if (statesRequiringCollab.length > 0) {
+      baseSteps.push({ id: 'collaboration', label: 'Collaboration', icon: Users });
+    }
+
     baseSteps.push({ id: 'review', label: 'Review & Submit', icon: ClipboardCheck });
 
     return baseSteps;
-  }, [data.providerType]);
+  }, [data.providerType, statesRequiringCollab.length]);
 
   const updateData = useCallback((updates: Partial<OnboardingData>) => {
     setData(prev => ({ ...prev, ...updates }));
@@ -114,8 +157,32 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
     }
   };
 
-  const handleComplete = () => {
-    onComplete(data);
+  const handleComplete = async () => {
+    setIsSubmitting(true);
+    try {
+      // Call onComplete with data
+      onComplete(data);
+
+      // If collaboration consent was given, create pending agreement records
+      if (collaborationConsent && statesRequiringCollab.length > 0) {
+        // This will be handled by the parent component (ProviderOnboardingPage)
+        // which will listen for onComplete callback and create agreements
+      }
+
+      toast({
+        title: 'Success',
+        description: 'Your onboarding is complete. Clinical Operations will contact you next steps.',
+      });
+    } catch (error) {
+      console.error('Error completing onboarding:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to complete onboarding. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const canProceed = () => {
@@ -132,6 +199,8 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
         return data.selectedStates.length > 0;
       case 'licenses':
         return true; // Licenses are optional for self-reporting
+      case 'collaboration':
+        return collaborationConsent;
       case 'review':
         return true;
       default:
@@ -188,22 +257,30 @@ export function OnboardingWizard({ mode, existingProvider, onComplete, onCancel 
             providerType={data.providerType}
           />
         );
-      case 'licenses':
-        return (
-          <LicenseReportingStep
-            selectedStates={data.selectedStates}
-            reportedLicenses={data.reportedLicenses}
-            onUpdate={(licenses) => updateData({ reportedLicenses: licenses })}
-            providerType={data.providerType}
-          />
-        );
-      case 'review':
-        return (
-          <ReviewStep
-            data={data}
-            mode={mode}
-          />
-        );
+       case 'licenses':
+         return (
+           <LicenseReportingStep
+             selectedStates={data.selectedStates}
+             reportedLicenses={data.reportedLicenses}
+             onUpdate={(licenses) => updateData({ reportedLicenses: licenses })}
+             providerType={data.providerType}
+           />
+         );
+       case 'collaboration':
+         return (
+           <CollaborationConsentStep
+             statesRequiringCollab={statesRequiringCollab}
+             onConsent={(consented) => setCollaborationConsent(consented)}
+             consented={collaborationConsent}
+           />
+         );
+       case 'review':
+         return (
+           <ReviewStep
+             data={data}
+             mode={mode}
+           />
+         );
       default:
         return null;
     }
