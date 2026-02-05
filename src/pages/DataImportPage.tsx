@@ -5,17 +5,35 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Users, Building2 } from 'lucide-react';
+import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Building2, Info } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { ConflictResolutionDialog } from '@/components/import/ConflictResolutionDialog';
 import Papa from 'papaparse';
+
+interface Conflict {
+  email: string;
+  providerName: string;
+  field: string;
+  fieldLabel: string;
+  currentValue: any;
+  newValue: any;
+}
+
+interface FieldResolution {
+  email: string;
+  field: string;
+  useNew: boolean;
+}
 
 interface MedallionResult {
   profilesUpserted: number;
   licensesInserted: number;
+  fieldsUpdated: number;
+  fieldsFilled: number;
+  conflicts: Conflict[];
   errors: string[];
 }
 
@@ -27,11 +45,15 @@ export default function DataImportPage() {
   const [medallionData, setMedallionData] = useState<any[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [medallionResult, setMedallionResult] = useState<MedallionResult | null>(null);
+  const [pendingConflicts, setPendingConflicts] = useState<Conflict[]>([]);
+  const [showConflictDialog, setShowConflictDialog] = useState(false);
   
   const medallionInputRef = useRef<HTMLInputElement>(null);
 
   const handleMedallionFileSelect = (file: File) => {
     setMedallionFile(file);
+    setMedallionResult(null);
+    setPendingConflicts([]);
     
     Papa.parse(file, {
       header: true,
@@ -53,11 +75,11 @@ export default function DataImportPage() {
     });
   };
 
-  const runMedallionImport = async () => {
+  const runPreviewImport = async () => {
     if (!medallionData) {
       toast({
         title: 'No data',
-        description: 'Please upload a Medallion CSV file',
+        description: 'Please upload a CSV file',
         variant: 'destructive',
       });
       return;
@@ -65,13 +87,17 @@ export default function DataImportPage() {
 
     setIsLoading(true);
     setMedallionResult(null);
+    setPendingConflicts([]);
 
     try {
-      // Batch providers to avoid payload size limits
       const BATCH_SIZE = 5;
+      const allConflicts: Conflict[] = [];
       const totalResult: MedallionResult = {
         profilesUpserted: 0,
         licensesInserted: 0,
+        fieldsUpdated: 0,
+        fieldsFilled: 0,
+        conflicts: [],
         errors: [],
       };
 
@@ -83,12 +109,87 @@ export default function DataImportPage() {
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
         toast({
+          title: `Analyzing batch ${i + 1}/${batches.length}`,
+          description: `Checking ${batch.length} providers for conflicts...`,
+        });
+
+        const { data, error } = await supabase.functions.invoke('import-medallion-providers', {
+          body: { providers: batch, mode: 'preview' },
+        });
+
+        if (error) {
+          totalResult.errors.push(`Batch ${i + 1} failed: ${error.message}`);
+          continue;
+        }
+
+        totalResult.profilesUpserted += data.profilesUpserted || 0;
+        totalResult.fieldsFilled += data.fieldsFilled || 0;
+        if (data.conflicts?.length) {
+          allConflicts.push(...data.conflicts);
+        }
+        if (data.errors?.length) {
+          totalResult.errors.push(...data.errors);
+        }
+      }
+
+      if (allConflicts.length > 0) {
+        setPendingConflicts(allConflicts);
+        setShowConflictDialog(true);
+        toast({
+          title: 'Conflicts found',
+          description: `${allConflicts.length} fields have different values. Please review.`,
+        });
+      } else {
+        // No conflicts - proceed with apply
+        await runApplyImport([]);
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Preview failed',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const runApplyImport = async (resolutions: FieldResolution[]) => {
+    if (!medallionData) return;
+
+    setIsLoading(true);
+    setShowConflictDialog(false);
+
+    try {
+      const BATCH_SIZE = 5;
+      const totalResult: MedallionResult = {
+        profilesUpserted: 0,
+        licensesInserted: 0,
+        fieldsUpdated: 0,
+        fieldsFilled: 0,
+        conflicts: [],
+        errors: [],
+      };
+
+      const batches = [];
+      for (let i = 0; i < medallionData.length; i += BATCH_SIZE) {
+        batches.push(medallionData.slice(i, i + BATCH_SIZE));
+      }
+
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        
+        // Filter resolutions for this batch
+        const batchEmails = batch.map((p: any) => p.Email?.toLowerCase().trim());
+        const batchResolutions = resolutions.filter(r => batchEmails.includes(r.email));
+
+        toast({
           title: `Processing batch ${i + 1}/${batches.length}`,
           description: `Importing ${batch.length} providers...`,
         });
 
         const { data, error } = await supabase.functions.invoke('import-medallion-providers', {
-          body: { providers: batch },
+          body: { providers: batch, mode: 'apply', resolutions: batchResolutions },
         });
 
         if (error) {
@@ -98,16 +199,19 @@ export default function DataImportPage() {
 
         totalResult.profilesUpserted += data.profilesUpserted || 0;
         totalResult.licensesInserted += data.licensesInserted || 0;
+        totalResult.fieldsUpdated += data.fieldsUpdated || 0;
+        totalResult.fieldsFilled += data.fieldsFilled || 0;
         if (data.errors?.length) {
           totalResult.errors.push(...data.errors);
         }
       }
 
       setMedallionResult(totalResult);
+      setPendingConflicts([]);
       
       toast({
         title: 'Import complete',
-        description: `Updated ${totalResult.profilesUpserted} providers, added ${totalResult.licensesInserted} licenses`,
+        description: `Updated ${totalResult.profilesUpserted} providers, filled ${totalResult.fieldsFilled} fields, added ${totalResult.licensesInserted} licenses`,
       });
     } catch (error: any) {
       toast({
@@ -118,6 +222,19 @@ export default function DataImportPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleConflictResolve = (resolutions: FieldResolution[]) => {
+    runApplyImport(resolutions);
+  };
+
+  const handleConflictCancel = () => {
+    setShowConflictDialog(false);
+    setPendingConflicts([]);
+    toast({
+      title: 'Import cancelled',
+      description: 'No changes were made.',
+    });
   };
 
   return (
@@ -140,6 +257,15 @@ export default function DataImportPage() {
                 Import provider data from Medallion CSV exports
               </p>
             </div>
+
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle>Smart Merge Import</AlertTitle>
+              <AlertDescription>
+                This import will fill in missing data without overwriting existing values. 
+                If there are conflicting values, you'll be prompted to choose which to keep.
+              </AlertDescription>
+            </Alert>
 
             <Card>
               <CardHeader>
@@ -181,6 +307,7 @@ export default function DataImportPage() {
                             setMedallionFile(null);
                             setMedallionData(null);
                             setMedallionResult(null);
+                            setPendingConflicts([]);
                           }}
                         >
                           Clear
@@ -209,7 +336,7 @@ export default function DataImportPage() {
                 </Alert>
 
                 <Button
-                  onClick={runMedallionImport}
+                  onClick={runPreviewImport}
                   disabled={isLoading || !medallionData}
                   className="w-full"
                   size="lg"
@@ -219,7 +346,7 @@ export default function DataImportPage() {
                   ) : (
                     <Database className="h-4 w-4 mr-2" />
                   )}
-                  Import Providers
+                  {isLoading ? 'Processing...' : 'Import Providers'}
                 </Button>
               </CardContent>
             </Card>
@@ -234,11 +361,23 @@ export default function DataImportPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid gap-4 grid-cols-2">
+                  <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
                     <Card>
                       <CardContent className="pt-6">
                         <div className="text-3xl font-bold text-primary">{medallionResult.profilesUpserted}</div>
-                        <p className="text-sm text-muted-foreground">Providers Updated</p>
+                        <p className="text-sm text-muted-foreground">Providers Processed</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-3xl font-bold text-primary">{medallionResult.fieldsFilled}</div>
+                        <p className="text-sm text-muted-foreground">Fields Filled</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-3xl font-bold text-primary">{medallionResult.fieldsUpdated}</div>
+                        <p className="text-sm text-muted-foreground">Fields Updated</p>
                       </CardContent>
                     </Card>
                     <Card>
@@ -270,6 +409,14 @@ export default function DataImportPage() {
           </div>
         </main>
       </div>
+
+      <ConflictResolutionDialog
+        open={showConflictDialog}
+        onOpenChange={setShowConflictDialog}
+        conflicts={pendingConflicts}
+        onResolve={handleConflictResolve}
+        onCancel={handleConflictCancel}
+      />
     </SidebarProvider>
   );
 }
