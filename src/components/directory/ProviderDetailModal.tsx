@@ -8,8 +8,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { FileText, ExternalLink } from 'lucide-react';
 
 interface FullProvider {
   id: string;
@@ -51,6 +53,7 @@ interface FullProvider {
   secondary_contact_email: string | null;
   actively_licensed_states: string | null;
   medallion_id: string | null;
+  chart_review_folder_url: string | null;
   created_at: string;
 }
 
@@ -190,6 +193,24 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
 
           <TabsContent value="licenses" className="mt-4 space-y-4">
             <InfoRow label="Actively Licensed States" value={provider.actively_licensed_states} />
+            
+            {/* Chart Review Link */}
+            {provider.chart_review_folder_url && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">Chart Reviews:</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => window.open(provider.chart_review_folder_url!, '_blank')}
+                >
+                  <FileText className="h-4 w-4" />
+                  Open Folder
+                  <ExternalLink className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+            
             <p className="text-sm text-muted-foreground">
               View the Licenses tab on the provider's profile for detailed license information.
             </p>

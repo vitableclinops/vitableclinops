@@ -51,6 +51,7 @@ interface FullProvider {
   secondary_contact_email: string | null;
   actively_licensed_states: string | null;
   medallion_id: string | null;
+  chart_review_folder_url: string | null;
   created_at: string;
 }
 

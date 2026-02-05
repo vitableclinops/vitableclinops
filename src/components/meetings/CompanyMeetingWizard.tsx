@@ -37,6 +37,8 @@ interface ProviderForMeeting {
   name: string;
   email: string;
   states: string[]; // All states this provider has agreements in
+  requiredStates: string[]; // States that require a meeting this month
+  isRequired: boolean; // Whether provider needs to attend this month
 }
 
 interface CompanyMeetingWizardProps {
@@ -71,12 +73,18 @@ export function CompanyMeetingWizard({
       setNotes('');
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
-      loadProviders();
       suggestNextDate();
     }
   }, [open]);
 
-  // Load all active providers with their states
+  // Reload providers when date changes to recalculate who's required
+  useEffect(() => {
+    if (open && selectedDate) {
+      loadProviders();
+    }
+  }, [selectedDate]);
+
+  // Load all active providers with their states and determine if required for this month
   const loadProviders = async () => {
     setLoading(true);
     try {
@@ -106,6 +114,22 @@ export function CompanyMeetingWizard({
         return;
       }
 
+      // Get state compliance requirements for meeting months
+      const stateAbbrs = [...new Set(agreements.map(a => a.state_abbreviation))];
+      const { data: stateCompliance } = await supabase
+        .from('state_compliance_requirements')
+        .select('state_abbreviation, meeting_months')
+        .in('state_abbreviation', stateAbbrs);
+
+      // Create state -> meeting months map
+      const stateMonthMap = new Map<string, number[]>();
+      stateCompliance?.forEach(sc => {
+        stateMonthMap.set(sc.state_abbreviation, sc.meeting_months || []);
+      });
+
+      // Determine which month we're scheduling for (default to next month)
+      const meetingMonth = selectedDate ? (selectedDate.getMonth() + 1) : ((new Date().getMonth() + 2) % 12 || 12);
+
       // Group providers and their states
       const providerMap = new Map<string, ProviderForMeeting>();
       
@@ -113,10 +137,18 @@ export function CompanyMeetingWizard({
         const agreement = agreements.find(a => a.id === ap.agreement_id);
         if (!agreement) return;
         
+        const stateMonths = stateMonthMap.get(agreement.state_abbreviation) || [];
+        // If no months specified or empty array, default to monthly (all months required)
+        const isRequiredForState = stateMonths.length === 0 || stateMonths.includes(meetingMonth);
+        
         const existing = providerMap.get(ap.provider_email);
         if (existing) {
           if (!existing.states.includes(agreement.state_abbreviation)) {
             existing.states.push(agreement.state_abbreviation);
+          }
+          if (isRequiredForState && !existing.requiredStates.includes(agreement.state_abbreviation)) {
+            existing.requiredStates.push(agreement.state_abbreviation);
+            existing.isRequired = true;
           }
         } else {
           providerMap.set(ap.provider_email, {
@@ -124,6 +156,8 @@ export function CompanyMeetingWizard({
             name: ap.provider_name,
             email: ap.provider_email,
             states: [agreement.state_abbreviation],
+            requiredStates: isRequiredForState ? [agreement.state_abbreviation] : [],
+            isRequired: isRequiredForState,
           });
         }
       });
@@ -169,10 +203,19 @@ export function CompanyMeetingWizard({
     }
   };
 
-  // Generate email list
-  const emailList = useMemo(() => {
-    return providers.map(p => p.email).join(', ');
+  // Get only required providers for invitations
+  const requiredProviders = useMemo(() => {
+    return providers.filter(p => p.isRequired);
   }, [providers]);
+
+  const nonRequiredProviders = useMemo(() => {
+    return providers.filter(p => !p.isRequired);
+  }, [providers]);
+
+  // Generate email list for required providers only
+  const emailList = useMemo(() => {
+    return requiredProviders.map(p => p.email).join(', ');
+  }, [requiredProviders]);
 
   // Copy emails to clipboard
   const copyEmails = async () => {
@@ -181,7 +224,7 @@ export function CompanyMeetingWizard({
       setEmailsCopied(true);
       toast({
         title: 'Copied!',
-        description: `${providers.length} email addresses copied to clipboard.`,
+        description: `${requiredProviders.length} email addresses copied to clipboard.`,
       });
       setTimeout(() => setEmailsCopied(false), 3000);
     } catch {
@@ -196,10 +239,11 @@ export function CompanyMeetingWizard({
   // Download email list as CSV
   const downloadEmailsCsv = () => {
     const csvContent = [
-      ['Name', 'Email', 'States'].join(','),
-      ...providers.map(p => [
+      ['Name', 'Email', 'Required States', 'All States'].join(','),
+      ...requiredProviders.map(p => [
         `"${p.name}"`,
         p.email,
+        `"${p.requiredStates.join(', ')}"`,
         `"${p.states.join(', ')}"`,
       ].join(',')),
     ].join('\n');
@@ -214,7 +258,7 @@ export function CompanyMeetingWizard({
 
     toast({
       title: 'Downloaded',
-      description: 'Email list exported to CSV.',
+      description: `${requiredProviders.length} providers exported to CSV.`,
     });
   };
 
@@ -276,9 +320,9 @@ export function CompanyMeetingWizard({
       
       if (pmError) throw pmError;
       
-      // Add all providers as invited attendees to both meetings
-      if (providers.length > 0 && amMeeting && pmMeeting) {
-        const attendeeInserts = providers.flatMap(provider => [
+      // Add only required providers as invited attendees to both meetings
+      if (requiredProviders.length > 0 && amMeeting && pmMeeting) {
+        const attendeeInserts = requiredProviders.flatMap(provider => [
           {
             meeting_id: amMeeting.id,
             provider_id: provider.id,
@@ -419,8 +463,14 @@ export function CompanyMeetingWizard({
               <Alert>
                 <Info className="h-4 w-4" />
                 <AlertDescription>
-                  This will schedule two meeting slots (AM at {AM_TIME} and PM at {PM_TIME}) 
-                  for all {providers.length} active providers across all states.
+                  {loading ? 'Loading providers...' : (
+                    <>
+                      <strong>{requiredProviders.length}</strong> providers require a meeting this month based on their state cadences.
+                      {nonRequiredProviders.length > 0 && (
+                        <span className="text-muted-foreground"> ({nonRequiredProviders.length} not required this month)</span>
+                      )}
+                    </>
+                  )}
                 </AlertDescription>
               </Alert>
 
@@ -490,16 +540,19 @@ export function CompanyMeetingWizard({
                   
                   <div>
                     <Label className="text-muted-foreground text-xs">Providers to be Invited</Label>
-                    <p className="font-medium">{providers.length} providers</p>
+                    <p className="font-medium">{requiredProviders.length} providers required this month</p>
+                    {nonRequiredProviders.length > 0 && (
+                      <p className="text-xs text-muted-foreground">{nonRequiredProviders.length} providers not required (skipped)</p>
+                    )}
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {providers.slice(0, 5).map(p => (
+                      {requiredProviders.slice(0, 5).map(p => (
                         <Badge key={p.email} variant="secondary" className="text-xs">
-                          {p.name}
+                          {p.name} ({p.requiredStates.join(', ')})
                         </Badge>
                       ))}
-                      {providers.length > 5 && (
+                      {requiredProviders.length > 5 && (
                         <Badge variant="outline" className="text-xs">
-                          +{providers.length - 5} more
+                          +{requiredProviders.length - 5} more
                         </Badge>
                       )}
                     </div>
