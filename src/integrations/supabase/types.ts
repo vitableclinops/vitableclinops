@@ -329,6 +329,72 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_licenses: {
+        Row: {
+          collab_agreement_id: string | null
+          created_at: string
+          expiration_date: string | null
+          id: string
+          issue_date: string | null
+          license_number: string | null
+          license_type: string | null
+          notes: string | null
+          profile_id: string | null
+          provider_email: string | null
+          requires_collab_agreement: boolean | null
+          state_abbreviation: string
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          collab_agreement_id?: string | null
+          created_at?: string
+          expiration_date?: string | null
+          id?: string
+          issue_date?: string | null
+          license_number?: string | null
+          license_type?: string | null
+          notes?: string | null
+          profile_id?: string | null
+          provider_email?: string | null
+          requires_collab_agreement?: boolean | null
+          state_abbreviation: string
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          collab_agreement_id?: string | null
+          created_at?: string
+          expiration_date?: string | null
+          id?: string
+          issue_date?: string | null
+          license_number?: string | null
+          license_type?: string | null
+          notes?: string | null
+          profile_id?: string | null
+          provider_email?: string | null
+          requires_collab_agreement?: boolean | null
+          state_abbreviation?: string
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_licenses_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_licenses_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supervision_meetings: {
         Row: {
           agreement_id: string
@@ -412,6 +478,26 @@ export type Database = {
           npi_number: string | null
           preferred_name: string | null
           states: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          credentials?: string | null
+          employment_status?: string | null
+          full_name?: string | null
+          id?: string | null
+          npi_number?: string | null
+          preferred_name?: string | null
+          states?: never
+        }
+        Update: {
+          avatar_url?: string | null
+          credentials?: string | null
+          employment_status?: string | null
+          full_name?: string | null
+          id?: string | null
+          npi_number?: string | null
+          preferred_name?: string | null
+          states?: never
         }
         Relationships: []
       }
