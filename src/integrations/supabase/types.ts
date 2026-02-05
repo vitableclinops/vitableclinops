@@ -14,6 +14,70 @@ export type Database = {
   }
   public: {
     Tables: {
+      agreement_audit_log: {
+        Row: {
+          action: string
+          changes: Json | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          ip_address: string | null
+          performed_by: string | null
+          performed_by_name: string | null
+          performed_by_role: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          changes?: Json | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          ip_address?: string | null
+          performed_by?: string | null
+          performed_by_name?: string | null
+          performed_by_role?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          changes?: Json | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          ip_address?: string | null
+          performed_by?: string | null
+          performed_by_name?: string | null
+          performed_by_role?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agreement_audit_log_performed_by_fkey"
+            columns: ["performed_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_audit_log_performed_by_fkey"
+            columns: ["performed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_audit_log_performed_by_fkey"
+            columns: ["performed_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agreement_notifications: {
         Row: {
           agreement_id: string
@@ -55,6 +119,13 @@ export type Database = {
           subject?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "agreement_notifications_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_summary"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "agreement_notifications_agreement_id_fkey"
             columns: ["agreement_id"]
@@ -124,7 +195,235 @@ export type Database = {
             foreignKeyName: "agreement_providers_agreement_id_fkey"
             columns: ["agreement_id"]
             isOneToOne: false
+            referencedRelation: "agreement_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_providers_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
             referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agreement_tasks: {
+        Row: {
+          agreement_id: string | null
+          assigned_role: string | null
+          assigned_to: string | null
+          auto_trigger: string | null
+          blockers: string | null
+          category: Database["public"]["Enums"]["agreement_task_category"]
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          due_date: string | null
+          external_url: string | null
+          id: string
+          is_auto_generated: boolean | null
+          meeting_id: string | null
+          notes: string | null
+          physician_id: string | null
+          priority: string | null
+          provider_id: string | null
+          started_at: string | null
+          state_abbreviation: string | null
+          state_name: string | null
+          status: Database["public"]["Enums"]["agreement_task_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          agreement_id?: string | null
+          assigned_role?: string | null
+          assigned_to?: string | null
+          auto_trigger?: string | null
+          blockers?: string | null
+          category?: Database["public"]["Enums"]["agreement_task_category"]
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string | null
+          external_url?: string | null
+          id?: string
+          is_auto_generated?: boolean | null
+          meeting_id?: string | null
+          notes?: string | null
+          physician_id?: string | null
+          priority?: string | null
+          provider_id?: string | null
+          started_at?: string | null
+          state_abbreviation?: string | null
+          state_name?: string | null
+          status?: Database["public"]["Enums"]["agreement_task_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          agreement_id?: string | null
+          assigned_role?: string | null
+          assigned_to?: string | null
+          auto_trigger?: string | null
+          blockers?: string | null
+          category?: Database["public"]["Enums"]["agreement_task_category"]
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string | null
+          external_url?: string | null
+          id?: string
+          is_auto_generated?: boolean | null
+          meeting_id?: string | null
+          notes?: string | null
+          physician_id?: string | null
+          priority?: string | null
+          provider_id?: string | null
+          started_at?: string | null
+          state_abbreviation?: string | null
+          state_name?: string | null
+          status?: Database["public"]["Enums"]["agreement_task_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agreement_tasks_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_completed_by_fkey"
+            columns: ["completed_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_completed_by_fkey"
+            columns: ["completed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_completed_by_fkey"
+            columns: ["completed_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meeting_notification_emails"
+            referencedColumns: ["meeting_id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "supervision_meetings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_physician_id_fkey"
+            columns: ["physician_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_physician_id_fkey"
+            columns: ["physician_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_physician_id_fkey"
+            columns: ["physician_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
             referencedColumns: ["id"]
           },
         ]
@@ -170,6 +469,13 @@ export type Database = {
           step_number?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "agreement_workflow_steps_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_summary"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "agreement_workflow_steps_agreement_id_fkey"
             columns: ["agreement_id"]
@@ -551,6 +857,13 @@ export type Database = {
             foreignKeyName: "provider_licenses_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_licenses_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -613,6 +926,13 @@ export type Database = {
             columns: ["meeting_id"]
             isOneToOne: false
             referencedRelation: "supervision_meetings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_meeting_compliance_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -745,6 +1065,13 @@ export type Database = {
             foreignKeyName: "supervision_meetings_agreement_id_fkey"
             columns: ["agreement_id"]
             isOneToOne: false
+            referencedRelation: "agreement_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supervision_meetings_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
             referencedRelation: "collaborative_agreements"
             referencedColumns: ["id"]
           },
@@ -773,6 +1100,36 @@ export type Database = {
       }
     }
     Views: {
+      agreement_summary: {
+        Row: {
+          active_provider_count: number | null
+          ca_meeting_cadence: string | null
+          ca_required: boolean | null
+          chart_review_frequency: string | null
+          chart_review_required: boolean | null
+          created_at: string | null
+          end_date: string | null
+          fpa_status: string | null
+          id: string | null
+          meeting_cadence: string | null
+          meeting_months: number[] | null
+          next_meeting_date: string | null
+          next_renewal_date: string | null
+          pending_task_count: number | null
+          physician_email: string | null
+          physician_id: string | null
+          physician_name: string | null
+          start_date: string | null
+          state_abbreviation: string | null
+          state_name: string | null
+          terminated_at: string | null
+          termination_reason: string | null
+          workflow_status:
+            | Database["public"]["Enums"]["agreement_workflow_status"]
+            | null
+        }
+        Relationships: []
+      }
       meeting_notification_emails: {
         Row: {
           assigned_slot: string | null
@@ -787,6 +1144,25 @@ export type Database = {
           rsvp_slot: string | null
           scheduled_date: string | null
           time_slot: string | null
+        }
+        Relationships: []
+      }
+      physician_profiles: {
+        Row: {
+          active_agreements_count: number | null
+          active_states: string[] | null
+          avatar_url: string | null
+          created_at: string | null
+          credentials: string | null
+          email: string | null
+          employment_status: string | null
+          full_name: string | null
+          id: string | null
+          npi_number: string | null
+          phone_number: string | null
+          primary_specialty: string | null
+          supervised_providers_count: number | null
+          user_id: string | null
         }
         Relationships: []
       }
@@ -843,6 +1219,22 @@ export type Database = {
       }
     }
     Enums: {
+      agreement_task_category:
+        | "agreement_creation"
+        | "signature"
+        | "supervision_meeting"
+        | "chart_review"
+        | "renewal"
+        | "termination"
+        | "compliance"
+        | "document"
+        | "custom"
+      agreement_task_status:
+        | "pending"
+        | "in_progress"
+        | "completed"
+        | "blocked"
+        | "cancelled"
       agreement_workflow_status:
         | "draft"
         | "pending_signatures"
@@ -989,6 +1381,24 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      agreement_task_category: [
+        "agreement_creation",
+        "signature",
+        "supervision_meeting",
+        "chart_review",
+        "renewal",
+        "termination",
+        "compliance",
+        "document",
+        "custom",
+      ],
+      agreement_task_status: [
+        "pending",
+        "in_progress",
+        "completed",
+        "blocked",
+        "cancelled",
+      ],
       agreement_workflow_status: [
         "draft",
         "pending_signatures",
