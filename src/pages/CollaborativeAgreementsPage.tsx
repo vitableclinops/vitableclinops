@@ -897,44 +897,99 @@ const CollaborativeAgreementsPage = () => {
                         ))}
                       </div>
                       
-                      {/* Provider list */}
+                      {/* Provider list - Aggregated by provider name */}
                       <Accordion type="single" collapsible className="w-full">
                         <AccordionItem value="providers" className="border-none">
                           <AccordionTrigger className="hover:no-underline py-2">
                             <span className="flex items-center gap-2 text-sm font-medium">
                               <Users className="h-4 w-4" />
-                              View all supervised providers ({physician.activeProviders.length} active)
+                              View all supervised providers ({
+                                // Count unique providers by email
+                                new Set(physician.activeProviders.map(p => p.provider_email)).size
+                              } providers, {physician.activeProviders.length} agreements)
                             </span>
                           </AccordionTrigger>
                           <AccordionContent>
                             <div className="grid gap-2 pt-2">
-                              {physician.activeProviders.map(provider => {
-                                const agreement = physician.agreements.find(a => a.id === provider.agreement_id);
-                                return (
-                                  <div 
-                                    key={provider.id} 
-                                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="h-8 w-8 rounded-full bg-success/10 flex items-center justify-center">
-                                        <CheckCircle2 className="h-4 w-4 text-success" />
+                              {/* Aggregate providers by email */}
+                              {(() => {
+                                // Group providers by email
+                                const providerMap = new Map<string, {
+                                  name: string;
+                                  email: string;
+                                  stateAgreements: Array<{
+                                    state: string;
+                                    startDate: string | null;
+                                    agreementId: string;
+                                  }>;
+                                }>();
+                                
+                                physician.activeProviders.forEach(provider => {
+                                  const agreement = physician.agreements.find(a => a.id === provider.agreement_id);
+                                  if (!agreement) return;
+                                  
+                                  const existing = providerMap.get(provider.provider_email);
+                                  if (existing) {
+                                    existing.stateAgreements.push({
+                                      state: agreement.state_abbreviation,
+                                      startDate: provider.start_date,
+                                      agreementId: agreement.id
+                                    });
+                                  } else {
+                                    providerMap.set(provider.provider_email, {
+                                      name: provider.provider_name,
+                                      email: provider.provider_email,
+                                      stateAgreements: [{
+                                        state: agreement.state_abbreviation,
+                                        startDate: provider.start_date,
+                                        agreementId: agreement.id
+                                      }]
+                                    });
+                                  }
+                                });
+                                
+                                return Array.from(providerMap.values())
+                                  .sort((a, b) => a.name.localeCompare(b.name))
+                                  .map(provider => (
+                                    <div 
+                                      key={provider.email} 
+                                      className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div className="h-8 w-8 rounded-full bg-success/10 flex items-center justify-center">
+                                          <CheckCircle2 className="h-4 w-4 text-success" />
+                                        </div>
+                                        <div>
+                                          <p className="font-medium text-sm">{provider.name}</p>
+                                          <p className="text-xs text-muted-foreground">{provider.email}</p>
+                                        </div>
                                       </div>
-                                      <div>
-                                        <p className="font-medium text-sm">{provider.provider_name}</p>
-                                        <p className="text-xs text-muted-foreground">{provider.provider_email}</p>
+                                      <div className="flex flex-col items-end gap-1">
+                                        {/* State badges */}
+                                        <div className="flex flex-wrap gap-1 justify-end">
+                                          {provider.stateAgreements
+                                            .sort((a, b) => a.state.localeCompare(b.state))
+                                            .map(sa => (
+                                              <Badge key={sa.agreementId} variant="secondary" className="text-xs">
+                                                {sa.state}
+                                              </Badge>
+                                            ))
+                                          }
+                                        </div>
+                                        {/* Show dates if multiple states */}
+                                        {provider.stateAgreements.length > 1 ? (
+                                          <span className="text-xs text-muted-foreground">
+                                            {provider.stateAgreements.length} agreements
+                                          </span>
+                                        ) : provider.stateAgreements[0]?.startDate && (
+                                          <span className="text-xs text-muted-foreground">
+                                            Since {new Date(provider.stateAgreements[0].startDate).toLocaleDateString()}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                      <Badge variant="secondary">{agreement?.state_abbreviation}</Badge>
-                                      {provider.start_date && (
-                                        <span className="text-xs text-muted-foreground">
-                                          Since {new Date(provider.start_date).toLocaleDateString()}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                  ));
+                              })()}
                             </div>
                           </AccordionContent>
                         </AccordionItem>
