@@ -27,7 +27,8 @@ import {
   BookOpen,
   UserPlus,
   User,
-  ChevronDown
+  ChevronDown,
+  Database
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -130,6 +131,12 @@ const navItems: NavItem[] = [
     icon: UserPlus, 
     href: '/onboarding?mode=edit', 
     roles: ['provider'] 
+  },
+  { 
+    label: 'Data Import', 
+    icon: Database, 
+    href: '/admin/import', 
+    roles: ['admin'] 
   },
   { 
     label: 'Manage Roles', 
