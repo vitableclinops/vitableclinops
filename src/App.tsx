@@ -21,6 +21,7 @@ import ProviderOnboardingPage from "./pages/ProviderOnboardingPage";
 import UserRolesPage from "./pages/UserRolesPage";
 import ProfileSettingsPage from "./pages/ProfileSettingsPage";
 import ProviderStateGridPage from "./pages/ProviderStateGridPage";
+import ProviderDirectoryPage from "./pages/ProviderDirectoryPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -107,6 +108,11 @@ const App = () => (
             <Route path="/grid" element={
               <ProtectedRoute requiredRoles={['admin', 'leadership']}>
                 <ProviderStateGridPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/directory" element={
+              <ProtectedRoute>
+                <ProviderDirectoryPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,11 +6,38 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Camera, Loader2, User, Key, Phone, FileText } from 'lucide-react';
+import { format } from 'date-fns';
+import { ArrowLeft, Camera, Loader2, User, Key, Phone, FileText, Home, Heart, CalendarIcon, Briefcase } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface ExtendedProfile {
+  id: string;
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  phone_number: string | null;
+  npi_number: string | null;
+  credentials: string | null;
+  birthday: string | null;
+  home_address: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  preferred_name: string | null;
+  patient_age_preference: string | null;
+  service_offerings: string | null;
+  employment_start_date: string | null;
+  employment_end_date: string | null;
+  employment_status: string | null;
+}
 
 const ProfileSettingsPage = () => {
   const navigate = useNavigate();
@@ -18,16 +45,26 @@ const ProfileSettingsPage = () => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Basic info
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
-  const [phoneNumber, setPhoneNumber] = useState((profile as any)?.phone_number || '');
-  const [npiNumber, setNpiNumber] = useState((profile as any)?.npi_number || '');
-  const [credentials, setCredentials] = useState((profile as any)?.credentials || '');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [npiNumber, setNpiNumber] = useState('');
+  const [credentials, setCredentials] = useState('');
+  
+  // New extended fields
+  const [preferredName, setPreferredName] = useState('');
+  const [birthday, setBirthday] = useState<Date | undefined>(undefined);
+  const [homeAddress, setHomeAddress] = useState('');
+  const [emergencyContactName, setEmergencyContactName] = useState('');
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
+  const [patientAgePreference, setPatientAgePreference] = useState('');
+  const [serviceOfferings, setServiceOfferings] = useState('');
+  
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Password change state
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -35,6 +72,37 @@ const ProfileSettingsPage = () => {
   const userRole = roles[0] || 'provider';
   const userName = profile?.full_name || profile?.email || 'User';
   const userEmail = profile?.email || '';
+
+  // Load full profile data on mount
+  useEffect(() => {
+    const loadFullProfile = async () => {
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (data && !error) {
+        const p = data as ExtendedProfile;
+        setFullName(p.full_name || '');
+        setAvatarUrl(p.avatar_url || '');
+        setPhoneNumber(p.phone_number || '');
+        setNpiNumber(p.npi_number || '');
+        setCredentials(p.credentials || '');
+        setPreferredName(p.preferred_name || '');
+        setBirthday(p.birthday ? new Date(p.birthday) : undefined);
+        setHomeAddress(p.home_address || '');
+        setEmergencyContactName(p.emergency_contact_name || '');
+        setEmergencyContactPhone(p.emergency_contact_phone || '');
+        setPatientAgePreference(p.patient_age_preference || '');
+        setServiceOfferings(p.service_offerings || '');
+      }
+    };
+
+    loadFullProfile();
+  }, [user]);
 
   const getInitials = (name: string) => {
     return name
@@ -120,6 +188,13 @@ const ProfileSettingsPage = () => {
           phone_number: phoneNumber || null,
           npi_number: npiNumber || null,
           credentials: credentials || null,
+          preferred_name: preferredName || null,
+          birthday: birthday ? birthday.toISOString().split('T')[0] : null,
+          home_address: homeAddress || null,
+          emergency_contact_name: emergencyContactName || null,
+          emergency_contact_phone: emergencyContactPhone || null,
+          patient_age_preference: patientAgePreference || null,
+          service_offerings: serviceOfferings || null,
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', user.id);
@@ -186,7 +261,6 @@ const ProfileSettingsPage = () => {
         description: 'Your password has been changed successfully.',
       });
 
-      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (error: any) {
@@ -231,7 +305,10 @@ const ProfileSettingsPage = () => {
             {/* Personal Information Card */}
             <Card>
               <CardHeader>
-                <CardTitle>Personal Information</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  Personal Information
+                </CardTitle>
                 <CardDescription>
                   Update your profile photo and display name
                 </CardDescription>
@@ -273,15 +350,58 @@ const ProfileSettingsPage = () => {
                   </div>
                 </div>
 
-                {/* Display Name */}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Display Name */}
+                  <div className="space-y-2">
+                    <Label htmlFor="fullName">Full Name</Label>
+                    <Input
+                      id="fullName"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Enter your full name"
+                    />
+                  </div>
+
+                  {/* Preferred Name */}
+                  <div className="space-y-2">
+                    <Label htmlFor="preferredName">Preferred Name</Label>
+                    <Input
+                      id="preferredName"
+                      value={preferredName}
+                      onChange={(e) => setPreferredName(e.target.value)}
+                      placeholder="What should we call you?"
+                    />
+                  </div>
+                </div>
+
+                {/* Birthday */}
                 <div className="space-y-2">
-                  <Label htmlFor="fullName">Display Name</Label>
-                  <Input
-                    id="fullName"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Enter your display name"
-                  />
+                  <Label>Birthday</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          'w-full justify-start text-left font-normal',
+                          !birthday && 'text-muted-foreground'
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {birthday ? format(birthday, 'PPP') : 'Pick a date'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={birthday}
+                        onSelect={setBirthday}
+                        captionLayout="dropdown-buttons"
+                        fromYear={1940}
+                        toYear={new Date().getFullYear()}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 {/* Email (Read-only) */}
@@ -311,9 +431,58 @@ const ProfileSettingsPage = () => {
                       </span>
                     ))}
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Contact an administrator to request role changes.
-                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Address & Emergency Contact */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Home className="h-5 w-5" />
+                  Address & Emergency Contact
+                </CardTitle>
+                <CardDescription>
+                  Your home address and emergency contact information
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Home Address */}
+                <div className="space-y-2">
+                  <Label htmlFor="homeAddress">Home Address</Label>
+                  <Textarea
+                    id="homeAddress"
+                    value={homeAddress}
+                    onChange={(e) => setHomeAddress(e.target.value)}
+                    placeholder="123 Main St, City, State ZIP"
+                    rows={2}
+                  />
+                </div>
+
+                {/* Emergency Contact */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyName" className="flex items-center gap-2">
+                      <Heart className="h-4 w-4" />
+                      Emergency Contact Name
+                    </Label>
+                    <Input
+                      id="emergencyName"
+                      value={emergencyContactName}
+                      onChange={(e) => setEmergencyContactName(e.target.value)}
+                      placeholder="Contact name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyPhone">Emergency Contact Phone</Label>
+                    <Input
+                      id="emergencyPhone"
+                      type="tel"
+                      value={emergencyContactPhone}
+                      onChange={(e) => setEmergencyContactPhone(e.target.value)}
+                      placeholder="(555) 123-4567"
+                    />
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -323,7 +492,7 @@ const ProfileSettingsPage = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="h-5 w-5" />
-                  Provider Information
+                  Professional Information
                 </CardTitle>
                 <CardDescription>
                   Professional details for credentialing purposes
@@ -345,32 +514,59 @@ const ProfileSettingsPage = () => {
                   />
                 </div>
 
-                {/* NPI Number */}
-                <div className="space-y-2">
-                  <Label htmlFor="npi">NPI Number</Label>
-                  <Input
-                    id="npi"
-                    value={npiNumber}
-                    onChange={(e) => setNpiNumber(e.target.value)}
-                    placeholder="10-digit NPI number"
-                    maxLength={10}
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Your National Provider Identifier for healthcare billing.
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* NPI Number */}
+                  <div className="space-y-2">
+                    <Label htmlFor="npi">NPI Number</Label>
+                    <Input
+                      id="npi"
+                      value={npiNumber}
+                      onChange={(e) => setNpiNumber(e.target.value)}
+                      placeholder="10-digit NPI"
+                      maxLength={10}
+                    />
+                  </div>
+
+                  {/* Credentials */}
+                  <div className="space-y-2">
+                    <Label htmlFor="credentials">Credentials</Label>
+                    <Input
+                      id="credentials"
+                      value={credentials}
+                      onChange={(e) => setCredentials(e.target.value)}
+                      placeholder="e.g., NP, RN, MSN"
+                    />
+                  </div>
                 </div>
 
-                {/* Credentials */}
+                {/* Patient Age Preference */}
                 <div className="space-y-2">
-                  <Label htmlFor="credentials">Credentials</Label>
-                  <Input
-                    id="credentials"
-                    value={credentials}
-                    onChange={(e) => setCredentials(e.target.value)}
-                    placeholder="e.g., NP, RN, MSN, DNP"
+                  <Label htmlFor="patientAge">Patient Age Preference</Label>
+                  <Select value={patientAgePreference} onValueChange={setPatientAgePreference}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select age preference" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pediatric">Pediatric (0-17)</SelectItem>
+                      <SelectItem value="adult">Adult (18-64)</SelectItem>
+                      <SelectItem value="geriatric">Geriatric (65+)</SelectItem>
+                      <SelectItem value="all_ages">All Ages</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Service Offerings */}
+                <div className="space-y-2">
+                  <Label htmlFor="services">Service Offerings</Label>
+                  <Textarea
+                    id="services"
+                    value={serviceOfferings}
+                    onChange={(e) => setServiceOfferings(e.target.value)}
+                    placeholder="Primary care, Mental health, Women's health..."
+                    rows={2}
                   />
-                  <p className="text-sm text-muted-foreground">
-                    Your professional credentials and certifications.
+                  <p className="text-xs text-muted-foreground">
+                    List the services you provide, separated by commas.
                   </p>
                 </div>
               </CardContent>
