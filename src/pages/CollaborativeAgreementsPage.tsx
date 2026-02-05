@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { useStateCompliance } from '@/hooks/useStateCompliance';
+import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
 import { supervisionMeetings } from '@/data/mockData';
 import { 
   Users, 
@@ -142,7 +142,31 @@ interface FlattenedAgreement {
   renewalDate: Date | null;
   daysUntilMeeting: number | null;
   daysUntilRenewal: number | null;
+  // State compliance fields
+  caRequired: boolean;
+  fpaStatus: string | null;
+  rxrRequired: boolean;
+  nlc: boolean;
+  npMdRatio: string | null;
 }
+
+// Helper to get meeting cadence from state compliance data
+const getStateMeetingCadence = (stateAbbr: string, complianceData: StateCompliance[]): string | null => {
+  const stateCompliance = complianceData.find(c => c.state_abbreviation === stateAbbr);
+  return stateCompliance?.ca_meeting_cadence || null;
+};
+
+// Helper to check if state requires collaborative agreement
+const getStateCARequired = (stateAbbr: string, complianceData: StateCompliance[]): boolean => {
+  const stateCompliance = complianceData.find(c => c.state_abbreviation === stateAbbr);
+  return stateCompliance?.ca_required ?? false;
+};
+
+// Helper to get FPA status
+const getStateFPAStatus = (stateAbbr: string, complianceData: StateCompliance[]): string | null => {
+  const stateCompliance = complianceData.find(c => c.state_abbreviation === stateAbbr);
+  return stateCompliance?.fpa_status || null;
+};
 
 const CollaborativeAgreementsPage = () => {
   const { toast } = useToast();
@@ -168,6 +192,9 @@ const CollaborativeAgreementsPage = () => {
   const [dbAgreements, setDbAgreements] = useState<DbAgreement[]>([]);
   const [dbProviders, setDbProviders] = useState<DbProvider[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Fetch state compliance data for accurate meeting cadences
+  const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
 
   const fetchDbAgreements = async () => {
     const [agreementsRes, providersRes] = await Promise.all([
@@ -198,12 +225,20 @@ const CollaborativeAgreementsPage = () => {
   }, []);
 
   // Create flattened agreements - each provider-state-physician combo is one row
+  // Use state compliance data for meeting cadences when available
   const flattenedAgreements: FlattenedAgreement[] = dbProviders.map(provider => {
     const agreement = dbAgreements.find(a => a.id === provider.agreement_id);
     if (!agreement) return null;
     
-    const nextMeetingDate = calculateNextMeetingDate(agreement.meeting_cadence);
+    // Use state compliance cadence if available, otherwise fall back to agreement cadence
+    const stateCadence = getStateMeetingCadence(agreement.state_abbreviation, stateComplianceData);
+    const effectiveCadence = stateCadence || agreement.meeting_cadence;
+    
+    const nextMeetingDate = calculateNextMeetingDate(effectiveCadence);
     const renewalDate = calculateRenewalDate(provider.start_date);
+    
+    // Get state compliance info
+    const stateCompliance = stateComplianceData.find(c => c.state_abbreviation === agreement.state_abbreviation);
     
     return {
       id: `${provider.id}-${agreement.id}`,
@@ -220,7 +255,7 @@ const CollaborativeAgreementsPage = () => {
       terminatedAt: provider.removed_at,
       removedReason: provider.removed_reason,
       isActive: provider.is_active ?? true,
-      meetingCadence: agreement.meeting_cadence,
+      meetingCadence: effectiveCadence, // Use state-derived cadence
       chartReviewFrequency: agreement.chart_review_frequency,
       documentUrl: provider.medallion_document_url,
       medallionDocumentUrl: agreement.medallion_document_url,
@@ -228,7 +263,13 @@ const CollaborativeAgreementsPage = () => {
       nextMeetingDate,
       renewalDate,
       daysUntilMeeting: getDaysUntil(nextMeetingDate),
-      daysUntilRenewal: getDaysUntil(renewalDate)
+      daysUntilRenewal: getDaysUntil(renewalDate),
+      // Add state compliance info
+      caRequired: stateCompliance?.ca_required ?? false,
+      fpaStatus: stateCompliance?.fpa_status || null,
+      rxrRequired: stateCompliance?.rxr_required ?? false,
+      nlc: stateCompliance?.nlc ?? false,
+      npMdRatio: stateCompliance?.np_md_ratio || null,
     };
   }).filter(Boolean) as FlattenedAgreement[];
 
@@ -701,14 +742,19 @@ const CollaborativeAgreementsPage = () => {
                               </div>
                             </div>
                             
-                            {/* State */}
+                            {/* State with CA requirement indicator */}
                             <div className="col-span-1">
-                              <Badge variant="outline" className="font-bold text-xs">
-                                {agreement.stateAbbreviation}
-                              </Badge>
+                              <div className="flex flex-col gap-1">
+                                <Badge variant="outline" className="font-bold text-xs w-fit">
+                                  {agreement.stateAbbreviation}
+                                </Badge>
+                                {agreement.caRequired && (
+                                  <span className="text-[10px] text-muted-foreground">CA Req</span>
+                                )}
+                              </div>
                             </div>
                             
-                            {/* Physician */}
+                            {/* Physician with state-derived cadence */}
                             <div className="col-span-2">
                               <p className="text-sm">Dr. {agreement.physicianName.split(' ')[1] || agreement.physicianName}</p>
                               <p className="text-xs text-muted-foreground">
@@ -890,13 +936,25 @@ const CollaborativeAgreementsPage = () => {
                       </div>
                     </CardHeader>
                     <CardContent className="p-6">
-                      {/* States badges */}
+                      {/* States badges with compliance info */}
                       <div className="flex flex-wrap gap-2 mb-6">
-                        {physician.states.sort().map(state => (
-                          <Badge key={state} variant="outline" className="px-3 py-1 text-sm">
-                            {state}
-                          </Badge>
-                        ))}
+                        {physician.states.sort().map(state => {
+                          const stateCompliance = stateComplianceData.find(c => c.state_abbreviation === state);
+                          const caRequired = stateCompliance?.ca_required ?? false;
+                          return (
+                            <div key={state} className="flex flex-col items-center gap-0.5">
+                              <Badge 
+                                variant={caRequired ? "default" : "outline"} 
+                                className="px-3 py-1 text-sm"
+                              >
+                                {state}
+                              </Badge>
+                              {caRequired && (
+                                <span className="text-[9px] text-muted-foreground">CA Req</span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                       
                       {/* Provider list - Aggregated by provider name */}
@@ -967,15 +1025,24 @@ const CollaborativeAgreementsPage = () => {
                                         </div>
                                       </div>
                                       <div className="flex flex-col items-end gap-1">
-                                        {/* State badges */}
+                                        {/* State badges with CA indicator */}
                                         <div className="flex flex-wrap gap-1 justify-end">
                                           {provider.stateAgreements
                                             .sort((a, b) => a.state.localeCompare(b.state))
-                                            .map(sa => (
-                                              <Badge key={sa.agreementId} variant="secondary" className="text-xs">
-                                                {sa.state}
-                                              </Badge>
-                                            ))
+                                            .map(sa => {
+                                              const stateCompliance = stateComplianceData.find(c => c.state_abbreviation === sa.state);
+                                              const caRequired = stateCompliance?.ca_required ?? false;
+                                              return (
+                                                <Badge 
+                                                  key={sa.agreementId} 
+                                                  variant={caRequired ? "default" : "secondary"} 
+                                                  className="text-xs"
+                                                  title={caRequired ? `${sa.state} requires CA` : sa.state}
+                                                >
+                                                  {sa.state}
+                                                </Badge>
+                                              );
+                                            })
                                           }
                                         </div>
                                         {/* Show dates if multiple states */}
@@ -1069,14 +1136,20 @@ const CollaborativeAgreementsPage = () => {
                                       </div>
                                       <div>
                                         <p className="text-sm font-medium">{item.providerName}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          {item.stateAbbreviation} • Dr. {item.physicianName.split(' ')[1] || item.physicianName}
-                                        </p>
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                          <Badge variant={item.caRequired ? "default" : "outline"} className="text-[10px] px-1.5 py-0">
+                                            {item.stateAbbreviation}
+                                          </Badge>
+                                          <span>Dr. {item.physicianName.split(' ')[1] || item.physicianName}</span>
+                                          {item.meetingCadence && (
+                                            <span className="text-muted-foreground/70">• {formatCadence(item.meetingCadence)}</span>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
-                                    <div className="text-right">
+                                    <div className="text-right flex flex-col gap-1">
                                       {item.daysUntilMeeting !== null && item.daysUntilMeeting < 0 && (
-                                        <Badge variant="destructive" className="mb-1">
+                                        <Badge variant="destructive">
                                           Meeting {Math.abs(item.daysUntilMeeting)} days overdue
                                         </Badge>
                                       )}
@@ -1108,12 +1181,18 @@ const CollaborativeAgreementsPage = () => {
                                       </div>
                                       <div>
                                         <p className="text-sm font-medium">{item.providerName}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          {item.stateAbbreviation} • Dr. {item.physicianName.split(' ')[1] || item.physicianName}
-                                        </p>
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                          <Badge variant={item.caRequired ? "default" : "outline"} className="text-[10px] px-1.5 py-0">
+                                            {item.stateAbbreviation}
+                                          </Badge>
+                                          <span>Dr. {item.physicianName.split(' ')[1] || item.physicianName}</span>
+                                          {item.meetingCadence && (
+                                            <span className="text-muted-foreground/70">• {formatCadence(item.meetingCadence)}</span>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 flex-wrap justify-end">
                                       {item.daysUntilMeeting !== null && item.daysUntilMeeting >= 0 && item.daysUntilMeeting <= 7 && (
                                         <Badge variant="outline" className="text-warning border-warning/50">
                                           Meeting in {item.daysUntilMeeting} days
