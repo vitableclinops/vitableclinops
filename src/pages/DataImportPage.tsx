@@ -67,17 +67,47 @@ export default function DataImportPage() {
     setMedallionResult(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke('import-medallion-providers', {
-        body: { providers: medallionData },
-      });
+      // Batch providers to avoid payload size limits
+      const BATCH_SIZE = 5;
+      const totalResult: MedallionResult = {
+        profilesUpserted: 0,
+        licensesInserted: 0,
+        errors: [],
+      };
 
-      if (error) throw error;
+      const batches = [];
+      for (let i = 0; i < medallionData.length; i += BATCH_SIZE) {
+        batches.push(medallionData.slice(i, i + BATCH_SIZE));
+      }
 
-      setMedallionResult(data as MedallionResult);
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        toast({
+          title: `Processing batch ${i + 1}/${batches.length}`,
+          description: `Importing ${batch.length} providers...`,
+        });
+
+        const { data, error } = await supabase.functions.invoke('import-medallion-providers', {
+          body: { providers: batch },
+        });
+
+        if (error) {
+          totalResult.errors.push(`Batch ${i + 1} failed: ${error.message}`);
+          continue;
+        }
+
+        totalResult.profilesUpserted += data.profilesUpserted || 0;
+        totalResult.licensesInserted += data.licensesInserted || 0;
+        if (data.errors?.length) {
+          totalResult.errors.push(...data.errors);
+        }
+      }
+
+      setMedallionResult(totalResult);
       
       toast({
         title: 'Import complete',
-        description: `Updated ${data.profilesUpserted} providers, added ${data.licensesInserted} licenses`,
+        description: `Updated ${totalResult.profilesUpserted} providers, added ${totalResult.licensesInserted} licenses`,
       });
     } catch (error: any) {
       toast({
