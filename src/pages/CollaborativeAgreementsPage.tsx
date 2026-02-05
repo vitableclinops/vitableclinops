@@ -169,7 +169,11 @@ const getStateFPAStatus = (stateAbbr: string, complianceData: StateCompliance[])
 };
 
 const CollaborativeAgreementsPage = () => {
+  // All hooks must be called first, before any conditional logic
   const { toast } = useToast();
+  const { profile, roles } = useAuth();
+  const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [stateFilter, setStateFilter] = useState<string>('all');
@@ -193,8 +197,10 @@ const CollaborativeAgreementsPage = () => {
   const [dbProviders, setDbProviders] = useState<DbProvider[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Fetch state compliance data for accurate meeting cadences
-  const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
+  // Derived values from auth
+  const userRole = roles[0] || 'admin';
+  const userName = profile?.full_name || profile?.email || 'Admin User';
+  const userEmail = profile?.email || '';
 
   const fetchDbAgreements = async () => {
     const [agreementsRes, providersRes] = await Promise.all([
@@ -370,10 +376,7 @@ const CollaborativeAgreementsPage = () => {
     a => a.isActive && a.daysUntilRenewal !== null && a.daysUntilRenewal <= 30
   ).length;
 
-  const { profile, roles } = useAuth();
-  const userRole = roles[0] || 'admin';
-  const userName = profile?.full_name || profile?.email || 'Admin User';
-  const userEmail = profile?.email || '';
+  // Note: useAuth() is called at top of component - userRole, userName, userEmail defined there
 
   // Group by physician
   const physicianData = (() => {
