@@ -47,13 +47,15 @@ import type { Tables } from '@/integrations/supabase/types';
 type DbAgreement = Tables<'collaborative_agreements'>;
 type DbProvider = Tables<'agreement_providers'>;
 
+// Last meeting date for all agreements - January 26, 2025
+const LAST_MEETING_DATE = new Date('2025-01-26');
+
 // Helper functions for date calculations
-const calculateNextMeetingDate = (startDate: string | null, cadence: string | null): Date | null => {
-  if (!startDate || !cadence) return null;
+const calculateNextMeetingDate = (cadence: string | null): Date | null => {
+  if (!cadence) return null;
   
-  const start = new Date(startDate);
   const now = new Date();
-  let nextMeeting = new Date(start);
+  let nextMeeting = new Date(LAST_MEETING_DATE);
   
   // Calculate interval in months based on cadence
   const getIntervalMonths = (cad: string): number => {
@@ -77,7 +79,7 @@ const calculateNextMeetingDate = (startDate: string | null, cadence: string | nu
   
   // For weekly/biweekly, use days
   if (intervalMonths < 1) {
-    const intervalDays = intervalMonths * 30;
+    const intervalDays = Math.round(intervalMonths * 30);
     while (nextMeeting <= now) {
       nextMeeting.setDate(nextMeeting.getDate() + intervalDays);
     }
@@ -198,7 +200,7 @@ const CollaborativeAgreementsPage = () => {
     const agreement = dbAgreements.find(a => a.id === provider.agreement_id);
     if (!agreement) return null;
     
-    const nextMeetingDate = calculateNextMeetingDate(provider.start_date, agreement.meeting_cadence);
+    const nextMeetingDate = calculateNextMeetingDate(agreement.meeting_cadence);
     const renewalDate = calculateRenewalDate(provider.start_date);
     
     return {
@@ -637,15 +639,13 @@ const CollaborativeAgreementsPage = () => {
               <Card>
                 <CardContent className="p-0">
                   {/* Header */}
-                  <div className="grid grid-cols-16 gap-3 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
+                  <div className="grid grid-cols-12 gap-4 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
                     <div className="col-span-3">Provider</div>
                     <div className="col-span-1">State</div>
                     <div className="col-span-2">Physician</div>
                     <div className="col-span-2">Next Meeting</div>
                     <div className="col-span-2">Renewal Due</div>
-                    <div className="col-span-1">Status</div>
-                    <div className="col-span-1">Doc</div>
-                    <div className="col-span-2"></div>
+                    <div className="col-span-2 text-right">Actions</div>
                   </div>
                   
                   {/* Rows */}
@@ -661,7 +661,6 @@ const CollaborativeAgreementsPage = () => {
                         
                         // Meeting urgency
                         const meetingUrgent = agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting <= 7;
-                        const meetingUpcoming = agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting <= 14;
                         const meetingOverdue = agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting < 0;
                         
                         // Renewal urgency
@@ -672,131 +671,114 @@ const CollaborativeAgreementsPage = () => {
                         return (
                           <div 
                             key={agreement.id} 
-                            className={`grid grid-cols-16 gap-3 p-4 border-b hover:bg-muted/30 transition-colors items-center ${
+                            className={`grid grid-cols-12 gap-4 p-4 border-b hover:bg-muted/30 transition-colors items-center group ${
                               !agreement.isActive ? 'opacity-60 bg-muted/10' : ''
-                            } ${renewalOverdue && agreement.isActive ? 'bg-destructive/5' : ''}`}
+                            }`}
                           >
                             {/* Provider */}
                             <div className="col-span-3">
                               <div className="flex items-center gap-3">
-                                <div className={`h-10 w-10 rounded-full flex items-center justify-center font-semibold text-sm ${
+                                <div className={`h-9 w-9 rounded-full flex items-center justify-center font-semibold text-xs shrink-0 ${
                                   agreement.isActive 
                                     ? 'bg-success/10 text-success' 
                                     : 'bg-muted text-muted-foreground'
                                 }`}>
                                   {agreement.providerName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                                 </div>
-                                <div>
-                                  <p className="font-medium text-sm">{agreement.providerName}</p>
-                                  <p className="text-xs text-muted-foreground truncate max-w-[180px]">
-                                    {agreement.providerEmail}
-                                  </p>
+                                <div className="min-w-0">
+                                  <p className="font-medium text-sm truncate">{agreement.providerName}</p>
+                                  <div className="flex items-center gap-2">
+                                    {!agreement.isActive && (
+                                      <Badge variant="secondary" className="text-[10px] px-1 py-0">Ended</Badge>
+                                    )}
+                                    {!hasDocument && agreement.isActive && (
+                                      <Badge variant="outline" className="text-[10px] px-1 py-0 text-warning border-warning/30">No Doc</Badge>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>
                             
                             {/* State */}
                             <div className="col-span-1">
-                              <Badge variant="outline" className="font-bold">
+                              <Badge variant="outline" className="font-bold text-xs">
                                 {agreement.stateAbbreviation}
                               </Badge>
                             </div>
                             
                             {/* Physician */}
                             <div className="col-span-2">
-                              <p className="text-sm font-medium">Dr. {agreement.physicianName}</p>
+                              <p className="text-sm">Dr. {agreement.physicianName.split(' ')[1] || agreement.physicianName}</p>
                               <p className="text-xs text-muted-foreground">
                                 {formatCadence(agreement.meetingCadence)}
                               </p>
                             </div>
                             
-                            {/* Next Meeting */}
+                            {/* Next Meeting - Clean display with hover for details */}
                             <div className="col-span-2">
                               {!agreement.isActive ? (
-                                <span className="text-xs text-muted-foreground">—</span>
+                                <span className="text-sm text-muted-foreground">—</span>
                               ) : agreement.nextMeetingDate ? (
-                                <div>
-                                  <p className={`text-sm font-medium ${
-                                    meetingOverdue ? 'text-destructive' : 
-                                    meetingUrgent ? 'text-warning' : ''
-                                  }`}>
-                                    {agreement.nextMeetingDate.toLocaleDateString()}
-                                  </p>
-                                  <p className={`text-xs ${
-                                    meetingOverdue ? 'text-destructive' : 
-                                    meetingUrgent ? 'text-warning' : 
-                                    'text-muted-foreground'
-                                  }`}>
+                                <div className="group/meeting relative cursor-default">
+                                  <div className="flex items-center gap-1.5">
+                                    {meetingOverdue && <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+                                    {meetingUrgent && !meetingOverdue && <Clock className="h-3.5 w-3.5 text-warning shrink-0" />}
+                                    <span className={`text-sm ${
+                                      meetingOverdue ? 'text-destructive font-medium' : 
+                                      meetingUrgent ? 'text-warning font-medium' : ''
+                                    }`}>
+                                      {agreement.nextMeetingDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    </span>
+                                  </div>
+                                  {/* Tooltip on hover */}
+                                  <div className="absolute left-0 top-full mt-1 bg-popover border rounded-md shadow-md p-2 text-xs z-10 hidden group-hover/meeting:block whitespace-nowrap">
                                     {meetingOverdue ? (
-                                      <span className="flex items-center gap-1">
-                                        <AlertCircle className="h-3 w-3" />
-                                        {Math.abs(agreement.daysUntilMeeting!)} days overdue
-                                      </span>
+                                      <span className="text-destructive">{Math.abs(agreement.daysUntilMeeting!)} days overdue</span>
                                     ) : agreement.daysUntilMeeting === 0 ? (
-                                      'Today'
-                                    ) : agreement.daysUntilMeeting === 1 ? (
-                                      'Tomorrow'
+                                      <span className="text-warning">Meeting today</span>
                                     ) : (
-                                      `In ${agreement.daysUntilMeeting} days`
+                                      <span>In {agreement.daysUntilMeeting} days</span>
                                     )}
-                                  </p>
+                                  </div>
                                 </div>
                               ) : (
-                                <span className="text-xs text-muted-foreground">No start date</span>
+                                <span className="text-sm text-muted-foreground">Not set</span>
                               )}
                             </div>
                             
-                            {/* Renewal Due */}
+                            {/* Renewal Due - Clean display with hover for details */}
                             <div className="col-span-2">
                               {!agreement.isActive ? (
-                                <span className="text-xs text-muted-foreground">—</span>
+                                <span className="text-sm text-muted-foreground">—</span>
                               ) : agreement.renewalDate ? (
-                                <div>
-                                  <p className={`text-sm font-medium ${
-                                    renewalOverdue ? 'text-destructive' : 
-                                    renewalUrgent ? 'text-destructive' :
-                                    renewalDueSoon ? 'text-warning' : ''
-                                  }`}>
-                                    {agreement.renewalDate.toLocaleDateString()}
-                                  </p>
-                                  <p className={`text-xs ${
-                                    renewalOverdue ? 'text-destructive' : 
-                                    renewalUrgent ? 'text-destructive' :
-                                    renewalDueSoon ? 'text-warning' : 
-                                    'text-muted-foreground'
-                                  }`}>
+                                <div className="group/renewal relative cursor-default">
+                                  <div className="flex items-center gap-1.5">
+                                    {renewalOverdue && <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+                                    {renewalDueSoon && !renewalOverdue && <Clock className="h-3.5 w-3.5 text-warning shrink-0" />}
+                                    <span className={`text-sm ${
+                                      renewalOverdue ? 'text-destructive font-medium' : 
+                                      renewalDueSoon ? 'text-warning font-medium' : ''
+                                    }`}>
+                                      {agreement.renewalDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                                    </span>
+                                  </div>
+                                  {/* Tooltip on hover */}
+                                  <div className="absolute left-0 top-full mt-1 bg-popover border rounded-md shadow-md p-2 text-xs z-10 hidden group-hover/renewal:block whitespace-nowrap">
                                     {renewalOverdue ? (
-                                      <span className="flex items-center gap-1">
-                                        <AlertTriangle className="h-3 w-3" />
-                                        {Math.abs(agreement.daysUntilRenewal!)} days overdue!
-                                      </span>
+                                      <span className="text-destructive font-medium">{Math.abs(agreement.daysUntilRenewal!)} days overdue - needs new agreement!</span>
                                     ) : agreement.daysUntilRenewal! <= 30 ? (
-                                      <span className="flex items-center gap-1">
-                                        <Clock className="h-3 w-3" />
-                                        {agreement.daysUntilRenewal} days left
-                                      </span>
+                                      <span className="text-warning">{agreement.daysUntilRenewal} days until renewal</span>
                                     ) : (
-                                      `In ${agreement.daysUntilRenewal} days`
+                                      <span>{agreement.daysUntilRenewal} days remaining</span>
                                     )}
-                                  </p>
+                                  </div>
                                 </div>
                               ) : (
-                                <span className="text-xs text-muted-foreground">No start date</span>
+                                <span className="text-sm text-muted-foreground">Not set</span>
                               )}
                             </div>
                             
-                            {/* Status */}
-                            <div className="col-span-1">
-                              {agreement.isActive ? (
-                                renewalOverdue ? (
-                                  <Badge variant="destructive">Renewal Due</Badge>
-                                ) : (
-                                  <Badge className="bg-success/10 text-success border-success/20">Active</Badge>
-                                )
-                              ) : (
-                                <Badge variant="secondary">Ended</Badge>
-                              )}
-                            </div>
+                            {/* Actions */}
                             
                             {/* Document */}
                             <div className="col-span-1">
@@ -1061,7 +1043,136 @@ const CollaborativeAgreementsPage = () => {
 
             {/* Notifications Tab */}
             <TabsContent value="notifications">
-              <NotificationQueue />
+              <div className="space-y-6">
+                {/* Compliance Alerts Section */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-warning" />
+                      Compliance Alerts
+                    </CardTitle>
+                    <CardDescription>
+                      Overdue meetings and renewals requiring immediate attention
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const overdueItems = flattenedAgreements.filter(a => 
+                        a.isActive && (
+                          (a.daysUntilMeeting !== null && a.daysUntilMeeting < 0) ||
+                          (a.daysUntilRenewal !== null && a.daysUntilRenewal < 0)
+                        )
+                      );
+                      
+                      const upcomingItems = flattenedAgreements.filter(a =>
+                        a.isActive && (
+                          (a.daysUntilMeeting !== null && a.daysUntilMeeting >= 0 && a.daysUntilMeeting <= 7) ||
+                          (a.daysUntilRenewal !== null && a.daysUntilRenewal >= 0 && a.daysUntilRenewal <= 30)
+                        )
+                      );
+                      
+                      if (overdueItems.length === 0 && upcomingItems.length === 0) {
+                        return (
+                          <div className="text-center py-8 text-muted-foreground">
+                            <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-success" />
+                            <p>No compliance alerts - all agreements are on track!</p>
+                          </div>
+                        );
+                      }
+                      
+                      return (
+                        <div className="space-y-4">
+                          {/* Overdue Section */}
+                          {overdueItems.length > 0 && (
+                            <div>
+                              <h4 className="font-medium text-destructive mb-3 flex items-center gap-2">
+                                <AlertCircle className="h-4 w-4" />
+                                Overdue ({overdueItems.length})
+                              </h4>
+                              <div className="space-y-2">
+                                {overdueItems.map(item => (
+                                  <div key={item.id} className="flex items-center justify-between p-3 rounded-lg border border-destructive/30 bg-destructive/5">
+                                    <div className="flex items-center gap-3">
+                                      <div className="h-8 w-8 rounded-full bg-destructive/10 flex items-center justify-center text-destructive text-xs font-medium">
+                                        {item.providerName.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium">{item.providerName}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          {item.stateAbbreviation} • Dr. {item.physicianName.split(' ')[1] || item.physicianName}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      {item.daysUntilMeeting !== null && item.daysUntilMeeting < 0 && (
+                                        <Badge variant="destructive" className="mb-1">
+                                          Meeting {Math.abs(item.daysUntilMeeting)} days overdue
+                                        </Badge>
+                                      )}
+                                      {item.daysUntilRenewal !== null && item.daysUntilRenewal < 0 && (
+                                        <Badge variant="destructive">
+                                          Renewal {Math.abs(item.daysUntilRenewal)} days overdue
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Upcoming Section */}
+                          {upcomingItems.length > 0 && (
+                            <div>
+                              <h4 className="font-medium text-warning mb-3 flex items-center gap-2">
+                                <Clock className="h-4 w-4" />
+                                Action Needed Soon ({upcomingItems.length})
+                              </h4>
+                              <div className="space-y-2">
+                                {upcomingItems.slice(0, 10).map(item => (
+                                  <div key={item.id} className="flex items-center justify-between p-3 rounded-lg border border-warning/30 bg-warning/5">
+                                    <div className="flex items-center gap-3">
+                                      <div className="h-8 w-8 rounded-full bg-warning/10 flex items-center justify-center text-warning text-xs font-medium">
+                                        {item.providerName.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium">{item.providerName}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          {item.stateAbbreviation} • Dr. {item.physicianName.split(' ')[1] || item.physicianName}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      {item.daysUntilMeeting !== null && item.daysUntilMeeting >= 0 && item.daysUntilMeeting <= 7 && (
+                                        <Badge variant="outline" className="text-warning border-warning/50">
+                                          Meeting in {item.daysUntilMeeting} days
+                                        </Badge>
+                                      )}
+                                      {item.daysUntilRenewal !== null && item.daysUntilRenewal >= 0 && item.daysUntilRenewal <= 30 && (
+                                        <Badge variant="outline" className="text-warning border-warning/50">
+                                          Renewal in {item.daysUntilRenewal} days
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                                {upcomingItems.length > 10 && (
+                                  <p className="text-xs text-muted-foreground text-center py-2">
+                                    +{upcomingItems.length - 10} more items
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+                
+                {/* Manual Notification Queue */}
+                <NotificationQueue />
+              </div>
             </TabsContent>
           </Tabs>
         </div>
