@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   collaborativeAgreements, 
   supervisionMeetings, 
@@ -105,12 +106,18 @@ const CollaborativeAgreementsPage = () => {
     ['draft', 'pending_signatures', 'awaiting_physician_signature', 'awaiting_provider_signatures'].includes(a.workflow_status)
   ).length;
 
+  const { profile, roles } = useAuth();
+  const userRole = roles[0] || 'admin';
+  const userName = profile?.full_name || profile?.email || 'Admin User';
+  const userEmail = profile?.email || '';
+
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar 
-        userRole="admin"
-        userName="Sarah Chen"
-        userEmail="sarah.chen@example.com"
+        userRole={userRole as any}
+        userName={userName}
+        userEmail={userEmail}
+        userAvatarUrl={profile?.avatar_url || undefined}
       />
       
       <main className="pl-64 transition-all duration-300">

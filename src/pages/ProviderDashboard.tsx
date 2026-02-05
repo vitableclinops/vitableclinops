@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { currentUser, getProviderStats, states } from '@/data/mockData';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   MapPin, 
   ClipboardList, 
@@ -45,12 +46,18 @@ const ProviderDashboard = () => {
   const criticalStates = currentUser.states.filter(s => s.state.demandTag === 'critical');
   const complianceTasks = allTasks.filter(t => t.category === 'compliance');
 
+  const { profile, roles } = useAuth();
+  const userRole = roles[0] || 'provider';
+  const userName = profile?.full_name || `${currentUser.firstName} ${currentUser.lastName}`;
+  const userEmail = profile?.email || currentUser.email;
+
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar 
-        userRole={currentUser.role}
-        userName={`${currentUser.firstName} ${currentUser.lastName}`}
-        userEmail={currentUser.email}
+        userRole={userRole as any}
+        userName={userName}
+        userEmail={userEmail}
+        userAvatarUrl={profile?.avatar_url || undefined}
       />
       
       <main className="pl-64 transition-all duration-300">
