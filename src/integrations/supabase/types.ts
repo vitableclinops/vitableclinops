@@ -652,6 +652,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          activation_status: string | null
           actively_licensed_states: string | null
           address_city: string | null
           address_line_1: string | null
@@ -659,6 +660,7 @@ export type Database = {
           address_state: string | null
           auto_renew_licenses: boolean | null
           avatar_url: string | null
+          bio: string | null
           birthday: string | null
           board_certificates: string | null
           caqh_number: string | null
@@ -686,6 +688,8 @@ export type Database = {
           min_patient_age: string | null
           notes: string | null
           npi_number: string | null
+          onboarding_completed: boolean | null
+          onboarding_completed_at: string | null
           patient_age_preference: string | null
           personal_email: string | null
           phone_number: string | null
@@ -702,6 +706,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          activation_status?: string | null
           actively_licensed_states?: string | null
           address_city?: string | null
           address_line_1?: string | null
@@ -709,6 +714,7 @@ export type Database = {
           address_state?: string | null
           auto_renew_licenses?: boolean | null
           avatar_url?: string | null
+          bio?: string | null
           birthday?: string | null
           board_certificates?: string | null
           caqh_number?: string | null
@@ -736,6 +742,8 @@ export type Database = {
           min_patient_age?: string | null
           notes?: string | null
           npi_number?: string | null
+          onboarding_completed?: boolean | null
+          onboarding_completed_at?: string | null
           patient_age_preference?: string | null
           personal_email?: string | null
           phone_number?: string | null
@@ -752,6 +760,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          activation_status?: string | null
           actively_licensed_states?: string | null
           address_city?: string | null
           address_line_1?: string | null
@@ -759,6 +768,7 @@ export type Database = {
           address_state?: string | null
           auto_renew_licenses?: boolean | null
           avatar_url?: string | null
+          bio?: string | null
           birthday?: string | null
           board_certificates?: string | null
           caqh_number?: string | null
@@ -786,6 +796,8 @@ export type Database = {
           min_patient_age?: string | null
           notes?: string | null
           npi_number?: string | null
+          onboarding_completed?: boolean | null
+          onboarding_completed_at?: string | null
           patient_age_preference?: string | null
           personal_email?: string | null
           phone_number?: string | null

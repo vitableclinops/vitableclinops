@@ -12,7 +12,7 @@ import { ProviderTypeStep } from './ProviderTypeStep';
 import { CollaborationConsentStep } from './CollaborationConsentStep';
 import { PROVIDER_TYPE_CONFIG, type Provider, type ProviderType } from '@/types';
 import { useToast } from '@/hooks/use-toast';
-import { useAgreementTasks } from '@/hooks/useAgreementTasks';
+import { useAuth } from '@/hooks/useAuth';
 
 export interface OnboardingData {
   providerId?: string;
@@ -22,6 +22,9 @@ export interface OnboardingData {
   npiNumber: string;
   selectedStates: string[];
   reportedLicenses: ReportedLicense[];
+  avatarUrl?: string;
+  bio?: string;
+  minPatientAge?: string;
 }
 
 export interface ReportedLicense {
@@ -38,7 +41,7 @@ interface OnboardingWizardProps {
   mode: 'new' | 'edit' | 'admin';
   existingProvider?: Provider;
   userId?: string;
-  onComplete: (data: OnboardingData) => void;
+  onComplete: (data: OnboardingData, statesRequiringCollab: string[]) => void;
   onCancel: () => void;
 }
 
@@ -52,11 +55,27 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
-  const { generateAgreementTasks } = useAgreementTasks();
+  const { profile, user } = useAuth();
   const [collaborationConsent, setCollaborationConsent] = useState(false);
   const [statesRequiringCollab, setStatesRequiringCollab] = useState<string[]>([]);
   
   const [data, setData] = useState<OnboardingData>(() => {
+    // Pre-populate from existing profile data if available
+    if (profile) {
+      const names = (profile.full_name || '').split(' ');
+      return {
+        providerId: profile.id,
+        providerType: (profile.profession as ProviderType) || null,
+        providerName: profile.full_name || '',
+        providerEmail: profile.email,
+        npiNumber: profile.npi_number || '',
+        selectedStates: profile.actively_licensed_states?.split(',').filter(Boolean) || [],
+        reportedLicenses: [],
+        avatarUrl: profile.avatar_url || undefined,
+        bio: profile.bio || undefined,
+        minPatientAge: profile.min_patient_age || undefined,
+      };
+    }
     if (existingProvider) {
       const fullName = `${existingProvider.firstName} ${existingProvider.lastName}`;
       return {
@@ -82,7 +101,7 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
     return {
       providerType: null,
       providerName: '',
-      providerEmail: '',
+      providerEmail: user?.email || '',
       npiNumber: '',
       selectedStates: [],
       reportedLicenses: [],
@@ -120,7 +139,7 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
   const steps: Step[] = useMemo(() => {
     const baseSteps: Step[] = [
       { id: 'type', label: 'Provider Type', icon: UserCog },
-      { id: 'welcome', label: 'Your Info', icon: User },
+      { id: 'welcome', label: 'Your Profile', icon: User },
     ];
 
     // If provider type requires licensure, add state and license steps
@@ -157,21 +176,98 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
     }
   };
 
+  const persistOnboardingData = async () => {
+    if (!profile?.id) {
+      throw new Error('No profile found');
+    }
+
+    // Parse name into first/last
+    const nameParts = data.providerName.trim().split(' ');
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    // Update profiles table with all onboarding data
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        full_name: data.providerName,
+        first_name: firstName,
+        last_name: lastName,
+        npi_number: data.npiNumber || null,
+        profession: data.providerType,
+        avatar_url: data.avatarUrl || null,
+        bio: data.bio || null,
+        min_patient_age: data.minPatientAge || null,
+        actively_licensed_states: data.selectedStates.join(','),
+        onboarding_completed: true,
+        onboarding_completed_at: new Date().toISOString(),
+        activation_status: statesRequiringCollab.length > 0 ? 'pending_agreements' : 'pending_licenses',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', profile.id);
+
+    if (profileError) throw profileError;
+
+    // Insert/update provider_licenses for each selected state
+    for (const stateAbbr of data.selectedStates) {
+      const reportedLicense = data.reportedLicenses.find(l => l.state === stateAbbr);
+      const requiresCollab = statesRequiringCollab.includes(stateAbbr);
+
+      // Check if license already exists
+      const { data: existingLicense } = await supabase
+        .from('provider_licenses')
+        .select('id')
+        .eq('profile_id', profile.id)
+        .eq('state_abbreviation', stateAbbr)
+        .maybeSingle();
+
+      if (existingLicense) {
+        // Update existing
+        await supabase
+          .from('provider_licenses')
+          .update({
+            license_number: reportedLicense?.licenseNumber || null,
+            expiration_date: reportedLicense?.expirationDate || null,
+            license_type: reportedLicense?.licenseType || 'APRN',
+            requires_collab_agreement: requiresCollab,
+            status: 'reported',
+            notes: reportedLicense?.notes || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingLicense.id);
+      } else {
+        // Insert new
+        await supabase
+          .from('provider_licenses')
+          .insert({
+            profile_id: profile.id,
+            provider_email: data.providerEmail,
+            state_abbreviation: stateAbbr,
+            license_number: reportedLicense?.licenseNumber || null,
+            expiration_date: reportedLicense?.expirationDate || null,
+            license_type: reportedLicense?.licenseType || 'APRN',
+            requires_collab_agreement: requiresCollab,
+            status: 'reported',
+            notes: reportedLicense?.notes || null,
+          });
+      }
+    }
+  };
+
   const handleComplete = async () => {
     setIsSubmitting(true);
     try {
-      // Call onComplete with data
-      onComplete(data);
+      // Persist data to Supabase
+      await persistOnboardingData();
 
-      // If collaboration consent was given, create pending agreement records
-      if (collaborationConsent && statesRequiringCollab.length > 0) {
-        // This will be handled by the parent component (ProviderOnboardingPage)
-        // which will listen for onComplete callback and create agreements
-      }
+      // Call onComplete with data and collab states
+      onComplete(data, statesRequiringCollab);
 
       toast({
-        title: 'Success',
-        description: 'Your onboarding is complete. Clinical Operations will contact you next steps.',
+        title: 'Onboarding Complete!',
+        description: statesRequiringCollab.length > 0
+          ? 'Clinical Operations will contact you about collaborative agreements.'
+          : 'Your profile has been saved. Welcome aboard!',
       });
     } catch (error) {
       console.error('Error completing onboarding:', error);
@@ -370,9 +466,9 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
           </Button>
 
           {currentStep === steps.length - 1 ? (
-            <Button onClick={handleComplete}>
+            <Button onClick={handleComplete} disabled={isSubmitting}>
               <Check className="h-4 w-4 mr-2" />
-              {mode === 'new' ? 'Complete Setup' : 'Save Changes'}
+              {isSubmitting ? 'Saving...' : mode === 'new' ? 'Complete Setup' : 'Save Changes'}
             </Button>
           ) : (
             <Button onClick={handleNext} disabled={!canProceed()}>

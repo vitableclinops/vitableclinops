@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps) {
-  const { user, roles, rolesHydrated, loading } = useAuth();
+  const { user, profile, roles, rolesHydrated, loading } = useAuth();
   const location = useLocation();
 
   // Always wait for the auth session. If the route is role-gated, also wait
@@ -33,6 +33,24 @@ export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps)
     }
   }
 
+  // First-login onboarding enforcement for providers
+  // Skip if already on onboarding page or if user has admin/leadership/physician role
+  const isOnboardingPage = location.pathname === '/onboarding';
+  const isProviderRole = roles.includes('provider');
+  const isNonProviderRole = roles.includes('admin') || roles.includes('leadership') || roles.includes('physician');
+  const hasCompletedOnboarding = profile?.onboarding_completed === true;
+
+  // Only enforce onboarding for pure provider users who haven't completed it
+  if (
+    !isOnboardingPage &&
+    isProviderRole &&
+    !isNonProviderRole &&
+    rolesHydrated &&
+    profile &&
+    !hasCompletedOnboarding
+  ) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
   return <>{children}</>;
 }
-

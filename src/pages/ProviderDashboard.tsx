@@ -1,16 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AppSidebar } from '@/components/AppSidebar';
 import { StatCard } from '@/components/StatCard';
-import { StateCard } from '@/components/StateCard';
-import { TaskCard } from '@/components/TaskCard';
-import { ActivationReadinessCard } from '@/components/ActivationReadinessCard';
-import { ComplianceStatusCard } from '@/components/ComplianceStatusCard';
-import { DemandTagBadge } from '@/components/DemandTagBadge';
+import { ReadinessScreen } from '@/components/ReadinessScreen';
 import { ProviderMeetingRSVP } from '@/components/meetings/ProviderMeetingRSVP';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { currentUser, getProviderStats, states } from '@/data/mockData';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { 
   MapPin, 
@@ -19,38 +16,104 @@ import {
   CheckCircle2,
   Clock,
   ChevronRight,
-  Receipt,
   Users,
   ShieldCheck,
-  FileText
+  FileText,
+  Loader2
 } from 'lucide-react';
-import type { Task } from '@/types';
 
 const ProviderDashboard = () => {
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const stats = getProviderStats(currentUser);
-  
-  // Get all tasks sorted by priority
-  const allTasks = currentUser.states.flatMap(s => 
-    s.tasks.map(t => ({ ...t, stateName: s.state.name, state: s.state }))
-  );
-  
-  const urgentTasks = allTasks.filter(t => 
-    t.status === 'blocked' || t.status === 'in_progress'
-  );
-  
-  const upcomingTasks = allTasks.filter(t => 
-    t.status === 'not_started' || t.status === 'submitted'
-  ).slice(0, 5);
-
-  // Get states with demand tags
-  const criticalStates = currentUser.states.filter(s => s.state.demandTag === 'critical');
-  const complianceTasks = allTasks.filter(t => t.category === 'compliance');
-
   const { profile, roles } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [licenses, setLicenses] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [agreements, setAgreements] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState('readiness');
+
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        // Fetch licenses
+        const { data: licenseData } = await supabase
+          .from('provider_licenses')
+          .select('*')
+          .eq('profile_id', profile.id);
+        setLicenses(licenseData || []);
+
+        // Fetch tasks
+        const { data: taskData } = await supabase
+          .from('agreement_tasks')
+          .select('*')
+          .eq('provider_id', profile.id)
+          .order('created_at', { ascending: false });
+        setTasks(taskData || []);
+
+        // Fetch agreements via agreement_providers
+        const { data: agreementData } = await supabase
+          .from('agreement_providers')
+          .select(`
+            *,
+            agreement:agreement_id (
+              id,
+              state_name,
+              state_abbreviation,
+              workflow_status,
+              physician_name,
+              start_date
+            )
+          `)
+          .eq('provider_id', profile.id);
+        setAgreements(agreementData || []);
+
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [profile?.id]);
+
   const userRole = roles[0] || 'provider';
-  const userName = profile?.full_name || `${currentUser.firstName} ${currentUser.lastName}`;
-  const userEmail = profile?.email || currentUser.email;
+  const userName = profile?.full_name || 'Provider';
+  const userEmail = profile?.email || '';
+  const firstName = profile?.first_name || userName.split(' ')[0];
+
+  // Calculate stats
+  const licensedStatesCount = licenses.filter(l => l.status === 'verified' || l.status === 'active').length;
+  const totalStatesCount = licenses.length;
+  const pendingTasksCount = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress').length;
+  const blockedTasksCount = tasks.filter(t => t.status === 'blocked').length;
+  const activeAgreementsCount = agreements.filter(a => a.agreement?.workflow_status === 'active').length;
+  const pendingAgreementsCount = agreements.filter(a => 
+    a.agreement?.workflow_status !== 'active' && a.agreement?.workflow_status !== 'terminated'
+  ).length;
+
+  // Determine if provider has completed basic setup
+  const hasCompletedOnboarding = profile?.onboarding_completed === true;
+  const showReadinessFirst = !hasCompletedOnboarding || pendingAgreementsCount > 0 || licensedStatesCount < totalStatesCount;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <AppSidebar 
+          userRole={userRole as any}
+          userName={userName}
+          userEmail={userEmail}
+          userAvatarUrl={profile?.avatar_url || undefined}
+        />
+        <main className="pl-64 transition-all duration-300">
+          <div className="flex items-center justify-center min-h-screen">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -66,179 +129,240 @@ const ProviderDashboard = () => {
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-foreground">
-              Welcome back, {currentUser.firstName}
+              Welcome back, {firstName}
             </h1>
             <p className="text-muted-foreground mt-1">
-              Here's your licensure overview and what needs your attention.
+              {showReadinessFirst 
+                ? 'Complete your activation requirements to start practicing.'
+                : 'Here\'s your licensure overview and what needs your attention.'}
             </p>
           </div>
 
           {/* Stats Grid */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-8">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
             <StatCard
               title="Licensed States"
-              value={stats.licensedStates}
-              subtitle={`of ${stats.totalStates} total`}
+              value={licensedStatesCount}
+              subtitle={`of ${totalStatesCount} selected`}
               icon={MapPin}
-              variant="success"
+              variant={licensedStatesCount === totalStatesCount ? 'success' : 'default'}
             />
             <StatCard
               title="Pending Tasks"
-              value={stats.pendingTasks}
+              value={pendingTasksCount}
               subtitle="Awaiting action"
               icon={ClipboardList}
               variant="default"
             />
             <StatCard
-              title="Blocked Tasks"
-              value={stats.blockedTasks}
-              subtitle="Needs attention"
-              icon={AlertTriangle}
-              variant={stats.blockedTasks > 0 ? 'danger' : 'default'}
+              title="Active Agreements"
+              value={activeAgreementsCount}
+              subtitle={pendingAgreementsCount > 0 ? `${pendingAgreementsCount} pending` : 'All set'}
+              icon={Users}
+              variant={pendingAgreementsCount > 0 ? 'warning' : 'success'}
             />
             <StatCard
-              title="Compliance"
-              value={stats.complianceComplete ? '✓' : stats.overdueComplianceTasks}
-              subtitle={stats.complianceComplete ? 'All complete' : 'overdue tasks'}
+              title="Status"
+              value={profile?.activation_status === 'active' ? 'Active' : 'Pending'}
+              subtitle={profile?.activation_status?.replace(/_/g, ' ') || 'Setting up'}
               icon={ShieldCheck}
-              variant={stats.complianceComplete ? 'success' : 'warning'}
-            />
-            <StatCard
-              title="Reimbursements"
-              value={stats.pendingReimbursements}
-              subtitle="Pending approval"
-              icon={Receipt}
-              variant="warning"
+              variant={profile?.activation_status === 'active' ? 'success' : 'warning'}
             />
           </div>
 
-          {/* Priority states alert */}
-          {criticalStates.length > 0 && (
-            <Card className="mb-8 border-destructive/30 bg-destructive/5">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <AlertTriangle className="h-5 w-5 text-destructive" />
-                  Priority States
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
-                  These states have high demand and need expedited licensure:
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  {criticalStates.map(ps => (
-                    <div 
-                      key={ps.id}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card border"
-                    >
-                      <span className="font-medium">{ps.state.name}</span>
-                      <DemandTagBadge tag={ps.state.demandTag!} size="sm" />
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {/* Main Content Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsList>
+              <TabsTrigger value="readiness" className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                Readiness
+              </TabsTrigger>
+              <TabsTrigger value="licenses" className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Licenses
+              </TabsTrigger>
+              <TabsTrigger value="agreements" className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Agreements
+              </TabsTrigger>
+              <TabsTrigger value="tasks" className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4" />
+                Tasks
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Urgent Tasks */}
-          {urgentTasks.length > 0 && (
-            <Card className="mb-8 border-warning/20 bg-warning/5">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <AlertTriangle className="h-5 w-5 text-warning" />
-                  Needs Your Attention
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {urgentTasks.map(task => (
-                  <div key={task.id}>
-                    {task.demandReason && (
-                      <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3 text-warning" />
-                        {task.demandReason}
-                      </p>
-                    )}
-                    <TaskCard 
-                      task={task} 
-                      stateName={task.stateName}
-                      showState
-                      onClick={() => setSelectedTask(task)}
-                    />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+            <div className="grid gap-8 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <TabsContent value="readiness" className="mt-0">
+                  <ReadinessScreen />
+                </TabsContent>
 
-          {/* Main content grid */}
-          <div className="grid gap-8 lg:grid-cols-3">
-            {/* States section */}
-            <div className="lg:col-span-2">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-foreground">Your States</h2>
-                <Button variant="ghost" size="sm" className="text-muted-foreground">
-                  View all
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
+                <TabsContent value="licenses" className="mt-0">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Your Licenses</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {licenses.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-8">
+                          No licenses reported yet.
+                        </p>
+                      ) : (
+                        <div className="space-y-4">
+                          {licenses.map((license) => (
+                            <div 
+                              key={license.id} 
+                              className="flex items-center justify-between p-4 bg-muted/50 rounded-lg"
+                            >
+                              <div className="flex items-center gap-3">
+                                <MapPin className="h-5 w-5 text-muted-foreground" />
+                                <div>
+                                  <p className="font-medium">{license.state_abbreviation}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {license.license_type || 'APRN'} • {license.license_number || 'No number'}
+                                  </p>
+                                </div>
+                              </div>
+                              <Badge variant={
+                                license.status === 'verified' || license.status === 'active' 
+                                  ? 'default' 
+                                  : 'secondary'
+                              }>
+                                {license.status || 'Reported'}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="agreements" className="mt-0">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Collaborative Agreements</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {agreements.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-8">
+                          No collaborative agreements yet.
+                        </p>
+                      ) : (
+                        <div className="space-y-4">
+                          {agreements.map((item) => (
+                            <div 
+                              key={item.id} 
+                              className="flex items-center justify-between p-4 bg-muted/50 rounded-lg"
+                            >
+                              <div className="flex items-center gap-3">
+                                <Users className="h-5 w-5 text-muted-foreground" />
+                                <div>
+                                  <p className="font-medium">{item.agreement?.state_name}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {item.agreement?.physician_name}
+                                  </p>
+                                </div>
+                              </div>
+                              <Badge variant={
+                                item.agreement?.workflow_status === 'active' 
+                                  ? 'default' 
+                                  : item.agreement?.workflow_status === 'draft'
+                                    ? 'secondary'
+                                    : 'outline'
+                              }>
+                                {item.agreement?.workflow_status || 'Draft'}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="tasks" className="mt-0">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Your Tasks</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {tasks.length === 0 ? (
+                        <div className="text-center py-8">
+                          <CheckCircle2 className="h-8 w-8 mx-auto text-success mb-2" />
+                          <p className="text-muted-foreground">All caught up!</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {tasks.slice(0, 10).map((task) => (
+                            <div 
+                              key={task.id} 
+                              className="flex items-start gap-3 p-4 bg-muted/50 rounded-lg"
+                            >
+                              {task.status === 'completed' ? (
+                                <CheckCircle2 className="h-5 w-5 text-success mt-0.5" />
+                              ) : task.status === 'blocked' ? (
+                                <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
+                              ) : (
+                                <Clock className="h-5 w-5 text-warning mt-0.5" />
+                              )}
+                              <div className="flex-1">
+                                <p className="font-medium">{task.title}</p>
+                                {task.description && (
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    {task.description}
+                                  </p>
+                                )}
+                                {task.state_name && (
+                                  <Badge variant="outline" className="mt-2">
+                                    {task.state_name}
+                                  </Badge>
+                                )}
+                              </div>
+                              <Badge variant={
+                                task.status === 'completed' ? 'default' :
+                                task.status === 'blocked' ? 'destructive' :
+                                'secondary'
+                              }>
+                                {task.status}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                {currentUser.states.map(providerState => (
-                  <div key={providerState.id} className="space-y-3">
-                    <StateCard 
-                      providerState={providerState}
-                      onClick={() => console.log('View state:', providerState.state.name)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Sidebar */}
-            <div className="space-y-6">
-              {/* Upcoming Meetings RSVP */}
-              <ProviderMeetingRSVP />
+              {/* Sidebar */}
+              <div className="space-y-6">
+                <ProviderMeetingRSVP />
 
-              {/* Compliance status */}
-              {currentUser.complianceStatus && (
-                <ComplianceStatusCard 
-                  status={currentUser.complianceStatus}
-                  tasks={complianceTasks}
-                />
-              )}
-
-              {/* Upcoming tasks */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Up Next</CardTitle>
-                    <Button variant="ghost" size="sm" className="text-muted-foreground h-8">
-                      View all
-                      <ChevronRight className="h-4 w-4 ml-1" />
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Quick Links</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <Button variant="ghost" className="w-full justify-start" asChild>
+                      <a href="/profile/settings">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Profile Settings
+                        <ChevronRight className="h-4 w-4 ml-auto" />
+                      </a>
                     </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {upcomingTasks.slice(0, 3).map(task => (
-                    <TaskCard 
-                      key={task.id} 
-                      task={task}
-                      stateName={task.stateName}
-                      showState
-                      onClick={() => setSelectedTask(task)}
-                    />
-                  ))}
-                  {upcomingTasks.length === 0 && (
-                    <div className="py-4 text-center">
-                      <CheckCircle2 className="h-8 w-8 mx-auto text-success mb-2" />
-                      <p className="text-sm text-muted-foreground">
-                        All caught up!
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                    <Button variant="ghost" className="w-full justify-start" asChild>
+                      <a href="/knowledge">
+                        <ShieldCheck className="h-4 w-4 mr-2" />
+                        Knowledge Base
+                        <ChevronRight className="h-4 w-4 ml-auto" />
+                      </a>
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
-          </div>
+          </Tabs>
         </div>
       </main>
     </div>
