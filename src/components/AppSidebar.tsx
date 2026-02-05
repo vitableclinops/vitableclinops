@@ -102,6 +102,12 @@ const navItems: NavItem[] = [
     roles: ['admin'] 
   },
   { 
+    label: 'Provider Grid', 
+    icon: BarChart3, 
+    href: '/grid', 
+    roles: ['admin', 'leadership'] 
+  },
+  { 
     label: 'Reports', 
     icon: BarChart3, 
     href: '/reports', 
