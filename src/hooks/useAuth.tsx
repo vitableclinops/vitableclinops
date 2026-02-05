@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
@@ -25,49 +25,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const cancelledRef = useRef(false);
+
   useEffect(() => {
-    // Set up auth state listener BEFORE checking session
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+    cancelledRef.current = false;
 
-        if (session?.user) {
-          // Fetch profile and roles
-          setTimeout(async () => {
-            const [profileResult, rolesResult] = await Promise.all([
-              supabase
-                .from('profiles')
-                .select('*')
-                .eq('user_id', session.user.id)
-                .maybeSingle(),
-              supabase
-                .from('user_roles')
-                .select('role')
-                .eq('user_id', session.user.id)
-            ]);
+    const fetchProfileAndRoles = async (userId: string) => {
+      const [profileResult, rolesResult] = await Promise.all([
+        supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('user_roles').select('role').eq('user_id', userId),
+      ]);
 
-            setProfile(profileResult.data);
-            setRoles((rolesResult.data || []).map(r => r.role as AppRole));
-          }, 0);
-        } else {
-          setProfile(null);
-          setRoles([]);
-        }
-        
-        setLoading(false);
+      if (cancelledRef.current) return;
+
+      if (profileResult.error) {
+        console.error('Error fetching profile:', profileResult.error);
       }
-    );
+      if (rolesResult.error) {
+        console.error('Error fetching roles:', rolesResult.error);
+      }
 
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        setLoading(false);
+      setProfile(profileResult.data ?? null);
+      setRoles((rolesResult.data ?? []).map((r) => r.role as AppRole));
+    };
+
+    const applySession = async (nextSession: Session | null) => {
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+
+      if (nextSession?.user) {
+        await fetchProfileAndRoles(nextSession.user.id);
+      } else {
+        if (cancelledRef.current) return;
+        setProfile(null);
+        setRoles([]);
+      }
+    };
+
+    // Listen first (covers OAuth redirects), but also proactively hydrate from getSession
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      try {
+        setLoading(true);
+        await applySession(nextSession);
+      } finally {
+        if (!cancelledRef.current) setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    (async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) console.error('Error getting session:', error);
+        await applySession(data.session);
+      } finally {
+        if (!cancelledRef.current) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelledRef.current = true;
+      subscription.unsubscribe();
+    };
   }, []);
+
 
   const signOut = async () => {
     await supabase.auth.signOut();
