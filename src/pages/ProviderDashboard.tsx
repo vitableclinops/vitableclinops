@@ -6,6 +6,7 @@ import { TaskCard } from '@/components/TaskCard';
 import { ActivationReadinessCard } from '@/components/ActivationReadinessCard';
 import { ComplianceStatusCard } from '@/components/ComplianceStatusCard';
 import { DemandTagBadge } from '@/components/DemandTagBadge';
+import { ProviderMeetingRSVP } from '@/components/meetings/ProviderMeetingRSVP';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -194,6 +195,9 @@ const ProviderDashboard = () => {
 
             {/* Sidebar */}
             <div className="space-y-6">
+              {/* Upcoming Meetings RSVP */}
+              <ProviderMeetingRSVP />
+
               {/* Compliance status */}
               {currentUser.complianceStatus && (
                 <ComplianceStatusCard 
