@@ -47,6 +47,21 @@ interface License {
   expiration_date: string | null;
 }
 
+interface Conflict {
+  email: string;
+  providerName: string;
+  field: string;
+  fieldLabel: string;
+  currentValue: any;
+  newValue: any;
+}
+
+interface FieldResolution {
+  email: string;
+  field: string;
+  useNew: boolean;
+}
+
 function parseLicenses(licenseText: string): License[] {
   if (!licenseText || licenseText.trim() === '') return [];
   
@@ -92,22 +107,18 @@ function parseLicenses(licenseText: string): License[] {
 function parseActiveStates(statesText: string): string {
   if (!statesText || statesText.trim() === '') return '';
   
-  // Extract state abbreviations from numbered list format
   const states: string[] = [];
   const matches = statesText.matchAll(/\d+\.\s*([A-Z]{2})/gi);
   for (const match of matches) {
     states.push(match[1].toUpperCase());
   }
   
-  // Remove duplicates and sort
   return [...new Set(states)].sort().join(', ');
 }
 
 function normalizePhone(phone: string): string {
   if (!phone) return '';
-  // Remove all non-digits except leading +
   const digits = phone.replace(/[^\d+]/g, '');
-  // Format as (XXX) XXX-XXXX for US numbers
   if (digits.length === 10) {
     return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
@@ -119,7 +130,6 @@ function normalizePhone(phone: string): string {
 
 function parseDate(dateStr: string): string | null {
   if (!dateStr || dateStr.trim() === '') return null;
-  // Handle YYYY-MM-DD format
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     return dateStr;
   }
@@ -129,6 +139,96 @@ function parseDate(dateStr: string): string | null {
 function boolFromString(str: string): boolean {
   return str?.toLowerCase() === 'yes' || str?.toLowerCase() === 'true';
 }
+
+// Check if two values are significantly different (not just formatting)
+function isSignificantDifference(currentVal: any, newVal: any, fieldName: string): boolean {
+  if (currentVal === null || currentVal === undefined || currentVal === '') {
+    return false; // No conflict if current is empty
+  }
+  if (newVal === null || newVal === undefined || newVal === '') {
+    return false; // No conflict if new is empty - we won't overwrite with empty
+  }
+  
+  // Normalize for comparison
+  const normalizedCurrent = String(currentVal).toLowerCase().trim();
+  const normalizedNew = String(newVal).toLowerCase().trim();
+  
+  // Same after normalization = no conflict
+  if (normalizedCurrent === normalizedNew) {
+    return false;
+  }
+  
+  // Phone number normalization
+  if (fieldName === 'phone_number') {
+    const currentDigits = String(currentVal).replace(/\D/g, '');
+    const newDigits = String(newVal).replace(/\D/g, '');
+    // If just last 10 digits match, consider it the same
+    if (currentDigits.slice(-10) === newDigits.slice(-10)) {
+      return false;
+    }
+  }
+  
+  // NPI - normalize by removing non-digits
+  if (fieldName === 'npi_number') {
+    const currentDigits = String(currentVal).replace(/\D/g, '');
+    const newDigits = String(newVal).replace(/\D/g, '');
+    if (currentDigits === newDigits) {
+      return false;
+    }
+  }
+  
+  // Dates - normalize format
+  if (fieldName.includes('date') || fieldName === 'birthday') {
+    const current = new Date(currentVal);
+    const newDate = new Date(newVal);
+    if (!isNaN(current.getTime()) && !isNaN(newDate.getTime())) {
+      if (current.toISOString().split('T')[0] === newDate.toISOString().split('T')[0]) {
+        return false;
+      }
+    }
+  }
+  
+  // Boolean fields
+  if (typeof currentVal === 'boolean' || typeof newVal === 'boolean') {
+    const currentBool = currentVal === true || currentVal === 'true' || currentVal === 'yes';
+    const newBool = newVal === true || newVal === 'true' || newVal === 'yes';
+    return currentBool !== newBool;
+  }
+  
+  // At this point, values are different
+  return true;
+}
+
+const fieldLabels: Record<string, string> = {
+  full_name: 'Full Name',
+  first_name: 'First Name',
+  middle_name: 'Middle Name',
+  last_name: 'Last Name',
+  preferred_name: 'Preferred Name',
+  credentials: 'Credentials',
+  profession: 'Profession',
+  medallion_id: 'Medallion ID',
+  board_certificates: 'Board Certificates',
+  practice_restrictions: 'Practice Restrictions',
+  primary_specialty: 'Primary Specialty',
+  secondary_contact_email: 'Secondary Email',
+  employment_offer_date: 'Offer Date',
+  employment_start_date: 'Start Date',
+  caqh_number: 'CAQH Number',
+  phone_number: 'Phone',
+  birthday: 'Birthday',
+  pronoun: 'Pronoun',
+  npi_number: 'NPI',
+  address_line_1: 'Address Line 1',
+  address_line_2: 'Address Line 2',
+  address_city: 'City',
+  address_state: 'State',
+  postal_code: 'Postal Code',
+  actively_licensed_states: 'Active States',
+  has_caqh_management: 'CAQH Management',
+  auto_renew_licenses: 'Auto-Renew Licenses',
+  has_collaborative_agreements: 'Has Collab Agreements',
+};
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -140,15 +240,32 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { providers } = await req.json() as { providers: ProviderRow[] };
+    const body = await req.json();
+    const { providers, mode, resolutions } = body as { 
+      providers: ProviderRow[]; 
+      mode?: 'preview' | 'apply';
+      resolutions?: FieldResolution[];
+    };
     
     if (!providers || !Array.isArray(providers)) {
       throw new Error('Invalid request: providers array required');
     }
 
+    const importMode = mode || 'apply';
+    const resolvedFields = new Map<string, boolean>();
+    
+    if (resolutions) {
+      for (const res of resolutions) {
+        resolvedFields.set(`${res.email}:${res.field}`, res.useNew);
+      }
+    }
+
     const results = {
       profilesUpserted: 0,
       licensesInserted: 0,
+      fieldsUpdated: 0,
+      fieldsFilled: 0,
+      conflicts: [] as Conflict[],
       errors: [] as string[],
     };
 
@@ -160,11 +277,10 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Parse active states
         const activelyLicensedStates = parseActiveStates(provider['Actively licensed states'] || '');
 
-        // Upsert profile
-        const profileData = {
+        // Build new data from CSV
+        const newProfileData: Record<string, any> = {
           email,
           full_name: provider['Full name']?.trim() || null,
           first_name: provider['First Name']?.trim() || null,
@@ -194,80 +310,162 @@ Deno.serve(async (req) => {
           address_state: provider['Address State']?.trim() || null,
           postal_code: provider['Postal code']?.trim() || null,
           actively_licensed_states: activelyLicensedStates,
-          employment_status: 'active',
         };
 
+        // Check if profile exists
         const { data: existingProfile } = await supabase
           .from('profiles')
-          .select('id')
+          .select('*')
           .eq('email', email)
           .maybeSingle();
 
-        let profileId: string;
+        const providerName = newProfileData.full_name || email;
         
         if (existingProfile) {
-          // Update existing profile
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update(profileData)
-            .eq('id', existingProfile.id);
+          // Build update data - only fill missing or resolve conflicts
+          const updateData: Record<string, any> = {};
           
-          if (updateError) throw updateError;
-          profileId = existingProfile.id;
-        } else {
-          // Insert new profile
-          const { data: newProfile, error: insertError } = await supabase
-            .from('profiles')
-            .insert(profileData)
-            .select('id')
-            .single();
-          
-          if (insertError) throw insertError;
-          profileId = newProfile.id;
-        }
-        
-        results.profilesUpserted++;
-
-        // Parse and insert licenses
-        const licenses = parseLicenses(provider.Licenses || '');
-        
-        for (const license of licenses) {
-          // Check if license already exists
-          const { data: existingLicense } = await supabase
-            .from('provider_licenses')
-            .select('id')
-            .eq('profile_id', profileId)
-            .eq('license_number', license.license_number)
-            .eq('state_abbreviation', license.state_abbreviation)
-            .maybeSingle();
-
-          if (existingLicense) {
-            // Update existing license
-            await supabase
-              .from('provider_licenses')
-              .update({
-                status: license.status,
-                issue_date: license.issue_date,
-                expiration_date: license.expiration_date,
-              })
-              .eq('id', existingLicense.id);
-          } else {
-            // Insert new license
-            const { error: licenseError } = await supabase
-              .from('provider_licenses')
-              .insert({
-                profile_id: profileId,
-                provider_email: email,
-                license_number: license.license_number,
-                state_abbreviation: license.state_abbreviation,
-                status: license.status,
-                issue_date: license.issue_date,
-                expiration_date: license.expiration_date,
-              });
-
-            if (!licenseError) {
-              results.licensesInserted++;
+          for (const [field, newValue] of Object.entries(newProfileData)) {
+            if (field === 'email') continue; // Never update email
+            
+            const currentValue = existingProfile[field];
+            const isEmpty = currentValue === null || currentValue === undefined || currentValue === '';
+            
+            if (isEmpty && newValue !== null && newValue !== undefined && newValue !== '') {
+              // Fill missing field
+              updateData[field] = newValue;
+              results.fieldsFilled++;
+            } else if (!isEmpty && newValue !== null && newValue !== undefined && newValue !== '') {
+              // Both have values - check for significant difference
+              if (isSignificantDifference(currentValue, newValue, field)) {
+                const resolutionKey = `${email}:${field}`;
+                
+                if (importMode === 'preview') {
+                  // Report conflict
+                  results.conflicts.push({
+                    email,
+                    providerName,
+                    field,
+                    fieldLabel: fieldLabels[field] || field,
+                    currentValue,
+                    newValue,
+                  });
+                } else {
+                  // Check if resolution exists
+                  const useNew = resolvedFields.get(resolutionKey);
+                  if (useNew === true) {
+                    updateData[field] = newValue;
+                    results.fieldsUpdated++;
+                  }
+                  // If useNew is false or undefined, keep current (don't update)
+                }
+              }
             }
+          }
+
+          if (importMode === 'apply' && Object.keys(updateData).length > 0) {
+            const { error: updateError } = await supabase
+              .from('profiles')
+              .update(updateData)
+              .eq('id', existingProfile.id);
+            
+            if (updateError) throw updateError;
+          }
+          
+          results.profilesUpserted++;
+          
+          // Handle licenses
+          if (importMode === 'apply') {
+            const licenses = parseLicenses(provider.Licenses || '');
+            
+            for (const license of licenses) {
+              const { data: existingLicense } = await supabase
+                .from('provider_licenses')
+                .select('id')
+                .eq('profile_id', existingProfile.id)
+                .eq('license_number', license.license_number)
+                .eq('state_abbreviation', license.state_abbreviation)
+                .maybeSingle();
+
+              if (existingLicense) {
+                // Update existing license - fill missing dates only
+                const { data: licenseDetails } = await supabase
+                  .from('provider_licenses')
+                  .select('issue_date, expiration_date')
+                  .eq('id', existingLicense.id)
+                  .single();
+                  
+                const licenseUpdate: Record<string, any> = { status: license.status };
+                if (!licenseDetails?.issue_date && license.issue_date) {
+                  licenseUpdate.issue_date = license.issue_date;
+                }
+                if (!licenseDetails?.expiration_date && license.expiration_date) {
+                  licenseUpdate.expiration_date = license.expiration_date;
+                }
+                
+                await supabase
+                  .from('provider_licenses')
+                  .update(licenseUpdate)
+                  .eq('id', existingLicense.id);
+              } else {
+                const { error: licenseError } = await supabase
+                  .from('provider_licenses')
+                  .insert({
+                    profile_id: existingProfile.id,
+                    provider_email: email,
+                    license_number: license.license_number,
+                    state_abbreviation: license.state_abbreviation,
+                    status: license.status,
+                    issue_date: license.issue_date,
+                    expiration_date: license.expiration_date,
+                  });
+
+                if (!licenseError) {
+                  results.licensesInserted++;
+                }
+              }
+            }
+          }
+        } else {
+          // New profile - insert everything
+          if (importMode === 'apply') {
+            const insertData = {
+              ...newProfileData,
+              employment_status: 'active',
+            };
+            
+            const { data: newProfile, error: insertError } = await supabase
+              .from('profiles')
+              .insert(insertData)
+              .select('id')
+              .single();
+            
+            if (insertError) throw insertError;
+            
+            results.profilesUpserted++;
+            
+            const licenses = parseLicenses(provider.Licenses || '');
+            
+            for (const license of licenses) {
+              const { error: licenseError } = await supabase
+                .from('provider_licenses')
+                .insert({
+                  profile_id: newProfile.id,
+                  provider_email: email,
+                  license_number: license.license_number,
+                  state_abbreviation: license.state_abbreviation,
+                  status: license.status,
+                  issue_date: license.issue_date,
+                  expiration_date: license.expiration_date,
+                });
+
+              if (!licenseError) {
+                results.licensesInserted++;
+              }
+            }
+          } else {
+            // Preview mode - just count
+            results.profilesUpserted++;
           }
         }
       } catch (err) {
