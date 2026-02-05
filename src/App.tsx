@@ -23,6 +23,8 @@ import ProfileSettingsPage from "./pages/ProfileSettingsPage";
 import ProviderStateGridPage from "./pages/ProviderStateGridPage";
 import ProviderDirectoryPage from "./pages/ProviderDirectoryPage";
 import DataImportPage from "./pages/DataImportPage";
+import StateDetailPage from "./pages/StateDetailPage";
+import AgreementDetailPage from "./pages/AgreementDetailPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -119,6 +121,16 @@ const App = () => (
             <Route path="/admin/import" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <DataImportPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/states/:stateAbbr" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <StateDetailPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/agreements/:agreementId" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <AgreementDetailPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
