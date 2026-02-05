@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { providers, states } from '@/data/mockData';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   Search,
   Filter,
@@ -85,12 +86,18 @@ const ProvidersListPage = () => {
     }
   });
 
+  const { profile, roles } = useAuth();
+  const userRole = roles[0] || 'admin';
+  const userName = profile?.full_name || profile?.email || 'Admin User';
+  const userEmail = profile?.email || '';
+
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar 
-        userRole="admin"
-        userName="Sarah Chen"
-        userEmail="sarah.chen@example.com"
+        userRole={userRole as any}
+        userName={userName}
+        userEmail={userEmail}
+        userAvatarUrl={profile?.avatar_url || undefined}
       />
       
       <main className="pl-64 transition-all duration-300">

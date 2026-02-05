@@ -122,7 +122,7 @@ export default function UserRolesPage() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <AppSidebar userRole={userRole} userName={userName} userEmail={userEmail} />
+      <AppSidebar userRole={userRole} userName={userName} userEmail={userEmail} userAvatarUrl={profile?.avatar_url || undefined} />
       
       <main className="flex-1 ml-64 p-6">
         <div className="mb-6">

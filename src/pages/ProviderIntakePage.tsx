@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   providers, 
   selfReportedLicenses,
@@ -45,12 +46,18 @@ const ProviderIntakePage = () => {
     return `${firstName[0]}${lastName[0]}`.toUpperCase();
   };
 
+  const { profile, roles } = useAuth();
+  const userRole = roles[0] || 'admin';
+  const userName = profile?.full_name || profile?.email || 'Admin User';
+  const userEmail = profile?.email || '';
+
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar 
-        userRole="admin"
-        userName="Sarah Chen"
-        userEmail="sarah.chen@example.com"
+        userRole={userRole as any}
+        userName={userName}
+        userEmail={userEmail}
+        userAvatarUrl={profile?.avatar_url || undefined}
       />
       
       <main className="pl-64 transition-all duration-300">
