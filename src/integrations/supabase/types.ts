@@ -71,6 +71,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean | null
+          medallion_document_url: string | null
           provider_email: string
           provider_id: string | null
           provider_name: string
@@ -79,6 +80,7 @@ export type Database = {
           removed_reason: string | null
           signature_status: string | null
           signed_at: string | null
+          start_date: string | null
         }
         Insert: {
           agreement_id: string
@@ -86,6 +88,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean | null
+          medallion_document_url?: string | null
           provider_email: string
           provider_id?: string | null
           provider_name: string
@@ -94,6 +97,7 @@ export type Database = {
           removed_reason?: string | null
           signature_status?: string | null
           signed_at?: string | null
+          start_date?: string | null
         }
         Update: {
           agreement_id?: string
@@ -101,6 +105,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean | null
+          medallion_document_url?: string | null
           provider_email?: string
           provider_id?: string | null
           provider_name?: string
@@ -109,6 +114,7 @@ export type Database = {
           removed_reason?: string | null
           signature_status?: string | null
           signed_at?: string | null
+          start_date?: string | null
         }
         Relationships: [
           {
