@@ -278,6 +278,50 @@ export type Database = {
         }
         Relationships: []
       }
+      meeting_attendees: {
+        Row: {
+          attendance_status: string | null
+          confirmed_at: string | null
+          created_at: string
+          id: string
+          meeting_id: string
+          notes: string | null
+          provider_email: string
+          provider_id: string
+          provider_name: string
+        }
+        Insert: {
+          attendance_status?: string | null
+          confirmed_at?: string | null
+          created_at?: string
+          id?: string
+          meeting_id: string
+          notes?: string | null
+          provider_email: string
+          provider_id: string
+          provider_name: string
+        }
+        Update: {
+          attendance_status?: string | null
+          confirmed_at?: string | null
+          created_at?: string
+          id?: string
+          meeting_id?: string
+          notes?: string | null
+          provider_email?: string
+          provider_id?: string
+          provider_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_attendees_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "supervision_meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           actively_licensed_states: string | null
@@ -556,7 +600,10 @@ export type Database = {
           meeting_type: string | null
           notes: string | null
           scheduled_date: string
+          state_abbreviation: string | null
+          state_name: string | null
           status: string | null
+          time_slot: string | null
           video_link: string | null
         }
         Insert: {
@@ -569,7 +616,10 @@ export type Database = {
           meeting_type?: string | null
           notes?: string | null
           scheduled_date: string
+          state_abbreviation?: string | null
+          state_name?: string | null
           status?: string | null
+          time_slot?: string | null
           video_link?: string | null
         }
         Update: {
@@ -582,7 +632,10 @@ export type Database = {
           meeting_type?: string | null
           notes?: string | null
           scheduled_date?: string
+          state_abbreviation?: string | null
+          state_name?: string | null
           status?: string | null
+          time_slot?: string | null
           video_link?: string | null
         }
         Relationships: [

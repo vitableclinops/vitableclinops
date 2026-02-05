@@ -7,6 +7,7 @@ import { TerminationDialog } from '@/components/agreements/TerminationDialog';
 import { NotificationQueue } from '@/components/agreements/NotificationQueue';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
 import { StateComplianceGrid } from '@/components/agreements/StateComplianceGrid';
+import { ScheduleMeetingWizard } from '@/components/meetings/ScheduleMeetingWizard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -140,6 +141,7 @@ const CollaborativeAgreementsPage = () => {
   const [physicianFilter, setPhysicianFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('all-agreements');
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [meetingWizardOpen, setMeetingWizardOpen] = useState(false);
   
   // Termination dialog state
   const [terminationOpen, setTerminationOpen] = useState(false);
@@ -454,10 +456,16 @@ const CollaborativeAgreementsPage = () => {
                 Manage physician collaborations, supervision schedules, and compliance.
               </p>
             </div>
-            <Button onClick={() => setWizardOpen(true)} size="lg">
-              <Plus className="h-4 w-4 mr-2" />
-              New Agreement
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setMeetingWizardOpen(true)} size="lg">
+                <Calendar className="h-4 w-4 mr-2" />
+                Schedule Meeting
+              </Button>
+              <Button onClick={() => setWizardOpen(true)} size="lg">
+                <Plus className="h-4 w-4 mr-2" />
+                New Agreement
+              </Button>
+            </div>
           </div>
 
           {/* Wizards and Dialogs */}
@@ -465,6 +473,24 @@ const CollaborativeAgreementsPage = () => {
             open={wizardOpen} 
             onOpenChange={setWizardOpen}
             onSuccess={() => fetchDbAgreements()}
+          />
+
+          <ScheduleMeetingWizard
+            open={meetingWizardOpen}
+            onOpenChange={setMeetingWizardOpen}
+            onSuccess={() => {
+              fetchDbAgreements();
+            }}
+            agreements={flattenedAgreements
+              .filter(a => a.isActive)
+              .map(a => ({
+                id: a.agreementId,
+                stateAbbreviation: a.stateAbbreviation,
+                stateName: a.stateName,
+                providerId: a.providerId,
+                providerName: a.providerName,
+                providerEmail: a.providerEmail,
+              }))}
           />
 
           {selectedAgreement && (
