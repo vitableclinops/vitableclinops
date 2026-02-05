@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { lovable } from '@/integrations/lovable/index';
@@ -19,71 +19,111 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
 
+  // If a session already exists (common after OAuth redirects), get out of /auth immediately.
+  useEffect(() => {
+    let cancelled = false;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      if (data.session) navigate('/');
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) navigate('/');
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [navigate]);
+
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      toast({
-        title: 'Sign in failed',
-        description: error.message,
-        variant: 'destructive',
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-    } else {
+
+      if (error) {
+        toast({
+          title: 'Sign in failed',
+          description: error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
       toast({
         title: 'Welcome back!',
         description: 'You have successfully signed in.',
       });
       navigate('/');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: {
-          full_name: fullName,
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: {
+            full_name: fullName,
+          },
         },
-      },
-    });
-
-    if (error) {
-      toast({
-        title: 'Sign up failed',
-        description: error.message,
-        variant: 'destructive',
       });
-    } else {
+
+      if (error) {
+        toast({
+          title: 'Sign up failed',
+          description: error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
       toast({
         title: 'Check your email',
         description: 'We sent you a confirmation link to verify your account.',
       });
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
+
+    // If the browser blocks the redirect/popup, users can get stuck in a disabled state.
+    // This timeout re-enables the UI and gives a helpful hint.
+    const fallbackTimer = window.setTimeout(() => {
+      toast({
+        title: 'Still signing in?',
+        description:
+          'If nothing happened, your browser may be blocking the login redirect. Please allow pop-ups/redirects for this site and try again.',
+        variant: 'destructive',
+      });
+      setLoading(false);
+    }, 8000);
 
     const { error } = await lovable.auth.signInWithOAuth('google', {
       redirect_uri: window.location.origin,
     });
 
     if (error) {
+      window.clearTimeout(fallbackTimer);
       toast({
         title: 'Google sign in failed',
         description: error.message,
@@ -92,6 +132,7 @@ export default function AuthPage() {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
