@@ -16,6 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
+import { useScheduledMeetings } from '@/hooks/useScheduledMeetings';
 import { supervisionMeetings } from '@/data/mockData';
 import { 
   Users, 
@@ -49,51 +50,9 @@ import type { Tables } from '@/integrations/supabase/types';
 type DbAgreement = Tables<'collaborative_agreements'>;
 type DbProvider = Tables<'agreement_providers'>;
 
-// Last meeting date for all agreements - January 26, 2025
-const LAST_MEETING_DATE = new Date('2025-01-26');
-
 // Helper functions for date calculations
-const calculateNextMeetingDate = (cadence: string | null): Date | null => {
-  if (!cadence) return null;
-  
-  const now = new Date();
-  let nextMeeting = new Date(LAST_MEETING_DATE);
-  
-  // Calculate interval in months based on cadence
-  const getIntervalMonths = (cad: string): number => {
-    switch (cad.toLowerCase()) {
-      case 'weekly': return 0.25;
-      case 'biweekly': return 0.5;
-      case 'monthly': return 1;
-      case 'monthly_then_biannual': return 6; // After first year, biannual
-      case 'bimonthly': return 2;
-      case 'quarterly': return 3;
-      case 'biannual': 
-      case 'biannually':
-      case 'every_6_months': return 6;
-      case 'annual':
-      case 'annually': return 12;
-      default: return 1; // Default to monthly
-    }
-  };
-  
-  const intervalMonths = getIntervalMonths(cadence);
-  
-  // For weekly/biweekly, use days
-  if (intervalMonths < 1) {
-    const intervalDays = Math.round(intervalMonths * 30);
-    while (nextMeeting <= now) {
-      nextMeeting.setDate(nextMeeting.getDate() + intervalDays);
-    }
-  } else {
-    // Advance until we find a future date
-    while (nextMeeting <= now) {
-      nextMeeting.setMonth(nextMeeting.getMonth() + intervalMonths);
-    }
-  }
-  
-  return nextMeeting;
-};
+// Note: Next meeting dates are now pulled from scheduled meetings in the database,
+// not auto-calculated from cadence. Cadence is shown for reference only.
 
 const calculateRenewalDate = (startDate: string | null): Date | null => {
   if (!startDate) return null;
@@ -173,6 +132,7 @@ const CollaborativeAgreementsPage = () => {
   const { toast } = useToast();
   const { profile, roles } = useAuth();
   const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
+  const { getNextMeetingForAgreement, hasMeetingScheduled, loading: meetingsLoading } = useScheduledMeetings();
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -232,6 +192,7 @@ const CollaborativeAgreementsPage = () => {
 
   // Create flattened agreements - each provider-state-physician combo is one row
   // Use state compliance data for meeting cadences when available
+  // Next meeting dates come from actual scheduled meetings in the database
   const flattenedAgreements: FlattenedAgreement[] = dbProviders.map(provider => {
     const agreement = dbAgreements.find(a => a.id === provider.agreement_id);
     if (!agreement) return null;
@@ -240,7 +201,10 @@ const CollaborativeAgreementsPage = () => {
     const stateCadence = getStateMeetingCadence(agreement.state_abbreviation, stateComplianceData);
     const effectiveCadence = stateCadence || agreement.meeting_cadence;
     
-    const nextMeetingDate = calculateNextMeetingDate(effectiveCadence);
+    // Get next meeting from scheduled meetings in database (not auto-calculated)
+    const nextScheduledMeeting = getNextMeetingForAgreement(agreement.id);
+    const nextMeetingDate = nextScheduledMeeting ? new Date(nextScheduledMeeting.scheduled_date) : null;
+    
     const renewalDate = calculateRenewalDate(provider.start_date);
     
     // Get state compliance info
@@ -261,12 +225,12 @@ const CollaborativeAgreementsPage = () => {
       terminatedAt: provider.removed_at,
       removedReason: provider.removed_reason,
       isActive: provider.is_active ?? true,
-      meetingCadence: effectiveCadence, // Use state-derived cadence
+      meetingCadence: effectiveCadence, // Use state-derived cadence for display
       chartReviewFrequency: agreement.chart_review_frequency,
       documentUrl: provider.medallion_document_url,
       medallionDocumentUrl: agreement.medallion_document_url,
       agreementId: agreement.id,
-      nextMeetingDate,
+      nextMeetingDate, // Now from actual scheduled meetings
       renewalDate,
       daysUntilMeeting: getDaysUntil(nextMeetingDate),
       daysUntilRenewal: getDaysUntil(renewalDate),
@@ -793,7 +757,7 @@ const CollaborativeAgreementsPage = () => {
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-sm text-muted-foreground">Not set</span>
+                                <span className="text-sm text-muted-foreground">None scheduled</span>
                               )}
                             </div>
                             
