@@ -293,23 +293,17 @@ export default function StateDetailPage() {
 
                       <Separator />
 
-                      {/* Meeting configuration note */}
-                      <div className="text-sm text-muted-foreground">
-                        Meeting months can be configured in the State Compliance Directory.
-                      </div>
-                        </div>
-                      )}
-
-                      <Separator />
-
                       {/* Steps to confirm eligibility */}
                       {stateCompliance?.steps_to_confirm_eligibility && (
-                        <div>
-                          <h4 className="font-medium mb-2">Steps to Confirm Eligibility</h4>
-                          <div className="bg-muted/50 p-4 rounded-lg text-sm whitespace-pre-wrap">
-                            {stateCompliance.steps_to_confirm_eligibility}
+                        <>
+                          <Separator />
+                          <div>
+                            <h4 className="font-medium mb-2">Steps to Confirm Eligibility</h4>
+                            <div className="bg-muted/50 p-4 rounded-lg text-sm whitespace-pre-wrap">
+                              {stateCompliance.steps_to_confirm_eligibility}
+                            </div>
                           </div>
-                        </div>
+                        </>
                       )}
 
                       {stateCompliance?.knowledge_base_url && (
