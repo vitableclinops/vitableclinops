@@ -254,7 +254,7 @@ Deno.serve(async (req) => {
           notes: provider.Notes?.trim() || null,
           languages: provider.Languages?.trim() || null,
           services_offered: provider.Services?.trim() || null,
-          min_patient_age: provider['min age they treat'] ? parseFloat(provider['min age they treat']) : null,
+          min_patient_age: provider['min age they treat']?.toString().trim() || null,
           pod_lead: provider['Pod Lead']?.trim() || null,
           collaborative_physician: provider['Collaborative Physcian']?.trim() || null,
           personal_email: personalEmail || null,
