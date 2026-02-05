@@ -30,15 +30,45 @@ import {
   Building2,
   ChevronRight,
   AlertCircle,
-  Shield
+  Shield,
+  Upload,
+  Eye,
+  MoreHorizontal,
+  Link as LinkIcon
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Label } from '@/components/ui/label';
 import type { Tables } from '@/integrations/supabase/types';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
 type DbProvider = Tables<'agreement_providers'>;
+
+// Flattened view: Each agreement = one provider + one physician + one state
+interface FlattenedAgreement {
+  id: string;
+  providerId: string;
+  providerName: string;
+  providerEmail: string;
+  providerNpi: string | null;
+  providerCredentials: string | null;
+  physicianName: string;
+  physicianEmail: string;
+  stateAbbreviation: string;
+  stateName: string;
+  startDate: string | null;
+  terminatedAt: string | null;
+  removedReason: string | null;
+  isActive: boolean;
+  meetingCadence: string | null;
+  chartReviewFrequency: string | null;
+  documentUrl: string | null;
+  medallionDocumentUrl: string | null;
+  agreementId: string;
+}
 
 const CollaborativeAgreementsPage = () => {
   const { toast } = useToast();
@@ -53,6 +83,12 @@ const CollaborativeAgreementsPage = () => {
   const [terminationOpen, setTerminationOpen] = useState(false);
   const [selectedAgreement, setSelectedAgreement] = useState<DbAgreement | null>(null);
   const [selectedProviders, setSelectedProviders] = useState<DbProvider[]>([]);
+
+  // Document upload dialog
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [selectedFlatAgreement, setSelectedFlatAgreement] = useState<FlattenedAgreement | null>(null);
+  const [documentUrl, setDocumentUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   // Database agreements and providers
   const [dbAgreements, setDbAgreements] = useState<DbAgreement[]>([]);
@@ -87,26 +123,90 @@ const CollaborativeAgreementsPage = () => {
     fetchDbAgreements();
   }, []);
 
-  // Extract unique values for filters
-  const uniqueStates = [...new Set(dbAgreements.map(a => a.state_abbreviation))].sort();
-  const uniquePhysicians = [...new Set(dbAgreements.map(a => a.physician_name))].sort();
+  // Create flattened agreements - each provider-state-physician combo is one row
+  const flattenedAgreements: FlattenedAgreement[] = dbProviders.map(provider => {
+    const agreement = dbAgreements.find(a => a.id === provider.agreement_id);
+    if (!agreement) return null;
+    
+    return {
+      id: `${provider.id}-${agreement.id}`,
+      providerId: provider.id,
+      providerName: provider.provider_name,
+      providerEmail: provider.provider_email,
+      providerNpi: provider.provider_npi,
+      providerCredentials: null, // Could be added to provider_licenses later
+      physicianName: agreement.physician_name,
+      physicianEmail: agreement.physician_email,
+      stateAbbreviation: agreement.state_abbreviation,
+      stateName: agreement.state_name,
+      startDate: provider.start_date,
+      terminatedAt: provider.removed_at,
+      removedReason: provider.removed_reason,
+      isActive: provider.is_active ?? true,
+      meetingCadence: agreement.meeting_cadence,
+      chartReviewFrequency: agreement.chart_review_frequency,
+      documentUrl: provider.medallion_document_url,
+      medallionDocumentUrl: agreement.medallion_document_url,
+      agreementId: agreement.id
+    };
+  }).filter(Boolean) as FlattenedAgreement[];
 
-  // Filter agreements
-  const filteredAgreements = dbAgreements.filter(agreement => {
+  // Extract unique values for filters
+  const uniqueStates = [...new Set(flattenedAgreements.map(a => a.stateAbbreviation))].sort();
+  const uniquePhysicians = [...new Set(flattenedAgreements.map(a => a.physicianName))].sort();
+
+  // Filter flattened agreements
+  const filteredFlatAgreements = flattenedAgreements.filter(agreement => {
     const searchLower = searchQuery.toLowerCase();
     const matchesSearch = !searchQuery || 
-      agreement.state_name.toLowerCase().includes(searchLower) ||
-      agreement.state_abbreviation.toLowerCase().includes(searchLower) ||
-      agreement.physician_name.toLowerCase().includes(searchLower) ||
-      dbProviders.filter(p => p.agreement_id === agreement.id)
-        .some(p => p.provider_name.toLowerCase().includes(searchLower));
+      agreement.stateName.toLowerCase().includes(searchLower) ||
+      agreement.stateAbbreviation.toLowerCase().includes(searchLower) ||
+      agreement.physicianName.toLowerCase().includes(searchLower) ||
+      agreement.providerName.toLowerCase().includes(searchLower) ||
+      agreement.providerEmail.toLowerCase().includes(searchLower);
     
-    const matchesStatus = statusFilter === 'all' || agreement.workflow_status === statusFilter;
-    const matchesState = stateFilter === 'all' || agreement.state_abbreviation === stateFilter;
-    const matchesPhysician = physicianFilter === 'all' || agreement.physician_name === physicianFilter;
+    const matchesStatus = statusFilter === 'all' || 
+      (statusFilter === 'active' && agreement.isActive) ||
+      (statusFilter === 'terminated' && !agreement.isActive);
+    const matchesState = stateFilter === 'all' || agreement.stateAbbreviation === stateFilter;
+    const matchesPhysician = physicianFilter === 'all' || agreement.physicianName === physicianFilter;
     
     return matchesSearch && matchesStatus && matchesState && matchesPhysician;
   });
+
+  // Handle document upload/link
+  const handleDocumentSave = async () => {
+    if (!selectedFlatAgreement || !documentUrl.trim()) return;
+    
+    setUploading(true);
+    try {
+      const { error } = await supabase
+        .from('agreement_providers')
+        .update({ medallion_document_url: documentUrl.trim() })
+        .eq('id', selectedFlatAgreement.providerId);
+      
+      if (error) throw error;
+      
+      toast({
+        title: 'Document saved',
+        description: 'Agreement document has been linked successfully.',
+      });
+      
+      setUploadDialogOpen(false);
+      setDocumentUrl('');
+      setSelectedFlatAgreement(null);
+      fetchDbAgreements();
+    } catch (error) {
+      console.error('Error saving document:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save document link.',
+        variant: 'destructive',
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleTerminateClick = async (agreement: DbAgreement) => {
     const { data: providers } = await supabase
@@ -129,15 +229,13 @@ const CollaborativeAgreementsPage = () => {
   };
 
   // Stats calculations
-  const dbActiveCount = dbAgreements.filter(a => a.workflow_status === 'active').length;
-  const dbPendingCount = dbAgreements.filter(a => 
-    ['draft', 'pending_signatures', 'awaiting_physician_signature', 'awaiting_provider_signatures'].includes(a.workflow_status)
-  ).length;
+  const activeAgreementsCount = flattenedAgreements.filter(a => a.isActive).length;
+  const terminatedCount = flattenedAgreements.filter(a => !a.isActive).length;
   const totalActiveProviders = dbProviders.filter(p => p.is_active).length;
   
-  // Check for compliance risks
-  const agreementsWithoutDocument = dbAgreements.filter(
-    a => a.workflow_status === 'active' && !a.medallion_document_url && !a.agreement_document_url
+  // Check for compliance risks - count active agreements without documents
+  const agreementsWithoutDocument = flattenedAgreements.filter(
+    a => a.isActive && !a.documentUrl && !a.medallionDocumentUrl
   ).length;
 
   const { profile, roles } = useAuth();
@@ -284,24 +382,24 @@ const CollaborativeAgreementsPage = () => {
           <div className="grid gap-4 md:grid-cols-4 mb-8">
             <StatCard
               title="Active Agreements"
-              value={dbActiveCount}
+              value={activeAgreementsCount}
               subtitle={`${uniqueStates.length} states covered`}
               icon={FileText}
               variant="success"
             />
             <StatCard
-              title="Active Providers"
+              title="Total Providers"
               value={totalActiveProviders}
               subtitle={`${uniquePhysicians.length} supervising physicians`}
               icon={Users}
               variant="default"
             />
             <StatCard
-              title="In Progress"
-              value={dbPendingCount}
-              subtitle="Awaiting signatures"
+              title="Ended Agreements"
+              value={terminatedCount}
+              subtitle="Terminated or completed"
               icon={Clock}
-              variant={dbPendingCount > 0 ? 'warning' : 'default'}
+              variant={terminatedCount > 0 ? 'default' : 'success'}
             />
             <StatCard
               title="Compliance Alerts"
@@ -358,9 +456,7 @@ const CollaborativeAgreementsPage = () => {
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="pending_signatures">Pending</SelectItem>
-                    <SelectItem value="terminated">Terminated</SelectItem>
+                    <SelectItem value="terminated">Ended</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -406,116 +502,193 @@ const CollaborativeAgreementsPage = () => {
 
               {/* Results count */}
               <p className="text-sm text-muted-foreground mb-4">
-                Showing {filteredAgreements.length} of {dbAgreements.length} agreements
+                Showing {filteredFlatAgreements.length} of {flattenedAgreements.length} individual agreements
               </p>
 
-              {/* Agreements Table-like List */}
+              {/* Document Upload Dialog */}
+              <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Link Agreement Document</DialogTitle>
+                    <DialogDescription>
+                      Add a link to the collaborative agreement document for {selectedFlatAgreement?.providerName} in {selectedFlatAgreement?.stateAbbreviation}.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="documentUrl">Document URL</Label>
+                      <Input
+                        id="documentUrl"
+                        placeholder="https://drive.google.com/... or https://..."
+                        value={documentUrl}
+                        onChange={(e) => setDocumentUrl(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Paste a link to the signed agreement from Google Drive, Dropbox, or other file storage.
+                      </p>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button variant="outline">Cancel</Button>
+                    </DialogClose>
+                    <Button onClick={handleDocumentSave} disabled={uploading || !documentUrl.trim()}>
+                      {uploading ? 'Saving...' : 'Save Document Link'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              {/* Agreements Table - One row per Provider-State-Physician */}
               <Card>
                 <CardContent className="p-0">
                   {/* Header */}
                   <div className="grid grid-cols-12 gap-4 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
-                    <div className="col-span-2">State</div>
+                    <div className="col-span-3">Provider</div>
+                    <div className="col-span-1">State</div>
                     <div className="col-span-2">Physician</div>
-                    <div className="col-span-3">Providers</div>
-                    <div className="col-span-2">Meeting Cadence</div>
+                    <div className="col-span-2">Start Date</div>
                     <div className="col-span-1">Status</div>
+                    <div className="col-span-1">Document</div>
                     <div className="col-span-2 text-right">Actions</div>
                   </div>
                   
                   {/* Rows */}
-                  <ScrollArea className="h-[500px]">
-                    {filteredAgreements.length === 0 ? (
+                  <ScrollArea className="h-[600px]">
+                    {filteredFlatAgreements.length === 0 ? (
                       <div className="p-8 text-center text-muted-foreground">
                         No agreements found matching your filters.
                       </div>
                     ) : (
-                      filteredAgreements.map((agreement) => {
-                        const agreementProviders = dbProviders.filter(p => p.agreement_id === agreement.id && p.is_active);
-                        const hasComplianceRisk = !agreement.medallion_document_url && !agreement.agreement_document_url;
+                      filteredFlatAgreements.map((agreement) => {
+                        const hasDocument = !!agreement.documentUrl || !!agreement.medallionDocumentUrl;
+                        const documentLink = agreement.documentUrl || agreement.medallionDocumentUrl;
                         
                         return (
                           <div 
                             key={agreement.id} 
                             className={`grid grid-cols-12 gap-4 p-4 border-b hover:bg-muted/30 transition-colors items-center ${
-                              agreement.workflow_status === 'terminated' ? 'opacity-60' : ''
+                              !agreement.isActive ? 'opacity-60 bg-muted/10' : ''
                             }`}
                           >
-                            {/* State */}
-                            <div className="col-span-2">
+                            {/* Provider */}
+                            <div className="col-span-3">
                               <div className="flex items-center gap-3">
-                                <div className={`h-10 w-10 rounded-lg flex items-center justify-center font-bold text-sm ${
-                                  agreement.workflow_status === 'active' 
+                                <div className={`h-10 w-10 rounded-full flex items-center justify-center font-semibold text-sm ${
+                                  agreement.isActive 
                                     ? 'bg-success/10 text-success' 
-                                    : agreement.workflow_status === 'terminated'
-                                    ? 'bg-muted text-muted-foreground'
-                                    : 'bg-warning/10 text-warning'
+                                    : 'bg-muted text-muted-foreground'
                                 }`}>
-                                  {agreement.state_abbreviation}
+                                  {agreement.providerName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                                 </div>
                                 <div>
-                                  <p className="font-medium text-sm">{agreement.state_name}</p>
-                                  {hasComplianceRisk && agreement.workflow_status === 'active' && (
-                                    <div className="flex items-center gap-1 text-destructive text-xs">
-                                      <AlertCircle className="h-3 w-3" />
-                                      Missing doc
-                                    </div>
-                                  )}
+                                  <p className="font-medium text-sm">{agreement.providerName}</p>
+                                  <p className="text-xs text-muted-foreground truncate max-w-[180px]">
+                                    {agreement.providerEmail}
+                                  </p>
                                 </div>
                               </div>
                             </div>
                             
+                            {/* State */}
+                            <div className="col-span-1">
+                              <Badge variant="outline" className="font-bold">
+                                {agreement.stateAbbreviation}
+                              </Badge>
+                            </div>
+                            
                             {/* Physician */}
                             <div className="col-span-2">
-                              <p className="font-medium text-sm">Dr. {agreement.physician_name}</p>
-                              <p className="text-xs text-muted-foreground">{agreement.physician_email}</p>
+                              <p className="text-sm font-medium">Dr. {agreement.physicianName}</p>
                             </div>
                             
-                            {/* Providers */}
-                            <div className="col-span-3">
-                              {agreementProviders.length > 0 ? (
-                                <div>
-                                  <p className="text-sm font-medium">{agreementProviders.length} provider{agreementProviders.length !== 1 ? 's' : ''}</p>
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {agreementProviders.slice(0, 2).map(p => p.provider_name).join(', ')}
-                                    {agreementProviders.length > 2 && ` +${agreementProviders.length - 2} more`}
-                                  </p>
-                                </div>
-                              ) : (
-                                <p className="text-sm text-muted-foreground">No active providers</p>
-                              )}
-                            </div>
-                            
-                            {/* Meeting Cadence */}
+                            {/* Start Date */}
                             <div className="col-span-2">
-                              <p className="text-sm capitalize">
-                                {agreement.meeting_cadence?.replace(/_/g, ' ') || 'Not set'}
+                              <p className="text-sm">
+                                {agreement.startDate 
+                                  ? new Date(agreement.startDate).toLocaleDateString()
+                                  : <span className="text-muted-foreground">Not set</span>
+                                }
                               </p>
+                              {agreement.terminatedAt && (
+                                <p className="text-xs text-destructive">
+                                  Ended {new Date(agreement.terminatedAt).toLocaleDateString()}
+                                </p>
+                              )}
                             </div>
                             
                             {/* Status */}
                             <div className="col-span-1">
-                              {getStatusBadge(agreement.workflow_status)}
+                              {agreement.isActive ? (
+                                <Badge className="bg-success/10 text-success border-success/20">Active</Badge>
+                              ) : (
+                                <Badge variant="secondary">Ended</Badge>
+                              )}
+                            </div>
+                            
+                            {/* Document */}
+                            <div className="col-span-1">
+                              {hasDocument ? (
+                                <Button variant="ghost" size="sm" asChild className="text-success">
+                                  <a href={documentLink!} target="_blank" rel="noopener noreferrer">
+                                    <Eye className="h-4 w-4 mr-1" />
+                                    View
+                                  </a>
+                                </Button>
+                              ) : agreement.isActive ? (
+                                <div className="flex items-center gap-1 text-warning text-xs">
+                                  <AlertCircle className="h-3 w-3" />
+                                  Missing
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
                             </div>
                             
                             {/* Actions */}
-                            <div className="col-span-2 flex justify-end gap-2">
-                              {agreement.medallion_document_url && (
-                                <Button variant="ghost" size="sm" asChild>
-                                  <a href={agreement.medallion_document_url} target="_blank" rel="noopener noreferrer">
-                                    <ExternalLink className="h-4 w-4" />
-                                  </a>
-                                </Button>
-                              )}
-                              {agreement.workflow_status !== 'terminated' && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-muted-foreground hover:text-destructive"
-                                  onClick={() => handleTerminateClick(agreement)}
-                                >
-                                  {agreement.workflow_status === 'active' ? 'Terminate' : 'Cancel'}
-                                </Button>
-                              )}
+                            <div className="col-span-2 flex justify-end">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setSelectedFlatAgreement(agreement);
+                                      setDocumentUrl(agreement.documentUrl || '');
+                                      setUploadDialogOpen(true);
+                                    }}
+                                  >
+                                    <LinkIcon className="h-4 w-4 mr-2" />
+                                    {hasDocument ? 'Update Document' : 'Add Document'}
+                                  </DropdownMenuItem>
+                                  {hasDocument && (
+                                    <DropdownMenuItem asChild>
+                                      <a href={documentLink!} target="_blank" rel="noopener noreferrer">
+                                        <ExternalLink className="h-4 w-4 mr-2" />
+                                        Open Document
+                                      </a>
+                                    </DropdownMenuItem>
+                                  )}
+                                  {agreement.isActive && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        onClick={() => {
+                                          const dbAgreement = dbAgreements.find(a => a.id === agreement.agreementId);
+                                          if (dbAgreement) handleTerminateClick(dbAgreement);
+                                        }}
+                                      >
+                                        <AlertCircle className="h-4 w-4 mr-2" />
+                                        Terminate
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </div>
                         );
