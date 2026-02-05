@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Building2, Info, BookOpen } from 'lucide-react';
+import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Building2, Info, BookOpen, FileCheck } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -40,6 +40,24 @@ interface ImportResult {
   errors: string[];
 }
 
+interface SupervisionImportResult {
+  agreementsCreated: number;
+  agreementsUpdated: number;
+  providersLinked: number;
+  skipped: number;
+  preview: Array<{
+    providerName: string;
+    physicianName: string;
+    state: string;
+    supervisionType: string;
+    status: string;
+    effectiveDate: string;
+    action: 'create' | 'update' | 'skip';
+    reason?: string;
+  }>;
+  errors: string[];
+}
+
 export default function DataImportPage() {
   const { user, roles } = useAuth();
   const { toast } = useToast();
@@ -56,6 +74,12 @@ export default function DataImportPage() {
   const [notionLoading, setNotionLoading] = useState(false);
   const [notionResult, setNotionResult] = useState<ImportResult | null>(null);
   
+  // Supervisions state
+  const [supervisionsFile, setSupervisionsFile] = useState<File | null>(null);
+  const [supervisionsData, setSupervisionsData] = useState<any[] | null>(null);
+  const [supervisionsLoading, setSupervisionsLoading] = useState(false);
+  const [supervisionsResult, setSupervisionsResult] = useState<SupervisionImportResult | null>(null);
+  
   // Shared state
   const [pendingConflicts, setPendingConflicts] = useState<Conflict[]>([]);
   const [showConflictDialog, setShowConflictDialog] = useState(false);
@@ -63,6 +87,7 @@ export default function DataImportPage() {
   
   const medallionInputRef = useRef<HTMLInputElement>(null);
   const notionInputRef = useRef<HTMLInputElement>(null);
+  const supervisionsInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (file: File, type: 'medallion' | 'notion') => {
     const setFile = type === 'medallion' ? setMedallionFile : setNotionFile;
@@ -267,6 +292,47 @@ export default function DataImportPage() {
     }
   };
 
+  const runSupervisionsImport = async (mode: 'preview' | 'apply') => {
+    if (!supervisionsData) return;
+
+    setSupervisionsLoading(true);
+    if (mode === 'preview') {
+      setSupervisionsResult(null);
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('import-supervisions', {
+        body: { supervisions: supervisionsData, mode },
+      });
+
+      if (error) throw error;
+
+      if (mode === 'preview') {
+        setSupervisionsResult(data);
+        if (data.preview?.length > 0) {
+          toast({
+            title: 'Preview ready',
+            description: `${data.preview.length} supervision records to import`,
+          });
+        }
+      } else {
+        setSupervisionsResult(data);
+        toast({
+          title: 'Import complete',
+          description: `Created ${data.agreementsCreated} agreements, linked ${data.providersLinked} providers`,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Import failed',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSupervisionsLoading(false);
+    }
+  };
+
   const handleConflictResolve = (resolutions: FieldResolution[]) => {
     setShowConflictDialog(false);
     if (activeImportType === 'medallion') {
@@ -373,7 +439,7 @@ export default function DataImportPage() {
             </Alert>
 
             <Tabs defaultValue="medallion" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="medallion" className="flex items-center gap-2">
                   <Building2 className="h-4 w-4" />
                   Medallion
@@ -381,6 +447,10 @@ export default function DataImportPage() {
                 <TabsTrigger value="notion" className="flex items-center gap-2">
                   <BookOpen className="h-4 w-4" />
                   Notion
+                </TabsTrigger>
+                <TabsTrigger value="supervisions" className="flex items-center gap-2">
+                  <FileCheck className="h-4 w-4" />
+                  Supervisions
                 </TabsTrigger>
               </TabsList>
 
@@ -556,6 +626,217 @@ export default function DataImportPage() {
                 </Card>
 
                 {notionResult && renderResultCard(notionResult, false)}
+              </TabsContent>
+
+              <TabsContent value="supervisions" className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileCheck className="h-5 w-5" />
+                      Medallion Supervision Export
+                    </CardTitle>
+                    <CardDescription>
+                      Upload the supervision/collaborative agreement CSV from Medallion to import agreements and link providers to physicians
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <input
+                      ref={supervisionsInputRef}
+                      type="file"
+                      accept=".csv"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setSupervisionsFile(file);
+                          setSupervisionsResult(null);
+                          Papa.parse(file, {
+                            header: true,
+                            skipEmptyLines: true,
+                            complete: (results) => {
+                              setSupervisionsData(results.data as any[]);
+                              toast({
+                                title: 'File parsed',
+                                description: `Found ${results.data.length} supervision records in ${file.name}`,
+                              });
+                            },
+                            error: (error) => {
+                              toast({
+                                title: 'Parse error',
+                                description: error.message,
+                                variant: 'destructive',
+                              });
+                            },
+                          });
+                        }
+                      }}
+                    />
+                    
+                    {supervisionsFile ? (
+                      <div className="p-4 border rounded-lg bg-muted/50">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{supervisionsFile.name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {supervisionsData?.length || 0} supervision records found
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Badge variant="secondary">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Ready
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSupervisionsFile(null);
+                                setSupervisionsData(null);
+                                setSupervisionsResult(null);
+                              }}
+                            >
+                              Clear
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        className="w-full h-24 border-dashed"
+                        onClick={() => supervisionsInputRef.current?.click()}
+                      >
+                        <Upload className="h-6 w-6 mr-2" />
+                        Select Supervisions CSV
+                      </Button>
+                    )}
+
+                    <Alert>
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <AlertTitle>Expected Columns</AlertTitle>
+                      <AlertDescription className="text-xs">
+                        Provider Full Name, Supervisor Full Name, Supervision State, Supervision Type, 
+                        Collaborative Agreement Status, Effective Date, Expiration Date, Document
+                      </AlertDescription>
+                    </Alert>
+
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => runSupervisionsImport('preview')}
+                        disabled={supervisionsLoading || !supervisionsData}
+                        variant="outline"
+                        className="flex-1"
+                      >
+                        {supervisionsLoading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <FileSpreadsheet className="h-4 w-4 mr-2" />
+                        )}
+                        Preview
+                      </Button>
+                      <Button
+                        onClick={() => runSupervisionsImport('apply')}
+                        disabled={supervisionsLoading || !supervisionsData}
+                        className="flex-1"
+                      >
+                        {supervisionsLoading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Database className="h-4 w-4 mr-2" />
+                        )}
+                        Import Agreements
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {supervisionsResult && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-success">
+                        <CheckCircle2 className="h-5 w-5" />
+                        {supervisionsResult.preview?.length > 0 ? 'Preview Results' : 'Import Complete'}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                        <Card>
+                          <CardContent className="pt-6">
+                            <div className="text-3xl font-bold text-primary">{supervisionsResult.agreementsCreated}</div>
+                            <p className="text-sm text-muted-foreground">Agreements Created</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="pt-6">
+                            <div className="text-3xl font-bold text-primary">{supervisionsResult.agreementsUpdated}</div>
+                            <p className="text-sm text-muted-foreground">Agreements Updated</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="pt-6">
+                            <div className="text-3xl font-bold text-primary">{supervisionsResult.providersLinked}</div>
+                            <p className="text-sm text-muted-foreground">Providers Linked</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="pt-6">
+                            <div className="text-3xl font-bold text-muted-foreground">{supervisionsResult.skipped}</div>
+                            <p className="text-sm text-muted-foreground">Already Linked</p>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {supervisionsResult.preview?.length > 0 && (
+                        <div className="border rounded-lg overflow-hidden">
+                          <ScrollArea className="h-64">
+                            <table className="w-full text-sm">
+                              <thead className="bg-muted sticky top-0">
+                                <tr>
+                                  <th className="text-left p-2">Provider</th>
+                                  <th className="text-left p-2">Physician</th>
+                                  <th className="text-left p-2">State</th>
+                                  <th className="text-left p-2">Type</th>
+                                  <th className="text-left p-2">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {supervisionsResult.preview.map((row, i) => (
+                                  <tr key={i} className="border-t">
+                                    <td className="p-2">{row.providerName}</td>
+                                    <td className="p-2">{row.physicianName}</td>
+                                    <td className="p-2">{row.state}</td>
+                                    <td className="p-2">{row.supervisionType}</td>
+                                    <td className="p-2">
+                                      <Badge variant={row.action === 'create' ? 'default' : 'secondary'}>
+                                        {row.action}
+                                      </Badge>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </ScrollArea>
+                        </div>
+                      )}
+
+                      {supervisionsResult.errors.length > 0 && (
+                        <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertTitle>Errors ({supervisionsResult.errors.length})</AlertTitle>
+                          <AlertDescription>
+                            <ScrollArea className="h-32 mt-2">
+                              <ul className="list-disc pl-4 space-y-1">
+                                {supervisionsResult.errors.map((error, i) => (
+                                  <li key={i} className="text-sm">{error}</li>
+                                ))}
+                              </ul>
+                            </ScrollArea>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
             </Tabs>
           </div>

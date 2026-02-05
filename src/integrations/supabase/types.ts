@@ -181,6 +181,8 @@ export type Database = {
           created_by: string | null
           end_date: string | null
           id: string
+          medallion_document_url: string | null
+          medallion_id: string | null
           meeting_cadence: string | null
           next_renewal_date: string | null
           physician_email: string
@@ -189,10 +191,12 @@ export type Database = {
           physician_npi: string | null
           physician_signed_at: string | null
           renewal_cadence: string | null
+          source: string | null
           start_date: string | null
           state_abbreviation: string
           state_id: string
           state_name: string
+          supervision_type: string | null
           terminated_at: string | null
           terminated_by: string | null
           termination_document_url: string | null
@@ -210,6 +214,8 @@ export type Database = {
           created_by?: string | null
           end_date?: string | null
           id?: string
+          medallion_document_url?: string | null
+          medallion_id?: string | null
           meeting_cadence?: string | null
           next_renewal_date?: string | null
           physician_email: string
@@ -218,10 +224,12 @@ export type Database = {
           physician_npi?: string | null
           physician_signed_at?: string | null
           renewal_cadence?: string | null
+          source?: string | null
           start_date?: string | null
           state_abbreviation: string
           state_id: string
           state_name: string
+          supervision_type?: string | null
           terminated_at?: string | null
           terminated_by?: string | null
           termination_document_url?: string | null
@@ -239,6 +247,8 @@ export type Database = {
           created_by?: string | null
           end_date?: string | null
           id?: string
+          medallion_document_url?: string | null
+          medallion_id?: string | null
           meeting_cadence?: string | null
           next_renewal_date?: string | null
           physician_email?: string
@@ -247,10 +257,12 @@ export type Database = {
           physician_npi?: string | null
           physician_signed_at?: string | null
           renewal_cadence?: string | null
+          source?: string | null
           start_date?: string | null
           state_abbreviation?: string
           state_id?: string
           state_name?: string
+          supervision_type?: string | null
           terminated_at?: string | null
           terminated_by?: string | null
           termination_document_url?: string | null

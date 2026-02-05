@@ -31,8 +31,11 @@ import {
   Plus,
   Clock,
   CheckCircle2,
-  Mail
+  Mail,
+  Filter,
+  ExternalLink
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Tables } from '@/integrations/supabase/types';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
@@ -41,6 +44,9 @@ type DbProvider = Tables<'agreement_providers'>;
 const CollaborativeAgreementsPage = () => {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [stateFilter, setStateFilter] = useState<string>('all');
+  const [physicianFilter, setPhysicianFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('agreements');
   const [wizardOpen, setWizardOpen] = useState(false);
   
@@ -49,27 +55,66 @@ const CollaborativeAgreementsPage = () => {
   const [selectedAgreement, setSelectedAgreement] = useState<DbAgreement | null>(null);
   const [selectedProviders, setSelectedProviders] = useState<DbProvider[]>([]);
 
-  // Database agreements
+  // Database agreements and providers
   const [dbAgreements, setDbAgreements] = useState<DbAgreement[]>([]);
+  const [dbProviders, setDbProviders] = useState<DbProvider[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchDbAgreements = async () => {
-    const { data, error } = await supabase
-      .from('collaborative_agreements')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const [agreementsRes, providersRes] = await Promise.all([
+      supabase
+        .from('collaborative_agreements')
+        .select('*')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('agreement_providers')
+        .select('*')
+        .eq('is_active', true)
+    ]);
 
-    if (error) {
-      console.error('Error fetching agreements:', error);
+    if (agreementsRes.error) {
+      console.error('Error fetching agreements:', agreementsRes.error);
     } else {
-      setDbAgreements(data || []);
+      setDbAgreements(agreementsRes.data || []);
     }
+    
+    if (!providersRes.error) {
+      setDbProviders(providersRes.data || []);
+    }
+    
     setLoading(false);
   };
 
   useEffect(() => {
     fetchDbAgreements();
   }, []);
+
+  // Extract unique values for filters
+  const uniqueStates = [...new Set(dbAgreements.map(a => a.state_abbreviation))].sort();
+  const uniquePhysicians = [...new Set(dbAgreements.map(a => a.physician_name))].sort();
+
+  // Filter agreements
+  const filteredAgreements = dbAgreements.filter(agreement => {
+    // Search filter
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch = !searchQuery || 
+      agreement.state_name.toLowerCase().includes(searchLower) ||
+      agreement.state_abbreviation.toLowerCase().includes(searchLower) ||
+      agreement.physician_name.toLowerCase().includes(searchLower) ||
+      dbProviders.filter(p => p.agreement_id === agreement.id)
+        .some(p => p.provider_name.toLowerCase().includes(searchLower));
+    
+    // Status filter
+    const matchesStatus = statusFilter === 'all' || agreement.workflow_status === statusFilter;
+    
+    // State filter
+    const matchesState = stateFilter === 'all' || agreement.state_abbreviation === stateFilter;
+    
+    // Physician filter
+    const matchesPhysician = physicianFilter === 'all' || agreement.physician_name === physicianFilter;
+    
+    return matchesSearch && matchesStatus && matchesState && matchesPhysician;
+  });
 
   const handleTerminateClick = async (agreement: DbAgreement) => {
     // Fetch providers for this agreement
@@ -212,28 +257,91 @@ const CollaborativeAgreementsPage = () => {
             </TabsList>
 
             <TabsContent value="agreements">
-              {/* Search */}
-              <div className="relative max-w-md mb-6">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search agreements..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
+              {/* Search and Filters */}
+              <div className="flex flex-wrap gap-4 mb-6">
+                <div className="relative flex-1 min-w-[200px] max-w-md">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by provider, physician, or state..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="pending_signatures">Pending</SelectItem>
+                    <SelectItem value="terminated">Terminated</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={stateFilter} onValueChange={setStateFilter}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue placeholder="State" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All States</SelectItem>
+                    {uniqueStates.map(state => (
+                      <SelectItem key={state} value={state}>{state}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={physicianFilter} onValueChange={setPhysicianFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Physician" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Physicians</SelectItem>
+                    {uniquePhysicians.map(physician => (
+                      <SelectItem key={physician} value={physician}>Dr. {physician}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {(searchQuery || statusFilter !== 'all' || stateFilter !== 'all' || physicianFilter !== 'all') && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setStatusFilter('all');
+                      setStateFilter('all');
+                      setPhysicianFilter('all');
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                )}
               </div>
 
+              {/* Results count */}
+              {dbAgreements.length > 0 && (
+                <p className="text-sm text-muted-foreground mb-4">
+                  Showing {filteredAgreements.length} of {dbAgreements.length} agreements
+                </p>
+              )}
+
               {/* Database Agreements (In Progress) */}
-              {dbAgreements.filter(a => !['active', 'terminated'].includes(a.workflow_status)).length > 0 && (
+              {filteredAgreements.filter(a => !['active', 'terminated'].includes(a.workflow_status)).length > 0 && (
                 <div className="mb-8">
                   <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
                     <Clock className="h-5 w-5 text-primary" />
                     In Progress
                   </h2>
                   <div className="grid gap-4 md:grid-cols-2">
-                    {dbAgreements
+                    {filteredAgreements
                       .filter(a => !['active', 'terminated'].includes(a.workflow_status))
-                      .map(agreement => (
+                      .map(agreement => {
+                        const agreementProviders = dbProviders.filter(p => p.agreement_id === agreement.id);
+                        return (
                         <Card key={agreement.id} className="card-interactive">
                           <CardHeader className="pb-3">
                             <div className="flex items-start justify-between">
@@ -271,7 +379,8 @@ const CollaborativeAgreementsPage = () => {
                             />
                           </CardContent>
                         </Card>
-                      ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -308,68 +417,93 @@ const CollaborativeAgreementsPage = () => {
                     />
                   ))}
                   {/* Show active DB agreements */}
-                  {dbAgreements
+                  {filteredAgreements
                     .filter(a => a.workflow_status === 'active')
-                    .map(agreement => (
-                      <Card key={agreement.id} className="card-interactive">
-                        <CardHeader className="pb-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
-                                <span className="text-sm font-bold text-success">
-                                  {agreement.state_abbreviation}
-                                </span>
+                    .map(agreement => {
+                      const agreementProviders = dbProviders.filter(p => p.agreement_id === agreement.id);
+                      return (
+                        <Card key={agreement.id} className="card-interactive">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
+                                  <span className="text-sm font-bold text-success">
+                                    {agreement.state_abbreviation}
+                                  </span>
+                                </div>
+                                <div>
+                                  <CardTitle className="text-base">
+                                    {agreement.state_name} Agreement
+                                  </CardTitle>
+                                  <p className="text-sm text-muted-foreground">
+                                    Dr. {agreement.physician_name}
+                                  </p>
+                                </div>
                               </div>
-                              <div>
-                                <CardTitle className="text-base">
-                                  {agreement.state_name} Agreement
-                                </CardTitle>
-                                <p className="text-sm text-muted-foreground">
-                                  Dr. {agreement.physician_name}
-                                </p>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-success border-success/30">
+                                  Active
+                                </Badge>
+                                {agreement.medallion_document_url && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    asChild
+                                  >
+                                    <a href={agreement.medallion_document_url} target="_blank" rel="noopener noreferrer">
+                                      <ExternalLink className="h-4 w-4" />
+                                    </a>
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleTerminateClick(agreement)}
+                                >
+                                  Terminate
+                                </Button>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-success border-success/30">
-                                Active
-                              </Badge>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-muted-foreground hover:text-destructive"
-                                onClick={() => handleTerminateClick(agreement)}
-                              >
-                                Terminate
-                              </Button>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <div className="flex items-center gap-1.5">
+                                <Users className="h-4 w-4" />
+                                <span>{agreementProviders.length} provider{agreementProviders.length !== 1 ? 's' : ''}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-4 w-4" />
+                                <span>Started {agreement.start_date ? new Date(agreement.start_date).toLocaleDateString() : 'N/A'}</span>
+                              </div>
+                              {agreement.supervision_type && agreement.supervision_type !== 'primary' && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {agreement.supervision_type}
+                                </Badge>
+                              )}
                             </div>
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-1.5">
-                              <Calendar className="h-4 w-4" />
-                              <span>Started {agreement.start_date ? new Date(agreement.start_date).toLocaleDateString() : 'N/A'}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Clock className="h-4 w-4" />
-                              <span className="capitalize">{agreement.meeting_cadence || 'Monthly'} meetings</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                            {agreementProviders.length > 0 && (
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                {agreementProviders.slice(0, 3).map(p => p.provider_name).join(', ')}
+                                {agreementProviders.length > 3 && ` +${agreementProviders.length - 3} more`}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                 </div>
               </div>
 
               {/* Terminated agreements */}
-              {dbAgreements.filter(a => a.workflow_status === 'terminated').length > 0 && (
+              {filteredAgreements.filter(a => a.workflow_status === 'terminated').length > 0 && (
                 <div className="mt-8">
                   <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2 text-muted-foreground">
                     <FileText className="h-5 w-5" />
                     Terminated Agreements
                   </h2>
                   <div className="grid gap-4 md:grid-cols-2">
-                    {dbAgreements
+                    {filteredAgreements
                       .filter(a => a.workflow_status === 'terminated')
                       .map(agreement => (
                         <Card key={agreement.id} className="opacity-60">
