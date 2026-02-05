@@ -47,6 +47,72 @@ import type { Tables } from '@/integrations/supabase/types';
 type DbAgreement = Tables<'collaborative_agreements'>;
 type DbProvider = Tables<'agreement_providers'>;
 
+// Helper functions for date calculations
+const calculateNextMeetingDate = (startDate: string | null, cadence: string | null): Date | null => {
+  if (!startDate || !cadence) return null;
+  
+  const start = new Date(startDate);
+  const now = new Date();
+  let nextMeeting = new Date(start);
+  
+  // Calculate interval in months based on cadence
+  const getIntervalMonths = (cad: string): number => {
+    switch (cad.toLowerCase()) {
+      case 'weekly': return 0.25;
+      case 'biweekly': return 0.5;
+      case 'monthly': return 1;
+      case 'monthly_then_biannual': return 6; // After first year, biannual
+      case 'bimonthly': return 2;
+      case 'quarterly': return 3;
+      case 'biannual': 
+      case 'biannually':
+      case 'every_6_months': return 6;
+      case 'annual':
+      case 'annually': return 12;
+      default: return 1; // Default to monthly
+    }
+  };
+  
+  const intervalMonths = getIntervalMonths(cadence);
+  
+  // For weekly/biweekly, use days
+  if (intervalMonths < 1) {
+    const intervalDays = intervalMonths * 30;
+    while (nextMeeting <= now) {
+      nextMeeting.setDate(nextMeeting.getDate() + intervalDays);
+    }
+  } else {
+    // Advance until we find a future date
+    while (nextMeeting <= now) {
+      nextMeeting.setMonth(nextMeeting.getMonth() + intervalMonths);
+    }
+  }
+  
+  return nextMeeting;
+};
+
+const calculateRenewalDate = (startDate: string | null): Date | null => {
+  if (!startDate) return null;
+  const start = new Date(startDate);
+  const renewalDate = new Date(start);
+  renewalDate.setFullYear(renewalDate.getFullYear() + 1);
+  return renewalDate;
+};
+
+const getDaysUntil = (targetDate: Date | null): number | null => {
+  if (!targetDate) return null;
+  const now = new Date();
+  const diffTime = targetDate.getTime() - now.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
+
+const formatCadence = (cadence: string | null): string => {
+  if (!cadence) return 'Not set';
+  return cadence
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase());
+};
+
 // Flattened view: Each agreement = one provider + one physician + one state
 interface FlattenedAgreement {
   id: string;
@@ -68,6 +134,10 @@ interface FlattenedAgreement {
   documentUrl: string | null;
   medallionDocumentUrl: string | null;
   agreementId: string;
+  nextMeetingDate: Date | null;
+  renewalDate: Date | null;
+  daysUntilMeeting: number | null;
+  daysUntilRenewal: number | null;
 }
 
 const CollaborativeAgreementsPage = () => {
@@ -128,13 +198,16 @@ const CollaborativeAgreementsPage = () => {
     const agreement = dbAgreements.find(a => a.id === provider.agreement_id);
     if (!agreement) return null;
     
+    const nextMeetingDate = calculateNextMeetingDate(provider.start_date, agreement.meeting_cadence);
+    const renewalDate = calculateRenewalDate(provider.start_date);
+    
     return {
       id: `${provider.id}-${agreement.id}`,
       providerId: provider.id,
       providerName: provider.provider_name,
       providerEmail: provider.provider_email,
       providerNpi: provider.provider_npi,
-      providerCredentials: null, // Could be added to provider_licenses later
+      providerCredentials: null,
       physicianName: agreement.physician_name,
       physicianEmail: agreement.physician_email,
       stateAbbreviation: agreement.state_abbreviation,
@@ -147,7 +220,11 @@ const CollaborativeAgreementsPage = () => {
       chartReviewFrequency: agreement.chart_review_frequency,
       documentUrl: provider.medallion_document_url,
       medallionDocumentUrl: agreement.medallion_document_url,
-      agreementId: agreement.id
+      agreementId: agreement.id,
+      nextMeetingDate,
+      renewalDate,
+      daysUntilMeeting: getDaysUntil(nextMeetingDate),
+      daysUntilRenewal: getDaysUntil(renewalDate)
     };
   }).filter(Boolean) as FlattenedAgreement[];
 
@@ -233,9 +310,19 @@ const CollaborativeAgreementsPage = () => {
   const terminatedCount = flattenedAgreements.filter(a => !a.isActive).length;
   const totalActiveProviders = dbProviders.filter(p => p.is_active).length;
   
-  // Check for compliance risks - count active agreements without documents
+  // Check for compliance risks
   const agreementsWithoutDocument = flattenedAgreements.filter(
     a => a.isActive && !a.documentUrl && !a.medallionDocumentUrl
+  ).length;
+  
+  // Upcoming meetings in next 14 days
+  const upcomingMeetings = flattenedAgreements.filter(
+    a => a.isActive && a.daysUntilMeeting !== null && a.daysUntilMeeting >= 0 && a.daysUntilMeeting <= 14
+  ).length;
+  
+  // Renewals due in next 30 days (or overdue)
+  const renewalsDue = flattenedAgreements.filter(
+    a => a.isActive && a.daysUntilRenewal !== null && a.daysUntilRenewal <= 30
   ).length;
 
   const { profile, roles } = useAuth();
@@ -379,7 +466,7 @@ const CollaborativeAgreementsPage = () => {
           )}
 
           {/* Stats Grid */}
-          <div className="grid gap-4 md:grid-cols-4 mb-8">
+          <div className="grid gap-4 md:grid-cols-5 mb-8">
             <StatCard
               title="Active Agreements"
               value={activeAgreementsCount}
@@ -388,25 +475,32 @@ const CollaborativeAgreementsPage = () => {
               variant="success"
             />
             <StatCard
-              title="Total Providers"
-              value={totalActiveProviders}
-              subtitle={`${uniquePhysicians.length} supervising physicians`}
-              icon={Users}
-              variant="default"
+              title="Upcoming Meetings"
+              value={upcomingMeetings}
+              subtitle="Next 14 days"
+              icon={Calendar}
+              variant={upcomingMeetings > 0 ? 'warning' : 'default'}
             />
             <StatCard
-              title="Ended Agreements"
-              value={terminatedCount}
-              subtitle="Terminated or completed"
+              title="Renewals Due"
+              value={renewalsDue}
+              subtitle="Next 30 days"
               icon={Clock}
-              variant={terminatedCount > 0 ? 'default' : 'success'}
+              variant={renewalsDue > 0 ? 'danger' : 'success'}
             />
             <StatCard
-              title="Compliance Alerts"
+              title="Missing Docs"
               value={agreementsWithoutDocument}
-              subtitle="Missing documentation"
+              subtitle="Need documentation"
               icon={AlertTriangle}
               variant={agreementsWithoutDocument > 0 ? 'danger' : 'success'}
+            />
+            <StatCard
+              title="Total Providers"
+              value={totalActiveProviders}
+              subtitle={`${uniquePhysicians.length} physicians`}
+              icon={Users}
+              variant="default"
             />
           </div>
 
@@ -543,14 +637,15 @@ const CollaborativeAgreementsPage = () => {
               <Card>
                 <CardContent className="p-0">
                   {/* Header */}
-                  <div className="grid grid-cols-12 gap-4 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
+                  <div className="grid grid-cols-16 gap-3 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
                     <div className="col-span-3">Provider</div>
                     <div className="col-span-1">State</div>
                     <div className="col-span-2">Physician</div>
-                    <div className="col-span-2">Start Date</div>
+                    <div className="col-span-2">Next Meeting</div>
+                    <div className="col-span-2">Renewal Due</div>
                     <div className="col-span-1">Status</div>
-                    <div className="col-span-1">Document</div>
-                    <div className="col-span-2 text-right">Actions</div>
+                    <div className="col-span-1">Doc</div>
+                    <div className="col-span-2"></div>
                   </div>
                   
                   {/* Rows */}
@@ -564,12 +659,22 @@ const CollaborativeAgreementsPage = () => {
                         const hasDocument = !!agreement.documentUrl || !!agreement.medallionDocumentUrl;
                         const documentLink = agreement.documentUrl || agreement.medallionDocumentUrl;
                         
+                        // Meeting urgency
+                        const meetingUrgent = agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting <= 7;
+                        const meetingUpcoming = agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting <= 14;
+                        const meetingOverdue = agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting < 0;
+                        
+                        // Renewal urgency
+                        const renewalUrgent = agreement.daysUntilRenewal !== null && agreement.daysUntilRenewal <= 14;
+                        const renewalOverdue = agreement.daysUntilRenewal !== null && agreement.daysUntilRenewal < 0;
+                        const renewalDueSoon = agreement.daysUntilRenewal !== null && agreement.daysUntilRenewal <= 30;
+                        
                         return (
                           <div 
                             key={agreement.id} 
-                            className={`grid grid-cols-12 gap-4 p-4 border-b hover:bg-muted/30 transition-colors items-center ${
+                            className={`grid grid-cols-16 gap-3 p-4 border-b hover:bg-muted/30 transition-colors items-center ${
                               !agreement.isActive ? 'opacity-60 bg-muted/10' : ''
-                            }`}
+                            } ${renewalOverdue && agreement.isActive ? 'bg-destructive/5' : ''}`}
                           >
                             {/* Provider */}
                             <div className="col-span-3">
@@ -600,27 +705,94 @@ const CollaborativeAgreementsPage = () => {
                             {/* Physician */}
                             <div className="col-span-2">
                               <p className="text-sm font-medium">Dr. {agreement.physicianName}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatCadence(agreement.meetingCadence)}
+                              </p>
                             </div>
                             
-                            {/* Start Date */}
+                            {/* Next Meeting */}
                             <div className="col-span-2">
-                              <p className="text-sm">
-                                {agreement.startDate 
-                                  ? new Date(agreement.startDate).toLocaleDateString()
-                                  : <span className="text-muted-foreground">Not set</span>
-                                }
-                              </p>
-                              {agreement.terminatedAt && (
-                                <p className="text-xs text-destructive">
-                                  Ended {new Date(agreement.terminatedAt).toLocaleDateString()}
-                                </p>
+                              {!agreement.isActive ? (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              ) : agreement.nextMeetingDate ? (
+                                <div>
+                                  <p className={`text-sm font-medium ${
+                                    meetingOverdue ? 'text-destructive' : 
+                                    meetingUrgent ? 'text-warning' : ''
+                                  }`}>
+                                    {agreement.nextMeetingDate.toLocaleDateString()}
+                                  </p>
+                                  <p className={`text-xs ${
+                                    meetingOverdue ? 'text-destructive' : 
+                                    meetingUrgent ? 'text-warning' : 
+                                    'text-muted-foreground'
+                                  }`}>
+                                    {meetingOverdue ? (
+                                      <span className="flex items-center gap-1">
+                                        <AlertCircle className="h-3 w-3" />
+                                        {Math.abs(agreement.daysUntilMeeting!)} days overdue
+                                      </span>
+                                    ) : agreement.daysUntilMeeting === 0 ? (
+                                      'Today'
+                                    ) : agreement.daysUntilMeeting === 1 ? (
+                                      'Tomorrow'
+                                    ) : (
+                                      `In ${agreement.daysUntilMeeting} days`
+                                    )}
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">No start date</span>
+                              )}
+                            </div>
+                            
+                            {/* Renewal Due */}
+                            <div className="col-span-2">
+                              {!agreement.isActive ? (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              ) : agreement.renewalDate ? (
+                                <div>
+                                  <p className={`text-sm font-medium ${
+                                    renewalOverdue ? 'text-destructive' : 
+                                    renewalUrgent ? 'text-destructive' :
+                                    renewalDueSoon ? 'text-warning' : ''
+                                  }`}>
+                                    {agreement.renewalDate.toLocaleDateString()}
+                                  </p>
+                                  <p className={`text-xs ${
+                                    renewalOverdue ? 'text-destructive' : 
+                                    renewalUrgent ? 'text-destructive' :
+                                    renewalDueSoon ? 'text-warning' : 
+                                    'text-muted-foreground'
+                                  }`}>
+                                    {renewalOverdue ? (
+                                      <span className="flex items-center gap-1">
+                                        <AlertTriangle className="h-3 w-3" />
+                                        {Math.abs(agreement.daysUntilRenewal!)} days overdue!
+                                      </span>
+                                    ) : agreement.daysUntilRenewal! <= 30 ? (
+                                      <span className="flex items-center gap-1">
+                                        <Clock className="h-3 w-3" />
+                                        {agreement.daysUntilRenewal} days left
+                                      </span>
+                                    ) : (
+                                      `In ${agreement.daysUntilRenewal} days`
+                                    )}
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">No start date</span>
                               )}
                             </div>
                             
                             {/* Status */}
                             <div className="col-span-1">
                               {agreement.isActive ? (
-                                <Badge className="bg-success/10 text-success border-success/20">Active</Badge>
+                                renewalOverdue ? (
+                                  <Badge variant="destructive">Renewal Due</Badge>
+                                ) : (
+                                  <Badge className="bg-success/10 text-success border-success/20">Active</Badge>
+                                )
                               ) : (
                                 <Badge variant="secondary">Ended</Badge>
                               )}
@@ -629,16 +801,14 @@ const CollaborativeAgreementsPage = () => {
                             {/* Document */}
                             <div className="col-span-1">
                               {hasDocument ? (
-                                <Button variant="ghost" size="sm" asChild className="text-success">
-                                  <a href={documentLink!} target="_blank" rel="noopener noreferrer">
-                                    <Eye className="h-4 w-4 mr-1" />
-                                    View
+                                <Button variant="ghost" size="icon" asChild className="text-success h-8 w-8">
+                                  <a href={documentLink!} target="_blank" rel="noopener noreferrer" title="View Document">
+                                    <Eye className="h-4 w-4" />
                                   </a>
                                 </Button>
                               ) : agreement.isActive ? (
-                                <div className="flex items-center gap-1 text-warning text-xs">
-                                  <AlertCircle className="h-3 w-3" />
-                                  Missing
+                                <div className="flex items-center gap-1 text-warning text-xs" title="Missing documentation">
+                                  <AlertCircle className="h-4 w-4" />
                                 </div>
                               ) : (
                                 <span className="text-xs text-muted-foreground">—</span>
