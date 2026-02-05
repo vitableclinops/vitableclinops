@@ -120,6 +120,12 @@ const navItems: NavItem[] = [
     roles: ['provider', 'admin', 'leadership'] 
   },
   { 
+    label: 'Provider Directory', 
+    icon: User, 
+    href: '/directory', 
+    roles: ['provider', 'admin', 'leadership'] 
+  },
+  { 
     label: 'Update My Info', 
     icon: UserPlus, 
     href: '/onboarding?mode=edit', 

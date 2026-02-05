@@ -263,37 +263,67 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          birthday: string | null
           created_at: string
           credentials: string | null
           email: string
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
+          employment_end_date: string | null
+          employment_start_date: string | null
+          employment_status: string | null
           full_name: string | null
+          home_address: string | null
           id: string
           npi_number: string | null
+          patient_age_preference: string | null
           phone_number: string | null
+          preferred_name: string | null
+          service_offerings: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           avatar_url?: string | null
+          birthday?: string | null
           created_at?: string
           credentials?: string | null
           email: string
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          employment_end_date?: string | null
+          employment_start_date?: string | null
+          employment_status?: string | null
           full_name?: string | null
+          home_address?: string | null
           id?: string
           npi_number?: string | null
+          patient_age_preference?: string | null
           phone_number?: string | null
+          preferred_name?: string | null
+          service_offerings?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           avatar_url?: string | null
+          birthday?: string | null
           created_at?: string
           credentials?: string | null
           email?: string
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          employment_end_date?: string | null
+          employment_start_date?: string | null
+          employment_status?: string | null
           full_name?: string | null
+          home_address?: string | null
           id?: string
           npi_number?: string | null
+          patient_age_preference?: string | null
           phone_number?: string | null
+          preferred_name?: string | null
+          service_offerings?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -372,7 +402,19 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      provider_directory_public: {
+        Row: {
+          avatar_url: string | null
+          credentials: string | null
+          employment_status: string | null
+          full_name: string | null
+          id: string | null
+          npi_number: string | null
+          preferred_name: string | null
+          states: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {
