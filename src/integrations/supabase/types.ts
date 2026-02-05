@@ -68,6 +68,7 @@ export type Database = {
         Row: {
           agreement_id: string
           box_sign_signer_id: string | null
+          chart_review_url: string | null
           created_at: string
           id: string
           is_active: boolean | null
@@ -85,6 +86,7 @@ export type Database = {
         Insert: {
           agreement_id: string
           box_sign_signer_id?: string | null
+          chart_review_url?: string | null
           created_at?: string
           id?: string
           is_active?: boolean | null
@@ -102,6 +104,7 @@ export type Database = {
         Update: {
           agreement_id?: string
           box_sign_signer_id?: string | null
+          chart_review_url?: string | null
           created_at?: string
           id?: string
           is_active?: boolean | null
@@ -353,6 +356,7 @@ export type Database = {
           birthday: string | null
           board_certificates: string | null
           caqh_number: string | null
+          chart_review_folder_url: string | null
           collaborative_physician: string | null
           created_at: string
           credentials: string | null
@@ -402,6 +406,7 @@ export type Database = {
           birthday?: string | null
           board_certificates?: string | null
           caqh_number?: string | null
+          chart_review_folder_url?: string | null
           collaborative_physician?: string | null
           created_at?: string
           credentials?: string | null
@@ -451,6 +456,7 @@ export type Database = {
           birthday?: string | null
           board_certificates?: string | null
           caqh_number?: string | null
+          chart_review_folder_url?: string | null
           collaborative_physician?: string | null
           created_at?: string
           credentials?: string | null
@@ -557,6 +563,74 @@ export type Database = {
           },
         ]
       }
+      provider_meeting_compliance: {
+        Row: {
+          attended: boolean | null
+          attended_at: string | null
+          created_at: string
+          id: string
+          meeting_id: string
+          meeting_month: string
+          provider_id: string
+          required: boolean
+          state_abbreviation: string
+          updated_at: string
+        }
+        Insert: {
+          attended?: boolean | null
+          attended_at?: string | null
+          created_at?: string
+          id?: string
+          meeting_id: string
+          meeting_month: string
+          provider_id: string
+          required?: boolean
+          state_abbreviation: string
+          updated_at?: string
+        }
+        Update: {
+          attended?: boolean | null
+          attended_at?: string | null
+          created_at?: string
+          id?: string
+          meeting_id?: string
+          meeting_month?: string
+          provider_id?: string
+          required?: boolean
+          state_abbreviation?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_meeting_compliance_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meeting_notification_emails"
+            referencedColumns: ["meeting_id"]
+          },
+          {
+            foreignKeyName: "provider_meeting_compliance_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "supervision_meetings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_meeting_compliance_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_meeting_compliance_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       state_compliance_requirements: {
         Row: {
           ca_meeting_cadence: string | null
@@ -566,6 +640,7 @@ export type Database = {
           id: string
           knowledge_base_url: string | null
           licenses: string | null
+          meeting_months: number[] | null
           nlc: boolean | null
           np_md_ratio: string | null
           rxr_required: boolean | null
@@ -582,6 +657,7 @@ export type Database = {
           id?: string
           knowledge_base_url?: string | null
           licenses?: string | null
+          meeting_months?: number[] | null
           nlc?: boolean | null
           np_md_ratio?: string | null
           rxr_required?: boolean | null
@@ -598,6 +674,7 @@ export type Database = {
           id?: string
           knowledge_base_url?: string | null
           licenses?: string | null
+          meeting_months?: number[] | null
           nlc?: boolean | null
           np_md_ratio?: string | null
           rxr_required?: boolean | null
