@@ -1,15 +1,28 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Grid3X3, List, MapPin } from 'lucide-react';
+import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ProviderFilters } from '@/components/directory/ProviderFilters';
 import { ProviderTable, ProviderTableData } from '@/components/directory/ProviderTable';
 import { ProviderDetailModal } from '@/components/directory/ProviderDetailModal';
+import { providers as mockProviders, states } from '@/data/mockData';
+import { cn } from '@/lib/utils';
+import type { Provider } from '@/types';
 
 interface FullProvider {
   id: string;
@@ -70,7 +83,16 @@ interface DirectoryProvider {
 }
 
 const ProviderDirectoryPage = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { profile, roles } = useAuth();
+  
+  // Determine initial tab from URL or default based on role
+  const tabParam = searchParams.get('tab');
+  const isAdmin = roles.includes('admin') || roles.includes('leadership');
+  const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : 'management') : 'directory';
+  
+  const [activeTab, setActiveTab] = useState(defaultTab);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [providers, setProviders] = useState<FullProvider[]>([]);
   const [publicProviders, setPublicProviders] = useState<DirectoryProvider[]>([]);
@@ -82,12 +104,12 @@ const ProviderDirectoryPage = () => {
   const [stateFilter, setStateFilter] = useState('all');
   const [professionFilter, setProfessionFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [selectedManagementFilter, setSelectedManagementFilter] = useState<'all' | 'ready' | 'blocked' | 'pending'>('all');
   
   // Sorting
   const [sortColumn, setSortColumn] = useState('full_name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const isAdmin = roles.includes('admin');
   const userRole = roles[0] || 'provider';
   const userName = profile?.full_name || profile?.email || 'User';
   const userEmail = profile?.email || '';
@@ -105,15 +127,16 @@ const ProviderDirectoryPage = () => {
         if (!error && data) {
           setProviders(data as FullProvider[]);
         }
-      } else {
-        const { data, error } = await supabase
-          .from('provider_directory_public')
-          .select('*')
-          .order('full_name', { ascending: true });
+      }
+      
+      // Always fetch public directory for the directory tab
+      const { data: publicData, error: publicError } = await supabase
+        .from('provider_directory_public')
+        .select('*')
+        .order('full_name', { ascending: true });
 
-        if (!error && data) {
-          setPublicProviders(data as DirectoryProvider[]);
-        }
+      if (!publicError && publicData) {
+        setPublicProviders(publicData as DirectoryProvider[]);
       }
       
       setLoading(false);
@@ -121,6 +144,48 @@ const ProviderDirectoryPage = () => {
 
     fetchProviders();
   }, [isAdmin]);
+
+  // Management view helpers (from old ProvidersListPage)
+  const getInitials = (firstName: string, lastName: string) => {
+    return `${firstName[0]}${lastName[0]}`.toUpperCase();
+  };
+
+  const getProviderSummary = (provider: Provider) => {
+    const totalTasks = provider.states.flatMap(s => s.tasks).length;
+    const completedTasks = provider.states.flatMap(s => 
+      s.tasks.filter(t => ['verified', 'approved'].includes(t.status))
+    ).length;
+    const blockedTasks = provider.states.flatMap(s => 
+      s.tasks.filter(t => t.status === 'blocked')
+    ).length;
+    const readyStates = provider.states.filter(s => s.isReadyForActivation);
+    const hasBlockers = blockedTasks > 0;
+    const isReady = readyStates.length > 0;
+
+    return { totalTasks, completedTasks, blockedTasks, readyStates, hasBlockers, isReady };
+  };
+
+  const filteredMockProviders = mockProviders.filter(provider => {
+    const matchesSearch = 
+      `${provider.firstName} ${provider.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      provider.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      provider.npiNumber.includes(searchQuery);
+
+    if (!matchesSearch) return false;
+
+    const summary = getProviderSummary(provider);
+    
+    switch (selectedManagementFilter) {
+      case 'ready':
+        return summary.isReady;
+      case 'blocked':
+        return summary.hasBlockers;
+      case 'pending':
+        return summary.totalTasks > summary.completedTasks && !summary.hasBlockers;
+      default:
+        return true;
+    }
+  });
 
   // Extract unique values for filter dropdowns
   const { availableStates, availableProfessions } = useMemo(() => {
@@ -146,9 +211,9 @@ const ProviderDirectoryPage = () => {
     };
   }, [providers, publicProviders, isAdmin]);
 
-  // Filter and sort providers
+  // Filter and sort providers for directory view
   const filteredProviders = useMemo(() => {
-    const data = isAdmin ? providers : publicProviders;
+    const data = isAdmin && activeTab === 'management' ? providers : publicProviders;
     
     let filtered = data.filter(p => {
       // Search filter
@@ -221,7 +286,7 @@ const ProviderDirectoryPage = () => {
     });
 
     return filtered;
-  }, [providers, publicProviders, isAdmin, searchQuery, stateFilter, professionFilter, statusFilter, sortColumn, sortDirection]);
+  }, [providers, publicProviders, isAdmin, activeTab, searchQuery, stateFilter, professionFilter, statusFilter, sortColumn, sortDirection]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -241,7 +306,7 @@ const ProviderDirectoryPage = () => {
 
   const hasActiveFilters = searchQuery !== '' || stateFilter !== 'all' || professionFilter !== 'all' || statusFilter !== 'all';
 
-  const getInitials = (name: string | null) => {
+  const getProviderInitials = (name: string | null) => {
     if (!name) return '?';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
@@ -259,7 +324,7 @@ const ProviderDirectoryPage = () => {
     }
   };
 
-  // Convert to table data format
+  // Convert to table data format for directory view
   const tableData: ProviderTableData[] = filteredProviders.map(p => ({
     id: p.id,
     full_name: p.full_name,
@@ -293,8 +358,8 @@ const ProviderDirectoryPage = () => {
         userAvatarUrl={profile?.avatar_url || undefined}
       />
 
-      <main className="pl-64 transition-all duration-300">
-        <div className="p-8">
+      <main className="ml-16 lg:ml-64 transition-all duration-300 min-w-0">
+        <div className="p-4 md:p-6 lg:p-8">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
@@ -302,119 +367,450 @@ const ProviderDirectoryPage = () => {
                 <Users className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-foreground">Provider Directory</h1>
+                <h1 className="text-3xl font-bold text-foreground">Providers</h1>
                 <p className="text-muted-foreground">
-                  {filteredProviders.length} of {isAdmin ? providers.length : publicProviders.length} providers
-                  {isAdmin && ` • ${providers.filter(p => p.employment_status === 'active').length} active`}
+                  {isAdmin 
+                    ? `${providers.length} total • ${providers.filter(p => p.employment_status === 'active').length} active`
+                    : `${publicProviders.length} colleagues`
+                  }
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-                size="icon"
-                onClick={() => setViewMode('table')}
-              >
-                <List className="h-4 w-4" />
+            {isAdmin && (
+              <Button onClick={() => navigate('/onboarding?mode=admin')}>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add Provider
               </Button>
-              <Button
-                variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-                size="icon"
-                onClick={() => setViewMode('grid')}
-              >
-                <Grid3X3 className="h-4 w-4" />
-              </Button>
-            </div>
+            )}
           </div>
 
-          {/* Filters */}
-          <ProviderFilters
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            stateFilter={stateFilter}
-            onStateChange={setStateFilter}
-            professionFilter={professionFilter}
-            onProfessionChange={setProfessionFilter}
-            statusFilter={statusFilter}
-            onStatusChange={setStatusFilter}
-            availableStates={availableStates}
-            availableProfessions={availableProfessions}
-            onClearFilters={handleClearFilters}
-            hasActiveFilters={hasActiveFilters}
-          />
+          {/* Tabs for Admin */}
+          {isAdmin ? (
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+              <TabsList>
+                <TabsTrigger value="management" className="gap-2">
+                  <Shield className="h-4 w-4" />
+                  Management
+                </TabsTrigger>
+                <TabsTrigger value="directory" className="gap-2">
+                  <Users className="h-4 w-4" />
+                  Directory
+                </TabsTrigger>
+              </TabsList>
 
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3, 4, 5, 6].map(i => (
-                <Card key={i} className="animate-pulse">
-                  <CardContent className="p-6">
+              {/* Management Tab - Task/Status focused view */}
+              <TabsContent value="management" className="space-y-6">
+                {/* Filters */}
+                <Card>
+                  <CardContent className="py-4">
                     <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 rounded-full bg-muted" />
-                      <div className="space-y-2">
-                        <div className="h-4 w-32 bg-muted rounded" />
-                        <div className="h-3 w-24 bg-muted rounded" />
+                      <div className="relative flex-1 max-w-md">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          placeholder="Search by name, email, or NPI..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          variant={selectedManagementFilter === 'all' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setSelectedManagementFilter('all')}
+                        >
+                          All
+                        </Button>
+                        <Button 
+                          variant={selectedManagementFilter === 'ready' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setSelectedManagementFilter('ready')}
+                          className={selectedManagementFilter === 'ready' ? '' : 'text-success border-success/30 hover:bg-success/10'}
+                        >
+                          <Shield className="h-4 w-4 mr-1" />
+                          Ready
+                        </Button>
+                        <Button 
+                          variant={selectedManagementFilter === 'blocked' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setSelectedManagementFilter('blocked')}
+                          className={selectedManagementFilter === 'blocked' ? '' : 'text-destructive border-destructive/30 hover:bg-destructive/10'}
+                        >
+                          <AlertTriangle className="h-4 w-4 mr-1" />
+                          Blocked
+                        </Button>
+                        <Button 
+                          variant={selectedManagementFilter === 'pending' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setSelectedManagementFilter('pending')}
+                          className={selectedManagementFilter === 'pending' ? '' : 'text-warning border-warning/30 hover:bg-warning/10'}
+                        >
+                          <Clock className="h-4 w-4 mr-1" />
+                          In Progress
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
-          ) : viewMode === 'table' ? (
-            <ProviderTable
-              providers={tableData}
-              onRowClick={handleRowClick}
-              isAdmin={isAdmin}
-              sortColumn={sortColumn}
-              sortDirection={sortDirection}
-              onSort={handleSort}
-            />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredProviders.map(provider => (
-                <Card 
-                  key={provider.id} 
-                  className="hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => isAdmin && setSelectedProvider(provider as FullProvider)}
-                >
-                  <CardContent className="p-6">
-                    <div className="flex items-start gap-4">
-                      <Avatar className="h-12 w-12">
-                        <AvatarImage src={provider.avatar_url || undefined} />
-                        <AvatarFallback className="bg-primary/10 text-primary">
-                          {getInitials(provider.full_name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-semibold text-foreground truncate">
-                            {provider.preferred_name || provider.full_name || 'Unknown'}
-                          </h3>
-                          {isAdmin && getStatusBadge(provider.employment_status)}
-                        </div>
-                        {(provider.profession || provider.credentials) && (
-                          <p className="text-sm text-muted-foreground">{provider.profession || provider.credentials}</p>
+
+                {/* Providers table */}
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[300px]">Provider</TableHead>
+                          <TableHead>Specialty</TableHead>
+                          <TableHead>States</TableHead>
+                          <TableHead>Progress</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredMockProviders.map(provider => {
+                          const summary = getProviderSummary(provider);
+                          
+                          return (
+                            <TableRow 
+                              key={provider.id}
+                              className="cursor-pointer hover:bg-muted/50"
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-10 w-10">
+                                    <AvatarFallback className="bg-primary/10 text-primary">
+                                      {getInitials(provider.firstName, provider.lastName)}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <p className="font-medium text-foreground">
+                                      {provider.firstName} {provider.lastName}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                      NPI: {provider.npiNumber}
+                                    </p>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {provider.specialty}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  {provider.states.slice(0, 4).map(ps => (
+                                    <Badge 
+                                      key={ps.id} 
+                                      variant="secondary"
+                                      className={cn(
+                                        'text-xs',
+                                        ps.isReadyForActivation && 'bg-success/10 text-success border-success/20',
+                                        ps.tasks.some(t => t.status === 'blocked') && 'bg-destructive/10 text-destructive border-destructive/20'
+                                      )}
+                                    >
+                                      {ps.state.abbreviation}
+                                    </Badge>
+                                  ))}
+                                  {provider.states.length > 4 && (
+                                    <span className="text-xs text-muted-foreground">
+                                      +{provider.states.length - 4}
+                                    </span>
+                                  )}
+                                  {provider.states.length === 0 && (
+                                    <span className="text-sm text-muted-foreground">No states assigned</span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {summary.totalTasks > 0 ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-24 h-2 rounded-full bg-secondary overflow-hidden">
+                                      <div 
+                                        className={cn(
+                                          'h-full rounded-full',
+                                          summary.hasBlockers ? 'bg-destructive' : 'bg-success'
+                                        )}
+                                        style={{ width: `${(summary.completedTasks / summary.totalTasks) * 100}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-sm text-muted-foreground">
+                                      {summary.completedTasks}/{summary.totalTasks}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {summary.isReady ? (
+                                  <Badge className="bg-success/10 text-success border-success/20">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                    Ready
+                                  </Badge>
+                                ) : summary.hasBlockers ? (
+                                  <Badge className="bg-destructive/10 text-destructive border-destructive/20">
+                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                    Blocked
+                                  </Badge>
+                                ) : summary.totalTasks > 0 ? (
+                                  <Badge className="bg-warning/10 text-warning border-warning/20">
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    In Progress
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary">
+                                    New
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => navigate(`/onboarding?mode=admin&providerId=${provider.id}`)}>
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Edit Provider
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem>
+                                      <Eye className="h-4 w-4 mr-2" />
+                                      View Details
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        {filteredMockProviders.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="h-32 text-center">
+                              <p className="text-muted-foreground">No providers found</p>
+                            </TableCell>
+                          </TableRow>
                         )}
-                        {provider.primary_specialty && (
-                          <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>
-                        )}
-                        {provider.npi_number && (
-                          <p className="text-xs text-muted-foreground mt-1 font-mono">NPI: {provider.npi_number}</p>
-                        )}
-                        {(isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).states) && (
-                          <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-                            <MapPin className="h-3 w-3 flex-shrink-0" />
-                            <span className="truncate">
-                              {isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).states}
-                            </span>
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Directory Tab - Contact/Profile focused view */}
+              <TabsContent value="directory" className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <ProviderFilters
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    stateFilter={stateFilter}
+                    onStateChange={setStateFilter}
+                    professionFilter={professionFilter}
+                    onProfessionChange={setProfessionFilter}
+                    statusFilter={statusFilter}
+                    onStatusChange={setStatusFilter}
+                    availableStates={availableStates}
+                    availableProfessions={availableProfessions}
+                    onClearFilters={handleClearFilters}
+                    hasActiveFilters={hasActiveFilters}
+                  />
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={viewMode === 'table' ? 'secondary' : 'ghost'}
+                      size="icon"
+                      onClick={() => setViewMode('table')}
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+                      size="icon"
+                      onClick={() => setViewMode('grid')}
+                    >
+                      <Grid3X3 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {loading ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {[1, 2, 3, 4, 5, 6].map(i => (
+                      <Card key={i} className="animate-pulse">
+                        <CardContent className="p-6">
+                          <div className="flex items-center gap-4">
+                            <div className="h-12 w-12 rounded-full bg-muted" />
+                            <div className="space-y-2">
+                              <div className="h-4 w-32 bg-muted rounded" />
+                              <div className="h-3 w-24 bg-muted rounded" />
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : viewMode === 'table' ? (
+                  <ProviderTable
+                    providers={tableData}
+                    onRowClick={handleRowClick}
+                    isAdmin={isAdmin}
+                    sortColumn={sortColumn}
+                    sortDirection={sortDirection}
+                    onSort={handleSort}
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredProviders.map(provider => (
+                      <Card 
+                        key={provider.id} 
+                        className="hover:shadow-md transition-shadow cursor-pointer"
+                        onClick={() => isAdmin && setSelectedProvider(provider as FullProvider)}
+                      >
+                        <CardContent className="p-6">
+                          <div className="flex items-start gap-4">
+                            <Avatar className="h-12 w-12">
+                              <AvatarImage src={provider.avatar_url || undefined} />
+                              <AvatarFallback className="bg-primary/10 text-primary">
+                                {getProviderInitials(provider.full_name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-semibold text-foreground truncate">
+                                  {provider.preferred_name || provider.full_name || 'Unknown'}
+                                </h3>
+                                {isAdmin && getStatusBadge(provider.employment_status)}
+                              </div>
+                              {(provider.profession || provider.credentials) && (
+                                <p className="text-sm text-muted-foreground">{provider.profession || provider.credentials}</p>
+                              )}
+                              {provider.primary_specialty && (
+                                <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>
+                              )}
+                              {provider.npi_number && (
+                                <p className="text-xs text-muted-foreground mt-1 font-mono">NPI: {provider.npi_number}</p>
+                              )}
+                              {(isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).states) && (
+                                <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+                                  <MapPin className="h-3 w-3 flex-shrink-0" />
+                                  <span className="truncate">
+                                    {isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).states}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          ) : (
+            // Non-admin view - Just the directory
+            <>
+              <div className="flex items-center justify-between mb-6">
+                <ProviderFilters
+                  searchQuery={searchQuery}
+                  onSearchChange={setSearchQuery}
+                  stateFilter={stateFilter}
+                  onStateChange={setStateFilter}
+                  professionFilter={professionFilter}
+                  onProfessionChange={setProfessionFilter}
+                  statusFilter={statusFilter}
+                  onStatusChange={setStatusFilter}
+                  availableStates={availableStates}
+                  availableProfessions={availableProfessions}
+                  onClearFilters={handleClearFilters}
+                  hasActiveFilters={hasActiveFilters}
+                />
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant={viewMode === 'table' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    onClick={() => setViewMode('table')}
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    onClick={() => setViewMode('grid')}
+                  >
+                    <Grid3X3 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[1, 2, 3, 4, 5, 6].map(i => (
+                    <Card key={i} className="animate-pulse">
+                      <CardContent className="p-6">
+                        <div className="flex items-center gap-4">
+                          <div className="h-12 w-12 rounded-full bg-muted" />
+                          <div className="space-y-2">
+                            <div className="h-4 w-32 bg-muted rounded" />
+                            <div className="h-3 w-24 bg-muted rounded" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : viewMode === 'table' ? (
+                <ProviderTable
+                  providers={tableData}
+                  onRowClick={handleRowClick}
+                  isAdmin={false}
+                  sortColumn={sortColumn}
+                  sortDirection={sortDirection}
+                  onSort={handleSort}
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredProviders.map(provider => (
+                    <Card 
+                      key={provider.id} 
+                      className="hover:shadow-md transition-shadow"
+                    >
+                      <CardContent className="p-6">
+                        <div className="flex items-start gap-4">
+                          <Avatar className="h-12 w-12">
+                            <AvatarImage src={provider.avatar_url || undefined} />
+                            <AvatarFallback className="bg-primary/10 text-primary">
+                              {getProviderInitials(provider.full_name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-foreground truncate">
+                              {provider.preferred_name || provider.full_name || 'Unknown'}
+                            </h3>
+                            {(provider.profession || provider.credentials) && (
+                              <p className="text-sm text-muted-foreground">{provider.profession || provider.credentials}</p>
+                            )}
+                            {provider.primary_specialty && (
+                              <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>
+                            )}
+                            {(provider as DirectoryProvider).states && (
+                              <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+                                <MapPin className="h-3 w-3 flex-shrink-0" />
+                                <span className="truncate">{(provider as DirectoryProvider).states}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>

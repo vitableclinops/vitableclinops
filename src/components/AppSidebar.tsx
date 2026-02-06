@@ -93,13 +93,7 @@ const navItems: NavItem[] = [
     roles: ['physician'] 
   },
   { 
-    label: 'Compliance', 
-    icon: ClipboardList, 
-    href: '/admin/compliance', 
-    roles: ['admin'] 
-  },
-  { 
-    label: 'State Directory', 
+    label: 'States & Compliance', 
     icon: MapPin, 
     href: '/admin/states', 
     roles: ['admin'] 
@@ -136,21 +130,15 @@ const navItems: NavItem[] = [
     roles: ['provider'] 
   },
   { 
-    label: 'Data Import', 
-    icon: Database, 
-    href: '/admin/import', 
-    roles: ['admin'] 
-  },
-  { 
     label: 'Activation Queue', 
     icon: Power, 
     href: '/admin/activation', 
     roles: ['admin'] 
   },
   { 
-    label: 'Manage Roles', 
-    icon: Shield, 
-    href: '/admin/roles', 
+    label: 'System Settings',
+    icon: Settings, 
+    href: '/admin/settings', 
     roles: ['admin'] 
   },
 ];
