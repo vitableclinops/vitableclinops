@@ -2140,6 +2140,7 @@ export type Database = {
           meeting_month: string | null
           meeting_type: string | null
           notes: string | null
+          physician_id: string | null
           scheduled_date: string
           state_abbreviation: string | null
           state_name: string | null
@@ -2158,6 +2159,7 @@ export type Database = {
           meeting_month?: string | null
           meeting_type?: string | null
           notes?: string | null
+          physician_id?: string | null
           scheduled_date: string
           state_abbreviation?: string | null
           state_name?: string | null
@@ -2176,6 +2178,7 @@ export type Database = {
           meeting_month?: string | null
           meeting_type?: string | null
           notes?: string | null
+          physician_id?: string | null
           scheduled_date?: string
           state_abbreviation?: string | null
           state_name?: string | null
@@ -2196,6 +2199,27 @@ export type Database = {
             columns: ["agreement_id"]
             isOneToOne: false
             referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supervision_meetings_physician_id_fkey"
+            columns: ["physician_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supervision_meetings_physician_id_fkey"
+            columns: ["physician_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supervision_meetings_physician_id_fkey"
+            columns: ["physician_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
             referencedColumns: ["id"]
           },
         ]
