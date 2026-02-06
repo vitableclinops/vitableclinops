@@ -733,6 +733,48 @@ export type Database = {
         }
         Relationships: []
       }
+      ehr_activation_events: {
+        Row: {
+          actor_id: string | null
+          actor_name: string | null
+          created_at: string
+          event_type: string
+          evidence_link: string | null
+          id: string
+          new_status: string | null
+          notes: string | null
+          previous_status: string | null
+          provider_id: string
+          state_abbreviation: string
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_name?: string | null
+          created_at?: string
+          event_type: string
+          evidence_link?: string | null
+          id?: string
+          new_status?: string | null
+          notes?: string | null
+          previous_status?: string | null
+          provider_id: string
+          state_abbreviation: string
+        }
+        Update: {
+          actor_id?: string | null
+          actor_name?: string | null
+          created_at?: string
+          event_type?: string
+          evidence_link?: string | null
+          id?: string
+          new_status?: string | null
+          notes?: string | null
+          previous_status?: string | null
+          provider_id?: string
+          state_abbreviation?: string
+        }
+        Relationships: []
+      }
       meeting_attendees: {
         Row: {
           assigned_slot: string | null
@@ -1246,6 +1288,75 @@ export type Database = {
           },
         ]
       }
+      provider_state_status: {
+        Row: {
+          activation_effective_date: string | null
+          activation_notes: string | null
+          created_at: string
+          deactivation_effective_date: string | null
+          ehr_activated_at: string | null
+          ehr_activated_by: string | null
+          ehr_activation_status: Database["public"]["Enums"]["ehr_activation_status"]
+          ehr_deactivated_at: string | null
+          ehr_deactivated_by: string | null
+          id: string
+          mismatch_type: Database["public"]["Enums"]["mismatch_type"] | null
+          override_expires_at: string | null
+          override_reason: string | null
+          provider_id: string
+          readiness_last_evaluated_at: string | null
+          readiness_override: boolean | null
+          readiness_reason: string | null
+          readiness_status: Database["public"]["Enums"]["readiness_status"]
+          state_abbreviation: string
+          updated_at: string
+        }
+        Insert: {
+          activation_effective_date?: string | null
+          activation_notes?: string | null
+          created_at?: string
+          deactivation_effective_date?: string | null
+          ehr_activated_at?: string | null
+          ehr_activated_by?: string | null
+          ehr_activation_status?: Database["public"]["Enums"]["ehr_activation_status"]
+          ehr_deactivated_at?: string | null
+          ehr_deactivated_by?: string | null
+          id?: string
+          mismatch_type?: Database["public"]["Enums"]["mismatch_type"] | null
+          override_expires_at?: string | null
+          override_reason?: string | null
+          provider_id: string
+          readiness_last_evaluated_at?: string | null
+          readiness_override?: boolean | null
+          readiness_reason?: string | null
+          readiness_status?: Database["public"]["Enums"]["readiness_status"]
+          state_abbreviation: string
+          updated_at?: string
+        }
+        Update: {
+          activation_effective_date?: string | null
+          activation_notes?: string | null
+          created_at?: string
+          deactivation_effective_date?: string | null
+          ehr_activated_at?: string | null
+          ehr_activated_by?: string | null
+          ehr_activation_status?: Database["public"]["Enums"]["ehr_activation_status"]
+          ehr_deactivated_at?: string | null
+          ehr_deactivated_by?: string | null
+          id?: string
+          mismatch_type?: Database["public"]["Enums"]["mismatch_type"] | null
+          override_expires_at?: string | null
+          override_reason?: string | null
+          provider_id?: string
+          readiness_last_evaluated_at?: string | null
+          readiness_override?: boolean | null
+          readiness_reason?: string | null
+          readiness_status?: Database["public"]["Enums"]["readiness_status"]
+          state_abbreviation?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       state_compliance_requirements: {
         Row: {
           ca_meeting_cadence: string | null
@@ -1743,6 +1854,18 @@ export type Database = {
         | "terminated"
       app_role: "admin" | "provider" | "physician" | "leadership"
       collab_requirement_type: "never" | "always" | "conditional"
+      ehr_activation_status:
+        | "inactive"
+        | "activation_requested"
+        | "active"
+        | "deactivation_requested"
+        | "deactivated"
+      mismatch_type:
+        | "active_but_not_ready"
+        | "ready_but_inactive"
+        | "expired_license_but_active"
+        | "expired_collab_but_active"
+        | "none"
       notification_type:
         | "agreement_initiated"
         | "signature_requested"
@@ -1751,6 +1874,7 @@ export type Database = {
         | "meeting_scheduled"
         | "termination_initiated"
         | "termination_complete"
+      readiness_status: "not_ready" | "ready" | "at_risk" | "blocked"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1910,6 +2034,20 @@ export const Constants = {
       ],
       app_role: ["admin", "provider", "physician", "leadership"],
       collab_requirement_type: ["never", "always", "conditional"],
+      ehr_activation_status: [
+        "inactive",
+        "activation_requested",
+        "active",
+        "deactivation_requested",
+        "deactivated",
+      ],
+      mismatch_type: [
+        "active_but_not_ready",
+        "ready_but_inactive",
+        "expired_license_but_active",
+        "expired_collab_but_active",
+        "none",
+      ],
       notification_type: [
         "agreement_initiated",
         "signature_requested",
@@ -1919,6 +2057,7 @@ export const Constants = {
         "termination_initiated",
         "termination_complete",
       ],
+      readiness_status: ["not_ready", "ready", "at_risk", "blocked"],
     },
   },
 } as const

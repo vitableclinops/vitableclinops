@@ -28,7 +28,8 @@ import {
   UserPlus,
   User,
   ChevronDown,
-  Database
+  Database,
+  Power
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -138,6 +139,12 @@ const navItems: NavItem[] = [
     label: 'Data Import', 
     icon: Database, 
     href: '/admin/import', 
+    roles: ['admin'] 
+  },
+  { 
+    label: 'Activation Queue', 
+    icon: Power, 
+    href: '/admin/activation', 
     roles: ['admin'] 
   },
   { 
