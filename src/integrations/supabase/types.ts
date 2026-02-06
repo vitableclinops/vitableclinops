@@ -815,6 +815,64 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_license_applications: {
+        Row: {
+          application_submitted_date: string | null
+          created_at: string
+          expected_approval_date: string | null
+          id: string
+          notes: string | null
+          profile_id: string
+          state_abbreviation: string
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          application_submitted_date?: string | null
+          created_at?: string
+          expected_approval_date?: string | null
+          id?: string
+          notes?: string | null
+          profile_id: string
+          state_abbreviation: string
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          application_submitted_date?: string | null
+          created_at?: string
+          expected_approval_date?: string | null
+          id?: string
+          notes?: string | null
+          profile_id?: string
+          state_abbreviation?: string
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_license_applications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_license_applications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_license_applications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       provider_licenses: {
         Row: {
           collab_agreement_id: string | null
@@ -963,18 +1021,104 @@ export type Database = {
           },
         ]
       }
+      provider_state_collab_decisions: {
+        Row: {
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          decision: string
+          decision_notes: string | null
+          id: string
+          profile_id: string
+          state_abbreviation: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision: string
+          decision_notes?: string | null
+          id?: string
+          profile_id: string
+          state_abbreviation: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision?: string
+          decision_notes?: string | null
+          id?: string
+          profile_id?: string
+          state_abbreviation?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_state_collab_decisions_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_state_collab_decisions_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_state_collab_decisions_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_state_collab_decisions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_state_collab_decisions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_state_collab_decisions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       state_compliance_requirements: {
         Row: {
           ca_meeting_cadence: string | null
           ca_required: boolean | null
+          collab_notes: string | null
+          collab_requirement_type:
+            | Database["public"]["Enums"]["collab_requirement_type"]
+            | null
           created_at: string | null
+          fpa_requirements_summary: string | null
           fpa_status: string | null
           id: string
+          independent_practice_requirements: string | null
           knowledge_base_url: string | null
           licenses: string | null
           meeting_months: number[] | null
           nlc: boolean | null
           np_md_ratio: string | null
+          np_prohibited: boolean | null
           rxr_required: boolean | null
           state_abbreviation: string
           state_name: string
@@ -984,14 +1128,21 @@ export type Database = {
         Insert: {
           ca_meeting_cadence?: string | null
           ca_required?: boolean | null
+          collab_notes?: string | null
+          collab_requirement_type?:
+            | Database["public"]["Enums"]["collab_requirement_type"]
+            | null
           created_at?: string | null
+          fpa_requirements_summary?: string | null
           fpa_status?: string | null
           id?: string
+          independent_practice_requirements?: string | null
           knowledge_base_url?: string | null
           licenses?: string | null
           meeting_months?: number[] | null
           nlc?: boolean | null
           np_md_ratio?: string | null
+          np_prohibited?: boolean | null
           rxr_required?: boolean | null
           state_abbreviation: string
           state_name: string
@@ -1001,14 +1152,21 @@ export type Database = {
         Update: {
           ca_meeting_cadence?: string | null
           ca_required?: boolean | null
+          collab_notes?: string | null
+          collab_requirement_type?:
+            | Database["public"]["Enums"]["collab_requirement_type"]
+            | null
           created_at?: string | null
+          fpa_requirements_summary?: string | null
           fpa_status?: string | null
           id?: string
+          independent_practice_requirements?: string | null
           knowledge_base_url?: string | null
           licenses?: string | null
           meeting_months?: number[] | null
           nlc?: boolean | null
           np_md_ratio?: string | null
+          np_prohibited?: boolean | null
           rxr_required?: boolean | null
           state_abbreviation?: string
           state_name?: string
@@ -1258,6 +1416,7 @@ export type Database = {
         | "termination_initiated"
         | "terminated"
       app_role: "admin" | "provider" | "physician" | "leadership"
+      collab_requirement_type: "never" | "always" | "conditional"
       notification_type:
         | "agreement_initiated"
         | "signature_requested"
@@ -1423,6 +1582,7 @@ export const Constants = {
         "terminated",
       ],
       app_role: ["admin", "provider", "physician", "leadership"],
+      collab_requirement_type: ["never", "always", "conditional"],
       notification_type: [
         "agreement_initiated",
         "signature_requested",
