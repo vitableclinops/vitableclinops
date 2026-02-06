@@ -1,4 +1,5 @@
-import { X, CheckCircle2, AlertTriangle, XCircle, Clock, FileText, Users, Shield, Stethoscope } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, XCircle, Clock, FileText, Users, Shield, Stethoscope, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -73,9 +74,19 @@ export function CellDetailPanel({ cell, provider, state, onClose }: CellDetailPa
         <div className="flex items-start justify-between">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
-              <span className="font-bold text-primary">{state.abbreviation}</span>
+              <Link 
+                to={`/states/${state.abbreviation}`}
+                className="font-bold text-primary hover:underline"
+              >
+                {state.abbreviation}
+              </Link>
               <span className="text-muted-foreground">×</span>
-              <span>{provider.name}</span>
+              <Link 
+                to={`/directory?search=${encodeURIComponent(provider.name)}`}
+                className="hover:underline"
+              >
+                {provider.name}
+              </Link>
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               {state.name} • {provider.credentials || provider.providerType}
@@ -84,6 +95,33 @@ export function CellDetailPanel({ cell, provider, state, onClose }: CellDetailPa
           <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
             <X className="h-4 w-4" />
           </Button>
+        </div>
+        
+        {/* Quick links */}
+        <div className="flex items-center gap-2 mt-3">
+          <Link 
+            to={`/states/${state.abbreviation}`}
+            className="text-xs text-primary hover:underline flex items-center gap-1"
+          >
+            <ExternalLink className="h-3 w-3" />
+            State Details
+          </Link>
+          <span className="text-muted-foreground">•</span>
+          <Link 
+            to={`/admin/agreements?state=${state.abbreviation}`}
+            className="text-xs text-primary hover:underline flex items-center gap-1"
+          >
+            <ExternalLink className="h-3 w-3" />
+            Agreements
+          </Link>
+          <span className="text-muted-foreground">•</span>
+          <Link 
+            to={`/knowledge?search=${encodeURIComponent(state.name)}`}
+            className="text-xs text-primary hover:underline flex items-center gap-1"
+          >
+            <ExternalLink className="h-3 w-3" />
+            State Guide
+          </Link>
         </div>
       </CardHeader>
 

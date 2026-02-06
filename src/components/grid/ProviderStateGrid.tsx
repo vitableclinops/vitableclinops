@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -158,11 +159,12 @@ export function ProviderStateGrid({ data, className }: ProviderStateGridProps) {
                   Provider
                 </div>
                 {data.states.map((state) => (
-                  <div
+                  <Link
                     key={state.id}
-                    className="w-12 flex-shrink-0 p-1 border-r text-center"
+                    to={`/states/${state.abbreviation}`}
+                    className="w-12 flex-shrink-0 p-1 border-r text-center hover:bg-muted/50 transition-colors"
                   >
-                    <div className="font-medium text-xs">{state.abbreviation}</div>
+                    <div className="font-medium text-xs hover:text-primary">{state.abbreviation}</div>
                     {state.demandTag && (
                       <Badge 
                         variant="outline" 
@@ -176,7 +178,7 @@ export function ProviderStateGrid({ data, className }: ProviderStateGridProps) {
                          state.demandTag === 'watch' ? '👁' : '•'}
                       </Badge>
                     )}
-                  </div>
+                  </Link>
                 ))}
               </div>
 
@@ -184,7 +186,12 @@ export function ProviderStateGrid({ data, className }: ProviderStateGridProps) {
               {filteredProviders.map((provider) => (
                 <div key={provider.id} className="flex border-b hover:bg-muted/20">
                   <div className="w-48 flex-shrink-0 p-2 border-r">
-                    <div className="font-medium text-sm truncate">{provider.name}</div>
+                    <Link 
+                      to={`/directory?search=${encodeURIComponent(provider.email)}`}
+                      className="font-medium text-sm truncate hover:text-primary hover:underline block"
+                    >
+                      {provider.name}
+                    </Link>
                     <div className="text-xs text-muted-foreground truncate">
                       {provider.credentials || provider.providerType}
                     </div>
