@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { SupervisionCalendar } from '@/components/SupervisionCalendar';
 import { StatCard } from '@/components/StatCard';
@@ -838,7 +839,10 @@ const CollaborativeAgreementsPage = () => {
                             )}
                             {/* Provider */}
                             <div className={hasRole('admin') ? 'col-span-3' : 'col-span-3'}>
-                              <div className="flex items-center gap-3">
+                              <Link 
+                                to={`/directory?search=${encodeURIComponent(agreement.providerEmail)}`}
+                                className="flex items-center gap-3 group/provider"
+                              >
                                 <div className={`h-9 w-9 rounded-full flex items-center justify-center font-semibold text-xs shrink-0 ${
                                   agreement.isActive 
                                     ? 'bg-success/10 text-success' 
@@ -847,7 +851,7 @@ const CollaborativeAgreementsPage = () => {
                                   {agreement.providerName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="font-medium text-sm truncate">{agreement.providerName}</p>
+                                  <p className="font-medium text-sm truncate group-hover/provider:text-primary transition-colors">{agreement.providerName}</p>
                                   <div className="flex items-center gap-2">
                                     {!agreement.isActive && (
                                       <Badge variant="secondary" className="text-[10px] px-1 py-0">Ended</Badge>
@@ -857,15 +861,17 @@ const CollaborativeAgreementsPage = () => {
                                     )}
                                   </div>
                                 </div>
-                              </div>
+                              </Link>
                             </div>
                             
                             {/* State with CA requirement indicator */}
                             <div className="col-span-1">
                               <div className="flex flex-col gap-1">
-                                <Badge variant="outline" className="font-bold text-xs w-fit">
-                                  {agreement.stateAbbreviation}
-                                </Badge>
+                                <Link to={`/states/${agreement.stateAbbreviation}`}>
+                                  <Badge variant="outline" className="font-bold text-xs w-fit hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer">
+                                    {agreement.stateAbbreviation}
+                                  </Badge>
+                                </Link>
                                 {agreement.caRequired && (
                                   <span className="text-[10px] text-muted-foreground">CA Req</span>
                                 )}
@@ -874,7 +880,12 @@ const CollaborativeAgreementsPage = () => {
                             
                             {/* Physician with state-derived cadence */}
                             <div className="col-span-2">
-                              <p className="text-sm">Dr. {agreement.physicianName.split(' ')[1] || agreement.physicianName}</p>
+                              <Link 
+                                to={`/physicians/${encodeURIComponent(agreement.physicianEmail)}`}
+                                className="text-sm hover:text-primary hover:underline transition-colors"
+                              >
+                                Dr. {agreement.physicianName.split(' ')[1] || agreement.physicianName}
+                              </Link>
                               <p className="text-xs text-muted-foreground">
                                 {formatCadence(agreement.meetingCadence)}
                               </p>

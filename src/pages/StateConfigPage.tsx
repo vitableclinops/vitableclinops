@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { DemandTagBadge } from '@/components/DemandTagBadge';
 import { StateImportDialog } from '@/components/StateImportDialog';
@@ -304,80 +305,89 @@ const StateConfigPage = () => {
               {/* States grid */}
               <div className="grid gap-4 md:grid-cols-2">
                 {filteredStates.map(state => (
-                  <Card 
-                    key={state.id} 
-                    className={cn(
-                      'card-interactive cursor-pointer group',
-                      selectedState?.id === state.id && 'ring-2 ring-primary'
-                    )}
-                    onClick={() => setSelectedState(state)}
+                  <Link
+                    key={state.id}
+                    to={`/states/${state.abbreviation}`}
+                    className="block"
                   >
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className={cn(
-                            'flex h-12 w-12 items-center justify-center rounded-lg text-lg font-bold',
-                            state.hasFPA ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'
-                          )}>
-                            {state.abbreviation}
-                          </div>
-                          <div>
-                            <CardTitle className="text-lg">{state.name}</CardTitle>
-                            <div className="flex items-center gap-2 mt-1">
-                              {state.demandTag && (
-                                <DemandTagBadge tag={state.demandTag} size="sm" />
-                              )}
+                    <Card 
+                      className={cn(
+                        'card-interactive cursor-pointer group h-full',
+                        selectedState?.id === state.id && 'ring-2 ring-primary'
+                      )}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setSelectedState(state);
+                      }}
+                    >
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              'flex h-12 w-12 items-center justify-center rounded-lg text-lg font-bold',
+                              state.hasFPA ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'
+                            )}>
+                              {state.abbreviation}
+                            </div>
+                            <div>
+                              <CardTitle className="text-lg">{state.name}</CardTitle>
+                              <div className="flex items-center gap-2 mt-1">
+                                {state.demandTag && (
+                                  <DemandTagBadge tag={state.demandTag} size="sm" />
+                                )}
+                              </div>
                             </div>
                           </div>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              console.log('Edit state:', state.id);
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            console.log('Edit state:', state.id);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {/* Key requirements badges */}
-                      <div className="flex flex-wrap gap-2">
-                        {state.hasFPA ? (
-                          <Badge className="text-xs bg-success/10 text-success border-0">
-                            <Shield className="h-3 w-3 mr-1" />
-                            FPA Available
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs">
-                            <Users className="h-3 w-3 mr-1" />
-                            Collaboration Required
-                          </Badge>
-                        )}
-                        {state.requiresPrescriptiveAuthority && (
-                          <Badge variant="outline" className="text-xs">
-                            <Pill className="h-3 w-3 mr-1" />
-                            Separate Rx Authority
-                          </Badge>
-                        )}
-                      </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {/* Key requirements badges */}
+                        <div className="flex flex-wrap gap-2">
+                          {state.hasFPA ? (
+                            <Badge className="text-xs bg-success/10 text-success border-0">
+                              <Shield className="h-3 w-3 mr-1" />
+                              FPA Available
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">
+                              <Users className="h-3 w-3 mr-1" />
+                              Collaboration Required
+                            </Badge>
+                          )}
+                          {state.requiresPrescriptiveAuthority && (
+                            <Badge variant="outline" className="text-xs">
+                              <Pill className="h-3 w-3 mr-1" />
+                              Separate Rx Authority
+                            </Badge>
+                          )}
+                        </div>
 
-                      {/* Stats */}
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <DollarSign className="h-4 w-4" />
-                          <span>${state.applicationFeeRange.min} - ${state.applicationFeeRange.max}</span>
+                        {/* Stats */}
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <DollarSign className="h-4 w-4" />
+                            <span>${state.applicationFeeRange.min} - ${state.applicationFeeRange.max}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Clock className="h-4 w-4" />
+                            <span>{state.processingTimeWeeks.min}-{state.processingTimeWeeks.max} weeks</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Clock className="h-4 w-4" />
-                          <span>{state.processingTimeWeeks.min}-{state.processingTimeWeeks.max} weeks</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
+                  </Link>
                 ))}
               </div>
 

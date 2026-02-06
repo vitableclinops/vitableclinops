@@ -55,23 +55,18 @@ const navItems: NavItem[] = [
     roles: ['provider', 'admin', 'leadership'] 
   },
   { 
-    label: 'My States', 
-    icon: MapPin, 
-    href: '/states', 
-    roles: ['provider'] 
-  },
-  { 
-    label: 'My Tasks', 
+    label: 'My Dashboard', 
     icon: ClipboardList, 
-    href: '/tasks', 
+    href: '/provider', 
     roles: ['provider'] 
   },
-  { 
-    label: 'Reimbursements', 
-    icon: Receipt, 
-    href: '/reimbursements', 
-    roles: ['provider', 'admin'] 
-  },
+  // Reimbursements - placeholder route (not yet implemented)
+  // { 
+  //   label: 'Reimbursements', 
+  //   icon: Receipt, 
+  //   href: '/reimbursements', 
+  //   roles: ['provider', 'admin'] 
+  // },
   { 
     label: 'All Providers', 
     icon: Users, 
@@ -108,12 +103,13 @@ const navItems: NavItem[] = [
     href: '/grid', 
     roles: ['admin', 'leadership'] 
   },
-  { 
-    label: 'Reports', 
-    icon: BarChart3, 
-    href: '/reports', 
-    roles: ['admin', 'leadership'] 
-  },
+  // Reports - placeholder route (not yet implemented)
+  // { 
+  //   label: 'Reports', 
+  //   icon: BarChart3, 
+  //   href: '/reports', 
+  //   roles: ['admin', 'leadership'] 
+  // },
   { 
     label: 'Knowledge Base', 
     icon: BookOpen, 
