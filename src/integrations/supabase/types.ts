@@ -232,6 +232,7 @@ export type Database = {
           id: string
           is_auto_generated: boolean | null
           is_required: boolean | null
+          links_json: Json | null
           meeting_id: string | null
           notes: string | null
           notification_sent_at: string | null
@@ -239,6 +240,7 @@ export type Database = {
           physician_id: string | null
           priority: string | null
           provider_id: string | null
+          related_event_id: string | null
           sort_order: number | null
           started_at: string | null
           state_abbreviation: string | null
@@ -273,6 +275,7 @@ export type Database = {
           id?: string
           is_auto_generated?: boolean | null
           is_required?: boolean | null
+          links_json?: Json | null
           meeting_id?: string | null
           notes?: string | null
           notification_sent_at?: string | null
@@ -280,6 +283,7 @@ export type Database = {
           physician_id?: string | null
           priority?: string | null
           provider_id?: string | null
+          related_event_id?: string | null
           sort_order?: number | null
           started_at?: string | null
           state_abbreviation?: string | null
@@ -314,6 +318,7 @@ export type Database = {
           id?: string
           is_auto_generated?: boolean | null
           is_required?: boolean | null
+          links_json?: Json | null
           meeting_id?: string | null
           notes?: string | null
           notification_sent_at?: string | null
@@ -321,6 +326,7 @@ export type Database = {
           physician_id?: string | null
           priority?: string | null
           provider_id?: string | null
+          related_event_id?: string | null
           sort_order?: number | null
           started_at?: string | null
           state_abbreviation?: string | null
@@ -463,6 +469,13 @@ export type Database = {
             columns: ["provider_id"]
             isOneToOne: false
             referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_tasks_related_event_id_fkey"
+            columns: ["related_event_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_events"
             referencedColumns: ["id"]
           },
           {
@@ -631,6 +644,135 @@ export type Database = {
           },
         ]
       }
+      calendar_events: {
+        Row: {
+          attestation_due_days: number | null
+          attestation_required: boolean | null
+          completed_attestations: number | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          ends_at: string
+          event_type: string
+          id: string
+          meeting_link: string | null
+          newsletter_article_id: string | null
+          parent_event_id: string | null
+          recording_link: string | null
+          recurrence_rule: string | null
+          starts_at: string
+          status: string
+          timezone: string | null
+          title: string
+          total_providers: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          attestation_due_days?: number | null
+          attestation_required?: boolean | null
+          completed_attestations?: number | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at: string
+          event_type?: string
+          id?: string
+          meeting_link?: string | null
+          newsletter_article_id?: string | null
+          parent_event_id?: string | null
+          recording_link?: string | null
+          recurrence_rule?: string | null
+          starts_at: string
+          status?: string
+          timezone?: string | null
+          title: string
+          total_providers?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          attestation_due_days?: number | null
+          attestation_required?: boolean | null
+          completed_attestations?: number | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at?: string
+          event_type?: string
+          id?: string
+          meeting_link?: string | null
+          newsletter_article_id?: string | null
+          parent_event_id?: string | null
+          recording_link?: string | null
+          recurrence_rule?: string | null
+          starts_at?: string
+          status?: string
+          timezone?: string | null
+          title?: string
+          total_providers?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_newsletter_article_id_fkey"
+            columns: ["newsletter_article_id"]
+            isOneToOne: false
+            referencedRelation: "kb_articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_parent_event_id_fkey"
+            columns: ["parent_event_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       collaborative_agreements: {
         Row: {
           agreement_document_url: string | null
@@ -774,6 +916,177 @@ export type Database = {
           state_abbreviation?: string
         }
         Relationships: []
+      }
+      event_activity_log: {
+        Row: {
+          activity_type: string
+          actor_id: string | null
+          actor_name: string | null
+          actor_role: string | null
+          created_at: string
+          description: string
+          event_id: string
+          id: string
+          metadata: Json | null
+        }
+        Insert: {
+          activity_type: string
+          actor_id?: string | null
+          actor_name?: string | null
+          actor_role?: string | null
+          created_at?: string
+          description: string
+          event_id: string
+          id?: string
+          metadata?: Json | null
+        }
+        Update: {
+          activity_type?: string
+          actor_id?: string | null
+          actor_name?: string | null
+          actor_role?: string | null
+          created_at?: string
+          description?: string
+          event_id?: string
+          id?: string
+          metadata?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_activity_log_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_activity_log_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_activity_log_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_activity_log_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      event_attestations: {
+        Row: {
+          completed_at: string | null
+          completed_by_user_id: string | null
+          completion_source: string | null
+          created_at: string
+          due_at: string
+          event_id: string
+          id: string
+          is_active_at_creation: boolean | null
+          last_reminder_at: string | null
+          notes: string | null
+          pod_id: string | null
+          provider_email: string | null
+          provider_id: string
+          provider_name: string
+          reminder_count: number | null
+          status: Database["public"]["Enums"]["attestation_status"]
+          task_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_by_user_id?: string | null
+          completion_source?: string | null
+          created_at?: string
+          due_at: string
+          event_id: string
+          id?: string
+          is_active_at_creation?: boolean | null
+          last_reminder_at?: string | null
+          notes?: string | null
+          pod_id?: string | null
+          provider_email?: string | null
+          provider_id: string
+          provider_name: string
+          reminder_count?: number | null
+          status?: Database["public"]["Enums"]["attestation_status"]
+          task_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_by_user_id?: string | null
+          completion_source?: string | null
+          created_at?: string
+          due_at?: string
+          event_id?: string
+          id?: string
+          is_active_at_creation?: boolean | null
+          last_reminder_at?: string | null
+          notes?: string | null
+          pod_id?: string | null
+          provider_email?: string | null
+          provider_id?: string
+          provider_name?: string
+          reminder_count?: number | null
+          status?: Database["public"]["Enums"]["attestation_status"]
+          task_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_attestations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_attestations_pod_id_fkey"
+            columns: ["pod_id"]
+            isOneToOne: false
+            referencedRelation: "pods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_attestations_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_attestations_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_attestations_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_attestations_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       kb_articles: {
         Row: {
@@ -2218,6 +2531,7 @@ export type Database = {
         | "compliance"
         | "document"
         | "custom"
+        | "all_hands_attestation"
       agreement_task_status:
         | "pending"
         | "in_progress"
@@ -2236,6 +2550,7 @@ export type Database = {
         | "termination_initiated"
         | "terminated"
       app_role: "admin" | "provider" | "physician" | "leadership"
+      attestation_status: "pending" | "completed" | "overdue" | "excused"
       collab_requirement_type: "never" | "always" | "conditional"
       ehr_activation_status:
         | "inactive"
@@ -2395,6 +2710,7 @@ export const Constants = {
         "compliance",
         "document",
         "custom",
+        "all_hands_attestation",
       ],
       agreement_task_status: [
         "pending",
@@ -2416,6 +2732,7 @@ export const Constants = {
         "terminated",
       ],
       app_role: ["admin", "provider", "physician", "leadership"],
+      attestation_status: ["pending", "completed", "overdue", "excused"],
       collab_requirement_type: ["never", "always", "conditional"],
       ehr_activation_status: [
         "inactive",

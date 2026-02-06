@@ -3,6 +3,7 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { StatCard } from '@/components/StatCard';
 import { ReadinessScreen } from '@/components/ReadinessScreen';
 import { ProviderMeetingRSVP } from '@/components/meetings/ProviderMeetingRSVP';
+import { ProviderAttestationCard } from '@/components/calendar/ProviderAttestationCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -337,6 +338,7 @@ const ProviderDashboard = () => {
 
               {/* Sidebar */}
               <div className="space-y-6">
+                <ProviderAttestationCard />
                 <ProviderMeetingRSVP />
 
                 <Card>
