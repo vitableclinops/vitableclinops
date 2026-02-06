@@ -292,6 +292,20 @@ export function BulkReassignDialog({
 
           if (tasksError) throw tasksError;
 
+          // Log the transfer initiation activity
+          await supabase.from('transfer_activity_log').insert({
+            transfer_id: transfer.id,
+            activity_type: 'status_changed',
+            actor_id: userId,
+            actor_name: user?.user_metadata?.full_name || user?.email || 'Admin',
+            actor_role: 'admin',
+            description: `Transfer workflow initiated from ${firstProvider.physicianName || 'Unassigned'} to ${selectedPhysician.name}`,
+            metadata: {
+              affected_providers: affectedProviders.map(p => p.providerName),
+              effective_date: effectiveDate || null,
+            },
+          });
+
         } else {
           // Direct reassignment without transfer workflow - just update the agreement
           const { error: updateError } = await supabase

@@ -6,9 +6,13 @@ import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { TaskAssignmentSelect } from './TaskAssignmentSelect';
+import { TransferActivityLog } from './TransferActivityLog';
+import { TransferLifecycleInfo } from './TransferLifecycleInfo';
 import { 
   ArrowRightLeft, 
   CheckCircle2, 
@@ -20,7 +24,9 @@ import {
   FileText,
   Calendar,
   Bell,
-  ClipboardCheck
+  ClipboardCheck,
+  Activity,
+  ListChecks
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Tables } from '@/integrations/supabase/types';
@@ -38,22 +44,23 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState('checklist');
+
+  const fetchTasks = async () => {
+    const { data, error } = await supabase
+      .from('agreement_tasks')
+      .select('*')
+      .eq('transfer_id', transfer.id)
+      .order('auto_trigger', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (!error && data) {
+      setTasks(data);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchTasks = async () => {
-      const { data, error } = await supabase
-        .from('agreement_tasks')
-        .select('*')
-        .eq('transfer_id', transfer.id)
-        .order('auto_trigger', { ascending: true })
-        .order('created_at', { ascending: true });
-
-      if (!error && data) {
-        setTasks(data);
-      }
-      setLoading(false);
-    };
-
     fetchTasks();
   }, [transfer.id]);
 
@@ -89,6 +96,19 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
       return;
     }
 
+    // Log the activity
+    await supabase.from('transfer_activity_log').insert({
+      transfer_id: transfer.id,
+      task_id: task.id,
+      activity_type: newStatus === 'completed' ? 'task_completed' : 'status_changed',
+      actor_id: user?.id,
+      actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
+      actor_role: 'admin',
+      description: newStatus === 'completed' 
+        ? `Completed: ${task.title}`
+        : `Reopened: ${task.title}`,
+    });
+
     setTasks(prev => prev.map(t => 
       t.id === task.id 
         ? { ...t, status: newStatus, completed_at: newStatus === 'completed' ? new Date().toISOString() : null }
@@ -108,6 +128,16 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
           completed_by: user?.id,
         })
         .eq('id', transfer.id);
+
+      // Log completion
+      await supabase.from('transfer_activity_log').insert({
+        transfer_id: transfer.id,
+        activity_type: 'status_changed',
+        actor_id: user?.id,
+        actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
+        actor_role: 'admin',
+        description: 'Transfer workflow completed - all tasks finished',
+      });
 
       toast({
         title: 'Transfer complete',
@@ -179,7 +209,22 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               )}>
                 {task.title}
               </p>
+              {task.description && (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {task.description}
+                </p>
+              )}
             </div>
+            
+            {/* Task Assignment */}
+            <TaskAssignmentSelect
+              taskId={task.id}
+              transferId={transfer.id}
+              currentAssigneeId={task.assigned_to}
+              currentAssigneeName={task.assigned_to_name}
+              onAssigned={fetchTasks}
+            />
+
             {task.status === 'completed' && task.completed_at && (
               <span className="text-xs text-muted-foreground">
                 {format(new Date(task.completed_at), 'MMM d')}
@@ -238,18 +283,50 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               <div className="h-8 bg-muted rounded" />
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2">
-              <TaskList 
-                taskList={terminationTasks} 
-                title="1. Termination Tasks" 
-                phase="termination"
-              />
-              <TaskList 
-                taskList={initiationTasks} 
-                title="2. Initiation Tasks" 
-                phase="initiation"
-              />
-            </div>
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="mb-4">
+                <TabsTrigger value="checklist" className="gap-2">
+                  <ListChecks className="h-4 w-4" />
+                  Checklist
+                </TabsTrigger>
+                <TabsTrigger value="activity" className="gap-2">
+                  <Activity className="h-4 w-4" />
+                  Activity
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="checklist" className="space-y-4">
+                <div className="grid gap-6 md:grid-cols-2">
+                  <TaskList 
+                    taskList={terminationTasks} 
+                    title="1. Termination Tasks" 
+                    phase="termination"
+                  />
+                  <TaskList 
+                    taskList={initiationTasks} 
+                    title="2. Initiation Tasks" 
+                    phase="initiation"
+                  />
+                </div>
+
+                {/* Lifecycle Info for completed transfers */}
+                <TransferLifecycleInfo
+                  status={transfer.status}
+                  completedAt={transfer.completed_at}
+                  effectiveDate={transfer.effective_date}
+                  renewalDate={transfer.new_agreement_renewal_date}
+                  firstMeetingDate={transfer.first_meeting_scheduled_date}
+                  meetingCadence={transfer.meeting_cadence}
+                  chartReviewFrequency={transfer.chart_review_frequency}
+                  targetPhysicianName={transfer.target_physician_name}
+                  affectedProviderCount={transfer.affected_provider_count}
+                />
+              </TabsContent>
+
+              <TabsContent value="activity">
+                <TransferActivityLog transferId={transfer.id} />
+              </TabsContent>
+            </Tabs>
           )}
 
           {transfer.effective_date && (

@@ -210,8 +210,10 @@ export type Database = {
       agreement_tasks: {
         Row: {
           agreement_id: string | null
+          assigned_at: string | null
           assigned_role: string | null
           assigned_to: string | null
+          assigned_to_name: string | null
           auto_trigger: string | null
           blockers: string | null
           category: Database["public"]["Enums"]["agreement_task_category"]
@@ -226,6 +228,8 @@ export type Database = {
           is_auto_generated: boolean | null
           meeting_id: string | null
           notes: string | null
+          notification_sent_at: string | null
+          notification_status: string | null
           physician_id: string | null
           priority: string | null
           provider_id: string | null
@@ -239,8 +243,10 @@ export type Database = {
         }
         Insert: {
           agreement_id?: string | null
+          assigned_at?: string | null
           assigned_role?: string | null
           assigned_to?: string | null
+          assigned_to_name?: string | null
           auto_trigger?: string | null
           blockers?: string | null
           category?: Database["public"]["Enums"]["agreement_task_category"]
@@ -255,6 +261,8 @@ export type Database = {
           is_auto_generated?: boolean | null
           meeting_id?: string | null
           notes?: string | null
+          notification_sent_at?: string | null
+          notification_status?: string | null
           physician_id?: string | null
           priority?: string | null
           provider_id?: string | null
@@ -268,8 +276,10 @@ export type Database = {
         }
         Update: {
           agreement_id?: string | null
+          assigned_at?: string | null
           assigned_role?: string | null
           assigned_to?: string | null
+          assigned_to_name?: string | null
           auto_trigger?: string | null
           blockers?: string | null
           category?: Database["public"]["Enums"]["agreement_task_category"]
@@ -284,6 +294,8 @@ export type Database = {
           is_auto_generated?: boolean | null
           meeting_id?: string | null
           notes?: string | null
+          notification_sent_at?: string | null
+          notification_status?: string | null
           physician_id?: string | null
           priority?: string | null
           provider_id?: string | null
@@ -442,13 +454,17 @@ export type Database = {
         Row: {
           affected_provider_count: number
           affected_provider_ids: string[]
+          chart_review_frequency: string | null
           completed_at: string | null
           completed_by: string | null
           created_at: string
           effective_date: string | null
+          first_meeting_scheduled_date: string | null
           id: string
           initiated_at: string
           initiated_by: string | null
+          meeting_cadence: string | null
+          new_agreement_renewal_date: string | null
           notes: string | null
           source_agreement_id: string
           source_physician_email: string | null
@@ -466,13 +482,17 @@ export type Database = {
         Insert: {
           affected_provider_count?: number
           affected_provider_ids?: string[]
+          chart_review_frequency?: string | null
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
           effective_date?: string | null
+          first_meeting_scheduled_date?: string | null
           id?: string
           initiated_at?: string
           initiated_by?: string | null
+          meeting_cadence?: string | null
+          new_agreement_renewal_date?: string | null
           notes?: string | null
           source_agreement_id: string
           source_physician_email?: string | null
@@ -490,13 +510,17 @@ export type Database = {
         Update: {
           affected_provider_count?: number
           affected_provider_ids?: string[]
+          chart_review_frequency?: string | null
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
           effective_date?: string | null
+          first_meeting_scheduled_date?: string | null
           id?: string
           initiated_at?: string
           initiated_by?: string | null
+          meeting_cadence?: string | null
+          new_agreement_renewal_date?: string | null
           notes?: string | null
           source_agreement_id?: string
           source_physician_email?: string | null
@@ -1328,6 +1352,81 @@ export type Database = {
             columns: ["agreement_id"]
             isOneToOne: false
             referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transfer_activity_log: {
+        Row: {
+          activity_type: string
+          actor_id: string | null
+          actor_name: string | null
+          actor_role: string | null
+          created_at: string | null
+          description: string
+          id: string
+          metadata: Json | null
+          task_id: string | null
+          transfer_id: string
+        }
+        Insert: {
+          activity_type: string
+          actor_id?: string | null
+          actor_name?: string | null
+          actor_role?: string | null
+          created_at?: string | null
+          description: string
+          id?: string
+          metadata?: Json | null
+          task_id?: string | null
+          transfer_id: string
+        }
+        Update: {
+          activity_type?: string
+          actor_id?: string | null
+          actor_name?: string | null
+          actor_role?: string | null
+          created_at?: string | null
+          description?: string
+          id?: string
+          metadata?: Json | null
+          task_id?: string | null
+          transfer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transfer_activity_log_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfer_activity_log_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfer_activity_log_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfer_activity_log_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfer_activity_log_transfer_id_fkey"
+            columns: ["transfer_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_transfers"
             referencedColumns: ["id"]
           },
         ]
