@@ -215,6 +215,8 @@ export type Database = {
           assigned_to: string | null
           assigned_to_name: string | null
           auto_trigger: string | null
+          blocked_reason: string | null
+          blocked_until: string | null
           blockers: string | null
           category: Database["public"]["Enums"]["agreement_task_category"]
           completed_at: string | null
@@ -223,6 +225,9 @@ export type Database = {
           created_by: string | null
           description: string | null
           due_date: string | null
+          escalated: boolean | null
+          escalated_at: string | null
+          escalated_by: string | null
           external_url: string | null
           id: string
           is_auto_generated: boolean | null
@@ -241,6 +246,7 @@ export type Database = {
           status: Database["public"]["Enums"]["agreement_task_status"]
           title: string
           transfer_id: string | null
+          transfer_provider_id: string | null
           updated_at: string
         }
         Insert: {
@@ -250,6 +256,8 @@ export type Database = {
           assigned_to?: string | null
           assigned_to_name?: string | null
           auto_trigger?: string | null
+          blocked_reason?: string | null
+          blocked_until?: string | null
           blockers?: string | null
           category?: Database["public"]["Enums"]["agreement_task_category"]
           completed_at?: string | null
@@ -258,6 +266,9 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           due_date?: string | null
+          escalated?: boolean | null
+          escalated_at?: string | null
+          escalated_by?: string | null
           external_url?: string | null
           id?: string
           is_auto_generated?: boolean | null
@@ -276,6 +287,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["agreement_task_status"]
           title: string
           transfer_id?: string | null
+          transfer_provider_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -285,6 +297,8 @@ export type Database = {
           assigned_to?: string | null
           assigned_to_name?: string | null
           auto_trigger?: string | null
+          blocked_reason?: string | null
+          blocked_until?: string | null
           blockers?: string | null
           category?: Database["public"]["Enums"]["agreement_task_category"]
           completed_at?: string | null
@@ -293,6 +307,9 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           due_date?: string | null
+          escalated?: boolean | null
+          escalated_at?: string | null
+          escalated_by?: string | null
           external_url?: string | null
           id?: string
           is_auto_generated?: boolean | null
@@ -311,6 +328,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["agreement_task_status"]
           title?: string
           transfer_id?: string | null
+          transfer_provider_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -454,6 +472,13 @@ export type Database = {
             referencedRelation: "agreement_transfers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "agreement_tasks_transfer_provider_id_fkey"
+            columns: ["transfer_provider_id"]
+            isOneToOne: false
+            referencedRelation: "transfer_provider_status"
+            referencedColumns: ["id"]
+          },
         ]
       }
       agreement_transfers: {
@@ -469,6 +494,7 @@ export type Database = {
           id: string
           initiated_at: string
           initiated_by: string | null
+          initiation_effective_date: string | null
           meeting_cadence: string | null
           new_agreement_renewal_date: string | null
           notes: string | null
@@ -483,6 +509,7 @@ export type Database = {
           target_physician_email: string | null
           target_physician_id: string | null
           target_physician_name: string
+          termination_effective_date: string | null
           updated_at: string
         }
         Insert: {
@@ -497,6 +524,7 @@ export type Database = {
           id?: string
           initiated_at?: string
           initiated_by?: string | null
+          initiation_effective_date?: string | null
           meeting_cadence?: string | null
           new_agreement_renewal_date?: string | null
           notes?: string | null
@@ -511,6 +539,7 @@ export type Database = {
           target_physician_email?: string | null
           target_physician_id?: string | null
           target_physician_name: string
+          termination_effective_date?: string | null
           updated_at?: string
         }
         Update: {
@@ -525,6 +554,7 @@ export type Database = {
           id?: string
           initiated_at?: string
           initiated_by?: string | null
+          initiation_effective_date?: string | null
           meeting_cadence?: string | null
           new_agreement_renewal_date?: string | null
           notes?: string | null
@@ -539,6 +569,7 @@ export type Database = {
           target_physician_email?: string | null
           target_physician_id?: string | null
           target_physician_name?: string
+          termination_effective_date?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -1437,6 +1468,110 @@ export type Database = {
           },
         ]
       }
+      transfer_provider_status: {
+        Row: {
+          blocked_reason: string | null
+          blocked_until: string | null
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          escalated: boolean | null
+          escalated_at: string | null
+          id: string
+          last_activity_at: string | null
+          notes: string | null
+          provider_email: string | null
+          provider_id: string
+          provider_name: string
+          status: string
+          transfer_id: string
+          updated_at: string
+        }
+        Insert: {
+          blocked_reason?: string | null
+          blocked_until?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          escalated?: boolean | null
+          escalated_at?: string | null
+          id?: string
+          last_activity_at?: string | null
+          notes?: string | null
+          provider_email?: string | null
+          provider_id: string
+          provider_name: string
+          status?: string
+          transfer_id: string
+          updated_at?: string
+        }
+        Update: {
+          blocked_reason?: string | null
+          blocked_until?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          escalated?: boolean | null
+          escalated_at?: string | null
+          id?: string
+          last_activity_at?: string | null
+          notes?: string | null
+          provider_email?: string | null
+          provider_id?: string
+          provider_name?: string
+          status?: string
+          transfer_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transfer_provider_status_transfer_id_fkey"
+            columns: ["transfer_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_transfers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transfer_task_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_default: boolean | null
+          name: string
+          phase: string
+          state_abbreviation: string | null
+          tasks: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_default?: boolean | null
+          name: string
+          phase: string
+          state_abbreviation?: string | null
+          tasks?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_default?: boolean | null
+          name?: string
+          phase?: string
+          state_abbreviation?: string | null
+          tasks?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -1595,6 +1730,7 @@ export type Database = {
         | "completed"
         | "blocked"
         | "cancelled"
+        | "waiting_on_signature"
       agreement_workflow_status:
         | "draft"
         | "pending_signatures"
@@ -1759,6 +1895,7 @@ export const Constants = {
         "completed",
         "blocked",
         "cancelled",
+        "waiting_on_signature",
       ],
       agreement_workflow_status: [
         "draft",

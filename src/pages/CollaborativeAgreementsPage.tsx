@@ -9,6 +9,7 @@ import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTra
 import { StateComplianceGrid } from '@/components/agreements/StateComplianceGrid';
 import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { TransferWorkflowCard } from '@/components/agreements/TransferWorkflowCard';
+import { AdminTaskQueue } from '@/components/agreements/AdminTaskQueue';
 import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard';
 import { useAgreementTransfers } from '@/hooks/useAgreementTransfers';
 import { Button } from '@/components/ui/button';
@@ -1018,40 +1019,48 @@ const CollaborativeAgreementsPage = () => {
 
             {/* Transfers Tab */}
             <TabsContent value="transfers">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold">Physician Transfers</h3>
-                    <p className="text-sm text-muted-foreground">Track in-progress physician reassignments with checklist workflows</p>
-                  </div>
+              <div className="grid gap-6 lg:grid-cols-3">
+                {/* Task Queue Sidebar */}
+                <div className="lg:col-span-1">
+                  <AdminTaskQueue />
                 </div>
-                
-                {transfersLoading ? (
-                  <div className="animate-pulse space-y-4">
-                    <div className="h-24 bg-muted rounded" />
-                    <div className="h-24 bg-muted rounded" />
+
+                {/* Transfer Workflows */}
+                <div className="lg:col-span-2 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold">Physician Transfers</h3>
+                      <p className="text-sm text-muted-foreground">Track in-progress physician reassignments with checklist workflows</p>
+                    </div>
                   </div>
-                ) : transfers.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center">
-                      <ArrowRightLeft className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                      <p className="text-muted-foreground">No transfers in progress</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Use bulk selection on the All Agreements tab to initiate transfers
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="space-y-4">
-                    {transfers.map(transfer => (
-                      <TransferWorkflowCard 
-                        key={transfer.id} 
-                        transfer={transfer} 
-                        onUpdate={refetchTransfers}
-                      />
-                    ))}
-                  </div>
-                )}
+                  
+                  {transfersLoading ? (
+                    <div className="animate-pulse space-y-4">
+                      <div className="h-24 bg-muted rounded" />
+                      <div className="h-24 bg-muted rounded" />
+                    </div>
+                  ) : transfers.length === 0 ? (
+                    <Card>
+                      <CardContent className="py-12 text-center">
+                        <ArrowRightLeft className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                        <p className="text-muted-foreground">No transfers in progress</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Use bulk selection on the All Agreements tab to initiate transfers
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-4">
+                      {transfers.map(transfer => (
+                        <TransferWorkflowCard 
+                          key={transfer.id} 
+                          transfer={transfer} 
+                          onUpdate={refetchTransfers}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </TabsContent>
 
