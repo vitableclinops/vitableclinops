@@ -8,9 +8,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Shield, Users, ArrowLeft } from 'lucide-react';
+import { Loader2, Shield, Users, ArrowLeft, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { CreateAccountDialog } from '@/components/admin/CreateAccountDialog';
 import type { Tables, Enums } from '@/integrations/supabase/types';
 
 type Profile = Tables<'profiles'>;
@@ -130,9 +131,12 @@ export default function UserRolesPage() {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back
           </Button>
-          <div className="flex items-center gap-2">
-            <Shield className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-bold">User Role Management</h1>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Shield className="h-6 w-6 text-primary" />
+              <h1 className="text-2xl font-bold">User Role Management</h1>
+            </div>
+            <CreateAccountDialog />
           </div>
         </div>
 
