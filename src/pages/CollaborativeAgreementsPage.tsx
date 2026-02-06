@@ -506,8 +506,8 @@ const CollaborativeAgreementsPage = () => {
         userAvatarUrl={profile?.avatar_url || undefined}
       />
       
-      <main className="pl-64 transition-all duration-300">
-        <div className="p-8">
+      <main className="ml-16 lg:ml-64 transition-all duration-300 min-w-0">
+        <div className="p-4 md:p-6 lg:p-8 overflow-x-auto">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -609,7 +609,7 @@ const CollaborativeAgreementsPage = () => {
               </TabsTrigger>
               <TabsTrigger value="transfers" className="gap-2 px-4">
                 <ArrowRightLeft className="h-4 w-4" />
-                Transfers
+                Tasks
                 {transfers.filter(t => t.status === 'pending' || t.status === 'in_progress').length > 0 && (
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {transfers.filter(t => t.status === 'pending' || t.status === 'in_progress').length}
@@ -1017,20 +1017,20 @@ const CollaborativeAgreementsPage = () => {
               </Card>
             </TabsContent>
 
-            {/* Transfers Tab */}
+            {/* Tasks Tab */}
             <TabsContent value="transfers">
-              <div className="grid gap-6 lg:grid-cols-3">
+              <div className="grid gap-6 xl:grid-cols-3">
                 {/* Task Queue Sidebar */}
-                <div className="lg:col-span-1">
+                <div className="xl:col-span-1 order-2 xl:order-1">
                   <AdminTaskQueue />
                 </div>
 
                 {/* Transfer Workflows */}
-                <div className="lg:col-span-2 space-y-4">
-                  <div className="flex items-center justify-between">
+                <div className="xl:col-span-2 space-y-4 order-1 xl:order-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
-                      <h3 className="text-lg font-semibold">Physician Transfers</h3>
-                      <p className="text-sm text-muted-foreground">Track in-progress physician reassignments with checklist workflows</p>
+                      <h3 className="text-lg font-semibold">Active Tasks</h3>
+                      <p className="text-sm text-muted-foreground">Track in-progress tasks, transfers, and checklist workflows</p>
                     </div>
                   </div>
                   
