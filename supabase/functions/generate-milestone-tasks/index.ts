@@ -24,6 +24,61 @@ interface Pod {
   slack_channel: string | null;
 }
 
+/**
+ * Parse a date string in YYYY-MM-DD format as a local date (not UTC)
+ * This prevents timezone shifting issues
+ */
+function parseLocalDate(dateStr: string): { year: number; month: number; day: number } {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return { year, month: month - 1, day }; // month is 0-indexed
+}
+
+/**
+ * Get Chicago date components from current time
+ */
+function getChicagoDate(): { year: number; month: number; day: number; dateStr: string } {
+  const now = new Date();
+  const chicagoFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const dateStr = chicagoFormatter.format(now);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return { year, month: month - 1, day, dateStr };
+}
+
+/**
+ * Compare two dates (year, month, day) without time
+ */
+function compareDates(
+  a: { year: number; month: number; day: number },
+  b: { year: number; month: number; day: number }
+): number {
+  if (a.year !== b.year) return a.year - b.year;
+  if (a.month !== b.month) return a.month - b.month;
+  return a.day - b.day;
+}
+
+/**
+ * Format date for display
+ */
+function formatDate(month: number, day: number): string {
+  const months = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  return `${months[month]} ${day}`;
+}
+
+/**
+ * Create a date string in YYYY-MM-DD format
+ */
+function toDateString(year: number, month: number, day: number): string {
+  const m = String(month + 1).padStart(2, '0');
+  const d = String(day).padStart(2, '0');
+  return `${year}-${m}-${d}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -35,16 +90,8 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Get current date in America/Chicago timezone
-    const now = new Date();
-    const chicagoFormatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Chicago',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    const todayStr = chicagoFormatter.format(now);
-    const today = new Date(todayStr);
-    const currentYear = today.getFullYear();
+    const chicago = getChicagoDate();
+    const currentYear = chicago.year;
 
     // Configuration
     const BIRTHDAY_LEAD_DAYS = 3;
@@ -86,19 +133,30 @@ Deno.serve(async (req) => {
 
       // Check birthday
       if (provider.date_of_birth) {
-        const dob = new Date(provider.date_of_birth);
-        const birthdayThisYear = new Date(currentYear, dob.getMonth(), dob.getDate());
+        const dob = parseLocalDate(provider.date_of_birth);
         
-        // Check if birthday is coming up within lead days
-        const dueDate = new Date(birthdayThisYear);
-        dueDate.setDate(dueDate.getDate() - BIRTHDAY_LEAD_DAYS);
+        // Calculate birthday this year and next year
+        let birthdayYear = currentYear;
+        let birthday = { year: birthdayYear, month: dob.month, day: dob.day };
+        
+        // If birthday already passed this year, use next year
+        if (compareDates(birthday, chicago) < 0) {
+          birthdayYear = currentYear + 1;
+          birthday = { year: birthdayYear, month: dob.month, day: dob.day };
+        }
+        
+        // Calculate due date (lead days before birthday)
+        const dueDateObj = new Date(birthdayYear, dob.month, dob.day);
+        dueDateObj.setDate(dueDateObj.getDate() - BIRTHDAY_LEAD_DAYS);
+        const dueDate = {
+          year: dueDateObj.getFullYear(),
+          month: dueDateObj.getMonth(),
+          day: dueDateObj.getDate(),
+        };
         
         // If due date is today or in the past but birthday hasn't happened yet
-        if (dueDate <= today && birthdayThisYear >= today) {
-          const formattedBirthday = birthdayThisYear.toLocaleDateString('en-US', {
-            month: 'long',
-            day: 'numeric',
-          });
+        if (compareDates(dueDate, chicago) <= 0 && compareDates(birthday, chicago) >= 0) {
+          const formattedBirthday = formatDate(dob.month, dob.day);
           
           const slackTemplate = `🎂 Happy Birthday, ${provider.full_name}! 🎉\n\nPlease join us in wishing ${provider.full_name} a wonderful birthday on ${formattedBirthday}!`;
           
@@ -107,38 +165,50 @@ Deno.serve(async (req) => {
             provider_name: provider.full_name,
             provider_email: provider.email,
             milestone_type: 'birthday',
-            milestone_date: birthdayThisYear.toISOString().split('T')[0],
-            milestone_year: currentYear,
+            milestone_date: toDateString(birthday.year, birthday.month, birthday.day),
+            milestone_year: birthdayYear,
             assigned_to: pod?.pod_lead_id || null,
             assigned_to_name: pod?.pod_lead_name || null,
             pod_id: provider.pod_id,
             title: `${provider.full_name}'s birthday on ${formattedBirthday}`,
             description: `${provider.full_name} has a birthday coming up on ${formattedBirthday}. Please coordinate a birthday message.`,
             slack_template: slackTemplate,
-            due_date: dueDate.toISOString().split('T')[0],
+            due_date: toDateString(dueDate.year, dueDate.month, dueDate.day),
           });
         }
       }
 
       // Check work anniversary
       if (provider.start_date_on_network) {
-        const startDate = new Date(provider.start_date_on_network);
-        const anniversaryThisYear = new Date(currentYear, startDate.getMonth(), startDate.getDate());
+        const startDate = parseLocalDate(provider.start_date_on_network);
         
-        // Calculate years
-        const yearsAtCompany = currentYear - startDate.getFullYear();
+        // Calculate anniversary this year and next year
+        let anniversaryYear = currentYear;
+        let anniversary = { year: anniversaryYear, month: startDate.month, day: startDate.day };
+        
+        // If anniversary already passed this year, use next year
+        if (compareDates(anniversary, chicago) < 0) {
+          anniversaryYear = currentYear + 1;
+          anniversary = { year: anniversaryYear, month: startDate.month, day: startDate.day };
+        }
+        
+        // Calculate years (for the upcoming anniversary)
+        const yearsAtCompany = anniversaryYear - startDate.year;
         
         // Only create task if it's a real anniversary (at least 1 year)
         if (yearsAtCompany >= 1) {
-          const dueDate = new Date(anniversaryThisYear);
-          dueDate.setDate(dueDate.getDate() - ANNIVERSARY_LEAD_DAYS);
+          // Calculate due date
+          const dueDateObj = new Date(anniversaryYear, startDate.month, startDate.day);
+          dueDateObj.setDate(dueDateObj.getDate() - ANNIVERSARY_LEAD_DAYS);
+          const dueDate = {
+            year: dueDateObj.getFullYear(),
+            month: dueDateObj.getMonth(),
+            day: dueDateObj.getDate(),
+          };
           
           // If due date is today or in the past but anniversary hasn't happened yet
-          if (dueDate <= today && anniversaryThisYear >= today) {
-            const formattedDate = anniversaryThisYear.toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-            });
+          if (compareDates(dueDate, chicago) <= 0 && compareDates(anniversary, chicago) >= 0) {
+            const formattedDate = formatDate(startDate.month, startDate.day);
             
             const yearWord = yearsAtCompany === 1 ? 'year' : 'years';
             const slackTemplate = `🎉 Happy ${yearsAtCompany}-Year Anniversary, ${provider.full_name}! 🎊\n\nPlease join us in celebrating ${provider.full_name}'s ${yearsAtCompany} ${yearWord} with us on ${formattedDate}!`;
@@ -148,15 +218,15 @@ Deno.serve(async (req) => {
               provider_name: provider.full_name,
               provider_email: provider.email,
               milestone_type: 'anniversary',
-              milestone_date: anniversaryThisYear.toISOString().split('T')[0],
-              milestone_year: currentYear,
+              milestone_date: toDateString(anniversary.year, anniversary.month, anniversary.day),
+              milestone_year: anniversaryYear,
               assigned_to: pod?.pod_lead_id || null,
               assigned_to_name: pod?.pod_lead_name || null,
               pod_id: provider.pod_id,
               title: `${provider.full_name}'s ${yearsAtCompany}-year anniversary on ${formattedDate}`,
               description: `${provider.full_name} will celebrate ${yearsAtCompany} ${yearWord} with us on ${formattedDate}. Please coordinate a celebration message.`,
               slack_template: slackTemplate,
-              due_date: dueDate.toISOString().split('T')[0],
+              due_date: toDateString(dueDate.year, dueDate.month, dueDate.day),
             });
           }
         }
