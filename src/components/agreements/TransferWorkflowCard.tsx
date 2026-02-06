@@ -14,6 +14,9 @@ import { EditableTaskItem } from './EditableTaskItem';
 import { AddTaskButton } from './AddTaskButton';
 import { TransferActivityLog } from './TransferActivityLog';
 import { TransferLifecycleEditor } from './TransferLifecycleEditor';
+import { TransferProviderSubtable } from './TransferProviderSubtable';
+import { TransferEffectiveDatesEditor } from './TransferEffectiveDatesEditor';
+import { EffectiveDateWarnings } from './EffectiveDateWarnings';
 import { 
   ArrowRightLeft, 
   CheckCircle2, 
@@ -24,7 +27,9 @@ import {
   Activity,
   ListChecks,
   AlertTriangle,
-  Lock
+  Lock,
+  Flag,
+  Calendar
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Tables } from '@/integrations/supabase/types';
@@ -73,6 +78,8 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
   // Progress calculations - REQUIRED tasks only for completion status
   const requiredTasks = tasks.filter(t => t.is_required !== false);
   const completedRequiredTasks = requiredTasks.filter(t => t.status === 'completed');
+  const blockedTasks = tasks.filter(t => t.status === 'blocked' || t.status === 'waiting_on_signature');
+  const escalatedTasks = tasks.filter(t => t.escalated);
   const allRequiredComplete = requiredTasks.length > 0 && 
     requiredTasks.every(t => t.status === 'completed');
 
@@ -247,13 +254,31 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                 {transfer.state_name} Transfer
                 {getStatusBadge(transfer.status)}
               </CardTitle>
-              <CardDescription className="flex items-center gap-2 mt-1">
+              <CardDescription className="flex items-center gap-2 mt-1 flex-wrap">
                 <span>{transfer.source_physician_name || 'Unassigned'}</span>
                 <ArrowRightLeft className="h-3 w-3" />
                 <span>{transfer.target_physician_name}</span>
                 <span className="text-muted-foreground">•</span>
                 <Users className="h-3 w-3" />
                 <span>{transfer.affected_provider_count} provider(s)</span>
+                {blockedTasks.length > 0 && (
+                  <>
+                    <span className="text-muted-foreground">•</span>
+                    <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-1">
+                      <Lock className="h-3 w-3" />
+                      {blockedTasks.length} blocked
+                    </Badge>
+                  </>
+                )}
+                {escalatedTasks.length > 0 && (
+                  <>
+                    <span className="text-muted-foreground">•</span>
+                    <Badge variant="destructive" className="text-[10px] gap-1">
+                      <Flag className="h-3 w-3" />
+                      {escalatedTasks.length} escalated
+                    </Badge>
+                  </>
+                )}
               </CardDescription>
             </div>
           </div>
@@ -264,6 +289,12 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               </p>
               <Progress value={progress} className="w-24 h-2" />
             </div>
+            {transfer.effective_date && (
+              <div className="text-right text-xs text-muted-foreground hidden sm:block">
+                <Calendar className="h-3 w-3 inline mr-1" />
+                {format(new Date(transfer.effective_date), 'MMM d')}
+              </div>
+            )}
             {expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
           </div>
         </div>
@@ -306,6 +337,34 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               </TabsList>
 
               <TabsContent value="checklist" className="space-y-6">
+                {/* Effective Date Warnings */}
+                <EffectiveDateWarnings
+                  terminationEffectiveDate={transfer.termination_effective_date}
+                  initiationEffectiveDate={transfer.initiation_effective_date}
+                  terminationComplete={terminationComplete}
+                  initiationComplete={initiationComplete}
+                  className="space-y-2"
+                />
+
+                {/* Effective Dates Editor */}
+                <TransferEffectiveDatesEditor
+                  transferId={transfer.id}
+                  terminationEffectiveDate={transfer.termination_effective_date}
+                  initiationEffectiveDate={transfer.initiation_effective_date}
+                  effectiveDate={transfer.effective_date}
+                  isAdmin={isAdmin}
+                  onUpdate={() => { fetchTasks(); onUpdate?.(); }}
+                />
+
+                {/* Provider-level tracking */}
+                <TransferProviderSubtable
+                  transferId={transfer.id}
+                  affectedProviderIds={transfer.affected_provider_ids || []}
+                  tasks={tasks}
+                  isAdmin={isAdmin}
+                  onUpdate={() => { fetchTasks(); onUpdate?.(); }}
+                />
+
                 <div className="grid gap-6 md:grid-cols-2">
                   <TaskPhaseSection 
                     taskList={terminationTasks} 
@@ -344,14 +403,6 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                 </ScrollArea>
               </TabsContent>
             </Tabs>
-          )}
-
-          {transfer.effective_date && (
-            <div className="mt-4 pt-4 border-t">
-              <p className="text-sm text-muted-foreground">
-                Effective Date: <span className="font-medium text-foreground">{format(new Date(transfer.effective_date), 'MMMM d, yyyy')}</span>
-              </p>
-            </div>
           )}
 
           {transfer.notes && (
