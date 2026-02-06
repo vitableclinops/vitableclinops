@@ -775,6 +775,133 @@ export type Database = {
         }
         Relationships: []
       }
+      kb_articles: {
+        Row: {
+          category: string
+          content: string | null
+          content_type: string
+          created_at: string
+          created_by: string | null
+          featured_order: number | null
+          id: string
+          is_featured: boolean | null
+          last_reviewed_at: string | null
+          last_reviewed_by: string | null
+          notion_url: string | null
+          owner_id: string | null
+          owner_name: string | null
+          published: boolean | null
+          review_cycle_days: number | null
+          slug: string | null
+          summary: string | null
+          tags: string[] | null
+          title: string
+          updated_at: string
+          view_count: number | null
+          visibility_roles: string[] | null
+        }
+        Insert: {
+          category?: string
+          content?: string | null
+          content_type?: string
+          created_at?: string
+          created_by?: string | null
+          featured_order?: number | null
+          id?: string
+          is_featured?: boolean | null
+          last_reviewed_at?: string | null
+          last_reviewed_by?: string | null
+          notion_url?: string | null
+          owner_id?: string | null
+          owner_name?: string | null
+          published?: boolean | null
+          review_cycle_days?: number | null
+          slug?: string | null
+          summary?: string | null
+          tags?: string[] | null
+          title: string
+          updated_at?: string
+          view_count?: number | null
+          visibility_roles?: string[] | null
+        }
+        Update: {
+          category?: string
+          content?: string | null
+          content_type?: string
+          created_at?: string
+          created_by?: string | null
+          featured_order?: number | null
+          id?: string
+          is_featured?: boolean | null
+          last_reviewed_at?: string | null
+          last_reviewed_by?: string | null
+          notion_url?: string | null
+          owner_id?: string | null
+          owner_name?: string | null
+          published?: boolean | null
+          review_cycle_days?: number | null
+          slug?: string | null
+          summary?: string | null
+          tags?: string[] | null
+          title?: string
+          updated_at?: string
+          view_count?: number | null
+          visibility_roles?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kb_articles_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kb_articles_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kb_articles_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kb_categories: {
+        Row: {
+          color: string | null
+          created_at: string
+          description: string | null
+          icon: string | null
+          id: string
+          name: string
+          sort_order: number | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name: string
+          sort_order?: number | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name?: string
+          sort_order?: number | null
+        }
+        Relationships: []
+      }
       meeting_attendees: {
         Row: {
           assigned_slot: string | null
@@ -838,6 +965,242 @@ export type Database = {
           },
         ]
       }
+      milestone_audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          actor_name: string | null
+          created_at: string
+          details: Json | null
+          id: string
+          milestone_task_id: string | null
+          provider_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          actor_name?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          milestone_task_id?: string | null
+          provider_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          actor_name?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          milestone_task_id?: string | null
+          provider_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "milestone_audit_log_milestone_task_id_fkey"
+            columns: ["milestone_task_id"]
+            isOneToOne: false
+            referencedRelation: "milestone_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestone_audit_log_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestone_audit_log_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestone_audit_log_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      milestone_tasks: {
+        Row: {
+          assigned_to: string | null
+          assigned_to_name: string | null
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          description: string | null
+          due_date: string
+          id: string
+          milestone_date: string
+          milestone_type: string
+          milestone_year: number
+          pod_id: string | null
+          provider_email: string | null
+          provider_id: string
+          provider_name: string
+          slack_template: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          assigned_to_name?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          description?: string | null
+          due_date: string
+          id?: string
+          milestone_date: string
+          milestone_type: string
+          milestone_year: number
+          pod_id?: string | null
+          provider_email?: string | null
+          provider_id: string
+          provider_name: string
+          slack_template?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          assigned_to_name?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          description?: string | null
+          due_date?: string
+          id?: string
+          milestone_date?: string
+          milestone_type?: string
+          milestone_year?: number
+          pod_id?: string | null
+          provider_email?: string | null
+          provider_id?: string
+          provider_name?: string
+          slack_template?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "milestone_tasks_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestone_tasks_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestone_tasks_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestone_tasks_pod_id_fkey"
+            columns: ["pod_id"]
+            isOneToOne: false
+            referencedRelation: "pods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestone_tasks_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestone_tasks_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestone_tasks_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pods: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          pod_lead_email: string | null
+          pod_lead_id: string | null
+          pod_lead_name: string | null
+          slack_channel: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          pod_lead_email?: string | null
+          pod_lead_id?: string | null
+          pod_lead_name?: string | null
+          slack_channel?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          pod_lead_email?: string | null
+          pod_lead_id?: string | null
+          pod_lead_name?: string | null
+          slack_channel?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pods_pod_lead_id_fkey"
+            columns: ["pod_lead_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pods_pod_lead_id_fkey"
+            columns: ["pod_lead_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pods_pod_lead_id_fkey"
+            columns: ["pod_lead_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           activation_status: string | null
@@ -856,6 +1219,7 @@ export type Database = {
           collaborative_physician: string | null
           created_at: string
           credentials: string | null
+          date_of_birth: string | null
           email: string
           emergency_contact_name: string | null
           emergency_contact_phone: string | null
@@ -873,6 +1237,7 @@ export type Database = {
           last_name: string | null
           medallion_id: string | null
           middle_name: string | null
+          milestone_visibility: string | null
           min_patient_age: string | null
           notes: string | null
           npi_number: string | null
@@ -881,6 +1246,7 @@ export type Database = {
           patient_age_preference: string | null
           personal_email: string | null
           phone_number: string | null
+          pod_id: string | null
           postal_code: string | null
           practice_restrictions: string | null
           preferred_name: string | null
@@ -890,6 +1256,7 @@ export type Database = {
           secondary_contact_email: string | null
           service_offerings: string | null
           services_offered: string | null
+          start_date_on_network: string | null
           updated_at: string
           user_id: string | null
         }
@@ -910,6 +1277,7 @@ export type Database = {
           collaborative_physician?: string | null
           created_at?: string
           credentials?: string | null
+          date_of_birth?: string | null
           email: string
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
@@ -927,6 +1295,7 @@ export type Database = {
           last_name?: string | null
           medallion_id?: string | null
           middle_name?: string | null
+          milestone_visibility?: string | null
           min_patient_age?: string | null
           notes?: string | null
           npi_number?: string | null
@@ -935,6 +1304,7 @@ export type Database = {
           patient_age_preference?: string | null
           personal_email?: string | null
           phone_number?: string | null
+          pod_id?: string | null
           postal_code?: string | null
           practice_restrictions?: string | null
           preferred_name?: string | null
@@ -944,6 +1314,7 @@ export type Database = {
           secondary_contact_email?: string | null
           service_offerings?: string | null
           services_offered?: string | null
+          start_date_on_network?: string | null
           updated_at?: string
           user_id?: string | null
         }
@@ -964,6 +1335,7 @@ export type Database = {
           collaborative_physician?: string | null
           created_at?: string
           credentials?: string | null
+          date_of_birth?: string | null
           email?: string
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
@@ -981,6 +1353,7 @@ export type Database = {
           last_name?: string | null
           medallion_id?: string | null
           middle_name?: string | null
+          milestone_visibility?: string | null
           min_patient_age?: string | null
           notes?: string | null
           npi_number?: string | null
@@ -989,6 +1362,7 @@ export type Database = {
           patient_age_preference?: string | null
           personal_email?: string | null
           phone_number?: string | null
+          pod_id?: string | null
           postal_code?: string | null
           practice_restrictions?: string | null
           preferred_name?: string | null
@@ -998,10 +1372,19 @@ export type Database = {
           secondary_contact_email?: string | null
           service_offerings?: string | null
           services_offered?: string | null
+          start_date_on_network?: string | null
           updated_at?: string
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_pod_id_fkey"
+            columns: ["pod_id"]
+            isOneToOne: false
+            referencedRelation: "pods"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       provider_license_applications: {
         Row: {

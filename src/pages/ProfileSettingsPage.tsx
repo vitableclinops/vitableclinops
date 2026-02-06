@@ -14,6 +14,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { MilestoneSettingsCard } from '@/components/milestones/MilestoneSettingsCard';
 import { format } from 'date-fns';
 import { ArrowLeft, Camera, Loader2, User, Key, Phone, FileText, Home, Heart, CalendarIcon, Briefcase } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -646,6 +647,9 @@ const ProfileSettingsPage = () => {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Milestone Settings */}
+            <MilestoneSettingsCard />
           </div>
         </div>
       </main>
