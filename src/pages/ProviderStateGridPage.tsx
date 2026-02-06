@@ -2,10 +2,23 @@ import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
 import { ProviderStateGrid } from '@/components/grid/ProviderStateGrid';
 import { useGridData } from '@/hooks/useGridData';
+import { useActivationStats } from '@/hooks/useProviderStateStatus';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Link } from 'react-router-dom';
+import { 
+  AlertTriangle, 
+  CheckCircle2, 
+  Clock, 
+  ShieldAlert,
+  ArrowRight
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export default function ProviderStateGridPage() {
   const { profile, roles } = useAuth();
   const gridData = useGridData();
+  const { data: stats, isLoading: statsLoading } = useActivationStats();
   
   const userRole = roles.includes('admin') ? 'admin' : 
                    roles.includes('leadership') ? 'leadership' : 
@@ -20,13 +33,47 @@ export default function ProviderStateGridPage() {
         userAvatarUrl={profile?.avatar_url || undefined}
       />
       
-      <main className="pl-64 transition-all duration-300">
-        <div className="p-8">
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold">Provider–State Grid</h1>
-            <p className="text-muted-foreground mt-1">
-              Visual overview of licensure and credentialing status across all providers and states
-            </p>
+      <main className="ml-16 lg:ml-64 transition-all duration-300 min-w-0">
+        <div className="p-4 md:p-6 lg:p-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold">Provider–State Grid</h1>
+              <p className="text-muted-foreground mt-1">
+                Visual overview of licensure and credentialing status across all providers and states
+              </p>
+            </div>
+            
+            {/* Quick Stats linking to Activation Queue */}
+            {!statsLoading && stats && (stats.activeButNotReady > 0 || stats.inactiveAndReady > 0) && (
+              <Link 
+                to="/admin/activation" 
+                className="flex items-center gap-4 p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors"
+              >
+                {stats.activeButNotReady > 0 && (
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="h-5 w-5 text-destructive" />
+                    <div>
+                      <p className="text-sm font-medium text-destructive">
+                        {stats.activeButNotReady} Critical
+                      </p>
+                      <p className="text-xs text-muted-foreground">Active but not ready</p>
+                    </div>
+                  </div>
+                )}
+                {stats.inactiveAndReady > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-info" />
+                    <div>
+                      <p className="text-sm font-medium text-info">
+                        {stats.inactiveAndReady} Pending
+                      </p>
+                      <p className="text-xs text-muted-foreground">Ready but inactive</p>
+                    </div>
+                  </div>
+                )}
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </Link>
+            )}
           </div>
 
           <ProviderStateGrid data={gridData} />
