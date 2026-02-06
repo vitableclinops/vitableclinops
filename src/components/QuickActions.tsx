@@ -77,7 +77,7 @@ export function QuickActions({ role = 'admin' }: QuickActionsProps) {
       description: 'View SOPs and state guides',
       icon: BookOpen,
       color: 'bg-indigo-500 hover:bg-indigo-600',
-      action: () => navigate('/admin/knowledge'),
+      action: () => navigate('/knowledge'),
     },
   ];
   
@@ -104,7 +104,7 @@ export function QuickActions({ role = 'admin' }: QuickActionsProps) {
       description: 'View compliance tasks',
       icon: CheckCircle,
       color: 'bg-purple-500 hover:bg-purple-600',
-      action: () => navigate('/admin/compliance'),
+      action: () => navigate('/provider'),
     },
     {
       id: 'knowledge-base',
@@ -112,7 +112,7 @@ export function QuickActions({ role = 'admin' }: QuickActionsProps) {
       description: 'Access state guides and SOPs',
       icon: BookOpen,
       color: 'bg-indigo-500 hover:bg-indigo-600',
-      action: () => navigate('/admin/knowledge'),
+      action: () => navigate('/knowledge'),
     },
   ];
   

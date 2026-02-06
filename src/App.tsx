@@ -25,8 +25,7 @@ import ProviderDirectoryPage from "./pages/ProviderDirectoryPage";
 import DataImportPage from "./pages/DataImportPage";
 import StateDetailPage from "./pages/StateDetailPage";
 import AgreementDetailPage from "./pages/AgreementDetailPage";
-// import ProviderDetailPage from "./pages/ProviderDetailPage";
-// import PhysicianDetailPage from "./pages/PhysicianDetailPage";
+import PhysicianDetailPage from "./pages/PhysicianDetailPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -135,8 +134,11 @@ const App = () => (
                 <AgreementDetailPage />
               </ProtectedRoute>
             } />
-            {/* Provider and Physician detail pages disabled due to TypeScript recursion issue */}
-            {/* TODO: Fix ProviderDetailPage and PhysicianDetailPage TypeScript types */}
+            <Route path="/physicians/:physicianEmail" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <PhysicianDetailPage />
+              </ProtectedRoute>
+            } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

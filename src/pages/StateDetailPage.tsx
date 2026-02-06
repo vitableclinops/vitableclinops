@@ -162,8 +162,8 @@ export default function StateDetailPage() {
         userAvatarUrl={profile?.avatar_url || undefined}
       />
       
-      <main className="pl-64 transition-all duration-300">
-        <div className="p-8">
+      <main className="ml-16 lg:ml-64 transition-all duration-300">
+        <div className="p-4 md:p-6 lg:p-8">
           {/* Breadcrumbs */}
           <Breadcrumbs items={breadcrumbs} className="mb-4" />
 
