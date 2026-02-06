@@ -11,9 +11,9 @@ import ProviderDashboard from "./pages/ProviderDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import TaskDetailView from "./pages/TaskDetailView";
 import ProvidersListPage from "./pages/ProvidersListPage";
-import StateConfigPage from "./pages/StateConfigPage";
+import StateCompliancePage from "./pages/StateCompliancePage";
 import CollaborativeAgreementsPage from "./pages/CollaborativeAgreementsPage";
-import CompliancePage from "./pages/CompliancePage";
+import SystemSettingsPage from "./pages/SystemSettingsPage";
 import ProviderIntakePage from "./pages/ProviderIntakePage";
 import PhysicianPortal from "./pages/PhysicianPortal";
 import KnowledgeBasePage from "./pages/KnowledgeBasePage";
@@ -67,7 +67,7 @@ const App = () => (
             } />
             <Route path="/admin/states" element={
               <ProtectedRoute requiredRoles={['admin']}>
-                <StateConfigPage />
+                <StateCompliancePage />
               </ProtectedRoute>
             } />
             <Route path="/admin/agreements" element={
@@ -75,9 +75,9 @@ const App = () => (
                 <CollaborativeAgreementsPage />
               </ProtectedRoute>
             } />
-            <Route path="/admin/compliance" element={
+            <Route path="/admin/settings" element={
               <ProtectedRoute requiredRoles={['admin']}>
-                <CompliancePage />
+                <SystemSettingsPage />
               </ProtectedRoute>
             } />
             <Route path="/admin/intake" element={
@@ -120,11 +120,7 @@ const App = () => (
                 <ProviderDirectoryPage />
               </ProtectedRoute>
             } />
-            <Route path="/admin/import" element={
-              <ProtectedRoute requiredRoles={['admin']}>
-                <DataImportPage />
-              </ProtectedRoute>
-            } />
+            {/* Data Import now in /admin/settings */}
             <Route path="/states/:stateAbbr" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <StateDetailPage />
