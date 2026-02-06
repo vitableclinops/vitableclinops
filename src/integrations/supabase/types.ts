@@ -234,6 +234,7 @@ export type Database = {
           state_name: string | null
           status: Database["public"]["Enums"]["agreement_task_status"]
           title: string
+          transfer_id: string | null
           updated_at: string
         }
         Insert: {
@@ -262,6 +263,7 @@ export type Database = {
           state_name?: string | null
           status?: Database["public"]["Enums"]["agreement_task_status"]
           title: string
+          transfer_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -290,6 +292,7 @@ export type Database = {
           state_name?: string | null
           status?: Database["public"]["Enums"]["agreement_task_status"]
           title?: string
+          transfer_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -426,7 +429,89 @@ export type Database = {
             referencedRelation: "provider_directory_public"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "agreement_tasks_transfer_id_fkey"
+            columns: ["transfer_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_transfers"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      agreement_transfers: {
+        Row: {
+          affected_provider_count: number
+          affected_provider_ids: string[]
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          effective_date: string | null
+          id: string
+          initiated_at: string
+          initiated_by: string | null
+          notes: string | null
+          source_agreement_id: string
+          source_physician_email: string | null
+          source_physician_id: string | null
+          source_physician_name: string | null
+          state_abbreviation: string
+          state_name: string
+          status: string
+          target_agreement_id: string | null
+          target_physician_email: string | null
+          target_physician_id: string | null
+          target_physician_name: string
+          updated_at: string
+        }
+        Insert: {
+          affected_provider_count?: number
+          affected_provider_ids?: string[]
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          effective_date?: string | null
+          id?: string
+          initiated_at?: string
+          initiated_by?: string | null
+          notes?: string | null
+          source_agreement_id: string
+          source_physician_email?: string | null
+          source_physician_id?: string | null
+          source_physician_name?: string | null
+          state_abbreviation: string
+          state_name: string
+          status?: string
+          target_agreement_id?: string | null
+          target_physician_email?: string | null
+          target_physician_id?: string | null
+          target_physician_name: string
+          updated_at?: string
+        }
+        Update: {
+          affected_provider_count?: number
+          affected_provider_ids?: string[]
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          effective_date?: string | null
+          id?: string
+          initiated_at?: string
+          initiated_by?: string | null
+          notes?: string | null
+          source_agreement_id?: string
+          source_physician_email?: string | null
+          source_physician_id?: string | null
+          source_physician_name?: string | null
+          state_abbreviation?: string
+          state_name?: string
+          status?: string
+          target_agreement_id?: string | null
+          target_physician_email?: string | null
+          target_physician_id?: string | null
+          target_physician_name?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       agreement_workflow_steps: {
         Row: {
