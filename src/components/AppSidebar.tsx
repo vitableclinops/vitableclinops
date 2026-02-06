@@ -83,7 +83,13 @@ const navItems: NavItem[] = [
     label: 'Agreements', 
     icon: Shield, 
     href: '/admin/agreements', 
-    roles: ['admin'] 
+    roles: ['admin', 'physician'] 
+  },
+  { 
+    label: 'Physician Portal', 
+    icon: Users, 
+    href: '/physician', 
+    roles: ['physician'] 
   },
   { 
     label: 'Compliance', 
@@ -148,7 +154,10 @@ export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: App
   const navigate = useNavigate();
   const { signOut, roles } = useAuth();
 
-  const filteredNavItems = navItems.filter(item => item.roles.includes(userRole));
+  // Filter nav items based on ALL user roles, not just the primary one
+  const filteredNavItems = navItems.filter(item => 
+    item.roles.some(role => roles.includes(role))
+  );
 
   const handleSignOut = async () => {
     await signOut();

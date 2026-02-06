@@ -780,11 +780,11 @@ const CollaborativeAgreementsPage = () => {
 
               {/* Agreements Table - One row per Provider-State-Physician */}
               <Card>
-                <CardContent className="p-0">
+                <CardContent className="p-0 overflow-x-auto">
                   {/* Header */}
-                  <div className="grid grid-cols-13 gap-4 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
+                  <div className="grid grid-cols-12 gap-3 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground min-w-[900px]">
                     {hasRole('admin') && (
-                      <div className="col-span-1 flex items-center">
+                      <div className="flex items-center">
                         <Checkbox
                           checked={isAllSelected}
                           onCheckedChange={toggleSelectAll}
@@ -792,12 +792,12 @@ const CollaborativeAgreementsPage = () => {
                         />
                       </div>
                     )}
-                    <div className={hasRole('admin') ? 'col-span-3' : 'col-span-3'}>Provider</div>
-                    <div className="col-span-1">State</div>
+                    <div className={hasRole('admin') ? 'col-span-3' : 'col-span-4'}>Provider</div>
+                    <div>State</div>
                     <div className="col-span-2">Physician</div>
                     <div className="col-span-2">Next Meeting</div>
                     <div className="col-span-2">Renewal Due</div>
-                    <div className="col-span-2 text-right">Actions</div>
+                    <div className="text-right">Actions</div>
                   </div>
                   
                   {/* Rows */}
@@ -823,13 +823,13 @@ const CollaborativeAgreementsPage = () => {
                         return (
                           <div 
                             key={agreement.id} 
-                            className={`grid grid-cols-13 gap-4 p-4 border-b hover:bg-muted/30 transition-colors items-center group ${
+                            className={`grid grid-cols-12 gap-3 p-4 border-b hover:bg-muted/30 transition-colors items-center group min-w-[900px] ${
                               !agreement.isActive ? 'opacity-60 bg-muted/10' : ''
                             } ${selectedIds.has(agreement.id) ? 'bg-primary/5' : ''}`}
                           >
                             {/* Checkbox */}
                             {hasRole('admin') && (
-                              <div className="col-span-1">
+                              <div>
                                 <Checkbox
                                   checked={selectedIds.has(agreement.id)}
                                   onCheckedChange={() => toggleSelect(agreement.id)}
@@ -838,7 +838,7 @@ const CollaborativeAgreementsPage = () => {
                               </div>
                             )}
                             {/* Provider */}
-                            <div className={hasRole('admin') ? 'col-span-3' : 'col-span-3'}>
+                            <div className={hasRole('admin') ? 'col-span-3' : 'col-span-4'}>
                               <Link 
                                 to={`/directory?search=${encodeURIComponent(agreement.providerEmail)}`}
                                 className="flex items-center gap-3 group/provider"
@@ -865,7 +865,7 @@ const CollaborativeAgreementsPage = () => {
                             </div>
                             
                             {/* State with CA requirement indicator */}
-                            <div className="col-span-1">
+                            <div>
                               <div className="flex flex-col gap-1">
                                 <Link to={`/states/${agreement.stateAbbreviation}`}>
                                   <Badge variant="outline" className="font-bold text-xs w-fit hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer">
@@ -955,27 +955,20 @@ const CollaborativeAgreementsPage = () => {
                               )}
                             </div>
                             
-                            {/* Actions */}
-                            
-                            {/* Document */}
-                            <div className="col-span-1">
-                              {hasDocument ? (
+                            {/* Actions - combined doc + menu */}
+                            <div className="flex justify-end items-center gap-1">
+                              {hasDocument && (
                                 <Button variant="ghost" size="icon" asChild className="text-success h-8 w-8">
                                   <a href={documentLink!} target="_blank" rel="noopener noreferrer" title="View Document">
                                     <Eye className="h-4 w-4" />
                                   </a>
                                 </Button>
-                              ) : agreement.isActive ? (
-                                <div className="flex items-center gap-1 text-warning text-xs" title="Missing documentation">
+                              )}
+                              {!hasDocument && agreement.isActive && (
+                                <div className="flex items-center gap-1 text-warning text-xs mr-1" title="Missing documentation">
                                   <AlertCircle className="h-4 w-4" />
                                 </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">—</span>
                               )}
-                            </div>
-                            
-                            {/* Actions */}
-                            <div className="col-span-2 flex justify-end">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" size="sm">
