@@ -7,11 +7,15 @@ import { TerminationDialog } from '@/components/agreements/TerminationDialog';
 import { NotificationQueue } from '@/components/agreements/NotificationQueue';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
 import { StateComplianceGrid } from '@/components/agreements/StateComplianceGrid';
+import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
+import { TransferWorkflowCard } from '@/components/agreements/TransferWorkflowCard';
 import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard';
+import { useAgreementTransfers } from '@/hooks/useAgreementTransfers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -38,7 +42,9 @@ import {
   Upload,
   Eye,
   MoreHorizontal,
-  Link as LinkIcon
+  Link as LinkIcon,
+  ArrowRightLeft,
+  UserMinus
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -139,6 +145,7 @@ const CollaborativeAgreementsPage = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [stateFilter, setStateFilter] = useState<string>('all');
   const [physicianFilter, setPhysicianFilter] = useState<string>('all');
+  const [meetingFilter, setMeetingFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('all-agreements');
   const [wizardOpen, setWizardOpen] = useState(false);
   const [meetingWizardOpen, setMeetingWizardOpen] = useState(false);
@@ -153,6 +160,13 @@ const CollaborativeAgreementsPage = () => {
   const [selectedFlatAgreement, setSelectedFlatAgreement] = useState<FlattenedAgreement | null>(null);
   const [documentUrl, setDocumentUrl] = useState('');
   const [uploading, setUploading] = useState(false);
+
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
+
+  // Transfers
+  const { transfers, loading: transfersLoading, refetch: refetchTransfers } = useAgreementTransfers();
 
   // Database agreements and providers
   const [dbAgreements, setDbAgreements] = useState<DbAgreement[]>([]);
@@ -265,8 +279,55 @@ const CollaborativeAgreementsPage = () => {
     const matchesState = stateFilter === 'all' || agreement.stateAbbreviation === stateFilter;
     const matchesPhysician = physicianFilter === 'all' || agreement.physicianName === physicianFilter;
     
-    return matchesSearch && matchesStatus && matchesState && matchesPhysician;
+    // Meeting filter logic
+    let matchesMeeting = true;
+    if (meetingFilter !== 'all') {
+      if (meetingFilter === 'upcoming7') {
+        matchesMeeting = agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting >= 0 && agreement.daysUntilMeeting <= 7;
+      } else if (meetingFilter === 'upcoming14') {
+        matchesMeeting = agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting >= 0 && agreement.daysUntilMeeting <= 14;
+      } else if (meetingFilter === 'overdue') {
+        matchesMeeting = agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting < 0;
+      } else if (meetingFilter === 'none') {
+        matchesMeeting = agreement.nextMeetingDate === null;
+      }
+    }
+    
+    return matchesSearch && matchesStatus && matchesState && matchesPhysician && matchesMeeting;
   });
+
+  // Bulk selection helpers
+  const isAllSelected = filteredFlatAgreements.length > 0 && 
+    filteredFlatAgreements.every(a => selectedIds.has(a.id));
+  
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredFlatAgreements.map(a => a.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedIds(newSet);
+  };
+
+  const selectedAgreementsForBulk = filteredFlatAgreements.filter(a => selectedIds.has(a.id));
+
+  // Get unique physicians for the reassign dialog
+  const physiciansForReassign = Array.from(
+    new Map(
+      dbAgreements
+        .filter(a => a.physician_name && a.physician_id)
+        .map(a => [a.physician_id, { id: a.physician_id!, name: a.physician_name!, email: a.physician_email || '' }])
+    ).values()
+  );
 
   // Handle document upload/link
   const handleDocumentSave = async () => {
@@ -545,6 +606,15 @@ const CollaborativeAgreementsPage = () => {
                 <FileText className="h-4 w-4" />
                 All Agreements
               </TabsTrigger>
+              <TabsTrigger value="transfers" className="gap-2 px-4">
+                <ArrowRightLeft className="h-4 w-4" />
+                Transfers
+                {transfers.filter(t => t.status === 'pending' || t.status === 'in_progress').length > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {transfers.filter(t => t.status === 'pending' || t.status === 'in_progress').length}
+                  </Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="by-physician" className="gap-2 px-4">
                 <Building2 className="h-4 w-4" />
                 By Physician
@@ -612,7 +682,20 @@ const CollaborativeAgreementsPage = () => {
                   </SelectContent>
                 </Select>
 
-                {(searchQuery || statusFilter !== 'all' || stateFilter !== 'all' || physicianFilter !== 'all') && (
+                <Select value={meetingFilter} onValueChange={setMeetingFilter}>
+                  <SelectTrigger className="w-[170px] h-10">
+                    <SelectValue placeholder="Next Meeting" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Meetings</SelectItem>
+                    <SelectItem value="upcoming7">Next 7 days</SelectItem>
+                    <SelectItem value="upcoming14">Next 14 days</SelectItem>
+                    <SelectItem value="overdue">Overdue</SelectItem>
+                    <SelectItem value="none">None scheduled</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {(searchQuery || statusFilter !== 'all' || stateFilter !== 'all' || physicianFilter !== 'all' || meetingFilter !== 'all') && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -621,12 +704,38 @@ const CollaborativeAgreementsPage = () => {
                       setStatusFilter('all');
                       setStateFilter('all');
                       setPhysicianFilter('all');
+                      setMeetingFilter('all');
                     }}
                   >
                     Clear filters
                   </Button>
                 )}
               </div>
+
+              {/* Bulk Actions Bar */}
+              {selectedIds.size > 0 && hasRole('admin') && (
+                <div className="flex items-center gap-4 p-3 mb-4 bg-primary/5 border border-primary/20 rounded-lg">
+                  <span className="text-sm font-medium">
+                    {selectedIds.size} agreement{selectedIds.size !== 1 ? 's' : ''} selected
+                  </span>
+                  <div className="flex-1" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkReassignOpen(true)}
+                  >
+                    <UserMinus className="h-4 w-4 mr-2" />
+                    Reassign Physician
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedIds(new Set())}
+                  >
+                    Clear selection
+                  </Button>
+                </div>
+              )}
 
               {/* Results count */}
               <p className="text-sm text-muted-foreground mb-4">
@@ -671,8 +780,17 @@ const CollaborativeAgreementsPage = () => {
               <Card>
                 <CardContent className="p-0">
                   {/* Header */}
-                  <div className="grid grid-cols-12 gap-4 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
-                    <div className="col-span-3">Provider</div>
+                  <div className="grid grid-cols-13 gap-4 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
+                    {hasRole('admin') && (
+                      <div className="col-span-1 flex items-center">
+                        <Checkbox
+                          checked={isAllSelected}
+                          onCheckedChange={toggleSelectAll}
+                          aria-label="Select all"
+                        />
+                      </div>
+                    )}
+                    <div className={hasRole('admin') ? 'col-span-3' : 'col-span-3'}>Provider</div>
                     <div className="col-span-1">State</div>
                     <div className="col-span-2">Physician</div>
                     <div className="col-span-2">Next Meeting</div>
@@ -703,12 +821,22 @@ const CollaborativeAgreementsPage = () => {
                         return (
                           <div 
                             key={agreement.id} 
-                            className={`grid grid-cols-12 gap-4 p-4 border-b hover:bg-muted/30 transition-colors items-center group ${
+                            className={`grid grid-cols-13 gap-4 p-4 border-b hover:bg-muted/30 transition-colors items-center group ${
                               !agreement.isActive ? 'opacity-60 bg-muted/10' : ''
-                            }`}
+                            } ${selectedIds.has(agreement.id) ? 'bg-primary/5' : ''}`}
                           >
+                            {/* Checkbox */}
+                            {hasRole('admin') && (
+                              <div className="col-span-1">
+                                <Checkbox
+                                  checked={selectedIds.has(agreement.id)}
+                                  onCheckedChange={() => toggleSelect(agreement.id)}
+                                  aria-label={`Select ${agreement.providerName}`}
+                                />
+                              </div>
+                            )}
                             {/* Provider */}
-                            <div className="col-span-3">
+                            <div className={hasRole('admin') ? 'col-span-3' : 'col-span-3'}>
                               <div className="flex items-center gap-3">
                                 <div className={`h-9 w-9 rounded-full flex items-center justify-center font-semibold text-xs shrink-0 ${
                                   agreement.isActive 
@@ -886,6 +1014,45 @@ const CollaborativeAgreementsPage = () => {
                   </ScrollArea>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Transfers Tab */}
+            <TabsContent value="transfers">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Physician Transfers</h3>
+                    <p className="text-sm text-muted-foreground">Track in-progress physician reassignments with checklist workflows</p>
+                  </div>
+                </div>
+                
+                {transfersLoading ? (
+                  <div className="animate-pulse space-y-4">
+                    <div className="h-24 bg-muted rounded" />
+                    <div className="h-24 bg-muted rounded" />
+                  </div>
+                ) : transfers.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <ArrowRightLeft className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">No transfers in progress</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Use bulk selection on the All Agreements tab to initiate transfers
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-4">
+                    {transfers.map(transfer => (
+                      <TransferWorkflowCard 
+                        key={transfer.id} 
+                        transfer={transfer} 
+                        onUpdate={refetchTransfers}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </TabsContent>
 
             {/* By Physician Tab */}
@@ -1214,6 +1381,19 @@ const CollaborativeAgreementsPage = () => {
               </div>
             </TabsContent>
           </Tabs>
+
+          {/* Bulk Reassign Dialog */}
+          <BulkReassignDialog
+            open={bulkReassignOpen}
+            onOpenChange={setBulkReassignOpen}
+            selectedAgreements={selectedAgreementsForBulk}
+            physicians={physiciansForReassign}
+            onSuccess={() => {
+              fetchDbAgreements();
+              refetchTransfers();
+              setSelectedIds(new Set());
+            }}
+          />
         </div>
       </main>
     </div>
