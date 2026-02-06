@@ -1,5 +1,5 @@
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { OnboardingWizard, OnboardingData } from '@/components/onboarding/OnboardingWizard';
+import { OnboardingWizard, OnboardingData, CollabClassification } from '@/components/onboarding/OnboardingWizard';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useAgreementTasks } from '@/hooks/useAgreementTasks';
@@ -12,27 +12,26 @@ export default function ProviderOnboardingPage() {
   const { generateAgreementTasks } = useAgreementTasks();
   
   const mode = (searchParams.get('mode') as 'new' | 'edit' | 'admin') || 'new';
-  const providerId = searchParams.get('providerId');
 
   const createPendingAgreements = async (
     data: OnboardingData,
-    statesRequiringCollab: string[]
+    alwaysCollabStates: string[]
   ) => {
-    if (!profile?.id || statesRequiringCollab.length === 0) return;
+    if (!profile?.id || alwaysCollabStates.length === 0) return;
 
     try {
       // Fetch state names for each abbreviation
       const { data: stateData } = await supabase
         .from('state_compliance_requirements')
         .select('state_abbreviation, state_name')
-        .in('state_abbreviation', statesRequiringCollab);
+        .in('state_abbreviation', alwaysCollabStates);
 
       const stateMap = new Map(
         (stateData || []).map(s => [s.state_abbreviation, s.state_name])
       );
 
       // Create pending collaborative agreements for each state requiring one
-      for (const stateAbbr of statesRequiringCollab) {
+      for (const stateAbbr of alwaysCollabStates) {
         const stateName = stateMap.get(stateAbbr) || stateAbbr;
 
         // Check if this specific provider already has an agreement for this state
@@ -62,10 +61,10 @@ export default function ProviderOnboardingPage() {
           .from('collaborative_agreements')
           .insert({
             state_abbreviation: stateAbbr,
-            state_id: stateAbbr, // Using abbreviation as ID placeholder
+            state_id: stateAbbr,
             state_name: stateName,
-            physician_name: null, // NULL - Clinical Ops will assign later
-            physician_email: null, // NULL - no fake placeholder emails
+            physician_name: null,
+            physician_email: null,
             workflow_status: 'draft',
             created_by: profile.id,
             source: 'onboarding',
@@ -97,7 +96,7 @@ export default function ProviderOnboardingPage() {
           stateAbbr,
           stateName,
           profile.id,
-          null // No physician assigned yet
+          null
         );
 
         // Create a specific "Assign collaborating physician" task
@@ -125,7 +124,7 @@ export default function ProviderOnboardingPage() {
         .insert({
           provider_id: profile.id,
           title: `New provider onboarded: ${data.providerName}`,
-          description: `${data.providerName} has completed onboarding and selected ${statesRequiringCollab.length} state(s) requiring collaborative agreements: ${statesRequiringCollab.join(', ')}. Please review and initiate the collaboration process.`,
+          description: `${data.providerName} has completed onboarding and selected ${alwaysCollabStates.length} state(s) requiring collaborative agreements: ${alwaysCollabStates.join(', ')}. Please review and initiate the collaboration process.`,
           category: 'compliance',
           status: 'pending',
           priority: 'high',
@@ -144,10 +143,87 @@ export default function ProviderOnboardingPage() {
     }
   };
 
-  const handleComplete = async (data: OnboardingData, statesRequiringCollab: string[]) => {
-    // Create pending agreements if consent was given
-    if (statesRequiringCollab.length > 0) {
-      await createPendingAgreements(data, statesRequiringCollab);
+  const createConditionalReviewTasks = async (
+    data: OnboardingData,
+    conditionalStates: string[]
+  ) => {
+    if (!profile?.id || conditionalStates.length === 0) return;
+
+    try {
+      // Fetch state names
+      const { data: stateData } = await supabase
+        .from('state_compliance_requirements')
+        .select('state_abbreviation, state_name')
+        .in('state_abbreviation', conditionalStates);
+
+      const stateMap = new Map(
+        (stateData || []).map(s => [s.state_abbreviation, s.state_name])
+      );
+
+      for (const stateAbbr of conditionalStates) {
+        const stateName = stateMap.get(stateAbbr) || stateAbbr;
+
+        // Check if a decision already exists for this provider-state
+        const { data: existingDecision } = await supabase
+          .from('provider_state_collab_decisions')
+          .select('id')
+          .eq('profile_id', profile.id)
+          .eq('state_abbreviation', stateAbbr)
+          .maybeSingle();
+
+        if (!existingDecision) {
+          // Create a pending_review decision record
+          await supabase
+            .from('provider_state_collab_decisions')
+            .insert({
+              profile_id: profile.id,
+              state_abbreviation: stateAbbr,
+              decision: 'pending_review',
+            });
+        }
+
+        // Check if task already exists to avoid duplicates
+        const { data: existingTask } = await supabase
+          .from('agreement_tasks')
+          .select('id')
+          .eq('provider_id', profile.id)
+          .eq('state_abbreviation', stateAbbr)
+          .ilike('title', '%FPA eligibility%')
+          .maybeSingle();
+
+        if (!existingTask) {
+          // Create admin review task
+          await supabase
+            .from('agreement_tasks')
+            .insert({
+              provider_id: profile.id,
+              title: `Confirm FPA eligibility for ${data.providerName} in ${stateName}`,
+              description: `${stateName} has conditional collaboration requirements. Review the provider's credentials to determine if they meet Full Practice Authority requirements, or if a collaborative agreement is needed.`,
+              category: 'compliance',
+              status: 'pending',
+              priority: 'medium',
+              assigned_role: 'admin',
+              is_auto_generated: true,
+              auto_trigger: 'conditional_state_review',
+              state_abbreviation: stateAbbr,
+              state_name: stateName,
+            });
+        }
+      }
+    } catch (error) {
+      console.error('Error creating conditional review tasks:', error);
+    }
+  };
+
+  const handleComplete = async (data: OnboardingData, collabClassification: CollabClassification) => {
+    // Create pending agreements for "always" states
+    if (collabClassification.always.length > 0) {
+      await createPendingAgreements(data, collabClassification.always);
+    }
+
+    // Create review tasks for "conditional" states (DO NOT auto-create agreements)
+    if (collabClassification.conditional.length > 0) {
+      await createConditionalReviewTasks(data, collabClassification.conditional);
     }
 
     toast({

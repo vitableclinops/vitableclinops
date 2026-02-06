@@ -13,6 +13,11 @@ import { CollaborationConsentStep } from './CollaborationConsentStep';
 import { PROVIDER_TYPE_CONFIG, type Provider, type ProviderType } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { 
+  getCollabRequirementType, 
+  isNPProhibitedState, 
+  type CollabRequirementType 
+} from '@/constants/stateRestrictions';
 
 export interface OnboardingData {
   providerId?: string;
@@ -25,6 +30,7 @@ export interface OnboardingData {
   avatarUrl?: string;
   bio?: string;
   minPatientAge?: string;
+  pendingApplications?: PendingApplication[];
 }
 
 export interface ReportedLicense {
@@ -37,11 +43,24 @@ export interface ReportedLicense {
   notes: string;
 }
 
+export interface PendingApplication {
+  stateAbbr: string;
+  submittedDate?: string;
+  expectedTimeline?: string;
+  notes?: string;
+}
+
+export interface CollabClassification {
+  always: string[];
+  conditional: string[];
+  never: string[];
+}
+
 interface OnboardingWizardProps {
   mode: 'new' | 'edit' | 'admin';
   existingProvider?: Provider;
   userId?: string;
-  onComplete: (data: OnboardingData, statesRequiringCollab: string[]) => void;
+  onComplete: (data: OnboardingData, collabClassification: CollabClassification) => void;
   onCancel: () => void;
 }
 
@@ -57,12 +76,15 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
   const { toast } = useToast();
   const { profile, user } = useAuth();
   const [collaborationConsent, setCollaborationConsent] = useState(false);
-  const [statesRequiringCollab, setStatesRequiringCollab] = useState<string[]>([]);
+  const [collabClassification, setCollabClassification] = useState<CollabClassification>({
+    always: [],
+    conditional: [],
+    never: [],
+  });
   
   const [data, setData] = useState<OnboardingData>(() => {
     // Pre-populate from existing profile data if available
     if (profile) {
-      const names = (profile.full_name || '').split(' ');
       return {
         providerId: profile.id,
         providerType: (profile.profession as ProviderType) || null,
@@ -74,6 +96,7 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
         avatarUrl: profile.avatar_url || undefined,
         bio: profile.bio || undefined,
         minPatientAge: profile.min_patient_age || undefined,
+        pendingApplications: [],
       };
     }
     if (existingProvider) {
@@ -96,6 +119,7 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
             notes: '',
           }))
         ),
+        pendingApplications: [],
       };
     }
     return {
@@ -105,35 +129,45 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
       npiNumber: '',
       selectedStates: [],
       reportedLicenses: [],
+      pendingApplications: [],
     };
   });
 
-  // Fetch state compliance to detect collab requirements
+  // Classify states by collaboration requirement type
   useEffect(() => {
-    const detectCollaborationStates = async () => {
+    const classifyStates = async () => {
       if (!data.selectedStates.length) {
-        setStatesRequiringCollab([]);
+        setCollabClassification({ always: [], conditional: [], never: [] });
         return;
       }
 
-      try {
-        const { data: complianceData } = await supabase
-          .from('state_compliance_requirements')
-          .select('state_abbreviation, ca_required')
-          .in('state_abbreviation', data.selectedStates);
+      // Filter out NP-prohibited states if provider is NP
+      const isNP = data.providerType === 'nurse_practitioner';
+      const validStates = data.selectedStates.filter(s => 
+        !isNP || !isNPProhibitedState(s)
+      );
 
-        const requireCollab = (complianceData || [])
-          .filter(s => s.ca_required === true)
-          .map(s => s.state_abbreviation);
+      // Classify states using constants (primary source of truth)
+      const always: string[] = [];
+      const conditional: string[] = [];
+      const never: string[] = [];
 
-        setStatesRequiringCollab(requireCollab);
-      } catch (error) {
-        console.error('Error detecting collaboration states:', error);
-      }
+      validStates.forEach(stateAbbr => {
+        const type = getCollabRequirementType(stateAbbr);
+        if (type === 'always') {
+          always.push(stateAbbr);
+        } else if (type === 'conditional') {
+          conditional.push(stateAbbr);
+        } else {
+          never.push(stateAbbr);
+        }
+      });
+
+      setCollabClassification({ always, conditional, never });
     };
 
-    detectCollaborationStates();
-  }, [data.selectedStates]);
+    classifyStates();
+  }, [data.selectedStates, data.providerType]);
 
   // Dynamic steps based on provider type
   const steps: Step[] = useMemo(() => {
@@ -150,15 +184,15 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
       );
     }
 
-    // Add collaboration consent step if states require it
-    if (statesRequiringCollab.length > 0) {
+    // Add collaboration consent step if there are "always" collab states
+    if (collabClassification.always.length > 0) {
       baseSteps.push({ id: 'collaboration', label: 'Collaboration', icon: Users });
     }
 
     baseSteps.push({ id: 'review', label: 'Review & Submit', icon: ClipboardCheck });
 
     return baseSteps;
-  }, [data.providerType, statesRequiringCollab.length]);
+  }, [data.providerType, collabClassification.always.length]);
 
   const updateData = useCallback((updates: Partial<OnboardingData>) => {
     setData(prev => ({ ...prev, ...updates }));
@@ -186,6 +220,14 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
     const firstName = nameParts[0] || '';
     const lastName = nameParts.slice(1).join(' ') || '';
 
+    // Determine activation status based on collab classification
+    let activationStatus = 'ready';
+    if (collabClassification.always.length > 0) {
+      activationStatus = 'pending_agreements';
+    } else if (collabClassification.conditional.length > 0) {
+      activationStatus = 'pending_review';
+    }
+
     // Update profiles table with all onboarding data
     const { error: profileError } = await supabase
       .from('profiles')
@@ -201,7 +243,7 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
         actively_licensed_states: data.selectedStates.join(','),
         onboarding_completed: true,
         onboarding_completed_at: new Date().toISOString(),
-        activation_status: statesRequiringCollab.length > 0 ? 'pending_agreements' : 'pending_licenses',
+        activation_status: activationStatus,
         updated_at: new Date().toISOString(),
       })
       .eq('id', profile.id);
@@ -211,7 +253,8 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
     // Insert/update provider_licenses for each selected state
     for (const stateAbbr of data.selectedStates) {
       const reportedLicense = data.reportedLicenses.find(l => l.state === stateAbbr);
-      const requiresCollab = statesRequiringCollab.includes(stateAbbr);
+      const collabType = getCollabRequirementType(stateAbbr);
+      const requiresCollab = collabType === 'always';
 
       // Check if license already exists
       const { data: existingLicense } = await supabase
@@ -252,6 +295,24 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
           });
       }
     }
+
+    // Insert pending license applications
+    if (data.pendingApplications && data.pendingApplications.length > 0) {
+      for (const app of data.pendingApplications) {
+        await supabase
+          .from('provider_license_applications')
+          .upsert({
+            profile_id: profile.id,
+            state_abbreviation: app.stateAbbr,
+            application_submitted_date: app.submittedDate || null,
+            expected_approval_date: app.expectedTimeline || null,
+            notes: app.notes || null,
+            status: 'pending',
+          }, {
+            onConflict: 'profile_id,state_abbreviation',
+          });
+      }
+    }
   };
 
   const handleComplete = async () => {
@@ -260,14 +321,19 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
       // Persist data to Supabase
       await persistOnboardingData();
 
-      // Call onComplete with data and collab states
-      onComplete(data, statesRequiringCollab);
+      // Call onComplete with data and collab classification
+      onComplete(data, collabClassification);
+
+      const hasCollab = collabClassification.always.length > 0;
+      const hasConditional = collabClassification.conditional.length > 0;
 
       toast({
         title: 'Onboarding Complete!',
-        description: statesRequiringCollab.length > 0
+        description: hasCollab
           ? 'Clinical Operations will contact you about collaborative agreements.'
-          : 'Your profile has been saved. Welcome aboard!',
+          : hasConditional
+            ? 'Some states require review by Clinical Operations.'
+            : 'Your profile has been saved. Welcome aboard!',
       });
     } catch (error) {
       console.error('Error completing onboarding:', error);
@@ -351,6 +417,9 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
             selectedStates={data.selectedStates}
             onUpdate={(states) => updateData({ selectedStates: states })}
             providerType={data.providerType}
+            pendingApplications={data.pendingApplications}
+            onPendingApplicationsUpdate={(apps) => updateData({ pendingApplications: apps })}
+            showPendingOption={true}
           />
         );
        case 'licenses':
@@ -365,7 +434,8 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
        case 'collaboration':
          return (
            <CollaborationConsentStep
-             statesRequiringCollab={statesRequiringCollab}
+             statesRequiringCollab={collabClassification.always}
+             conditionalStates={collabClassification.conditional}
              onConsent={(consented) => setCollaborationConsent(consented)}
              consented={collaborationConsent}
            />

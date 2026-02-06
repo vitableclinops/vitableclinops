@@ -213,12 +213,9 @@ export function WelcomeStep({ mode, data, onUpdate }: WelcomeStepProps) {
               <SelectValue placeholder="Select minimum age" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="0">All ages (0+)</SelectItem>
-              <SelectItem value="2">2+ years</SelectItem>
-              <SelectItem value="5">5+ years</SelectItem>
-              <SelectItem value="12">12+ years (Adolescent+)</SelectItem>
-              <SelectItem value="18">18+ years (Adults only)</SelectItem>
-              <SelectItem value="21">21+ years</SelectItem>
+              <SelectItem value="1.5">1.5+ years (Toddlers and up)</SelectItem>
+              <SelectItem value="13">13+ years (Adolescents and up)</SelectItem>
+              <SelectItem value="17">17+ years (Adults only)</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
