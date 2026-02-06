@@ -8,6 +8,8 @@ interface UseAgreementTransfersOptions {
   status?: string[];
   stateAbbreviation?: string;
   limit?: number;
+  providerId?: string; // Filter transfers affecting a specific provider
+  physicianId?: string; // Filter transfers involving a specific physician
 }
 
 export const useAgreementTransfers = (options: UseAgreementTransfersOptions = {}) => {
@@ -30,6 +32,14 @@ export const useAgreementTransfers = (options: UseAgreementTransfersOptions = {}
         query = query.eq('state_abbreviation', options.stateAbbreviation);
       }
 
+      if (options.providerId) {
+        query = query.contains('affected_provider_ids', [options.providerId]);
+      }
+
+      if (options.physicianId) {
+        query = query.or(`source_physician_id.eq.${options.physicianId},target_physician_id.eq.${options.physicianId}`);
+      }
+
       if (options.limit) {
         query = query.limit(options.limit);
       }
@@ -43,10 +53,32 @@ export const useAgreementTransfers = (options: UseAgreementTransfersOptions = {}
     } finally {
       setLoading(false);
     }
-  }, [options.status, options.stateAbbreviation, options.limit]);
+  }, [options.status, options.stateAbbreviation, options.limit, options.providerId, options.physicianId]);
 
   useEffect(() => {
     fetchTransfers();
+  }, [fetchTransfers]);
+
+  // Subscribe to realtime updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('agreement-transfers-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'agreement_transfers',
+        },
+        () => {
+          fetchTransfers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchTransfers]);
 
   return {
