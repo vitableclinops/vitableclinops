@@ -11,6 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useEmailNotifications } from '@/hooks/useEmailNotifications';
 import { AlertTriangle, Users, ArrowRight, Calendar, FileText } from 'lucide-react';
 
 interface SelectedAgreement {
@@ -164,6 +165,7 @@ export function BulkReassignDialog({
   onSuccess,
 }: BulkReassignDialogProps) {
   const { toast } = useToast();
+  const { notifyWorkflowInitiated } = useEmailNotifications();
   const [targetPhysician, setTargetPhysician] = useState<string>('');
   const [effectiveDate, setEffectiveDate] = useState<string>('');
   const [notes, setNotes] = useState('');
@@ -310,6 +312,45 @@ export function BulkReassignDialog({
             },
           });
 
+          // Send email notifications for this transfer workflow
+          const actorName = user?.user_metadata?.full_name || user?.email || 'Admin';
+          
+          // Notify all affected providers
+          for (const provider of affectedProviders) {
+            if (provider.providerEmail) {
+              await notifyWorkflowInitiated(
+                provider.providerEmail,
+                provider.providerName,
+                {
+                  workflowType: 'Transfer',
+                  providerName: provider.providerName,
+                  stateName: provider.stateName,
+                  physicianName: selectedPhysician.name,
+                  initiatedBy: actorName,
+                  notes: notes || undefined,
+                  actionUrl: `${window.location.origin}/provider`,
+                }
+              );
+            }
+          }
+
+          // Notify the new physician
+          if (selectedPhysician.email) {
+            await notifyWorkflowInitiated(
+              selectedPhysician.email,
+              selectedPhysician.name,
+              {
+                workflowType: 'Transfer',
+                providerName: `${affectedProviders.length} provider(s)`,
+                stateName: firstProvider.stateName,
+                physicianName: selectedPhysician.name,
+                initiatedBy: actorName,
+                notes: notes || undefined,
+                actionUrl: `${window.location.origin}/physician`,
+              }
+            );
+          }
+
         } else {
           // Direct reassignment without transfer workflow - just update the agreement
           const { error: updateError } = await supabase
@@ -344,7 +385,7 @@ export function BulkReassignDialog({
       toast({
         title: createTransferWorkflow ? 'Transfer workflows created' : 'Reassignment complete',
         description: createTransferWorkflow 
-          ? `Created ${uniqueAgreementIds.length} transfer workflow(s) with ${getTerminationTasks('', 0).length + getInitiationTasks('', 0).length} checklist tasks each.`
+          ? `Created ${uniqueAgreementIds.length} transfer workflow(s) with ${getTerminationTasks('', 0).length + getInitiationTasks('', 0).length} checklist tasks each. Email notifications sent.`
           : `Updated ${uniqueAgreementIds.length} agreement(s) to ${selectedPhysician.name}.`,
       });
 

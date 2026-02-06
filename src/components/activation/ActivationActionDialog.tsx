@@ -14,6 +14,8 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useUpdateActivationStatus, type EhrActivationStatus } from '@/hooks/useProviderStateStatus';
+import { useEmailNotifications } from '@/hooks/useEmailNotifications';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ActivationActionDialogProps {
   open: boolean;
@@ -76,6 +78,7 @@ export function ActivationActionDialog({
   const [evidenceLink, setEvidenceLink] = useState('');
   
   const updateMutation = useUpdateActivationStatus();
+  const { notifyStatusChanged } = useEmailNotifications();
   const config = actionConfig[actionType];
 
   const isNotReady = readinessStatus !== 'ready';
@@ -92,6 +95,27 @@ export function ActivationActionDialog({
       effectiveDate: effectiveDate || undefined,
       evidenceLink: evidenceLink || undefined,
     });
+
+    // Fetch provider email to send notification
+    const { data: providerProfile } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('id', providerId)
+      .single();
+
+    if (providerProfile?.email) {
+      await notifyStatusChanged(
+        providerProfile.email,
+        providerProfile.full_name || providerName,
+        {
+          entityName: `${providerName} - ${stateName} (${stateAbbreviation})`,
+          previousStatus: currentStatus,
+          newStatus: config.newStatus,
+          notes: notes,
+          actionUrl: `${window.location.origin}/directory?search=${encodeURIComponent(providerName)}`,
+        }
+      );
+    }
 
     setNotes('');
     setEffectiveDate('');
