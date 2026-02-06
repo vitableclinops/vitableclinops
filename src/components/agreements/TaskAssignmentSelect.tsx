@@ -29,17 +29,21 @@ export function TaskAssignmentSelect({
 
   useEffect(() => {
     const fetchAssignees = async () => {
-      // Get all admin users who can be assigned tasks
-      const { data: adminRoles } = await supabase
+      // Get all users with admin or leadership roles (team members who can be assigned tasks)
+      const { data: teamRoles } = await supabase
         .from('user_roles')
-        .select('user_id')
-        .eq('role', 'admin');
+        .select('user_id, role')
+        .in('role', ['admin', 'leadership']);
 
-      if (adminRoles && adminRoles.length > 0) {
+      if (teamRoles && teamRoles.length > 0) {
+        // Deduplicate user_ids (users may have multiple roles)
+        const uniqueUserIds = [...new Set(teamRoles.map(r => r.user_id).filter(Boolean))] as string[];
+        
         const { data: profiles } = await supabase
           .from('profiles')
           .select('*')
-          .in('user_id', adminRoles.map(r => r.user_id).filter(Boolean) as string[]);
+          .in('user_id', uniqueUserIds)
+          .order('full_name', { ascending: true });
 
         if (profiles) {
           setAssignees(profiles);
