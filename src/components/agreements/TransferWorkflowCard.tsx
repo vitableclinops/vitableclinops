@@ -3,30 +3,28 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
-import { TaskAssignmentSelect } from './TaskAssignmentSelect';
+import { useAuth } from '@/hooks/useAuth';
+import { EditableTaskItem } from './EditableTaskItem';
+import { AddTaskButton } from './AddTaskButton';
 import { TransferActivityLog } from './TransferActivityLog';
-import { TransferLifecycleInfo } from './TransferLifecycleInfo';
+import { TransferLifecycleEditor } from './TransferLifecycleEditor';
 import { 
   ArrowRightLeft, 
   CheckCircle2, 
   Clock, 
-  XCircle,
   ChevronDown,
   ChevronUp,
   Users,
-  FileText,
-  Calendar,
-  Bell,
-  ClipboardCheck,
   Activity,
-  ListChecks
+  ListChecks,
+  AlertTriangle,
+  Lock
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Tables } from '@/integrations/supabase/types';
@@ -41,16 +39,20 @@ interface TransferWorkflowCardProps {
 
 export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCardProps) {
   const { toast } = useToast();
+  const { hasRole } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState('checklist');
+
+  const isAdmin = hasRole('admin');
 
   const fetchTasks = async () => {
     const { data, error } = await supabase
       .from('agreement_tasks')
       .select('*')
       .eq('transfer_id', transfer.id)
+      .order('sort_order', { ascending: true })
       .order('auto_trigger', { ascending: true })
       .order('created_at', { ascending: true });
 
@@ -64,87 +66,96 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
     fetchTasks();
   }, [transfer.id]);
 
+  // Separate by phase
   const terminationTasks = tasks.filter(t => t.auto_trigger === 'transfer_termination');
   const initiationTasks = tasks.filter(t => t.auto_trigger === 'transfer_initiation');
 
+  // Progress calculations - REQUIRED tasks only for completion status
+  const requiredTasks = tasks.filter(t => t.is_required !== false);
+  const completedRequiredTasks = requiredTasks.filter(t => t.status === 'completed');
+  const allRequiredComplete = requiredTasks.length > 0 && 
+    requiredTasks.every(t => t.status === 'completed');
+
+  // Overall progress including optional
   const completedTasks = tasks.filter(t => t.status === 'completed').length;
   const totalTasks = tasks.length;
   const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
-  const allTerminationComplete = terminationTasks.every(t => t.status === 'completed');
-  const allInitiationComplete = initiationTasks.every(t => t.status === 'completed');
+  // Phase-specific progress (required only)
+  const terminationRequired = terminationTasks.filter(t => t.is_required !== false);
+  const terminationComplete = terminationRequired.every(t => t.status === 'completed');
+  const initiationRequired = initiationTasks.filter(t => t.is_required !== false);
+  const initiationComplete = initiationRequired.every(t => t.status === 'completed');
 
-  const handleTaskToggle = async (task: Task) => {
-    const newStatus = task.status === 'completed' ? 'pending' : 'completed';
-    const { data: { user } } = await supabase.auth.getUser();
+  // Check for and handle transfer completion
+  useEffect(() => {
+    const checkCompletion = async () => {
+      if (allRequiredComplete && transfer.status !== 'completed') {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        await supabase
+          .from('agreement_transfers')
+          .update({
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            completed_by: user?.id,
+          })
+          .eq('id', transfer.id);
 
-    const { error } = await supabase
-      .from('agreement_tasks')
-      .update({
-        status: newStatus,
-        completed_at: newStatus === 'completed' ? new Date().toISOString() : null,
-        completed_by: newStatus === 'completed' ? user?.id : null,
-      })
-      .eq('id', task.id);
+        // Log completion
+        await supabase.from('transfer_activity_log').insert({
+          transfer_id: transfer.id,
+          activity_type: 'status_changed',
+          actor_id: user?.id,
+          actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
+          actor_role: 'admin',
+          description: 'Transfer workflow completed - all required tasks finished',
+        });
 
-    if (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to update task.',
-        variant: 'destructive',
-      });
-      return;
+        toast({
+          title: 'Transfer complete',
+          description: 'All required workflow tasks have been completed.',
+        });
+        onUpdate?.();
+      } else if (!allRequiredComplete && transfer.status === 'completed') {
+        // Reopen if a required task was reopened
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        await supabase
+          .from('agreement_transfers')
+          .update({
+            status: 'in_progress',
+            completed_at: null,
+            completed_by: null,
+          })
+          .eq('id', transfer.id);
+
+        // Log reopening
+        await supabase.from('transfer_activity_log').insert({
+          transfer_id: transfer.id,
+          activity_type: 'status_changed',
+          actor_id: user?.id,
+          actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
+          actor_role: 'admin',
+          description: 'Transfer workflow reopened - required task was unchecked',
+        });
+
+        toast({
+          title: 'Transfer reopened',
+          description: 'A required task was marked incomplete.',
+          variant: 'destructive',
+        });
+        onUpdate?.();
+      }
+    };
+
+    if (!loading && tasks.length > 0) {
+      checkCompletion();
     }
+  }, [tasks, transfer.status, loading]);
 
-    // Log the activity
-    await supabase.from('transfer_activity_log').insert({
-      transfer_id: transfer.id,
-      task_id: task.id,
-      activity_type: newStatus === 'completed' ? 'task_completed' : 'status_changed',
-      actor_id: user?.id,
-      actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
-      actor_role: 'admin',
-      description: newStatus === 'completed' 
-        ? `Completed: ${task.title}`
-        : `Reopened: ${task.title}`,
-    });
-
-    setTasks(prev => prev.map(t => 
-      t.id === task.id 
-        ? { ...t, status: newStatus, completed_at: newStatus === 'completed' ? new Date().toISOString() : null }
-        : t
-    ));
-
-    // Check if transfer should be marked complete
-    const updatedTasks = tasks.map(t => t.id === task.id ? { ...t, status: newStatus } : t);
-    const allComplete = updatedTasks.every(t => t.status === 'completed');
-    
-    if (allComplete && transfer.status !== 'completed') {
-      await supabase
-        .from('agreement_transfers')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          completed_by: user?.id,
-        })
-        .eq('id', transfer.id);
-
-      // Log completion
-      await supabase.from('transfer_activity_log').insert({
-        transfer_id: transfer.id,
-        activity_type: 'status_changed',
-        actor_id: user?.id,
-        actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
-        actor_role: 'admin',
-        description: 'Transfer workflow completed - all tasks finished',
-      });
-
-      toast({
-        title: 'Transfer complete',
-        description: 'All workflow tasks have been completed.',
-      });
-      onUpdate?.();
-    }
+  const handleTaskDeleted = (taskId: string) => {
+    setTasks(prev => prev.filter(t => t.id !== taskId));
   };
 
   const getStatusBadge = (status: string) => {
@@ -160,81 +171,65 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
     }
   };
 
-  const getCategoryIcon = (category: string) => {
-    switch (category) {
-      case 'document':
-        return <FileText className="h-4 w-4" />;
-      case 'supervision_meeting':
-        return <Calendar className="h-4 w-4" />;
-      case 'notification':
-        return <Bell className="h-4 w-4" />;
-      case 'chart_review':
-        return <ClipboardCheck className="h-4 w-4" />;
-      default:
-        return <Clock className="h-4 w-4" />;
-    }
-  };
+  const TaskPhaseSection = ({ 
+    taskList, 
+    title, 
+    phase,
+    isComplete 
+  }: { 
+    taskList: Task[]; 
+    title: string; 
+    phase: 'termination' | 'initiation';
+    isComplete: boolean;
+  }) => {
+    const requiredCount = taskList.filter(t => t.is_required !== false).length;
+    const completedRequired = taskList.filter(t => t.is_required !== false && t.status === 'completed').length;
+    const nextSortOrder = taskList.length > 0 
+      ? Math.max(...taskList.map(t => t.sort_order || 0)) + 1 
+      : 0;
 
-  const TaskList = ({ taskList, title, phase }: { taskList: Task[]; title: string; phase: 'termination' | 'initiation' }) => (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <h4 className="text-sm font-medium">{title}</h4>
-        <Badge variant="outline" className="text-xs">
-          {taskList.filter(t => t.status === 'completed').length}/{taskList.length}
-        </Badge>
-        {(phase === 'termination' ? allTerminationComplete : allInitiationComplete) && (
-          <CheckCircle2 className="h-4 w-4 text-success" />
-        )}
-      </div>
-      <div className="space-y-1">
-        {taskList.map(task => (
-          <div
-            key={task.id}
-            className={cn(
-              "flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors",
-              task.status === 'completed' && 'opacity-60'
-            )}
-          >
-            <Checkbox
-              checked={task.status === 'completed'}
-              onCheckedChange={() => handleTaskToggle(task)}
-            />
-            <div className="text-muted-foreground">
-              {getCategoryIcon(task.category)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className={cn(
-                "text-sm",
-                task.status === 'completed' && 'line-through'
-              )}>
-                {task.title}
-              </p>
-              {task.description && (
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                  {task.description}
-                </p>
-              )}
-            </div>
-            
-            {/* Task Assignment */}
-            <TaskAssignmentSelect
-              taskId={task.id}
-              transferId={transfer.id}
-              currentAssigneeId={task.assigned_to}
-              currentAssigneeName={task.assigned_to_name}
-              onAssigned={fetchTasks}
-            />
-
-            {task.status === 'completed' && task.completed_at && (
-              <span className="text-xs text-muted-foreground">
-                {format(new Date(task.completed_at), 'MMM d')}
-              </span>
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-medium">{title}</h4>
+            <Badge variant="outline" className="text-xs">
+              {completedRequired}/{requiredCount} required
+            </Badge>
+            {isComplete && (
+              <CheckCircle2 className="h-4 w-4 text-success" />
             )}
           </div>
-        ))}
+        </div>
+        
+        <div className="space-y-1">
+          {taskList.map(task => (
+            <EditableTaskItem
+              key={task.id}
+              task={task}
+              transferId={transfer.id}
+              isAdmin={isAdmin}
+              onUpdate={fetchTasks}
+              onDelete={handleTaskDeleted}
+            />
+          ))}
+          
+          {/* Add task button (admin only) */}
+          {isAdmin && (
+            <AddTaskButton
+              transferId={transfer.id}
+              agreementId={transfer.source_agreement_id}
+              phase={phase}
+              stateAbbreviation={transfer.state_abbreviation}
+              stateName={transfer.state_name}
+              nextSortOrder={nextSortOrder}
+              onAdded={fetchTasks}
+            />
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <Card className="overflow-hidden">
@@ -264,7 +259,9 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-sm font-medium">{completedTasks}/{totalTasks} tasks</p>
+              <p className="text-sm font-medium">
+                {completedRequiredTasks.length}/{requiredTasks.length} required
+              </p>
               <Progress value={progress} className="w-24 h-2" />
             </div>
             {expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
@@ -276,6 +273,19 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
         <CardContent className="pt-0">
           <Separator className="mb-4" />
           
+          {/* Completion blocking alert */}
+          {!allRequiredComplete && transfer.status !== 'completed' && (
+            <Alert className="mb-4">
+              <Lock className="h-4 w-4" />
+              <AlertDescription>
+                <span className="font-medium">
+                  {requiredTasks.length - completedRequiredTasks.length} required task(s) remaining
+                </span>
+                {' '}before this transfer can be marked complete.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {loading ? (
             <div className="animate-pulse space-y-2">
               <div className="h-4 bg-muted rounded w-1/3" />
@@ -295,22 +305,25 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="checklist" className="space-y-4">
+              <TabsContent value="checklist" className="space-y-6">
                 <div className="grid gap-6 md:grid-cols-2">
-                  <TaskList 
+                  <TaskPhaseSection 
                     taskList={terminationTasks} 
-                    title="1. Termination Tasks" 
+                    title="1. Termination Phase" 
                     phase="termination"
+                    isComplete={terminationComplete}
                   />
-                  <TaskList 
+                  <TaskPhaseSection 
                     taskList={initiationTasks} 
-                    title="2. Initiation Tasks" 
+                    title="2. Initiation Phase" 
                     phase="initiation"
+                    isComplete={initiationComplete}
                   />
                 </div>
 
-                {/* Lifecycle Info for completed transfers */}
-                <TransferLifecycleInfo
+                {/* Lifecycle Info for completed transfers - editable by admin */}
+                <TransferLifecycleEditor
+                  transferId={transfer.id}
                   status={transfer.status}
                   completedAt={transfer.completed_at}
                   effectiveDate={transfer.effective_date}
@@ -320,11 +333,15 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                   chartReviewFrequency={transfer.chart_review_frequency}
                   targetPhysicianName={transfer.target_physician_name}
                   affectedProviderCount={transfer.affected_provider_count}
+                  isAdmin={isAdmin}
+                  onUpdate={() => onUpdate?.()}
                 />
               </TabsContent>
 
               <TabsContent value="activity">
-                <TransferActivityLog transferId={transfer.id} />
+                <ScrollArea className="h-[300px]">
+                  <TransferActivityLog transferId={transfer.id} />
+                </ScrollArea>
               </TabsContent>
             </Tabs>
           )}

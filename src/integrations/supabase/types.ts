@@ -226,6 +226,7 @@ export type Database = {
           external_url: string | null
           id: string
           is_auto_generated: boolean | null
+          is_required: boolean | null
           meeting_id: string | null
           notes: string | null
           notification_sent_at: string | null
@@ -233,6 +234,7 @@ export type Database = {
           physician_id: string | null
           priority: string | null
           provider_id: string | null
+          sort_order: number | null
           started_at: string | null
           state_abbreviation: string | null
           state_name: string | null
@@ -259,6 +261,7 @@ export type Database = {
           external_url?: string | null
           id?: string
           is_auto_generated?: boolean | null
+          is_required?: boolean | null
           meeting_id?: string | null
           notes?: string | null
           notification_sent_at?: string | null
@@ -266,6 +269,7 @@ export type Database = {
           physician_id?: string | null
           priority?: string | null
           provider_id?: string | null
+          sort_order?: number | null
           started_at?: string | null
           state_abbreviation?: string | null
           state_name?: string | null
@@ -292,6 +296,7 @@ export type Database = {
           external_url?: string | null
           id?: string
           is_auto_generated?: boolean | null
+          is_required?: boolean | null
           meeting_id?: string | null
           notes?: string | null
           notification_sent_at?: string | null
@@ -299,6 +304,7 @@ export type Database = {
           physician_id?: string | null
           priority?: string | null
           provider_id?: string | null
+          sort_order?: number | null
           started_at?: string | null
           state_abbreviation?: string | null
           state_name?: string | null

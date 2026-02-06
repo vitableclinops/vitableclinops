@@ -11,7 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { AlertTriangle, Users, ArrowRight, Calendar } from 'lucide-react';
+import { AlertTriangle, Users, ArrowRight, Calendar, FileText } from 'lucide-react';
 
 interface SelectedAgreement {
   id: string;
@@ -38,6 +38,123 @@ interface BulkReassignDialogProps {
   physicians: Physician[];
   onSuccess: () => void;
 }
+
+// Default task templates for transfer workflow
+const getTerminationTasks = (
+  sourcePhysicianName: string,
+  affectedProviderCount: number
+) => [
+  {
+    title: `Send termination agreement via BoxSign`,
+    description: `Route termination agreement to ${sourcePhysicianName} for signature`,
+    category: 'signature' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 1,
+  },
+  {
+    title: 'Email NP + physician confirming termination initiated',
+    description: `Send notification email to ${affectedProviderCount} provider(s) and Dr. ${sourcePhysicianName} about the pending termination`,
+    category: 'custom' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 2,
+  },
+  {
+    title: 'Upload executed termination agreement',
+    description: 'Obtain and upload the fully signed termination document',
+    category: 'document' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 3,
+  },
+  {
+    title: 'Confirm termination effective date recorded',
+    description: 'Verify the effective date of termination is captured in the system',
+    category: 'compliance' as const,
+    priority: 'medium',
+    is_required: true,
+    sort_order: 4,
+  },
+  {
+    title: 'Update meeting/cadence records as needed',
+    description: 'Cancel or reschedule any pending meetings with the outgoing physician',
+    category: 'supervision_meeting' as const,
+    priority: 'medium',
+    is_required: false,
+    sort_order: 5,
+  },
+  {
+    title: 'Update chart review linkage/tracking references',
+    description: 'Ensure chart review records are updated to reflect the termination',
+    category: 'chart_review' as const,
+    priority: 'medium',
+    is_required: false,
+    sort_order: 6,
+  },
+];
+
+const getInitiationTasks = (
+  targetPhysicianName: string,
+  affectedProviderCount: number
+) => [
+  {
+    title: 'Initiate new collaborative agreement record',
+    description: `Create new agreement record for ${affectedProviderCount} provider(s) with ${targetPhysicianName}`,
+    category: 'agreement_creation' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 1,
+  },
+  {
+    title: `Assign collaborating physician (${targetPhysicianName})`,
+    description: 'Confirm physician assignment and update all provider records',
+    category: 'custom' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 2,
+  },
+  {
+    title: 'Send new agreement via BoxSign',
+    description: 'Route new collaborative agreement to physician and all affected providers for signature',
+    category: 'signature' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 3,
+  },
+  {
+    title: 'Confirm NP + physician notification email sent',
+    description: 'Verify all parties received email confirmation of the new agreement',
+    category: 'custom' as const,
+    priority: 'medium',
+    is_required: true,
+    sort_order: 4,
+  },
+  {
+    title: 'Upload executed new agreement',
+    description: 'Upload the fully signed new collaborative agreement document',
+    category: 'document' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 5,
+  },
+  {
+    title: 'Schedule first collaboration meeting + record cadence',
+    description: 'Set up initial collaborative meeting and establish meeting schedule',
+    category: 'supervision_meeting' as const,
+    priority: 'medium',
+    is_required: true,
+    sort_order: 6,
+  },
+  {
+    title: 'Link chart review calendar/tracker',
+    description: 'Set up chart review schedule and store reference URL/tracker link',
+    category: 'chart_review' as const,
+    priority: 'medium',
+    is_required: true,
+    sort_order: 7,
+  },
+];
 
 export function BulkReassignDialog({
   open,
@@ -124,166 +241,51 @@ export function BulkReassignDialog({
 
           if (transferError) throw transferError;
 
-          // Create termination sub-workflow tasks
-          const terminationTasks: Array<{
-            transfer_id: string;
-            agreement_id: string;
-            title: string;
-            description: string;
-            category: 'termination' | 'chart_review' | 'document' | 'agreement_creation' | 'signature' | 'supervision_meeting' | 'renewal' | 'compliance' | 'custom';
-            status: 'pending' | 'in_progress' | 'completed' | 'blocked';
-            priority: string;
-            assigned_role: string;
-            is_auto_generated: boolean;
-            auto_trigger: string;
-            state_abbreviation: string;
-            state_name: string;
-          }> = [
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: `Notify ${firstProvider.physicianName} of termination`,
-              description: `Send formal notification of agreement termination to Dr. ${firstProvider.physicianName}`,
-              category: 'termination',
-              status: 'pending',
-              priority: 'high',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_termination',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: 'Notify affected providers of physician change',
-              description: `Notify ${affectedProviders.length} provider(s) of the upcoming physician reassignment`,
-              category: 'termination',
-              status: 'pending',
-              priority: 'high',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_termination',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: 'Complete final chart reviews with outgoing physician',
-              description: 'Ensure all pending chart reviews are completed before transition',
-              category: 'chart_review',
-              status: 'pending',
-              priority: 'medium',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_termination',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: 'Upload executed termination document',
-              description: 'Obtain and upload the signed termination agreement for the old collaboration',
-              category: 'document',
-              status: 'pending',
-              priority: 'high',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_termination',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-          ];
+          // Generate termination tasks from template
+          const terminationTaskData = getTerminationTasks(
+            firstProvider.physicianName,
+            affectedProviders.length
+          );
 
-          // Create initiation sub-workflow tasks
-          const initiationTasks: typeof terminationTasks = [
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: `Prepare new agreement with ${selectedPhysician.name}`,
-              description: `Draft collaborative agreement document for new supervision relationship`,
-              category: 'agreement_creation',
-              status: 'pending',
-              priority: 'high',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_initiation',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: 'Send new agreement for signatures',
-              description: 'Route agreement to physician and all affected providers for signature',
-              category: 'signature',
-              status: 'pending',
-              priority: 'high',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_initiation',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: 'Upload executed new agreement',
-              description: 'Upload the fully signed new collaborative agreement document',
-              category: 'document',
-              status: 'pending',
-              priority: 'high',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_initiation',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: 'Send confirmation to all parties',
-              description: 'Send confirmation email to physician and providers that transfer is complete',
-              category: 'custom',
-              status: 'pending',
-              priority: 'medium',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_initiation',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: 'Schedule first meeting with new physician',
-              description: 'Set up initial collaborative meeting with the new supervising physician',
-              category: 'supervision_meeting',
-              status: 'pending',
-              priority: 'medium',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_initiation',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-            {
-              transfer_id: transfer.id,
-              agreement_id: agreementId,
-              title: 'Initialize chart review tracking',
-              description: 'Set up chart review schedule and tracking for new collaboration',
-              category: 'chart_review',
-              status: 'pending',
-              priority: 'medium',
-              assigned_role: 'admin',
-              is_auto_generated: true,
-              auto_trigger: 'transfer_initiation',
-              state_abbreviation: firstProvider.stateAbbreviation,
-              state_name: firstProvider.stateName,
-            },
-          ];
+          const terminationTasks = terminationTaskData.map(task => ({
+            transfer_id: transfer.id,
+            agreement_id: agreementId,
+            title: task.title,
+            description: task.description,
+            category: task.category,
+            status: 'pending' as const,
+            priority: task.priority,
+            assigned_role: 'admin',
+            is_auto_generated: true,
+            is_required: task.is_required,
+            sort_order: task.sort_order,
+            auto_trigger: 'transfer_termination',
+            state_abbreviation: firstProvider.stateAbbreviation,
+            state_name: firstProvider.stateName,
+          }));
+
+          // Generate initiation tasks from template
+          const initiationTaskData = getInitiationTasks(
+            selectedPhysician.name,
+            affectedProviders.length
+          );
+
+          const initiationTasks = initiationTaskData.map(task => ({
+            transfer_id: transfer.id,
+            agreement_id: agreementId,
+            title: task.title,
+            description: task.description,
+            category: task.category,
+            status: 'pending' as const,
+            priority: task.priority,
+            assigned_role: 'admin',
+            is_auto_generated: true,
+            is_required: task.is_required,
+            sort_order: task.sort_order + 10, // Offset to keep initiation after termination
+            auto_trigger: 'transfer_initiation',
+            state_abbreviation: firstProvider.stateAbbreviation,
+            state_name: firstProvider.stateName,
+          }));
 
           // Insert all tasks
           const { error: tasksError } = await supabase
@@ -303,6 +305,8 @@ export function BulkReassignDialog({
             metadata: {
               affected_providers: affectedProviders.map(p => p.providerName),
               effective_date: effectiveDate || null,
+              termination_tasks_count: terminationTasks.length,
+              initiation_tasks_count: initiationTasks.length,
             },
           });
 
@@ -340,7 +344,7 @@ export function BulkReassignDialog({
       toast({
         title: createTransferWorkflow ? 'Transfer workflows created' : 'Reassignment complete',
         description: createTransferWorkflow 
-          ? `Created ${uniqueAgreementIds.length} transfer workflow(s) with checklist tasks.`
+          ? `Created ${uniqueAgreementIds.length} transfer workflow(s) with ${getTerminationTasks('', 0).length + getInitiationTasks('', 0).length} checklist tasks each.`
           : `Updated ${uniqueAgreementIds.length} agreement(s) to ${selectedPhysician.name}.`,
       });
 
@@ -365,6 +369,13 @@ export function BulkReassignDialog({
     setNotes('');
     setCreateTransferWorkflow(true);
   };
+
+  // Calculate task counts for display
+  const terminationTaskCount = getTerminationTasks('', 0).length;
+  const initiationTaskCount = getInitiationTasks('', 0).length;
+  const totalTaskCount = terminationTaskCount + initiationTaskCount;
+  const requiredTaskCount = getTerminationTasks('', 0).filter(t => t.is_required).length +
+    getInitiationTasks('', 0).filter(t => t.is_required).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -463,9 +474,21 @@ export function BulkReassignDialog({
                 Create transfer workflow with checklist
               </Label>
               <p className="text-xs text-muted-foreground">
-                Generates separate termination and initiation tasks that must be completed manually. 
-                Includes document uploads, notifications, and meeting scheduling steps.
+                Generates {totalTaskCount} tasks ({requiredTaskCount} required) across termination and initiation phases.
+                Tasks include document uploads, notifications, signatures, and meeting scheduling.
               </p>
+              {createTransferWorkflow && (
+                <div className="flex gap-4 mt-2">
+                  <div className="flex items-center gap-1 text-xs">
+                    <FileText className="h-3 w-3" />
+                    <span>{terminationTaskCount} termination tasks</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs">
+                    <FileText className="h-3 w-3" />
+                    <span>{initiationTaskCount} initiation tasks</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
