@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { SidebarProvider } from '@/components/ui/sidebar';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   Search, 
   BookOpen, 
@@ -212,9 +213,24 @@ function ArticleDetail({ article, onBack }: { article: KnowledgeBaseArticle; onB
 }
 
 export default function KnowledgeBasePage() {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams] = useSearchParams();
+  const initialSearch = searchParams.get('search') || '';
+  
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [selectedArticle, setSelectedArticle] = useState<KnowledgeBaseArticle | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | KnowledgeBaseArticle['category']>('all');
+  
+  const { profile, roles } = useAuth();
+  const userRole = roles.includes('admin') ? 'admin' : 
+                   roles.includes('leadership') ? 'leadership' : 
+                   roles.includes('physician') ? 'physician' : 'provider';
+
+  // Update search when URL param changes
+  useEffect(() => {
+    if (initialSearch) {
+      setSearchQuery(initialSearch);
+    }
+  }, [initialSearch]);
   
   const filteredArticles = searchQuery 
     ? searchKnowledgeBase(searchQuery)
@@ -232,11 +248,15 @@ export default function KnowledgeBasePage() {
   };
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar userRole="admin" userName="Sarah Chen" userEmail="sarah.chen@example.com" />
-        <main className="flex-1 p-6 overflow-auto">
-          <div className="max-w-6xl mx-auto space-y-6">
+    <div className="min-h-screen bg-background">
+      <AppSidebar 
+        userRole={userRole}
+        userName={profile?.full_name || 'User'}
+        userEmail={profile?.email || ''}
+        userAvatarUrl={profile?.avatar_url || undefined}
+      />
+      <main className="ml-16 lg:ml-64 transition-all duration-300 p-6">
+        <div className="max-w-6xl mx-auto space-y-6">
             {selectedArticle ? (
               <ArticleDetail 
                 article={selectedArticle} 
@@ -340,14 +360,13 @@ export default function KnowledgeBasePage() {
                           />
                         ))}
                       </div>
-                    )}
-                  </TabsContent>
-                </Tabs>
-              </>
-            )}
-          </div>
-        </main>
-      </div>
-    </SidebarProvider>
+                )}
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
+        </div>
+      </main>
+    </div>
   );
 }

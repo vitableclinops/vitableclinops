@@ -26,6 +26,7 @@ import {
   Pill,
   Edit,
   ArrowLeft,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -460,6 +461,19 @@ export default function StateDetailPage() {
                     href: '/admin/states',
                     icon: Shield,
                     description: 'Edit compliance requirements',
+                  },
+                ]}
+              />
+
+              {/* Knowledge Base Link */}
+              <RelatedLinksCard
+                title="Knowledge Base"
+                links={[
+                  {
+                    label: `${stateCompliance?.state_name || stateAbbr} State Guide`,
+                    href: `/knowledge?search=${encodeURIComponent(stateCompliance?.state_name || stateAbbr || '')}`,
+                    icon: BookOpen,
+                    description: 'SOPs, training, and compliance docs',
                   },
                 ]}
               />
