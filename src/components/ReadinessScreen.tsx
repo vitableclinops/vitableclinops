@@ -80,7 +80,7 @@ export function ReadinessScreen() {
         // Build readiness items
         const items: ReadinessItem[] = [];
 
-        // Profile completion
+        // Profile completion - route to existing ProfileSettingsPage
         items.push({
           id: 'profile',
           label: 'Profile Information',
@@ -89,10 +89,10 @@ export function ReadinessScreen() {
             ? 'Your profile has been completed'
             : 'Complete your profile information',
           category: 'profile',
-          actionUrl: '/profile/settings',
+          actionUrl: '/onboarding?mode=edit', // Route to onboarding in edit mode
         });
 
-        // Bio
+        // Bio - route to onboarding wizard for edit
         items.push({
           id: 'bio',
           label: 'Professional Bio',
@@ -101,10 +101,10 @@ export function ReadinessScreen() {
             ? 'Bio has been added'
             : 'Add a professional bio for patient visibility',
           category: 'profile',
-          actionUrl: '/profile/settings',
+          actionUrl: '/onboarding?mode=edit', // Route to onboarding in edit mode
         });
 
-        // Headshot
+        // Headshot - route to onboarding wizard for edit
         items.push({
           id: 'avatar',
           label: 'Profile Photo',
@@ -113,7 +113,7 @@ export function ReadinessScreen() {
             ? 'Photo uploaded'
             : 'Upload a professional headshot',
           category: 'profile',
-          actionUrl: '/profile/settings',
+          actionUrl: '/onboarding?mode=edit', // Route to onboarding in edit mode
         });
 
         // Licenses by state
@@ -151,7 +151,7 @@ export function ReadinessScreen() {
               label: `${state} Collaborative Agreement`,
               status: isActive ? 'completed' : isBlocked ? 'blocked' : 'pending',
               description: isActive 
-                ? `Active with ${agreement?.physician_name}`
+                ? `Active with ${agreement?.physician_name || 'Physician'}`
                 : isBlocked 
                   ? 'Pending physician assignment'
                   : `In progress: ${agreement?.workflow_status}`,

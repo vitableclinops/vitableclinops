@@ -500,9 +500,9 @@ export type Database = {
           medallion_id: string | null
           meeting_cadence: string | null
           next_renewal_date: string | null
-          physician_email: string
+          physician_email: string | null
           physician_id: string | null
-          physician_name: string
+          physician_name: string | null
           physician_npi: string | null
           physician_signed_at: string | null
           renewal_cadence: string | null
@@ -533,9 +533,9 @@ export type Database = {
           medallion_id?: string | null
           meeting_cadence?: string | null
           next_renewal_date?: string | null
-          physician_email: string
+          physician_email?: string | null
           physician_id?: string | null
-          physician_name: string
+          physician_name?: string | null
           physician_npi?: string | null
           physician_signed_at?: string | null
           renewal_cadence?: string | null
@@ -566,9 +566,9 @@ export type Database = {
           medallion_id?: string | null
           meeting_cadence?: string | null
           next_renewal_date?: string | null
-          physician_email?: string
+          physician_email?: string | null
           physician_id?: string | null
-          physician_name?: string
+          physician_name?: string | null
           physician_npi?: string | null
           physician_signed_at?: string | null
           renewal_cadence?: string | null

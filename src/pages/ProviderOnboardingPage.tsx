@@ -35,38 +35,37 @@ export default function ProviderOnboardingPage() {
       for (const stateAbbr of statesRequiringCollab) {
         const stateName = stateMap.get(stateAbbr) || stateAbbr;
 
-        // Check if agreement already exists for this provider/state
-        const { data: existingAgreement } = await supabase
-          .from('collaborative_agreements')
-          .select('id')
-          .eq('state_abbreviation', stateAbbr)
-          .maybeSingle();
+        // Check if this specific provider already has an agreement for this state
+        // (dedupe by provider_id + state_abbreviation, NOT just state)
+        const { data: existingLink } = await supabase
+          .from('agreement_providers')
+          .select(`
+            id,
+            agreement:agreement_id (
+              id,
+              state_abbreviation
+            )
+          `)
+          .eq('provider_id', profile.id);
 
-        // For now, check via agreement_providers if this provider is already linked
-        if (existingAgreement) {
-          const { data: existingLink } = await supabase
-            .from('agreement_providers')
-            .select('id')
-            .eq('agreement_id', existingAgreement.id)
-            .eq('provider_id', profile.id)
-            .maybeSingle();
+        const hasExistingAgreement = existingLink?.some(
+          link => link.agreement?.state_abbreviation === stateAbbr
+        );
 
-          if (existingLink) {
-            console.log(`Agreement already exists for ${stateAbbr}, skipping`);
-            continue;
-          }
+        if (hasExistingAgreement) {
+          console.log(`Agreement already exists for provider in ${stateAbbr}, skipping`);
+          continue;
         }
 
-        // Create a placeholder pending agreement
-        // Note: physician details are TBD - Clinical Ops will assign later
+        // Create a placeholder pending agreement with NULL physician (awaiting assignment)
         const { data: newAgreement, error: agreementError } = await supabase
           .from('collaborative_agreements')
           .insert({
             state_abbreviation: stateAbbr,
             state_id: stateAbbr, // Using abbreviation as ID placeholder
             state_name: stateName,
-            physician_name: 'TBD - Pending Assignment',
-            physician_email: 'pending@assignment.com',
+            physician_name: null, // NULL - Clinical Ops will assign later
+            physician_email: null, // NULL - no fake placeholder emails
             workflow_status: 'draft',
             created_by: profile.id,
             source: 'onboarding',
