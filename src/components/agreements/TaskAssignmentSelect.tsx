@@ -3,6 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useEmailNotifications } from '@/hooks/useEmailNotifications';
 import { UserPlus } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -24,6 +25,7 @@ export function TaskAssignmentSelect({
   onAssigned 
 }: TaskAssignmentSelectProps) {
   const { toast } = useToast();
+  const { notifyTaskAssigned } = useEmailNotifications();
   const [assignees, setAssignees] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -62,6 +64,13 @@ export function TaskAssignmentSelect({
       const assignee = assignees.find(a => a.id === assigneeId);
       const { data: { user } } = await supabase.auth.getUser();
 
+      // Fetch task details for the email
+      const { data: taskData } = await supabase
+        .from('agreement_tasks')
+        .select('title, description, state_name, state_abbreviation, due_date, priority')
+        .eq('id', taskId)
+        .single();
+
       // Update the task
       const { error: taskError } = await supabase
         .from('agreement_tasks')
@@ -90,9 +99,26 @@ export function TaskAssignmentSelect({
         },
       });
 
+      // Send email notification to the assignee
+      if (assignee?.email) {
+        await notifyTaskAssigned(
+          assignee.email,
+          assignee.full_name || 'Team Member',
+          {
+            taskTitle: taskData?.title || 'Task',
+            description: taskData?.description || undefined,
+            stateName: taskData?.state_name || undefined,
+            stateAbbreviation: taskData?.state_abbreviation || undefined,
+            dueDate: taskData?.due_date || undefined,
+            priority: taskData?.priority || undefined,
+            actionUrl: `${window.location.origin}/task/${taskId}`,
+          }
+        );
+      }
+
       toast({
         title: 'Task assigned',
-        description: `Assigned to ${assignee?.full_name || assignee?.email}`,
+        description: `Assigned to ${assignee?.full_name || assignee?.email}. Email notification sent.`,
       });
 
       onAssigned?.();

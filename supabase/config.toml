@@ -1,1 +1,10 @@
 project_id = "saksjvmqyudkowxypoce"
+
+[functions.send-notification-email]
+verify_jwt = false
+
+[functions.check-overdue-tasks]
+verify_jwt = false
+
+[functions.check-meeting-reminders]
+verify_jwt = false
