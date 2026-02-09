@@ -5,6 +5,8 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { CategoryBadge } from '@/components/CategoryBadge';
 import { DemandTagBadge } from '@/components/DemandTagBadge';
 import { SelfReportedLicenseCard } from '@/components/SelfReportedLicenseCard';
+import { MvpBanner } from '@/components/MvpBanner';
+import { ComplianceRiskSummaryCard } from '@/components/ComplianceRiskSummary';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -111,6 +113,9 @@ const AdminDashboard = () => {
       
       <main className="pl-64 transition-all duration-300">
         <div className="p-8">
+          {/* MVP Banner */}
+          <MvpBanner />
+
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-foreground">
@@ -165,6 +170,11 @@ const AdminDashboard = () => {
               icon={AlertTriangle}
               variant={tasksByStatus.blocked > 0 ? 'danger' : 'default'}
             />
+          </div>
+
+          {/* Compliance Risk Summary */}
+          <div className="mb-8">
+            <ComplianceRiskSummaryCard />
           </div>
 
           {/* Tabs */}

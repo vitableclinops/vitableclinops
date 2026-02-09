@@ -29,7 +29,8 @@ import {
   User,
   ChevronDown,
   Database,
-  Power
+  Power,
+  Lightbulb
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -138,6 +139,12 @@ const navItems: NavItem[] = [
     label: 'Activation Queue', 
     icon: Power, 
     href: '/admin/activation', 
+    roles: ['admin'] 
+  },
+  { 
+    label: 'Enhancements', 
+    icon: Lightbulb, 
+    href: '/admin/enhancements', 
     roles: ['admin'] 
   },
   { 

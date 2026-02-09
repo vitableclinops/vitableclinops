@@ -255,8 +255,10 @@ export type Database = {
           blocked_until: string | null
           blockers: string | null
           category: Database["public"]["Enums"]["agreement_task_category"]
+          checklist_items: Json | null
           completed_at: string | null
           completed_by: string | null
+          compliance_risk: string | null
           created_at: string
           created_by: string | null
           description: string | null
@@ -264,6 +266,7 @@ export type Database = {
           escalated: boolean | null
           escalated_at: string | null
           escalated_by: string | null
+          expected_outcome: string | null
           external_url: string | null
           id: string
           is_auto_generated: boolean | null
@@ -282,6 +285,7 @@ export type Database = {
           state_abbreviation: string | null
           state_name: string | null
           status: Database["public"]["Enums"]["agreement_task_status"]
+          task_purpose: string | null
           title: string
           transfer_id: string | null
           transfer_provider_id: string | null
@@ -298,8 +302,10 @@ export type Database = {
           blocked_until?: string | null
           blockers?: string | null
           category?: Database["public"]["Enums"]["agreement_task_category"]
+          checklist_items?: Json | null
           completed_at?: string | null
           completed_by?: string | null
+          compliance_risk?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -307,6 +313,7 @@ export type Database = {
           escalated?: boolean | null
           escalated_at?: string | null
           escalated_by?: string | null
+          expected_outcome?: string | null
           external_url?: string | null
           id?: string
           is_auto_generated?: boolean | null
@@ -325,6 +332,7 @@ export type Database = {
           state_abbreviation?: string | null
           state_name?: string | null
           status?: Database["public"]["Enums"]["agreement_task_status"]
+          task_purpose?: string | null
           title: string
           transfer_id?: string | null
           transfer_provider_id?: string | null
@@ -341,8 +349,10 @@ export type Database = {
           blocked_until?: string | null
           blockers?: string | null
           category?: Database["public"]["Enums"]["agreement_task_category"]
+          checklist_items?: Json | null
           completed_at?: string | null
           completed_by?: string | null
+          compliance_risk?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -350,6 +360,7 @@ export type Database = {
           escalated?: boolean | null
           escalated_at?: string | null
           escalated_by?: string | null
+          expected_outcome?: string | null
           external_url?: string | null
           id?: string
           is_auto_generated?: boolean | null
@@ -368,6 +379,7 @@ export type Database = {
           state_abbreviation?: string | null
           state_name?: string | null
           status?: Database["public"]["Enums"]["agreement_task_status"]
+          task_purpose?: string | null
           title?: string
           transfer_id?: string | null
           transfer_provider_id?: string | null
@@ -535,6 +547,7 @@ export type Database = {
           affected_provider_count: number
           affected_provider_ids: string[]
           chart_review_frequency: string | null
+          checklist_items: Json | null
           completed_at: string | null
           completed_by: string | null
           created_at: string
@@ -565,6 +578,7 @@ export type Database = {
           affected_provider_count?: number
           affected_provider_ids?: string[]
           chart_review_frequency?: string | null
+          checklist_items?: Json | null
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
@@ -595,6 +609,7 @@ export type Database = {
           affected_provider_count?: number
           affected_provider_ids?: string[]
           chart_review_frequency?: string | null
+          checklist_items?: Json | null
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
@@ -911,6 +926,39 @@ export type Database = {
         }
         Relationships: []
       }
+      compliance_status_log: {
+        Row: {
+          computed_from: Json | null
+          created_at: string
+          id: string
+          new_status: string
+          previous_status: string | null
+          provider_id: string
+          reason: string | null
+          state_abbreviation: string
+        }
+        Insert: {
+          computed_from?: Json | null
+          created_at?: string
+          id?: string
+          new_status: string
+          previous_status?: string | null
+          provider_id: string
+          reason?: string | null
+          state_abbreviation: string
+        }
+        Update: {
+          computed_from?: Json | null
+          created_at?: string
+          id?: string
+          new_status?: string
+          previous_status?: string | null
+          provider_id?: string
+          reason?: string | null
+          state_abbreviation?: string
+        }
+        Relationships: []
+      }
       ehr_activation_events: {
         Row: {
           actor_id: string | null
@@ -950,6 +998,42 @@ export type Database = {
           previous_status?: string | null
           provider_id?: string
           state_abbreviation?: string
+        }
+        Relationships: []
+      }
+      enhancement_registry: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          priority: string
+          requested_by: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          priority?: string
+          requested_by?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          priority?: string
+          requested_by?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -2040,6 +2124,8 @@ export type Database = {
         Row: {
           activation_effective_date: string | null
           activation_notes: string | null
+          compliance_reason: string | null
+          compliance_status: string | null
           created_at: string
           deactivation_effective_date: string | null
           ehr_activated_at: string | null
@@ -2062,6 +2148,8 @@ export type Database = {
         Insert: {
           activation_effective_date?: string | null
           activation_notes?: string | null
+          compliance_reason?: string | null
+          compliance_status?: string | null
           created_at?: string
           deactivation_effective_date?: string | null
           ehr_activated_at?: string | null
@@ -2084,6 +2172,8 @@ export type Database = {
         Update: {
           activation_effective_date?: string | null
           activation_notes?: string | null
+          compliance_reason?: string | null
+          compliance_status?: string | null
           created_at?: string
           deactivation_effective_date?: string | null
           ehr_activated_at?: string | null
@@ -2250,6 +2340,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sensitive_data_log: {
+        Row: {
+          action: string
+          created_at: string
+          detected_pattern: string | null
+          entity_id: string | null
+          entity_type: string
+          field_name: string
+          id: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          detected_pattern?: string | null
+          entity_id?: string | null
+          entity_type?: string
+          field_name: string
+          id?: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          detected_pattern?: string | null
+          entity_id?: string | null
+          entity_type?: string
+          field_name?: string
+          id?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       state_compliance_requirements: {
         Row: {
@@ -2421,6 +2544,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_config: {
+        Row: {
+          description: string | null
+          id: string
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          description?: string | null
+          id?: string
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Update: {
+          description?: string | null
+          id?: string
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
       }
       transfer_activity_log: {
         Row: {
