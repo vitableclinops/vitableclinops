@@ -113,7 +113,7 @@ const navItems: NavItem[] = [
   //   roles: ['admin', 'leadership'] 
   // },
   { 
-    label: 'Knowledge Base', 
+    label: 'Provider Resources', 
     icon: BookOpen, 
     href: '/knowledge', 
     roles: ['provider', 'admin', 'leadership'] 
@@ -195,7 +195,7 @@ export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: App
           {!collapsed && (
             <div className="flex items-center gap-2">
               <Shield className="h-6 w-6 text-sidebar-primary" />
-              <span className="font-semibold text-sidebar-foreground">Credentialing</span>
+              <span className="font-semibold text-sidebar-foreground">Vitable Ops</span>
             </div>
           )}
           <Button
