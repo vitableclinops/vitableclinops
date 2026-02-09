@@ -27,6 +27,8 @@ import StateDetailPage from "./pages/StateDetailPage";
 import AgreementDetailPage from "./pages/AgreementDetailPage";
 import PhysicianDetailPage from "./pages/PhysicianDetailPage";
 import ActivationQueuePage from "./pages/ActivationQueuePage";
+import ReimbursementsPage from "./pages/ReimbursementsPage";
+import AgencyManagementPage from "./pages/AgencyManagementPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -139,6 +141,16 @@ const App = () => (
             <Route path="/admin/activation" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <ActivationQueuePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/reimbursements" element={
+              <ProtectedRoute>
+                <ReimbursementsPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/agencies" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <AgencyManagementPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

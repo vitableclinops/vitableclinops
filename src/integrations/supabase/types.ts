@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      agencies: {
+        Row: {
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       agreement_audit_log: {
         Row: {
           action: string
@@ -1522,6 +1558,7 @@ export type Database = {
           address_line_1: string | null
           address_line_2: string | null
           address_state: string | null
+          agency_id: string | null
           auto_renew_licenses: boolean | null
           avatar_url: string | null
           bio: string | null
@@ -1540,6 +1577,7 @@ export type Database = {
           employment_offer_date: string | null
           employment_start_date: string | null
           employment_status: string | null
+          employment_type: string | null
           first_name: string | null
           full_name: string | null
           has_caqh_management: boolean | null
@@ -1548,6 +1586,7 @@ export type Database = {
           id: string
           languages: string | null
           last_name: string | null
+          manages_own_renewals: boolean | null
           medallion_id: string | null
           middle_name: string | null
           milestone_visibility: string | null
@@ -1580,6 +1619,7 @@ export type Database = {
           address_line_1?: string | null
           address_line_2?: string | null
           address_state?: string | null
+          agency_id?: string | null
           auto_renew_licenses?: boolean | null
           avatar_url?: string | null
           bio?: string | null
@@ -1598,6 +1638,7 @@ export type Database = {
           employment_offer_date?: string | null
           employment_start_date?: string | null
           employment_status?: string | null
+          employment_type?: string | null
           first_name?: string | null
           full_name?: string | null
           has_caqh_management?: boolean | null
@@ -1606,6 +1647,7 @@ export type Database = {
           id?: string
           languages?: string | null
           last_name?: string | null
+          manages_own_renewals?: boolean | null
           medallion_id?: string | null
           middle_name?: string | null
           milestone_visibility?: string | null
@@ -1638,6 +1680,7 @@ export type Database = {
           address_line_1?: string | null
           address_line_2?: string | null
           address_state?: string | null
+          agency_id?: string | null
           auto_renew_licenses?: boolean | null
           avatar_url?: string | null
           bio?: string | null
@@ -1656,6 +1699,7 @@ export type Database = {
           employment_offer_date?: string | null
           employment_start_date?: string | null
           employment_status?: string | null
+          employment_type?: string | null
           first_name?: string | null
           full_name?: string | null
           has_caqh_management?: boolean | null
@@ -1664,6 +1708,7 @@ export type Database = {
           id?: string
           languages?: string | null
           last_name?: string | null
+          manages_own_renewals?: boolean | null
           medallion_id?: string | null
           middle_name?: string | null
           milestone_visibility?: string | null
@@ -1690,6 +1735,13 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "profiles_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "profiles_pod_id_fkey"
             columns: ["pod_id"]
@@ -2052,6 +2104,152 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      reimbursement_requests: {
+        Row: {
+          admin_hours_spent: number | null
+          admin_time_total: number | null
+          application_fee_amount: number | null
+          application_fee_receipt_url: string | null
+          created_at: string
+          description: string | null
+          hourly_rate: number
+          id: string
+          license_application_id: string | null
+          notes: string | null
+          processed_at: string | null
+          processed_by: string | null
+          provider_id: string
+          provider_name: string
+          review_notes: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          state_abbreviation: string
+          status: string
+          submitted_at: string | null
+          total_reimbursement: number | null
+          updated_at: string
+        }
+        Insert: {
+          admin_hours_spent?: number | null
+          admin_time_total?: number | null
+          application_fee_amount?: number | null
+          application_fee_receipt_url?: string | null
+          created_at?: string
+          description?: string | null
+          hourly_rate?: number
+          id?: string
+          license_application_id?: string | null
+          notes?: string | null
+          processed_at?: string | null
+          processed_by?: string | null
+          provider_id: string
+          provider_name: string
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          state_abbreviation: string
+          status?: string
+          submitted_at?: string | null
+          total_reimbursement?: number | null
+          updated_at?: string
+        }
+        Update: {
+          admin_hours_spent?: number | null
+          admin_time_total?: number | null
+          application_fee_amount?: number | null
+          application_fee_receipt_url?: string | null
+          created_at?: string
+          description?: string | null
+          hourly_rate?: number
+          id?: string
+          license_application_id?: string | null
+          notes?: string | null
+          processed_at?: string | null
+          processed_by?: string | null
+          provider_id?: string
+          provider_name?: string
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          state_abbreviation?: string
+          status?: string
+          submitted_at?: string | null
+          total_reimbursement?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reimbursement_requests_license_application_id_fkey"
+            columns: ["license_application_id"]
+            isOneToOne: false
+            referencedRelation: "provider_license_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reimbursement_requests_processed_by_fkey"
+            columns: ["processed_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reimbursement_requests_processed_by_fkey"
+            columns: ["processed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reimbursement_requests_processed_by_fkey"
+            columns: ["processed_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reimbursement_requests_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reimbursement_requests_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reimbursement_requests_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reimbursement_requests_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reimbursement_requests_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reimbursement_requests_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       state_compliance_requirements: {
         Row: {
@@ -2494,45 +2692,150 @@ export type Database = {
       }
       provider_directory_public: {
         Row: {
+          activation_status: string | null
+          actively_licensed_states: string | null
+          address_city: string | null
+          address_line_1: string | null
+          address_line_2: string | null
+          address_state: string | null
+          agency_id: string | null
           avatar_url: string | null
+          bio: string | null
+          birthday: string | null
+          created_at: string | null
           credentials: string | null
+          date_of_birth: string | null
+          email: string | null
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
           employment_status: string | null
+          employment_type: string | null
+          first_name: string | null
           full_name: string | null
-          home_state: string | null
+          home_address: string | null
           id: string | null
+          languages: string | null
+          last_name: string | null
+          manages_own_renewals: boolean | null
+          min_patient_age: string | null
           npi_number: string | null
+          onboarding_completed: boolean | null
+          patient_age_preference: string | null
+          personal_email: string | null
+          phone_number: string | null
+          pod_id: string | null
+          postal_code: string | null
           preferred_name: string | null
           primary_specialty: string | null
           profession: string | null
-          states: string | null
+          service_offerings: string | null
+          services_offered: string | null
+          start_date_on_network: string | null
+          updated_at: string | null
+          user_id: string | null
         }
         Insert: {
+          activation_status?: string | null
+          actively_licensed_states?: string | null
+          address_city?: never
+          address_line_1?: never
+          address_line_2?: never
+          address_state?: never
+          agency_id?: string | null
           avatar_url?: string | null
+          bio?: string | null
+          birthday?: never
+          created_at?: string | null
           credentials?: string | null
+          date_of_birth?: never
+          email?: string | null
+          emergency_contact_name?: never
+          emergency_contact_phone?: never
           employment_status?: string | null
+          employment_type?: string | null
+          first_name?: string | null
           full_name?: string | null
-          home_state?: string | null
+          home_address?: never
           id?: string | null
+          languages?: string | null
+          last_name?: string | null
+          manages_own_renewals?: boolean | null
+          min_patient_age?: string | null
           npi_number?: string | null
+          onboarding_completed?: boolean | null
+          patient_age_preference?: string | null
+          personal_email?: never
+          phone_number?: string | null
+          pod_id?: string | null
+          postal_code?: never
           preferred_name?: string | null
           primary_specialty?: string | null
           profession?: string | null
-          states?: string | null
+          service_offerings?: string | null
+          services_offered?: string | null
+          start_date_on_network?: string | null
+          updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
+          activation_status?: string | null
+          actively_licensed_states?: string | null
+          address_city?: never
+          address_line_1?: never
+          address_line_2?: never
+          address_state?: never
+          agency_id?: string | null
           avatar_url?: string | null
+          bio?: string | null
+          birthday?: never
+          created_at?: string | null
           credentials?: string | null
+          date_of_birth?: never
+          email?: string | null
+          emergency_contact_name?: never
+          emergency_contact_phone?: never
           employment_status?: string | null
+          employment_type?: string | null
+          first_name?: string | null
           full_name?: string | null
-          home_state?: string | null
+          home_address?: never
           id?: string | null
+          languages?: string | null
+          last_name?: string | null
+          manages_own_renewals?: boolean | null
+          min_patient_age?: string | null
           npi_number?: string | null
+          onboarding_completed?: boolean | null
+          patient_age_preference?: string | null
+          personal_email?: never
+          phone_number?: string | null
+          pod_id?: string | null
+          postal_code?: never
           preferred_name?: string | null
           primary_specialty?: string | null
           profession?: string | null
-          states?: string | null
+          service_offerings?: string | null
+          services_offered?: string | null
+          start_date_on_network?: string | null
+          updated_at?: string | null
+          user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_pod_id_fkey"
+            columns: ["pod_id"]
+            isOneToOne: false
+            referencedRelation: "pods"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {

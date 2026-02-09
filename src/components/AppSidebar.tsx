@@ -61,13 +61,12 @@ const navItems: NavItem[] = [
     href: '/provider', 
     roles: ['provider'] 
   },
-  // Reimbursements - placeholder route (not yet implemented)
-  // { 
-  //   label: 'Reimbursements', 
-  //   icon: Receipt, 
-  //   href: '/reimbursements', 
-  //   roles: ['provider', 'admin'] 
-  // },
+  { 
+    label: 'Reimbursements', 
+    icon: Receipt, 
+    href: '/reimbursements', 
+    roles: ['provider', 'admin'] 
+  },
   { 
     label: 'All Providers', 
     icon: Users, 
@@ -128,6 +127,12 @@ const navItems: NavItem[] = [
     icon: UserPlus, 
     href: '/onboarding?mode=edit', 
     roles: ['provider'] 
+  },
+  { 
+    label: 'Agencies', 
+    icon: Database, 
+    href: '/admin/agencies', 
+    roles: ['admin'] 
   },
   { 
     label: 'Activation Queue', 

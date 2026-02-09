@@ -76,10 +76,12 @@ interface DirectoryProvider {
   credentials: string | null;
   avatar_url: string | null;
   employment_status: string | null;
+  employment_type: string | null;
+  agency_id: string | null;
   profession: string | null;
   primary_specialty: string | null;
-  states: string | null;
-  home_state: string | null;
+  actively_licensed_states: string | null;
+  address_state: string | null;
 }
 
 const ProviderDirectoryPage = () => {
@@ -194,7 +196,7 @@ const ProviderDirectoryPage = () => {
     const professions = new Set<string>();
 
     data.forEach(p => {
-      const statesField = isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).states;
+      const statesField = isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).actively_licensed_states;
       if (statesField) {
         statesField.split(',').forEach(s => {
           const trimmed = s.trim();
@@ -231,7 +233,7 @@ const ProviderDirectoryPage = () => {
 
       // State filter
       if (stateFilter !== 'all') {
-        const statesField = isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).states;
+        const statesField = isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).actively_licensed_states;
         if (!statesField?.includes(stateFilter)) return false;
       }
 
@@ -268,8 +270,8 @@ const ProviderDirectoryPage = () => {
           bVal = b.employment_status;
           break;
         case 'actively_licensed_states':
-          aVal = isAdmin ? (a as FullProvider).actively_licensed_states : (a as DirectoryProvider).states;
-          bVal = isAdmin ? (b as FullProvider).actively_licensed_states : (b as DirectoryProvider).states;
+          aVal = isAdmin ? (a as FullProvider).actively_licensed_states : (a as DirectoryProvider).actively_licensed_states;
+          bVal = isAdmin ? (b as FullProvider).actively_licensed_states : (b as DirectoryProvider).actively_licensed_states;
           break;
         default:
           aVal = a.full_name;
@@ -336,9 +338,9 @@ const ProviderDirectoryPage = () => {
     profession: p.profession,
     avatar_url: p.avatar_url,
     employment_status: p.employment_status,
-    actively_licensed_states: isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).states,
+    actively_licensed_states: isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).actively_licensed_states,
     primary_specialty: p.primary_specialty,
-    address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).home_state,
+    address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
     has_collaborative_agreements: isAdmin ? (p as FullProvider).has_collaborative_agreements : null,
   }));
 
@@ -693,11 +695,11 @@ const ProviderDirectoryPage = () => {
                               {provider.npi_number && (
                                 <p className="text-xs text-muted-foreground mt-1 font-mono">NPI: {provider.npi_number}</p>
                               )}
-                              {(isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).states) && (
+                              {(isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).actively_licensed_states) && (
                                 <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
                                   <MapPin className="h-3 w-3 flex-shrink-0" />
                                   <span className="truncate">
-                                    {isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).states}
+                                    {isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).actively_licensed_states}
                                   </span>
                                 </div>
                               )}
@@ -797,10 +799,10 @@ const ProviderDirectoryPage = () => {
                             {provider.primary_specialty && (
                               <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>
                             )}
-                            {(provider as DirectoryProvider).states && (
+                            {(provider as DirectoryProvider).actively_licensed_states && (
                               <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
                                 <MapPin className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">{(provider as DirectoryProvider).states}</span>
+                                <span className="truncate">{(provider as DirectoryProvider).actively_licensed_states}</span>
                               </div>
                             )}
                           </div>
