@@ -83,7 +83,7 @@ const Index = () => {
           <div className="flex items-center justify-center gap-3 mb-4">
             <Shield className="h-10 w-10 text-accent" />
             <h1 className="text-3xl font-bold text-foreground">
-              Credentialing Platform
+              Provider Operations Hub
             </h1>
           </div>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
