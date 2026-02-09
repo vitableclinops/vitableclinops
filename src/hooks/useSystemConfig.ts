@@ -60,13 +60,28 @@ export function useUpdateSystemConfig() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async ({ key, value }: { key: string; value: Record<string, any> }) => {
+    mutationFn: async ({ key, value, description }: { key: string; value: Record<string, any>; description?: string }) => {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase
+
+      // Try update first
+      const { data: existing } = await supabase
         .from('system_config')
-        .update({ value, updated_by: user?.id, updated_at: new Date().toISOString() })
-        .eq('key', key);
-      if (error) throw error;
+        .select('id')
+        .eq('key', key)
+        .maybeSingle();
+
+      if (existing) {
+        const { error } = await supabase
+          .from('system_config')
+          .update({ value, updated_by: user?.id, updated_at: new Date().toISOString() })
+          .eq('key', key);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('system_config')
+          .insert({ key, value, description: description || key, updated_by: user?.id });
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system-config'] });
