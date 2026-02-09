@@ -143,7 +143,7 @@ export default function AuthPage() {
               <Shield className="h-6 w-6 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-2xl">Credentialing Platform</CardTitle>
+          <CardTitle className="text-2xl">Provider Operations Hub</CardTitle>
           <CardDescription>
             Sign in to manage licensure and compliance
           </CardDescription>
