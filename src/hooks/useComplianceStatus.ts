@@ -34,8 +34,9 @@ export function useComplianceRiskSummary() {
       // Get W2 providers only (agency providers excluded from compliance tracking)
       const { data: providers } = await supabase
         .from('profiles')
-        .select('id, full_name, employment_type')
-        .or('employment_type.eq.w2,employment_type.is.null');
+        .select('id, full_name, employment_type, employment_status')
+        .or('employment_type.eq.w2,employment_type.is.null')
+        .or('employment_status.eq.active,employment_status.is.null');
 
       const { data: statuses } = await supabase
         .from('provider_state_status')
@@ -45,6 +46,22 @@ export function useComplianceRiskSummary() {
         .from('provider_licenses')
         .select('profile_id, state_abbreviation, status, expiration_date');
 
+      // Get state compliance rules for collab requirements
+      const { data: stateRules } = await supabase
+        .from('state_compliance_requirements')
+        .select('state_abbreviation, ca_required');
+
+      // Get active collaborative agreements
+      const { data: agreements } = await supabase
+        .from('collaborative_agreements')
+        .select('id, physician_id, state_abbreviation, workflow_status, start_date, end_date, terminated_at')
+        .in('workflow_status', ['active', 'pending_renewal']);
+
+      // Get agreement providers to link providers to agreements
+      const { data: agreementProviders } = await supabase
+        .from('agreement_providers')
+        .select('agreement_id, provider_id, is_active');
+
       if (!providers) return { total: 0, compliant: 0, at_risk: 0, non_compliant: 0, active_but_non_compliant: 0, records: [] } as ComplianceRiskSummary & { records: ComplianceRecord[] };
 
       const today = new Date().toISOString().split('T')[0];
@@ -52,12 +69,29 @@ export function useComplianceRiskSummary() {
       const summary: ComplianceRiskSummary = { total: 0, compliant: 0, at_risk: 0, non_compliant: 0, active_but_non_compliant: 0 };
 
       const providerIds = new Set(providers.map(p => p.id));
+      const stateRulesMap = new Map(stateRules?.map(r => [r.state_abbreviation, r]) || []);
+
+      // Build a map of provider+state -> has active collab agreement
+      const providerStateCollabMap = new Map<string, boolean>();
+      if (agreementProviders && agreements) {
+        for (const ap of agreementProviders) {
+          if (!ap.is_active || !ap.provider_id) continue;
+          const agreement = agreements.find(a => a.id === ap.agreement_id);
+          if (!agreement) continue;
+          if (agreement.terminated_at) continue;
+          if (agreement.workflow_status === 'active' || agreement.workflow_status === 'pending_renewal') {
+            const key = `${ap.provider_id}:${agreement.state_abbreviation}`;
+            providerStateCollabMap.set(key, true);
+          }
+        }
+      }
 
       statuses?.forEach(status => {
         if (!providerIds.has(status.provider_id)) return;
 
         const provider = providers.find(p => p.id === status.provider_id);
         const license = licenses?.find(l => l.profile_id === status.provider_id && l.state_abbreviation === status.state_abbreviation);
+        const stateRule = stateRulesMap.get(status.state_abbreviation);
 
         let complianceStatus: ComplianceStatus = 'unknown';
         const reasons: string[] = [];
@@ -77,8 +111,21 @@ export function useComplianceRiskSummary() {
           }
         }
 
+        // Check collaborative agreement requirement
+        const collabRequired = stateRule?.ca_required === true;
+        if (collabRequired) {
+          const collabKey = `${status.provider_id}:${status.state_abbreviation}`;
+          const hasActiveCollab = providerStateCollabMap.get(collabKey) || false;
+          if (!hasActiveCollab) {
+            reasons.push('Missing collaborative agreement (required by state)');
+            if (complianceStatus !== 'non_compliant') {
+              complianceStatus = 'non_compliant';
+            }
+          }
+        }
+
         // Check activation mismatch
-        if (status.ehr_activation_status === 'active' && complianceStatus === 'non_compliant') {
+        if (status.ehr_activation_status === 'active' && (complianceStatus === 'non_compliant')) {
           complianceStatus = 'active_but_non_compliant';
         }
 
@@ -98,8 +145,10 @@ export function useComplianceRiskSummary() {
           readiness_status: status.readiness_status,
           license_status: license?.status || null,
           license_expiration: license?.expiration_date || null,
-          collab_required: false,
-          collab_status: null,
+          collab_required: collabRequired,
+          collab_status: collabRequired
+            ? (providerStateCollabMap.get(`${status.provider_id}:${status.state_abbreviation}`) ? 'active' : 'missing')
+            : null,
         });
       });
 

@@ -30,7 +30,8 @@ import {
   ChevronDown,
   Database,
   Power,
-  Lightbulb
+  Lightbulb,
+  Calendar,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -140,6 +141,12 @@ const navItems: NavItem[] = [
     icon: Power, 
     href: '/admin/activation', 
     roles: ['admin'] 
+  },
+  {
+    label: 'All-Hands Calendar',
+    icon: Calendar,
+    href: '/admin/calendar',
+    roles: ['admin'],
   },
   { 
     label: 'Enhancements', 

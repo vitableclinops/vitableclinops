@@ -275,35 +275,16 @@ export function useGenerateAttestationTasks() {
         throw new Error('Newsletter article is required before generating attestation tasks');
       }
 
-      // Get active providers
+      // Get active W2 providers only
       const { data: providers, error: providersError } = await supabase
         .from('profiles')
-        .select('id, full_name, email, pod_id')
-        .eq('onboarding_completed', true);
+        .select('id, full_name, email, pod_id, employment_type, employment_status')
+        .or('employment_type.eq.w2,employment_type.is.null')
+        .or('employment_status.eq.active,employment_status.is.null');
 
       if (providersError) throw providersError;
 
-      // Filter to only those with provider role
-      const { data: providerRoles } = await supabase
-        .from('user_roles')
-        .select('user_id')
-        .eq('role', 'provider');
-
-      const providerUserIds = new Set(providerRoles?.map(r => r.user_id) || []);
-      
-      // Get profiles with user_ids to match
-      const { data: profilesWithUsers } = await supabase
-        .from('profiles')
-        .select('id, user_id')
-        .in('id', providers?.map(p => p.id) || []);
-
-      const activeProviderIds = new Set(
-        profilesWithUsers
-          ?.filter(p => p.user_id && providerUserIds.has(p.user_id))
-          .map(p => p.id) || []
-      );
-
-      const activeProviders = providers?.filter(p => activeProviderIds.has(p.id)) || [];
+      const activeProviders = providers || [];
 
       const { data: { user } } = await supabase.auth.getUser();
       const { data: actorProfile } = await supabase

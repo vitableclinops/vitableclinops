@@ -30,6 +30,7 @@ import ActivationQueuePage from "./pages/ActivationQueuePage";
 import ReimbursementsPage from "./pages/ReimbursementsPage";
 import AgencyManagementPage from "./pages/AgencyManagementPage";
 import EnhancementRegistryPage from "./pages/EnhancementRegistryPage";
+import CalendarPage from "./pages/CalendarPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -152,6 +153,11 @@ const App = () => (
             <Route path="/admin/agencies" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <AgencyManagementPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/calendar" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <CalendarPage />
               </ProtectedRoute>
             } />
             <Route path="/admin/enhancements" element={
