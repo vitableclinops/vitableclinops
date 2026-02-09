@@ -29,6 +29,7 @@ import PhysicianDetailPage from "./pages/PhysicianDetailPage";
 import ActivationQueuePage from "./pages/ActivationQueuePage";
 import ReimbursementsPage from "./pages/ReimbursementsPage";
 import AgencyManagementPage from "./pages/AgencyManagementPage";
+import EnhancementRegistryPage from "./pages/EnhancementRegistryPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -151,6 +152,11 @@ const App = () => (
             <Route path="/admin/agencies" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <AgencyManagementPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/enhancements" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <EnhancementRegistryPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
