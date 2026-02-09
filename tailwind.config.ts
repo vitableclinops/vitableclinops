@@ -108,11 +108,11 @@ export default {
       },
       fontFamily: {
         sans: [
+          "DM Sans",
           "Inter",
           "-apple-system",
           "BlinkMacSystemFont",
           "Segoe UI",
-          "Roboto",
           "sans-serif",
         ],
       },

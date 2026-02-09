@@ -2,127 +2,127 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Healthcare Licensure Platform Design System
-   Professional, clarity-focused internal tool aesthetic
+/* Vitable Health — Provider Credentialing Platform
+   Warm, accessible healthcare aesthetic aligned with Vitable brand
    Colors in HSL format */
 
 @layer base {
   :root {
-    /* Core backgrounds */
-    --background: 210 20% 98%;
-    --foreground: 222 47% 11%;
+    /* Core backgrounds — warm off-white */
+    --background: 150 10% 97%;
+    --foreground: 200 40% 12%;
 
     /* Cards and elevated surfaces */
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 200 40% 12%;
 
     /* Popovers and overlays */
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 200 40% 12%;
 
-    /* Primary - Deep slate blue (trust, professionalism) */
-    --primary: 222 47% 20%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary — Vitable teal-green (care, trust, vitality) */
+    --primary: 162 63% 38%;
+    --primary-foreground: 0 0% 100%;
 
-    /* Secondary - Light slate for subtle UI */
-    --secondary: 214 32% 91%;
-    --secondary-foreground: 222 47% 20%;
+    /* Secondary — Soft sage for subtle UI */
+    --secondary: 155 18% 90%;
+    --secondary-foreground: 162 45% 22%;
 
-    /* Muted surfaces */
-    --muted: 210 20% 96%;
-    --muted-foreground: 215 16% 47%;
+    /* Muted surfaces — warm gray */
+    --muted: 150 10% 95%;
+    --muted-foreground: 200 12% 46%;
 
-    /* Accent - Teal for highlights */
-    --accent: 172 66% 40%;
+    /* Accent — Warm coral for highlights & CTAs */
+    --accent: 12 80% 58%;
     --accent-foreground: 0 0% 100%;
 
     /* Status colors */
-    --success: 160 84% 39%;
+    --success: 158 64% 42%;
     --success-foreground: 0 0% 100%;
     
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
     
-    --destructive: 0 84% 60%;
+    --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    --info: 199 89% 48%;
+    --info: 199 80% 48%;
     --info-foreground: 0 0% 100%;
 
     /* Form elements */
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 222 47% 20%;
+    --border: 155 18% 88%;
+    --input: 155 18% 88%;
+    --ring: 162 63% 38%;
 
-    --radius: 0.5rem;
+    --radius: 0.625rem;
 
-    /* Sidebar */
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 210 20% 90%;
-    --sidebar-primary: 172 66% 50%;
+    /* Sidebar — Deep navy */
+    --sidebar-background: 210 45% 12%;
+    --sidebar-foreground: 150 10% 90%;
+    --sidebar-primary: 162 63% 48%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 47% 18%;
-    --sidebar-accent-foreground: 210 20% 90%;
-    --sidebar-border: 222 47% 18%;
-    --sidebar-ring: 172 66% 50%;
-    --sidebar-muted: 222 30% 25%;
+    --sidebar-accent: 210 40% 18%;
+    --sidebar-accent-foreground: 150 10% 92%;
+    --sidebar-border: 210 40% 18%;
+    --sidebar-ring: 162 63% 48%;
+    --sidebar-muted: 210 25% 30%;
 
     /* Status badge colors */
-    --status-not-started: 215 16% 47%;
+    --status-not-started: 200 12% 46%;
     --status-in-progress: 38 92% 50%;
-    --status-submitted: 199 89% 48%;
-    --status-verified: 172 66% 40%;
-    --status-approved: 160 84% 39%;
-    --status-blocked: 0 84% 60%;
+    --status-submitted: 199 80% 48%;
+    --status-verified: 162 63% 38%;
+    --status-approved: 158 64% 42%;
+    --status-blocked: 0 72% 56%;
   }
 
   .dark {
-    --background: 222 47% 8%;
-    --foreground: 210 20% 98%;
+    --background: 210 45% 8%;
+    --foreground: 150 10% 97%;
 
-    --card: 222 47% 11%;
-    --card-foreground: 210 20% 98%;
+    --card: 210 45% 12%;
+    --card-foreground: 150 10% 97%;
 
-    --popover: 222 47% 11%;
-    --popover-foreground: 210 20% 98%;
+    --popover: 210 45% 12%;
+    --popover-foreground: 150 10% 97%;
 
-    --primary: 172 66% 50%;
-    --primary-foreground: 222 47% 11%;
+    --primary: 162 63% 48%;
+    --primary-foreground: 210 45% 8%;
 
-    --secondary: 222 30% 20%;
-    --secondary-foreground: 210 20% 98%;
+    --secondary: 210 30% 20%;
+    --secondary-foreground: 150 10% 97%;
 
-    --muted: 222 30% 18%;
-    --muted-foreground: 215 16% 65%;
+    --muted: 210 30% 18%;
+    --muted-foreground: 200 12% 62%;
 
-    --accent: 172 66% 40%;
+    --accent: 12 80% 58%;
     --accent-foreground: 0 0% 100%;
 
-    --success: 160 84% 39%;
+    --success: 158 64% 42%;
     --success-foreground: 0 0% 100%;
     
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
     
-    --destructive: 0 62% 50%;
+    --destructive: 0 60% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --info: 199 89% 48%;
+    --info: 199 80% 48%;
     --info-foreground: 0 0% 100%;
 
-    --border: 222 30% 20%;
-    --input: 222 30% 20%;
-    --ring: 172 66% 50%;
+    --border: 210 30% 20%;
+    --input: 210 30% 20%;
+    --ring: 162 63% 48%;
 
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 210 20% 90%;
-    --sidebar-primary: 172 66% 50%;
-    --sidebar-primary-foreground: 222 47% 11%;
-    --sidebar-accent: 222 47% 12%;
-    --sidebar-accent-foreground: 210 20% 90%;
-    --sidebar-border: 222 47% 15%;
-    --sidebar-ring: 172 66% 50%;
-    --sidebar-muted: 222 30% 20%;
+    --sidebar-background: 210 45% 6%;
+    --sidebar-foreground: 150 10% 90%;
+    --sidebar-primary: 162 63% 48%;
+    --sidebar-primary-foreground: 210 45% 8%;
+    --sidebar-accent: 210 40% 14%;
+    --sidebar-accent-foreground: 150 10% 92%;
+    --sidebar-border: 210 40% 16%;
+    --sidebar-ring: 162 63% 48%;
+    --sidebar-muted: 210 25% 25%;
   }
 }
 
@@ -134,6 +134,7 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    letter-spacing: -0.01em;
   }
 
   /* Smooth scrolling */
