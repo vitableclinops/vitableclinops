@@ -119,7 +119,7 @@ const AdminDashboard = () => {
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-foreground">
-              Operations Dashboard
+              Provider Operations Hub
             </h1>
             <p className="text-muted-foreground mt-1">
               Manage provider licensure, agreements, compliance, and track progress.
