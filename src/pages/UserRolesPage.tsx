@@ -8,7 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Shield, Users, ArrowLeft, UserPlus } from 'lucide-react';
+import { Loader2, Shield, Users, ArrowLeft, UserPlus, Info, ChevronDown } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { CreateAccountDialog } from '@/components/admin/CreateAccountDialog';
@@ -139,6 +140,63 @@ export default function UserRolesPage() {
           </div>
         </div>
 
+        <Collapsible className="mb-6">
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2 mb-3">
+              <Info className="h-4 w-4" />
+              Role Definitions
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="grid gap-4 md:grid-cols-3 mb-2">
+              {ALL_ROLES.map(role => (
+                <Card key={role} className="border-l-4" style={{ borderLeftColor: role === 'admin' ? 'hsl(var(--destructive))' : role === 'physician' ? 'hsl(142 71% 45%)' : 'hsl(var(--primary))' }}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base capitalize">{role}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm text-muted-foreground space-y-1">
+                    {role === 'admin' && (
+                      <>
+                        <p className="font-medium text-foreground">Clinical Operations & Leadership</p>
+                        <ul className="list-disc list-inside space-y-0.5">
+                          <li>Assign and review licensure tasks</li>
+                          <li>Approve submissions and reimbursements</li>
+                          <li>Configure state requirements</li>
+                          <li>View analytics, reports, and demand metrics</li>
+                          <li>Manage user accounts and roles</li>
+                        </ul>
+                      </>
+                    )}
+                    {role === 'provider' && (
+                      <>
+                        <p className="font-medium text-foreground">Nurse Practitioners & Clinicians</p>
+                        <ul className="list-disc list-inside space-y-0.5">
+                          <li>Complete onboarding and licensure tasks</li>
+                          <li>Upload documentation and evidence</li>
+                          <li>Track compliance across states</li>
+                          <li>Submit reimbursement requests</li>
+                        </ul>
+                      </>
+                    )}
+                    {role === 'physician' && (
+                      <>
+                        <p className="font-medium text-foreground">Collaborating / Supervising MDs</p>
+                        <ul className="list-disc list-inside space-y-0.5">
+                          <li>Supervise NPs via physician portal</li>
+                          <li>Manage collaborative agreements</li>
+                          <li>Attend and track supervision meetings</li>
+                          <li>Review chart reviews</li>
+                        </ul>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -224,51 +282,6 @@ export default function UserRolesPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-3 mt-6">
-          {ALL_ROLES.map(role => (
-            <Card key={role} className="border-l-4" style={{ borderLeftColor: role === 'admin' ? 'hsl(var(--destructive))' : role === 'physician' ? 'hsl(142 71% 45%)' : 'hsl(var(--primary))' }}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base capitalize">{role}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground space-y-1">
-                {role === 'admin' && (
-                  <>
-                    <p className="font-medium text-foreground">Clinical Operations & Leadership</p>
-                    <ul className="list-disc list-inside space-y-0.5">
-                      <li>Assign and review licensure tasks</li>
-                      <li>Approve submissions and reimbursements</li>
-                      <li>Configure state requirements</li>
-                      <li>View analytics, reports, and demand metrics</li>
-                      <li>Manage user accounts and roles</li>
-                    </ul>
-                  </>
-                )}
-                {role === 'provider' && (
-                  <>
-                    <p className="font-medium text-foreground">Nurse Practitioners & Clinicians</p>
-                    <ul className="list-disc list-inside space-y-0.5">
-                      <li>Complete onboarding and licensure tasks</li>
-                      <li>Upload documentation and evidence</li>
-                      <li>Track compliance across states</li>
-                      <li>Submit reimbursement requests</li>
-                    </ul>
-                  </>
-                )}
-                {role === 'physician' && (
-                  <>
-                    <p className="font-medium text-foreground">Collaborating / Supervising MDs</p>
-                    <ul className="list-disc list-inside space-y-0.5">
-                      <li>Supervise NPs via physician portal</li>
-                      <li>Manage collaborative agreements</li>
-                      <li>Attend and track supervision meetings</li>
-                      <li>Review chart reviews</li>
-                    </ul>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       </main>
     </div>
   );
