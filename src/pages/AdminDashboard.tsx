@@ -7,6 +7,8 @@ import { DemandTagBadge } from '@/components/DemandTagBadge';
 import { SelfReportedLicenseCard } from '@/components/SelfReportedLicenseCard';
 import { MvpBanner } from '@/components/MvpBanner';
 import { ComplianceRiskSummaryCard } from '@/components/ComplianceRiskSummary';
+import { UpcomingMilestonesWidget } from '@/components/milestones/UpcomingMilestonesWidget';
+import { useGenerateMilestoneTasks } from '@/hooks/useMilestones';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,7 +37,10 @@ import {
   Shield,
   FileText,
   Calendar,
-  ShieldCheck
+  ShieldCheck,
+  Cake,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import type { Task, TaskStatus, Provider, TaskCategory } from '@/types';
 import { cn } from '@/lib/utils';
@@ -46,6 +51,7 @@ const AdminDashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('review');
   const [categoryFilter, setCategoryFilter] = useState<TaskCategory | 'all'>('all');
+  const generateMilestones = useGenerateMilestoneTasks();
   
   const userRole = roles[0] || 'admin';
   const userName = profile?.full_name || profile?.email || 'Admin User';
@@ -348,6 +354,38 @@ const AdminDashboard = () => {
                           <span className="text-sm font-medium text-foreground">{count}</span>
                         </div>
                       ))}
+                    </CardContent>
+                  </Card>
+
+                  {/* Upcoming Milestones */}
+                  <UpcomingMilestonesWidget />
+                  
+                  {/* Generate Milestone Tasks */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Cake className="h-4 w-4 text-pink-500" />
+                        Milestone Tasks
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Scan all providers and generate upcoming birthday & anniversary tasks for pod leads.
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full"
+                        onClick={() => generateMilestones.mutate()}
+                        disabled={generateMilestones.isPending}
+                      >
+                        {generateMilestones.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                        )}
+                        Generate Milestone Tasks
+                      </Button>
                     </CardContent>
                   </Card>
                 </div>

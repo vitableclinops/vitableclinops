@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 
 export interface MilestoneTask {
   id: string;
@@ -197,6 +198,29 @@ export function useUpdateProviderMilestoneSettings() {
     },
     onError: (error: Error) => {
       toast({ title: 'Error updating settings', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useGenerateMilestoneTasks() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('generate-milestone-tasks', {
+        method: 'POST',
+      });
+
+      if (error) throw error;
+      return data as { success: boolean; created: number; skipped: number; message: string };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['upcoming-milestones'] });
+      queryClient.invalidateQueries({ queryKey: ['my-milestone-tasks'] });
+      sonnerToast.success(`${data.created} milestone tasks generated, ${data.skipped} duplicates skipped`);
+    },
+    onError: (error: Error) => {
+      sonnerToast.error('Failed to generate milestone tasks', { description: error.message });
     },
   });
 }
