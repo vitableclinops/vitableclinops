@@ -201,10 +201,43 @@ export const useAgencyDetail = (agencyId: string | undefined) => {
     return data?.signedUrl;
   };
 
+  const linkProvider = async (providerId: string) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ employment_type: 'agency', agency_id: agencyId } as any)
+        .eq('id', providerId);
+      if (error) throw error;
+      toast({ title: 'Provider linked to agency' });
+      await fetchAll();
+    } catch (error: any) {
+      console.error('Error linking provider:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to link provider.', variant: 'destructive' });
+      throw error;
+    }
+  };
+
+  const unlinkProvider = async (providerId: string) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ employment_type: '1099', agency_id: null } as any)
+        .eq('id', providerId);
+      if (error) throw error;
+      toast({ title: 'Provider unlinked from agency' });
+      await fetchAll();
+    } catch (error: any) {
+      console.error('Error unlinking provider:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to unlink provider.', variant: 'destructive' });
+      throw error;
+    }
+  };
+
   return {
     contacts, documents, providers, loading,
     refetch: fetchAll,
     addContact, updateContact, deleteContact,
     uploadDocument, deleteDocument, getDocumentUrl,
+    linkProvider, unlinkProvider,
   };
 };

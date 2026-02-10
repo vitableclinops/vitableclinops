@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useAgencies, Agency } from '@/hooks/useAgencies';
 import { useAgencyDetail, AgencyContact, AgencyDocument } from '@/hooks/useAgencyDetail';
@@ -29,6 +30,7 @@ const AgencyDetailPage = () => {
     contacts, documents, providers, loading,
     addContact, updateContact, deleteContact,
     uploadDocument, deleteDocument, getDocumentUrl, refetch,
+    linkProvider, unlinkProvider,
   } = useAgencyDetail(agencyId);
 
   const agency = agencies.find(a => a.id === agencyId);
@@ -58,6 +60,44 @@ const AgencyDetailPage = () => {
   const [editDialog, setEditDialog] = useState(false);
   const [agencyName, setAgencyName] = useState('');
   const [agencyNotes, setAgencyNotes] = useState('');
+
+  // Link provider dialog
+  const [linkDialog, setLinkDialog] = useState(false);
+  const [availableProviders, setAvailableProviders] = useState<{ id: string; full_name: string | null; email: string }[]>([]);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linking, setLinking] = useState(false);
+
+  const fetchAvailableProviders = async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .or('employment_type.is.null,employment_type.neq.agency')
+      .order('full_name');
+    if (data) setAvailableProviders(data);
+  };
+
+  const openLinkDialog = () => {
+    setLinkSearch('');
+    fetchAvailableProviders();
+    setLinkDialog(true);
+  };
+
+  const handleLinkProvider = async (providerId: string) => {
+    setLinking(true);
+    try {
+      await linkProvider(providerId);
+      setAvailableProviders(prev => prev.filter(p => p.id !== providerId));
+    } catch { /* handled */ }
+    setLinking(false);
+  };
+
+  const handleUnlinkProvider = async (providerId: string) => {
+    setSaving(true);
+    try {
+      await unlinkProvider(providerId);
+    } catch { /* handled */ }
+    setSaving(false);
+  };
 
   const resetContactForm = () => {
     setCName(''); setCRole(''); setCEmail(''); setCPhone(''); setCMethod('email'); setCNotes('');
@@ -243,15 +283,20 @@ const AgencyDetailPage = () => {
             {/* PROVIDERS TAB */}
             <TabsContent value="providers">
               <Card>
-                <CardHeader>
-                  <CardTitle>Linked Providers</CardTitle>
-                  <CardDescription>Providers supplied by this agency. Compliance is shown for visibility only — licensure and agreements are externally managed.</CardDescription>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>Linked Providers</CardTitle>
+                    <CardDescription>Providers supplied by this agency. Compliance is shown for visibility only — licensure and agreements are externally managed.</CardDescription>
+                  </div>
+                  <Button size="sm" onClick={openLinkDialog}>
+                    <Plus className="h-4 w-4 mr-2" />Link Provider
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   {providers.length === 0 ? (
                     <div className="text-center py-8 space-y-2">
                       <p className="text-muted-foreground">No providers linked to this agency.</p>
-                      <p className="text-xs text-muted-foreground">Set a provider's employment type to "Agency-Supplied" and link this agency from their profile.</p>
+                      <p className="text-xs text-muted-foreground">Click "Link Provider" to assign providers to this agency.</p>
                     </div>
                   ) : (
                     <Table>
@@ -263,6 +308,7 @@ const AgencyDetailPage = () => {
                           <TableHead>Licensed States</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Compliance</TableHead>
+                          <TableHead className="w-[60px]"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -286,6 +332,11 @@ const AgencyDetailPage = () => {
                                 <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
                                 <span className="text-xs text-muted-foreground">Externally Managed</span>
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              <Button size="icon" variant="ghost" onClick={() => handleUnlinkProvider(p.id)} title="Unlink from agency">
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -486,6 +537,51 @@ const AgencyDetailPage = () => {
               Save
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link Provider Dialog */}
+      <Dialog open={linkDialog} onOpenChange={setLinkDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Link Provider to {agency?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="Search providers by name or email..."
+              value={linkSearch}
+              onChange={e => setLinkSearch(e.target.value)}
+            />
+            <div className="max-h-[300px] overflow-y-auto border rounded-lg divide-y">
+              {availableProviders
+                .filter(p => {
+                  if (!linkSearch) return true;
+                  const q = linkSearch.toLowerCase();
+                  return (p.full_name || '').toLowerCase().includes(q) || p.email.toLowerCase().includes(q);
+                })
+                .slice(0, 20)
+                .map(p => (
+                  <div key={p.id} className="flex items-center justify-between px-4 py-3 hover:bg-muted/50">
+                    <div>
+                      <p className="font-medium text-sm">{p.full_name || 'Unknown'}</p>
+                      <p className="text-xs text-muted-foreground">{p.email}</p>
+                    </div>
+                    <Button size="sm" variant="outline" disabled={linking} onClick={() => handleLinkProvider(p.id)}>
+                      {linking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                      Link
+                    </Button>
+                  </div>
+                ))}
+              {availableProviders.filter(p => {
+                if (!linkSearch) return true;
+                const q = linkSearch.toLowerCase();
+                return (p.full_name || '').toLowerCase().includes(q) || p.email.toLowerCase().includes(q);
+              }).length === 0 && (
+                <p className="text-center text-muted-foreground text-sm py-6">No matching providers found.</p>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">Linking a provider will set their employment type to "Agency-Supplied" and associate them with this agency.</p>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
