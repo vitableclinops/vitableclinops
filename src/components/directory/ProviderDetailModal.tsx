@@ -142,6 +142,26 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Record<string, any>>({});
 
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!provider) return;
+      const { error } = await supabase
+        .from('profiles')
+        .update(formData)
+        .eq('id', provider.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['providers'] });
+      queryClient.invalidateQueries({ queryKey: ['provider-directory'] });
+      toast({ title: 'Profile updated', description: 'Provider profile saved successfully.' });
+      setIsEditing(false);
+    },
+    onError: (error) => {
+      toast({ title: 'Error saving', description: error.message, variant: 'destructive' });
+    },
+  });
+
   if (!provider) return null;
 
   const startEditing = () => {
@@ -195,24 +215,6 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
     setFormData(prev => ({ ...prev, [field]: value || null }));
   };
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase
-        .from('profiles')
-        .update(formData)
-        .eq('id', provider.id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
-      queryClient.invalidateQueries({ queryKey: ['provider-directory'] });
-      toast({ title: 'Profile updated', description: 'Provider profile saved successfully.' });
-      setIsEditing(false);
-    },
-    onError: (error) => {
-      toast({ title: 'Error saving', description: error.message, variant: 'destructive' });
-    },
-  });
 
   const val = (field: string) => isEditing ? (formData[field] ?? '') : (provider as any)[field];
 
