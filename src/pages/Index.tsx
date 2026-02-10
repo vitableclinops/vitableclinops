@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -63,7 +64,23 @@ const roles: {
 
 const Index = () => {
   const navigate = useNavigate();
+  const { roles: userRoles } = useAuth();
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+
+  // Auto-redirect if user already has roles assigned
+  useEffect(() => {
+    if (userRoles.length > 0) {
+      if (userRoles.includes('admin')) {
+        navigate('/admin', { replace: true });
+      } else if (userRoles.includes('provider')) {
+        navigate('/provider', { replace: true });
+      } else if (userRoles.includes('physician')) {
+        navigate('/physician', { replace: true });
+      } else if (userRoles.includes('leadership')) {
+        navigate('/providers', { replace: true });
+      }
+    }
+  }, [userRoles, navigate]);
 
   const handleContinue = () => {
     if (selectedRole === 'provider') {

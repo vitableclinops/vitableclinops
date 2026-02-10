@@ -32,6 +32,11 @@ import {
   Power,
   Lightbulb,
   Calendar,
+  Grid3X3,
+  UserCog,
+  Stethoscope,
+  Building2,
+  FolderOpen,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -50,115 +55,74 @@ interface NavItem {
   roles: UserRole[];
 }
 
-const navItems: NavItem[] = [
-  { 
-    label: 'Dashboard', 
-    icon: LayoutDashboard, 
-    href: '/', 
-    roles: ['provider', 'admin', 'leadership'] 
-  },
-  { 
-    label: 'My Dashboard', 
-    icon: ClipboardList, 
-    href: '/provider', 
-    roles: ['provider'] 
-  },
-  { 
-    label: 'Reimbursements', 
-    icon: Receipt, 
-    href: '/reimbursements', 
-    roles: ['provider', 'admin'] 
-  },
-  { 
-    label: 'All Providers', 
-    icon: Users, 
-    href: '/providers', 
-    roles: ['admin', 'leadership'] 
-  },
-  { 
-    label: 'Provider Intake', 
-    icon: Users, 
-    href: '/admin/intake', 
-    roles: ['admin'] 
-  },
-  { 
-    label: 'Agreements', 
-    icon: Shield, 
-    href: '/admin/agreements', 
-    roles: ['admin', 'physician'] 
-  },
-  { 
-    label: 'Physician Portal', 
-    icon: Users, 
-    href: '/physician', 
-    roles: ['physician'] 
-  },
-  { 
-    label: 'States & Compliance', 
-    icon: MapPin, 
-    href: '/admin/states', 
-    roles: ['admin'] 
-  },
-  { 
-    label: 'Provider Grid', 
-    icon: BarChart3, 
-    href: '/grid', 
-    roles: ['admin', 'leadership'] 
-  },
-  // Reports - placeholder route (not yet implemented)
-  // { 
-  //   label: 'Reports', 
-  //   icon: BarChart3, 
-  //   href: '/reports', 
-  //   roles: ['admin', 'leadership'] 
-  // },
-  { 
-    label: 'Provider Resources', 
-    icon: BookOpen, 
-    href: '/knowledge', 
-    roles: ['provider', 'admin', 'leadership'] 
-  },
-  { 
-    label: 'Provider Directory', 
-    icon: User, 
-    href: '/directory', 
-    roles: ['provider', 'admin', 'leadership'] 
-  },
-  { 
-    label: 'Update My Info', 
-    icon: UserPlus, 
-    href: '/onboarding?mode=edit', 
-    roles: ['provider'] 
-  },
-  { 
-    label: 'Agencies', 
-    icon: Database, 
-    href: '/admin/agencies', 
-    roles: ['admin'] 
-  },
-  { 
-    label: 'Activation Queue', 
-    icon: Power, 
-    href: '/admin/activation', 
-    roles: ['admin'] 
+interface NavGroup {
+  label: string;
+  roles: UserRole[];
+  items: NavItem[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    label: 'Home',
+    roles: ['provider', 'admin', 'leadership', 'physician'],
+    items: [
+      { label: 'Admin Dashboard', icon: LayoutDashboard, href: '/admin', roles: ['admin'] },
+      { label: 'My Dashboard', icon: ClipboardList, href: '/provider', roles: ['provider'] },
+      { label: 'Physician Portal', icon: Stethoscope, href: '/physician', roles: ['physician'] },
+      { label: 'Provider Overview', icon: BarChart3, href: '/providers', roles: ['leadership'] },
+    ],
   },
   {
-    label: 'All-Hands Calendar',
-    icon: Calendar,
-    href: '/admin/calendar',
+    label: 'Providers',
+    roles: ['admin', 'leadership'],
+    items: [
+      { label: 'All Providers', icon: Users, href: '/providers', roles: ['admin'] },
+      { label: 'Provider Directory', icon: User, href: '/directory', roles: ['admin', 'leadership'] },
+      { label: 'Provider Intake', icon: UserPlus, href: '/admin/intake', roles: ['admin'] },
+      { label: 'Provider Grid', icon: Grid3X3, href: '/grid', roles: ['admin', 'leadership'] },
+      { label: 'Activation Queue', icon: Power, href: '/admin/activation', roles: ['admin'] },
+    ],
+  },
+  {
+    label: 'Compliance',
+    roles: ['admin', 'physician'],
+    items: [
+      { label: 'States & Compliance', icon: MapPin, href: '/admin/states', roles: ['admin'] },
+      { label: 'Agreements', icon: Shield, href: '/admin/agreements', roles: ['admin', 'physician'] },
+    ],
+  },
+  {
+    label: 'Operations',
+    roles: ['provider', 'admin'],
+    items: [
+      { label: 'Reimbursements', icon: Receipt, href: '/reimbursements', roles: ['provider', 'admin'] },
+      { label: 'Agencies', icon: Building2, href: '/admin/agencies', roles: ['admin'] },
+      { label: 'All-Hands Calendar', icon: Calendar, href: '/admin/calendar', roles: ['admin'] },
+    ],
+  },
+  {
+    label: 'Resources',
+    roles: ['provider', 'admin', 'leadership'],
+    items: [
+      { label: 'Knowledge Base', icon: BookOpen, href: '/knowledge', roles: ['provider', 'admin', 'leadership'] },
+      { label: 'Provider Directory', icon: User, href: '/directory', roles: ['provider'] },
+      { label: 'Enhancements', icon: Lightbulb, href: '/admin/enhancements', roles: ['admin'] },
+    ],
+  },
+  {
+    label: 'My Account',
+    roles: ['provider'],
+    items: [
+      { label: 'Update My Info', icon: UserPlus, href: '/onboarding?mode=edit', roles: ['provider'] },
+    ],
+  },
+  {
+    label: 'Administration',
     roles: ['admin'],
-  },
-  { 
-    label: 'Enhancements', 
-    icon: Lightbulb, 
-    href: '/admin/enhancements', 
-    roles: ['admin'] 
-  },
-  { 
-    label: 'System Settings',
-    icon: Settings, 
-    href: '/admin/settings', 
-    roles: ['admin'] 
+    items: [
+      { label: 'User Roles', icon: UserCog, href: '/admin/roles', roles: ['admin'] },
+      { label: 'System Settings', icon: Settings, href: '/admin/settings', roles: ['admin'] },
+    ],
   },
 ];
 
@@ -168,11 +132,6 @@ export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: App
   const navigate = useNavigate();
   const { signOut, roles } = useAuth();
 
-  // Filter nav items based on ALL user roles, not just the primary one
-  const filteredNavItems = navItems.filter(item => 
-    item.roles.some(role => roles.includes(role))
-  );
-
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
@@ -181,6 +140,14 @@ export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: App
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
+
+  // Filter groups: show only groups that have at least one visible item for this user
+  const visibleGroups = navGroups
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => item.roles.some(role => roles.includes(role))),
+    }))
+    .filter(group => group.items.length > 0);
 
   return (
     <aside
@@ -213,27 +180,46 @@ export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: App
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 px-2 py-4 overflow-y-auto scrollbar-thin">
-          {filteredNavItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.href;
-            
-            return (
-              <NavLink
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  isActive 
-                    ? 'bg-sidebar-accent text-sidebar-primary' 
-                    : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
-                )}
-              >
-                <Icon className={cn('h-5 w-5 shrink-0', isActive && 'text-sidebar-primary')} />
-                {!collapsed && <span>{item.label}</span>}
-              </NavLink>
-            );
-          })}
+        <nav className="flex-1 px-2 py-3 overflow-y-auto scrollbar-thin">
+          {visibleGroups.map((group, groupIndex) => (
+            <div key={group.label} className={cn(groupIndex > 0 && 'mt-4')}>
+              {!collapsed && (
+                <div className="px-3 mb-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
+                    {group.label}
+                  </span>
+                </div>
+              )}
+              {collapsed && groupIndex > 0 && (
+                <div className="mx-3 mb-2 border-t border-sidebar-border" />
+              )}
+              <div className="space-y-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = location.pathname === item.href || 
+                    (item.href !== '/' && location.pathname.startsWith(item.href.split('?')[0]));
+                  
+                  return (
+                    <NavLink
+                      key={item.href + item.label}
+                      to={item.href}
+                      className={cn(
+                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                        isActive 
+                          ? 'bg-sidebar-accent text-sidebar-primary' 
+                          : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                        collapsed && 'justify-center px-0'
+                      )}
+                      title={collapsed ? item.label : undefined}
+                    >
+                      <Icon className={cn('h-5 w-5 shrink-0', isActive && 'text-sidebar-primary')} />
+                      {!collapsed && <span>{item.label}</span>}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* User section with dropdown */}
