@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { SupervisionCalendar } from '@/components/SupervisionCalendar';
@@ -322,14 +323,24 @@ const CollaborativeAgreementsPage = () => {
 
   const selectedAgreementsForBulk = filteredFlatAgreements.filter(a => selectedIds.has(a.id));
 
-  // Get unique physicians for the reassign dialog
-  const physiciansForReassign = Array.from(
-    new Map(
-      dbAgreements
-        .filter(a => a.physician_name)
-        .map(a => [a.physician_name, { id: a.physician_id || a.physician_name!, name: a.physician_name!, email: a.physician_email || '' }])
-    ).values()
-  );
+  // Get all physicians from physician_profiles view
+  const { data: allPhysicians } = useQuery({
+    queryKey: ['physicians-for-reassign'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('physician_profiles')
+        .select('id, full_name, email, npi_number')
+        .eq('employment_status', 'active')
+        .order('full_name');
+      if (error) throw error;
+      return (data || []).map(p => ({
+        id: p.id,
+        name: p.full_name || 'Unknown',
+        email: p.email || '',
+      }));
+    },
+  });
+  const physiciansForReassign = allPhysicians || [];
 
   // Handle document upload/link
   const handleDocumentSave = async () => {
