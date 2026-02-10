@@ -346,7 +346,7 @@ export const useAgreementWorkflow = () => {
 
     // Log the transition
     await supabase.from('agreement_audit_log').insert({
-      entity_type: 'collaborative_agreement',
+      entity_type: 'agreement',
       entity_id: agreementId,
       action: `status_change_to_${targetStatus}`,
       performed_by: adminId || null,
@@ -428,7 +428,7 @@ export const useAgreementWorkflow = () => {
 
     // Step 6: Log creation
     await supabase.from('agreement_audit_log').insert({
-      entity_type: 'collaborative_agreement',
+      entity_type: 'agreement',
       entity_id: agreement.id,
       action: 'agreement_created',
       changes: {
@@ -477,7 +477,7 @@ export const useAgreementWorkflow = () => {
 
     // Step 3: Log
     await supabase.from('agreement_audit_log').insert({
-      entity_type: 'collaborative_agreement',
+      entity_type: 'agreement',
       entity_id: agreementId,
       action: 'termination_initiated',
       performed_by: adminId || null,
