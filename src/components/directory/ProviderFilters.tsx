@@ -84,11 +84,12 @@ export const ProviderFilters = ({
       </Select>
 
       <Select value={statusFilter} onValueChange={onStatusChange}>
-        <SelectTrigger className="w-[140px]">
+        <SelectTrigger className="w-[160px]">
           <SelectValue placeholder="Status" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Status</SelectItem>
+          <SelectItem value="hide_termed">Hide Terminated</SelectItem>
           <SelectItem value="active">Active</SelectItem>
           <SelectItem value="inactive">Inactive</SelectItem>
           <SelectItem value="termed">Terminated</SelectItem>

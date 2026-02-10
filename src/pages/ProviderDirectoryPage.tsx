@@ -108,7 +108,7 @@ const ProviderDirectoryPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [stateFilter, setStateFilter] = useState('all');
   const [professionFilter, setProfessionFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('hide_termed');
   const [employmentTypeFilter, setEmploymentTypeFilter] = useState('all');
   const [agencyFilter, setAgencyFilter] = useState('all');
   
@@ -229,7 +229,9 @@ const ProviderDirectoryPage = () => {
       }
 
       // Status filter (admin only)
-      if (isAdmin && statusFilter !== 'all') {
+      if (isAdmin && statusFilter === 'hide_termed') {
+        if (p.employment_status === 'termed') return false;
+      } else if (isAdmin && statusFilter !== 'all') {
         if (p.employment_status !== statusFilter) return false;
       }
 
@@ -299,12 +301,12 @@ const ProviderDirectoryPage = () => {
     setSearchQuery('');
     setStateFilter('all');
     setProfessionFilter('all');
-    setStatusFilter('all');
+    setStatusFilter('hide_termed');
     setEmploymentTypeFilter('all');
     setAgencyFilter('all');
   };
 
-  const hasActiveFilters = searchQuery !== '' || stateFilter !== 'all' || professionFilter !== 'all' || statusFilter !== 'all' || employmentTypeFilter !== 'all' || agencyFilter !== 'all';
+  const hasActiveFilters = searchQuery !== '' || stateFilter !== 'all' || professionFilter !== 'all' || statusFilter !== 'hide_termed' || employmentTypeFilter !== 'all' || agencyFilter !== 'all';
 
   const getProviderInitials = (name: string | null) => {
     if (!name) return '?';
