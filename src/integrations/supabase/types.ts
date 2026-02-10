@@ -50,6 +50,133 @@ export type Database = {
         }
         Relationships: []
       }
+      agency_contacts: {
+        Row: {
+          agency_id: string
+          contact_name: string
+          created_at: string
+          email: string | null
+          id: string
+          notes: string | null
+          phone: string | null
+          preferred_contact_method: string | null
+          role_title: string | null
+          updated_at: string
+        }
+        Insert: {
+          agency_id: string
+          contact_name: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          notes?: string | null
+          phone?: string | null
+          preferred_contact_method?: string | null
+          role_title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agency_id?: string
+          contact_name?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          notes?: string | null
+          phone?: string | null
+          preferred_contact_method?: string | null
+          role_title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agency_contacts_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agency_documents: {
+        Row: {
+          agency_id: string
+          created_at: string
+          document_name: string
+          document_type: string
+          effective_date: string | null
+          expiration_date: string | null
+          file_size: number | null
+          id: string
+          mime_type: string | null
+          notes: string | null
+          storage_path: string
+          updated_at: string
+          uploaded_by: string | null
+          uploaded_by_name: string | null
+        }
+        Insert: {
+          agency_id: string
+          created_at?: string
+          document_name: string
+          document_type?: string
+          effective_date?: string | null
+          expiration_date?: string | null
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          notes?: string | null
+          storage_path: string
+          updated_at?: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Update: {
+          agency_id?: string
+          created_at?: string
+          document_name?: string
+          document_type?: string
+          effective_date?: string | null
+          expiration_date?: string | null
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          notes?: string | null
+          storage_path?: string
+          updated_at?: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agency_documents_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agency_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agency_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agency_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agreement_audit_log: {
         Row: {
           action: string
