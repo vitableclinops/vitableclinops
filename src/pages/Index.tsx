@@ -48,18 +48,6 @@ const roles: {
       'Configure state requirements',
     ],
   },
-  {
-    id: 'leadership',
-    title: 'Medical Leadership',
-    description: 'View licensure status dashboards and identify operational risks.',
-    icon: BarChart3,
-    features: [
-      'View provider status',
-      'Monitor activation readiness',
-      'Identify blockers by state',
-      'Access reports',
-    ],
-  },
 ];
 
 const Index = () => {
@@ -76,8 +64,6 @@ const Index = () => {
         navigate('/provider', { replace: true });
       } else if (userRoles.includes('physician')) {
         navigate('/physician', { replace: true });
-      } else if (userRoles.includes('leadership')) {
-        navigate('/providers', { replace: true });
       }
     }
   }, [userRoles, navigate]);
@@ -87,8 +73,6 @@ const Index = () => {
       navigate('/provider');
     } else if (selectedRole === 'admin') {
       navigate('/admin');
-    } else if (selectedRole === 'leadership') {
-      navigate('/providers');
     }
   };
 
@@ -110,7 +94,7 @@ const Index = () => {
         </div>
 
         {/* Role cards */}
-        <div className="grid gap-4 md:grid-cols-3 mb-8">
+        <div className="grid gap-4 md:grid-cols-2 max-w-2xl mx-auto mb-8">
           {roles.map(role => {
             const Icon = role.icon;
             const isSelected = selectedRole === role.id;

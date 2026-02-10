@@ -49,7 +49,6 @@ export default function PhysicianDetailPage() {
   const [loading, setLoading] = useState(true);
 
   const userRole = roles.includes('admin') ? 'admin' : 
-                   roles.includes('leadership') ? 'leadership' : 
                    roles.includes('physician') ? 'physician' : 'provider';
 
   useEffect(() => {

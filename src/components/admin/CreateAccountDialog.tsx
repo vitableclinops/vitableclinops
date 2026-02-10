@@ -24,7 +24,6 @@ const ALL_ROLES: { value: AppRole; label: string; description: string }[] = [
   { value: 'provider', label: 'Provider', description: 'Can complete onboarding and view their dashboard' },
   { value: 'physician', label: 'Physician', description: 'Can supervise providers and manage agreements' },
   { value: 'admin', label: 'Admin', description: 'Full access to all system features' },
-  { value: 'leadership', label: 'Leadership', description: 'Read-only access to reports and analytics' },
 ];
 
 interface CreateAccountDialogProps {

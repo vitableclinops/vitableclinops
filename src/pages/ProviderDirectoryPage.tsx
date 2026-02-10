@@ -91,7 +91,7 @@ const ProviderDirectoryPage = () => {
   
   // Determine initial tab from URL or default based on role
   const tabParam = searchParams.get('tab');
-  const isAdmin = roles.includes('admin') || roles.includes('leadership');
+  const isAdmin = roles.includes('admin');
   const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : 'management') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);

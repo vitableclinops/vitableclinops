@@ -54,7 +54,6 @@ export default function AgreementDetailPage() {
   const [terminationOpen, setTerminationOpen] = useState(false);
 
   const userRole = roles.includes('admin') ? 'admin' : 
-                   roles.includes('leadership') ? 'leadership' : 
                    roles.includes('physician') ? 'physician' : 'provider';
 
   useEffect(() => {

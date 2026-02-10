@@ -41,7 +41,7 @@ export function StateSelectionStep({
   const [isApplyingForNew, setIsApplyingForNew] = useState(pendingApplications.length > 0);
   const { hasRole } = useAuth();
   
-  const isProvider = hasRole('provider') && !hasRole('admin') && !hasRole('leadership');
+  const isProvider = hasRole('provider') && !hasRole('admin');
   const isNPProvider = providerType === 'nurse_practitioner';
 
   // Get states that are prohibited for NPs
@@ -234,7 +234,7 @@ export function StateSelectionStep({
                             </Badge>
                           )}
                           {getCollabBadge(state.abbreviation)}
-                          {/* Only show demand tags to admin/leadership */}
+                          {/* Only show demand tags to admin */}
                           {!isProvider && state.demandTag && state.demandTag !== 'stable' && (
                             <Badge 
                               variant="outline" 

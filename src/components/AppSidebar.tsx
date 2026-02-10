@@ -64,21 +64,20 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: 'Home',
-    roles: ['provider', 'admin', 'leadership', 'physician'],
+    roles: ['provider', 'admin', 'physician'],
     items: [
       { label: 'Admin Dashboard', icon: LayoutDashboard, href: '/admin', roles: ['admin'] },
       { label: 'My Dashboard', icon: ClipboardList, href: '/provider', roles: ['provider'] },
       { label: 'Physician Portal', icon: Stethoscope, href: '/physician', roles: ['physician'] },
-      { label: 'Provider Overview', icon: BarChart3, href: '/directory', roles: ['leadership'] },
     ],
   },
   {
     label: 'Providers',
-    roles: ['admin', 'leadership'],
+    roles: ['admin'],
     items: [
-      { label: 'Provider Directory', icon: Users, href: '/directory', roles: ['admin', 'leadership'] },
+      { label: 'Provider Directory', icon: Users, href: '/directory', roles: ['admin'] },
       { label: 'Provider Intake', icon: UserPlus, href: '/admin/intake', roles: ['admin'] },
-      { label: 'Provider Grid', icon: Grid3X3, href: '/grid', roles: ['admin', 'leadership'] },
+      { label: 'Provider Grid', icon: Grid3X3, href: '/grid', roles: ['admin'] },
       { label: 'Activation Queue', icon: Power, href: '/admin/activation', roles: ['admin'] },
     ],
   },
@@ -101,9 +100,9 @@ const navGroups: NavGroup[] = [
   },
   {
     label: 'Resources',
-    roles: ['provider', 'admin', 'leadership'],
+    roles: ['provider', 'admin'],
     items: [
-      { label: 'Knowledge Base', icon: BookOpen, href: '/knowledge', roles: ['provider', 'admin', 'leadership'] },
+      { label: 'Knowledge Base', icon: BookOpen, href: '/knowledge', roles: ['provider', 'admin'] },
       { label: 'Provider Directory', icon: User, href: '/directory', roles: ['provider'] },
       { label: 'Enhancements', icon: Lightbulb, href: '/admin/enhancements', roles: ['admin'] },
     ],

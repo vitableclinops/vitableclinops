@@ -17,13 +17,12 @@ import type { Tables, Enums } from '@/integrations/supabase/types';
 type Profile = Tables<'profiles'>;
 type AppRole = Enums<'app_role'>;
 
-const ALL_ROLES: AppRole[] = ['admin', 'provider', 'physician', 'leadership'];
+const ALL_ROLES: AppRole[] = ['admin', 'provider', 'physician'];
 
 const ROLE_COLORS: Record<AppRole, string> = {
   admin: 'bg-red-100 text-red-800 border-red-200',
   provider: 'bg-blue-100 text-blue-800 border-blue-200',
   physician: 'bg-green-100 text-green-800 border-green-200',
-  leadership: 'bg-purple-100 text-purple-800 border-purple-200',
 };
 
 interface UserWithRoles extends Profile {
