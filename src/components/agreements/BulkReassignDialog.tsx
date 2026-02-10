@@ -497,7 +497,7 @@ export function BulkReassignDialog({
               <SelectTrigger>
                 <SelectValue placeholder="Select physician..." />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" className="z-[9999] max-h-60 overflow-y-auto">
                 {physicians.map(physician => (
                   <SelectItem key={physician.id} value={physician.id}>
                     Dr. {physician.name}
