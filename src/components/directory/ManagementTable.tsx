@@ -23,6 +23,7 @@ type ManagementFilter = 'all' | 'ready' | 'blocked' | 'in_progress' | 'blocked_l
 interface ManagementTableProps {
   providers: ProviderReadiness[];
   agencyMap: Map<string, string>;
+  initialSearch?: string;
 }
 
 const filterConfig: { value: ManagementFilter; label: string; icon: React.ReactNode; variant: string }[] = [
@@ -34,10 +35,10 @@ const filterConfig: { value: ManagementFilter; label: string; icon: React.ReactN
   { value: 'expiring_30', label: 'Expiring Soon', icon: <CalendarDays className="h-3.5 w-3.5" />, variant: 'text-warning border-warning/30 hover:bg-warning/10' },
 ];
 
-export function ManagementTable({ providers, agencyMap }: ManagementTableProps) {
+export function ManagementTable({ providers, agencyMap, initialSearch = '' }: ManagementTableProps) {
   const navigate = useNavigate();
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<ManagementFilter>('needs_action');
+  const [search, setSearch] = useState(initialSearch);
+  const [filter, setFilter] = useState<ManagementFilter>(initialSearch ? 'all' : 'needs_action');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {

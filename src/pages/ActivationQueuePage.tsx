@@ -70,13 +70,14 @@ export default function ActivationQueuePage() {
   // Fetch all statuses
   const { data: allStatuses, isLoading: statusesLoading } = useProviderStateStatuses();
 
-  // Fetch profiles to get names
+  // Fetch profiles to get names and filter terminated
   const { data: profiles } = useQuery({
     queryKey: ['profiles-for-activation'],
     queryFn: async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('id, full_name, email');
+        .select('id, full_name, email, employment_status')
+        .neq('employment_status', 'termed');
       return data || [];
     },
   });
@@ -94,7 +95,9 @@ export default function ActivationQueuePage() {
   const filteredData = useMemo(() => {
     if (!allStatuses) return [];
 
-    let filtered = [...allStatuses];
+    // Exclude terminated providers
+    const activeProviderIds = new Set(profiles?.map(p => p.id) || []);
+    let filtered = allStatuses.filter(s => activeProviderIds.has(s.provider_id));
 
     // Tab filter
     if (activeTab === 'mismatches') {
@@ -132,7 +135,7 @@ export default function ActivationQueuePage() {
     });
 
     return filtered;
-  }, [allStatuses, activeTab, stateFilter, searchQuery, profileLookup]);
+  }, [allStatuses, activeTab, stateFilter, searchQuery, profileLookup, profiles]);
 
   // Get unique states for filter
   const uniqueStates = useMemo(() => {
@@ -360,7 +363,7 @@ export default function ActivationQueuePage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <Link 
-                                to={`/directory?search=${encodeURIComponent(providerName)}`}
+                                to={`/directory?tab=management&search=${encodeURIComponent(providerName)}`}
                                 className="font-medium hover:underline truncate"
                               >
                                 {providerName}
