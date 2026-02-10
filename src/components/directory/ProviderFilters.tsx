@@ -78,8 +78,10 @@ export const ProviderFilters = ({
         <SelectContent>
           <SelectItem value="all">All Professions</SelectItem>
           <SelectItem value="physician">Physician (MD/DO)</SelectItem>
+          <SelectItem value="np">Nurse Practitioner (NP/APN)</SelectItem>
+          <SelectItem value="lpc">Therapist (LPC/LCSW)</SelectItem>
           {availableProfessions
-            .filter(prof => prof !== 'MD' && prof !== 'DO')
+            .filter(prof => !['MD', 'DO', 'NP', 'APN', 'LPC', 'LCSW'].includes(prof.toUpperCase()))
             .map(prof => (
               <SelectItem key={prof} value={prof}>{prof}</SelectItem>
             ))}

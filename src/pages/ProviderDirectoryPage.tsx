@@ -227,6 +227,10 @@ const ProviderDirectoryPage = () => {
         const prof = (p.profession || p.credentials || '').toUpperCase();
         if (professionFilter === 'physician') {
           if (prof !== 'MD' && prof !== 'DO') return false;
+        } else if (professionFilter === 'np') {
+          if (prof !== 'NP' && prof !== 'APN') return false;
+        } else if (professionFilter === 'lpc') {
+          if (prof !== 'LPC' && prof !== 'LCSW') return false;
         } else {
           if (prof !== professionFilter.toUpperCase()) return false;
         }
@@ -266,7 +270,10 @@ const ProviderDirectoryPage = () => {
         case 'profession': {
           const normProf = (v: string | null | undefined) => {
             const val = (v || '').toUpperCase();
-            return (val === 'MD' || val === 'DO') ? 'PHYSICIAN' : val;
+            if (val === 'MD' || val === 'DO') return 'PHYSICIAN';
+            if (val === 'NP' || val === 'APN') return 'NURSE_PRACTITIONER';
+            if (val === 'LPC' || val === 'LCSW') return 'THERAPIST';
+            return val;
           };
           aVal = normProf(a.profession || a.credentials);
           bVal = normProf(b.profession || b.credentials);
