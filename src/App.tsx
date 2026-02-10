@@ -29,6 +29,7 @@ import PhysicianDetailPage from "./pages/PhysicianDetailPage";
 import ActivationQueuePage from "./pages/ActivationQueuePage";
 import ReimbursementsPage from "./pages/ReimbursementsPage";
 import AgencyManagementPage from "./pages/AgencyManagementPage";
+import AgencyDetailPage from "./pages/AgencyDetailPage";
 import EnhancementRegistryPage from "./pages/EnhancementRegistryPage";
 import CalendarPage from "./pages/CalendarPage";
 import AdminAddProviderPage from "./pages/AdminAddProviderPage";
@@ -154,6 +155,11 @@ const App = () => (
             <Route path="/admin/agencies" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <AgencyManagementPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/agencies/:agencyId" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <AgencyDetailPage />
               </ProtectedRoute>
             } />
             <Route path="/admin/calendar" element={
