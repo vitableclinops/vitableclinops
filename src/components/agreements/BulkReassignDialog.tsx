@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useEmailNotifications } from '@/hooks/useEmailNotifications';
-import { AlertTriangle, Users, ArrowRight, Calendar, FileText } from 'lucide-react';
+import { AlertTriangle, Users, ArrowRight, Calendar, FileText, Info } from 'lucide-react';
 
 interface SelectedAgreement {
   id: string;
@@ -237,6 +237,10 @@ export function BulkReassignDialog({
               initiated_by: userId,
               notes,
               status: 'pending',
+              readiness_status: effectiveDate ? 'ready_for_review' : 'not_ready',
+              blocking_reasons: !effectiveDate 
+                ? JSON.stringify([{ field: 'effective_date', label: 'No effective date set', severity: 'required' }])
+                : '[]',
             })
             .select()
             .single();
@@ -295,6 +299,32 @@ export function BulkReassignDialog({
             .insert([...terminationTasks, ...initiationTasks]);
 
           if (tasksError) throw tasksError;
+
+          // Smart Intake: auto-generate tasks for missing required data
+          const missingDataTasks = [];
+          if (!effectiveDate) {
+            missingDataTasks.push({
+              transfer_id: transfer.id,
+              agreement_id: agreementId,
+              title: 'Set transfer effective date',
+              description: 'An effective date is required to move this transfer to "Ready" status. Update the transfer effective dates section.',
+              category: 'custom' as const,
+              status: 'pending' as const,
+              priority: 'high',
+              assigned_role: 'admin',
+              is_auto_generated: true,
+              is_required: true,
+              sort_order: 0,
+              auto_trigger: 'smart_intake',
+              state_abbreviation: firstProvider.stateAbbreviation,
+              state_name: firstProvider.stateName,
+              task_purpose: 'Required for workflow readiness — transfer cannot proceed without an effective date.',
+              compliance_risk: 'Transfer may create a coverage gap if dates are not properly sequenced.',
+            });
+          }
+          if (missingDataTasks.length > 0) {
+            await supabase.from('agreement_tasks').insert(missingDataTasks);
+          }
 
           // Log the transfer initiation activity
           await supabase.from('transfer_activity_log').insert({
@@ -477,11 +507,11 @@ export function BulkReassignDialog({
             </Select>
           </div>
 
-          {/* Effective date */}
+          {/* Effective date - REQUIRED for Smart Intake */}
           <div className="space-y-2">
             <Label htmlFor="effectiveDate" className="flex items-center gap-2">
               <Calendar className="h-4 w-4" />
-              Effective Date (optional)
+              Effective Date *
             </Label>
             <Input
               id="effectiveDate"
@@ -489,6 +519,12 @@ export function BulkReassignDialog({
               value={effectiveDate}
               onChange={(e) => setEffectiveDate(e.target.value)}
             />
+            {!effectiveDate && (
+              <p className="text-xs text-warning flex items-center gap-1">
+                <Info className="h-3 w-3" />
+                Transfer will be created in "Not Ready" state without an effective date. A task will be auto-generated.
+              </p>
+            )}
           </div>
 
           {/* Notes */}

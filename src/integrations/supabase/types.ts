@@ -544,8 +544,13 @@ export type Database = {
       }
       agreement_transfers: {
         Row: {
+          admin_override: boolean | null
+          admin_override_at: string | null
+          admin_override_by: string | null
+          admin_override_reason: string | null
           affected_provider_count: number
           affected_provider_ids: string[]
+          blocking_reasons: Json | null
           chart_review_frequency: string | null
           checklist_items: Json | null
           completed_at: string | null
@@ -560,6 +565,8 @@ export type Database = {
           meeting_cadence: string | null
           new_agreement_renewal_date: string | null
           notes: string | null
+          readiness_last_checked_at: string | null
+          readiness_status: string
           source_agreement_id: string
           source_physician_email: string | null
           source_physician_id: string | null
@@ -575,8 +582,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          admin_override?: boolean | null
+          admin_override_at?: string | null
+          admin_override_by?: string | null
+          admin_override_reason?: string | null
           affected_provider_count?: number
           affected_provider_ids?: string[]
+          blocking_reasons?: Json | null
           chart_review_frequency?: string | null
           checklist_items?: Json | null
           completed_at?: string | null
@@ -591,6 +603,8 @@ export type Database = {
           meeting_cadence?: string | null
           new_agreement_renewal_date?: string | null
           notes?: string | null
+          readiness_last_checked_at?: string | null
+          readiness_status?: string
           source_agreement_id: string
           source_physician_email?: string | null
           source_physician_id?: string | null
@@ -606,8 +620,13 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          admin_override?: boolean | null
+          admin_override_at?: string | null
+          admin_override_by?: string | null
+          admin_override_reason?: string | null
           affected_provider_count?: number
           affected_provider_ids?: string[]
+          blocking_reasons?: Json | null
           chart_review_frequency?: string | null
           checklist_items?: Json | null
           completed_at?: string | null
@@ -622,6 +641,8 @@ export type Database = {
           meeting_cadence?: string | null
           new_agreement_renewal_date?: string | null
           notes?: string | null
+          readiness_last_checked_at?: string | null
+          readiness_status?: string
           source_agreement_id?: string
           source_physician_email?: string | null
           source_physician_id?: string | null
@@ -826,7 +847,12 @@ export type Database = {
       }
       collaborative_agreements: {
         Row: {
+          admin_override: boolean | null
+          admin_override_at: string | null
+          admin_override_by: string | null
+          admin_override_reason: string | null
           agreement_document_url: string | null
+          blocking_reasons: Json | null
           box_sign_request_id: string | null
           box_sign_status: string | null
           chart_review_frequency: string | null
@@ -844,6 +870,8 @@ export type Database = {
           physician_name: string | null
           physician_npi: string | null
           physician_signed_at: string | null
+          readiness_last_checked_at: string | null
+          readiness_status: string
           renewal_cadence: string | null
           source: string | null
           start_date: string | null
@@ -859,7 +887,12 @@ export type Database = {
           workflow_status: Database["public"]["Enums"]["agreement_workflow_status"]
         }
         Insert: {
+          admin_override?: boolean | null
+          admin_override_at?: string | null
+          admin_override_by?: string | null
+          admin_override_reason?: string | null
           agreement_document_url?: string | null
+          blocking_reasons?: Json | null
           box_sign_request_id?: string | null
           box_sign_status?: string | null
           chart_review_frequency?: string | null
@@ -877,6 +910,8 @@ export type Database = {
           physician_name?: string | null
           physician_npi?: string | null
           physician_signed_at?: string | null
+          readiness_last_checked_at?: string | null
+          readiness_status?: string
           renewal_cadence?: string | null
           source?: string | null
           start_date?: string | null
@@ -892,7 +927,12 @@ export type Database = {
           workflow_status?: Database["public"]["Enums"]["agreement_workflow_status"]
         }
         Update: {
+          admin_override?: boolean | null
+          admin_override_at?: string | null
+          admin_override_by?: string | null
+          admin_override_reason?: string | null
           agreement_document_url?: string | null
+          blocking_reasons?: Json | null
           box_sign_request_id?: string | null
           box_sign_status?: string | null
           chart_review_frequency?: string | null
@@ -910,6 +950,8 @@ export type Database = {
           physician_name?: string | null
           physician_npi?: string | null
           physician_signed_at?: string | null
+          readiness_last_checked_at?: string | null
+          readiness_status?: string
           renewal_cadence?: string | null
           source?: string | null
           start_date?: string | null
@@ -2769,6 +2811,42 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      workflow_overrides: {
+        Row: {
+          action: string
+          blocking_reasons_at_override: Json | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          overridden_by: string | null
+          overridden_by_name: string | null
+          reason: string
+        }
+        Insert: {
+          action: string
+          blocking_reasons_at_override?: Json | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          overridden_by?: string | null
+          overridden_by_name?: string | null
+          reason: string
+        }
+        Update: {
+          action?: string
+          blocking_reasons_at_override?: Json | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          overridden_by?: string | null
+          overridden_by_name?: string | null
+          reason?: string
         }
         Relationships: []
       }
