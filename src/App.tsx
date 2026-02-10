@@ -31,6 +31,7 @@ import ReimbursementsPage from "./pages/ReimbursementsPage";
 import AgencyManagementPage from "./pages/AgencyManagementPage";
 import EnhancementRegistryPage from "./pages/EnhancementRegistryPage";
 import CalendarPage from "./pages/CalendarPage";
+import AdminAddProviderPage from "./pages/AdminAddProviderPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -163,6 +164,11 @@ const App = () => (
             <Route path="/admin/enhancements" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <EnhancementRegistryPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/add-provider" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <AdminAddProviderPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

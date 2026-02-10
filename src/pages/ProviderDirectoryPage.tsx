@@ -380,7 +380,7 @@ const ProviderDirectoryPage = () => {
             </div>
 
             {isAdmin && (
-              <Button onClick={() => navigate('/onboarding?mode=admin')}>
+              <Button onClick={() => navigate('/admin/add-provider')}>
                 <UserPlus className="h-4 w-4 mr-2" />
                 Add Provider
               </Button>
