@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { providers as mockProviders } from '@/data/mockData';
 import { Plus, X, UserPlus, Users, Search, Check } from 'lucide-react';
 import type { AgreementFormData } from '../AgreementWizard';
 
@@ -18,31 +19,44 @@ export const ProviderSelectionStep = ({ formData, updateFormData }: ProviderSele
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [manualProvider, setManualProvider] = useState({ name: '', email: '', npi: '' });
 
-  const filteredProviders = mockProviders.filter(p => {
+  const { data: dbProviders = [], isLoading } = useQuery({
+    queryKey: ['profiles-for-agreement'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, first_name, last_name, email, npi_number, profession')
+        .order('full_name');
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const filteredProviders = dbProviders.filter(p => {
     const query = searchQuery.toLowerCase();
-    const fullName = `${p.firstName} ${p.lastName}`.toLowerCase();
-    return fullName.includes(query) || p.email.toLowerCase().includes(query);
+    const name = (p.full_name || `${p.first_name || ''} ${p.last_name || ''}`).toLowerCase();
+    return name.includes(query) || (p.email || '').toLowerCase().includes(query);
   });
 
   const isProviderSelected = (providerId: string) => {
     return formData.providers.some(p => p.id === providerId);
   };
 
-  const toggleProvider = (provider: typeof mockProviders[0]) => {
+  const toggleProvider = (provider: typeof dbProviders[0]) => {
     const isSelected = isProviderSelected(provider.id);
     if (isSelected) {
       updateFormData({
         providers: formData.providers.filter(p => p.id !== provider.id),
       });
     } else {
+      const displayName = provider.full_name || `${provider.first_name || ''} ${provider.last_name || ''}`.trim() || provider.email;
       updateFormData({
         providers: [
           ...formData.providers,
           {
             id: provider.id,
-            name: `${provider.firstName} ${provider.lastName}`,
+            name: displayName,
             email: provider.email,
-            npi: provider.npiNumber || undefined,
+            npi: provider.npi_number || undefined,
           },
         ],
       });
@@ -70,6 +84,17 @@ export const ProviderSelectionStep = ({ formData, updateFormData }: ProviderSele
     updateFormData({
       providers: formData.providers.filter((_, i) => i !== index),
     });
+  };
+
+  const getInitials = (provider: typeof dbProviders[0]) => {
+    if (provider.first_name && provider.last_name) {
+      return `${provider.first_name[0]}${provider.last_name[0]}`;
+    }
+    if (provider.full_name) {
+      const parts = provider.full_name.split(' ');
+      return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : parts[0][0];
+    }
+    return provider.email[0]?.toUpperCase() || '?';
   };
 
   return (
@@ -178,48 +203,53 @@ export const ProviderSelectionStep = ({ formData, updateFormData }: ProviderSele
 
       {/* Provider list */}
       <div className="space-y-2 max-h-[250px] overflow-y-auto pr-2">
-        {filteredProviders.map((provider) => {
-          const isSelected = isProviderSelected(provider.id);
-          return (
-            <Card
-              key={provider.id}
-              onClick={() => toggleProvider(provider)}
-              className={`p-3 cursor-pointer transition-all ${
-                isSelected 
-                  ? 'ring-2 ring-primary bg-primary/5' 
-                  : 'hover:bg-accent/50'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                    <span className="text-sm font-medium">
-                      {provider.firstName[0]}{provider.lastName[0]}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">
-                      {provider.firstName} {provider.lastName}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{provider.email}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs capitalize">
-                    {provider.providerType.replace('_', ' ')}
-                  </Badge>
-                  {isSelected && (
-                    <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center">
-                      <Check className="h-4 w-4 text-primary-foreground" />
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">Loading providers...</div>
+        ) : (
+          filteredProviders.map((provider) => {
+            const isSelected = isProviderSelected(provider.id);
+            const displayName = provider.full_name || `${provider.first_name || ''} ${provider.last_name || ''}`.trim() || provider.email;
+            return (
+              <Card
+                key={provider.id}
+                onClick={() => toggleProvider(provider)}
+                className={`p-3 cursor-pointer transition-all ${
+                  isSelected 
+                    ? 'ring-2 ring-primary bg-primary/5' 
+                    : 'hover:bg-accent/50'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                      <span className="text-sm font-medium">
+                        {getInitials(provider)}
+                      </span>
                     </div>
-                  )}
+                    <div>
+                      <p className="font-medium text-sm">{displayName}</p>
+                      <p className="text-xs text-muted-foreground">{provider.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {provider.profession && (
+                      <Badge variant="outline" className="text-xs capitalize">
+                        {provider.profession}
+                      </Badge>
+                    )}
+                    {isSelected && (
+                      <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center">
+                        <Check className="h-4 w-4 text-primary-foreground" />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </Card>
-          );
-        })}
+              </Card>
+            );
+          })
+        )}
 
-        {filteredProviders.length === 0 && (
+        {!isLoading && filteredProviders.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">No providers found</p>
