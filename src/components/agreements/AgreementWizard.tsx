@@ -7,7 +7,7 @@ import { PhysicianInfoStep } from './wizard/PhysicianInfoStep';
 import { ProviderSelectionStep } from './wizard/ProviderSelectionStep';
 import { AgreementDetailsStep } from './wizard/AgreementDetailsStep';
 import { ReviewStep } from './wizard/ReviewStep';
-import { supabase } from '@/integrations/supabase/client';
+import { useAgreementWorkflow } from '@/hooks/useAgreementWorkflow';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, Check, Loader2 } from 'lucide-react';
 import type { State } from '@/types';
@@ -54,6 +54,7 @@ const STEPS = [
 export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWizardProps) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { createAgreementWithTasks } = useAgreementWorkflow();
   const [formData, setFormData] = useState<AgreementFormData>({
     selectedState: null,
     physicianName: '',
@@ -107,10 +108,8 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
 
     setIsSubmitting(true);
     try {
-      // Create the collaborative agreement
-      const { data: agreement, error: agreementError } = await supabase
-        .from('collaborative_agreements')
-        .insert({
+      await createAgreementWithTasks(
+        {
           state_id: formData.selectedState.id,
           state_name: formData.selectedState.name,
           state_abbreviation: formData.selectedState.abbreviation,
@@ -122,53 +121,16 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
           meeting_cadence: formData.meetingCadence,
           chart_review_required: formData.chartReviewRequired,
           chart_review_frequency: formData.chartReviewFrequency || null,
-          workflow_status: 'draft',
-        })
-        .select()
-        .single();
+        },
+        formData.providers,
+        {
+          chartReviewRequired: formData.chartReviewRequired,
+          meetingCadence: formData.meetingCadence,
+        }
+      );
 
-      if (agreementError) throw agreementError;
-
-      // Add providers to the agreement
-      if (formData.providers.length > 0 && agreement) {
-        const providerInserts = formData.providers.map(provider => ({
-          agreement_id: agreement.id,
-          provider_id: provider.id || null,
-          provider_name: provider.name,
-          provider_email: provider.email,
-          provider_npi: provider.npi || null,
-        }));
-
-        const { error: providersError } = await supabase
-          .from('agreement_providers')
-          .insert(providerInserts);
-
-        if (providersError) throw providersError;
-      }
-
-      // Create initial workflow steps
-      if (agreement) {
-        const workflowSteps = [
-          { step_number: 1, step_name: 'Agreement Created', step_description: 'Initial agreement draft created', status: 'completed' },
-          { step_number: 2, step_name: 'Pending Physician Signature', step_description: 'Awaiting collaborating physician signature', status: 'pending' },
-          { step_number: 3, step_name: 'Pending Provider Signatures', step_description: 'Awaiting provider signatures', status: 'pending' },
-          { step_number: 4, step_name: 'Agreement Executed', step_description: 'All parties have signed', status: 'pending' },
-          { step_number: 5, step_name: 'Active', step_description: 'Agreement is active and in effect', status: 'pending' },
-        ];
-
-        const { error: stepsError } = await supabase
-          .from('agreement_workflow_steps')
-          .insert(workflowSteps.map(step => ({
-            ...step,
-            agreement_id: agreement.id,
-            completed_at: step.status === 'completed' ? new Date().toISOString() : null,
-          })));
-
-        if (stepsError) throw stepsError;
-      }
-
-      toast.success('Agreement created successfully!', {
-        description: `Draft agreement for ${formData.selectedState.name} has been created.`,
+      toast.success('Agreement created in Pending Setup', {
+        description: `Required tasks have been generated for ${formData.selectedState.name}. Complete all tasks to activate.`,
       });
 
       onOpenChange(false);
