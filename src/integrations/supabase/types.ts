@@ -3043,6 +3043,38 @@ export type Database = {
           supervised_providers_count: number | null
           user_id: string | null
         }
+        Insert: {
+          active_agreements_count?: never
+          active_states?: never
+          avatar_url?: string | null
+          created_at?: string | null
+          credentials?: string | null
+          email?: string | null
+          employment_status?: string | null
+          full_name?: string | null
+          id?: string | null
+          npi_number?: string | null
+          phone_number?: string | null
+          primary_specialty?: string | null
+          supervised_providers_count?: never
+          user_id?: string | null
+        }
+        Update: {
+          active_agreements_count?: never
+          active_states?: never
+          avatar_url?: string | null
+          created_at?: string | null
+          credentials?: string | null
+          email?: string | null
+          employment_status?: string | null
+          full_name?: string | null
+          id?: string | null
+          npi_number?: string | null
+          phone_number?: string | null
+          primary_specialty?: string | null
+          supervised_providers_count?: never
+          user_id?: string | null
+        }
         Relationships: []
       }
       provider_directory_public: {
