@@ -150,10 +150,10 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
       if (agreement) {
         const workflowSteps = [
           { step_number: 1, step_name: 'Agreement Created', step_description: 'Initial agreement draft created', status: 'completed' },
-          { step_number: 2, step_name: 'Pending Physician Signature', step_description: 'Awaiting collaborating physician signature' },
-          { step_number: 3, step_name: 'Pending Provider Signatures', step_description: 'Awaiting provider signatures' },
-          { step_number: 4, step_name: 'Agreement Executed', step_description: 'All parties have signed' },
-          { step_number: 5, step_name: 'Active', step_description: 'Agreement is active and in effect' },
+          { step_number: 2, step_name: 'Pending Physician Signature', step_description: 'Awaiting collaborating physician signature', status: 'pending' },
+          { step_number: 3, step_name: 'Pending Provider Signatures', step_description: 'Awaiting provider signatures', status: 'pending' },
+          { step_number: 4, step_name: 'Agreement Executed', step_description: 'All parties have signed', status: 'pending' },
+          { step_number: 5, step_name: 'Active', step_description: 'Agreement is active and in effect', status: 'pending' },
         ];
 
         const { error: stepsError } = await supabase
