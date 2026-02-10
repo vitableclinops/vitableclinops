@@ -968,30 +968,30 @@ export const states: State[] = [
   },
 ];
 
-// Collaborating Physicians - Enhanced with Notion data
+// Collaborating Physicians
 export const collaboratingPhysicians: CollaboratingPhysician[] = [
   {
     id: 'physician-1',
-    email: 'dr.dinowitz@vitablehealth.com',
-    firstName: 'Seth',
-    lastName: 'Dinowitz',
+    email: 'collaborating.physician1@vitablehealth.com',
+    firstName: 'Collaborating',
+    lastName: 'Physician 1',
     role: 'physician',
-    npiNumber: '1234567890',
+    npiNumber: '1760485230',
     specialty: 'Internal Medicine',
-    licenseNumber: 'TX-MD-123456',
+    licenseNumber: 'TX-MD-284719',
     licenseState: 'tx',
     createdAt: new Date('2023-06-01'),
     agreements: [],
   },
   {
     id: 'physician-2',
-    email: 'dr.baron@vitablehealth.com',
-    firstName: 'Kate',
-    lastName: 'Baron',
+    email: 'collaborating.physician2@vitablehealth.com',
+    firstName: 'Collaborating',
+    lastName: 'Physician 2',
     role: 'physician',
-    npiNumber: '0987654321',
+    npiNumber: '1841396027',
     specialty: 'Family Medicine',
-    licenseNumber: 'CA-MD-789012',
+    licenseNumber: 'CA-MD-503186',
     licenseState: 'ca',
     createdAt: new Date('2023-08-15'),
     agreements: [],
@@ -1746,7 +1746,7 @@ export const taskTemplates: TaskTemplate[] = [
   },
 ];
 
-// Mock evidence
+// Sample evidence
 const mockEvidence: Evidence[] = [
   {
     id: 'ev-1',
@@ -1774,13 +1774,13 @@ const mockEvidence: Evidence[] = [
   },
 ];
 
-// Mock task notes
+// Task notes
 const mockNotes: TaskNote[] = [
   {
     id: 'note-1',
     taskId: 'task-1',
     authorId: 'admin-1',
-    authorName: 'Sarah Chen',
+    authorName: 'Clinical Ops',
     content: 'Verified confirmation number matches board records. Application is in queue.',
     createdAt: new Date('2024-01-16'),
     isInternal: false,
@@ -1789,14 +1789,14 @@ const mockNotes: TaskNote[] = [
     id: 'note-2',
     taskId: 'task-2',
     authorId: 'provider-1',
-    authorName: 'Emily Johnson',
-    content: 'Scheduled fingerprinting for January 20th at IdentoGO location.',
+    authorName: 'Sample Provider',
+    content: 'Scheduled fingerprinting for next week at IdentoGO location.',
     createdAt: new Date('2024-01-17'),
     isInternal: false,
   },
 ];
 
-// Mock reimbursement
+// Sample reimbursement
 const mockReimbursement: Reimbursement = {
   id: 'reimb-1',
   taskId: 'task-1',
@@ -1809,7 +1809,7 @@ const mockReimbursement: Reimbursement = {
   submittedAt: new Date('2024-01-15'),
 };
 
-// Mock tasks for providers
+// Tasks for providers by state
 const createTasksForState = (providerId: string, stateId: string, stateName: string): Task[] => {
   const state = states.find(s => s.id === stateId);
   const baseDate = new Date();
@@ -1952,7 +1952,7 @@ const createTasksForState = (providerId: string, stateId: string, stateName: str
           'Create account on TMB website (sso.tmb.state.tx.us)',
           'Enter Texas license number, last 4 SSN, and DOB',
           'Navigate to prescriptive delegation section',
-          'Complete delegation agreement with Dr. Dinowitz',
+          'Complete delegation agreement with collaborating physician',
           'Wait 30-day period before delegation begins',
           'Download confirmation and upload to Modio',
         ],
@@ -1962,7 +1962,7 @@ const createTasksForState = (providerId: string, stateId: string, stateName: str
         evidence: [],
         notes: [],
         order: 2,
-        demandReason: 'Required for TX practice - Monthly meetings with Dr. Dinowitz',
+        demandReason: 'Required for TX practice - Monthly supervision meetings required',
       },
     ];
   }
@@ -2041,7 +2041,7 @@ const createTasksForState = (providerId: string, stateId: string, stateName: str
   ];
 };
 
-// Create mock provider states
+// Create provider states
 const createProviderStates = (providerId: string, stateIds: string[]): ProviderState[] => {
   return stateIds.map(stateId => {
     const state = states.find(s => s.id === stateId)!;
@@ -2067,7 +2067,7 @@ const createProviderStates = (providerId: string, stateIds: string[]): ProviderS
   });
 };
 
-// Mock self-reported licenses
+// Self-reported licenses
 export const selfReportedLicenses: SelfReportedLicense[] = [
   {
     id: 'srl-1',
@@ -2103,16 +2103,16 @@ export const selfReportedLicenses: SelfReportedLicense[] = [
   },
 ];
 
-// Mock providers - with provider types
+// Sample providers - representative of provider types on the platform
 export const providers: Provider[] = [
   {
     id: 'provider-1',
-    email: 'emily.johnson@vitablehealth.com',
-    firstName: 'Emily',
-    lastName: 'Johnson',
+    email: 'np.provider1@vitablehealth.com',
+    firstName: 'Sample',
+    lastName: 'Provider A',
     role: 'provider',
     providerType: 'nurse_practitioner',
-    npiNumber: '1122334455',
+    npiNumber: '1538274690',
     specialty: 'Family Nurse Practitioner',
     hireDate: new Date('2023-09-01'),
     createdAt: new Date('2023-09-01'),
@@ -2126,12 +2126,12 @@ export const providers: Provider[] = [
   },
   {
     id: 'provider-2',
-    email: 'michael.chen@vitablehealth.com',
-    firstName: 'Michael',
-    lastName: 'Chen',
+    email: 'np.provider2@vitablehealth.com',
+    firstName: 'Sample',
+    lastName: 'Provider B',
     role: 'provider',
     providerType: 'nurse_practitioner',
-    npiNumber: '5566778899',
+    npiNumber: '1649385701',
     specialty: 'Adult-Gerontology Nurse Practitioner',
     hireDate: new Date('2023-11-15'),
     createdAt: new Date('2023-11-15'),
@@ -2147,12 +2147,12 @@ export const providers: Provider[] = [
   },
   {
     id: 'provider-3',
-    email: 'sarah.williams@vitablehealth.com',
-    firstName: 'Sarah',
-    lastName: 'Williams',
+    email: 'np.provider3@vitablehealth.com',
+    firstName: 'Sample',
+    lastName: 'Provider C',
     role: 'provider',
     providerType: 'nurse_practitioner',
-    npiNumber: '9988776655',
+    npiNumber: '1750496812',
     specialty: 'Psychiatric Mental Health Nurse Practitioner',
     hireDate: new Date('2024-01-02'),
     createdAt: new Date('2024-01-02'),
@@ -2168,9 +2168,9 @@ export const providers: Provider[] = [
   // RN providers
   {
     id: 'provider-4',
-    email: 'jessica.martinez@vitablehealth.com',
-    firstName: 'Jessica',
-    lastName: 'Martinez',
+    email: 'rn.provider4@vitablehealth.com',
+    firstName: 'Sample',
+    lastName: 'RN Provider',
     role: 'provider',
     providerType: 'registered_nurse',
     specialty: 'Care Coordination',
@@ -2186,9 +2186,9 @@ export const providers: Provider[] = [
   },
   {
     id: 'provider-5',
-    email: 'david.thompson@vitablehealth.com',
-    firstName: 'David',
-    lastName: 'Thompson',
+    email: 'rn.provider5@vitablehealth.com',
+    firstName: 'Sample',
+    lastName: 'RN Provider 2',
     role: 'provider',
     providerType: 'registered_nurse',
     specialty: 'Patient Education',
@@ -2205,12 +2205,12 @@ export const providers: Provider[] = [
   // Physician
   {
     id: 'provider-6',
-    email: 'dr.patel@vitablehealth.com',
-    firstName: 'Anita',
-    lastName: 'Patel',
+    email: 'md.provider6@vitablehealth.com',
+    firstName: 'Sample',
+    lastName: 'Physician',
     role: 'provider',
     providerType: 'physician',
-    npiNumber: '1234509876',
+    npiNumber: '1861507923',
     specialty: 'Internal Medicine',
     hireDate: new Date('2022-03-01'),
     createdAt: new Date('2022-03-01'),
@@ -2225,12 +2225,12 @@ export const providers: Provider[] = [
   // LPC
   {
     id: 'provider-7',
-    email: 'amanda.roberts@vitablehealth.com',
-    firstName: 'Amanda',
-    lastName: 'Roberts',
+    email: 'lpc.provider7@vitablehealth.com',
+    firstName: 'Sample',
+    lastName: 'Counselor',
     role: 'provider',
     providerType: 'licensed_counselor',
-    npiNumber: '6789012345',
+    npiNumber: '1972618034',
     specialty: 'Anxiety & Depression',
     hireDate: new Date('2023-08-01'),
     createdAt: new Date('2023-08-01'),
@@ -2245,9 +2245,9 @@ export const providers: Provider[] = [
   // Mental Health Coaches (no licensure)
   {
     id: 'provider-8',
-    email: 'jason.lee@vitablehealth.com',
-    firstName: 'Jason',
-    lastName: 'Lee',
+    email: 'coach.provider8@vitablehealth.com',
+    firstName: 'Sample',
+    lastName: 'Coach 1',
     role: 'provider',
     providerType: 'mental_health_coach',
     specialty: 'Wellness Coaching',
@@ -2263,9 +2263,9 @@ export const providers: Provider[] = [
   },
   {
     id: 'provider-9',
-    email: 'maria.garcia@vitablehealth.com',
-    firstName: 'Maria',
-    lastName: 'Garcia',
+    email: 'coach.provider9@vitablehealth.com',
+    firstName: 'Sample',
+    lastName: 'Coach 2',
     role: 'provider',
     providerType: 'mental_health_coach',
     specialty: 'Stress Management',
@@ -2282,7 +2282,7 @@ export const providers: Provider[] = [
   },
 ];
 
-// Mock collaborative agreements
+// Collaborative agreements
 export const collaborativeAgreements: CollaborativeAgreement[] = [
   {
     id: 'ca-1',
@@ -2326,7 +2326,7 @@ export const collaborativeAgreements: CollaborativeAgreement[] = [
   },
 ];
 
-// Mock supervision meetings
+// Supervision meetings
 export const supervisionMeetings: SupervisionMeeting[] = [
   {
     id: 'meeting-1',
