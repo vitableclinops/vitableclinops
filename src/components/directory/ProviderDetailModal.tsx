@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Dialog,
@@ -18,8 +18,21 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FileText, ExternalLink, Pencil, Save, X } from 'lucide-react';
+import { FileText, ExternalLink, Pencil, Save, X, Link2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+
+const PROFESSION_OPTIONS = [
+  'NP',
+  'RN',
+  'MD',
+  'DO',
+  'LPC',
+  'LCSW',
+  'LMFT',
+  'Psychologist',
+  'Mental Health Coach',
+  'Other',
+] as const;
 
 interface FullProvider {
   id: string;
@@ -142,12 +155,30 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Record<string, any>>({});
 
+  // Fetch actual collaborative agreement count for this provider
+  const { data: agreementCount = 0 } = useQuery({
+    queryKey: ['provider-agreements-count', provider?.id],
+    queryFn: async () => {
+      if (!provider) return 0;
+      const { count, error } = await supabase
+        .from('agreement_providers')
+        .select('*', { count: 'exact', head: true })
+        .eq('provider_id', provider.id)
+        .eq('is_active', true);
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!provider,
+  });
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!provider) return;
+      // Exclude computed field from save
+      const { has_collaborative_agreements: _, ...saveData } = formData;
       const { error } = await supabase
         .from('profiles')
-        .update(formData)
+        .update({ ...saveData, has_collaborative_agreements: agreementCount > 0 })
         .eq('id', provider.id);
       if (error) throw error;
     },
@@ -284,7 +315,19 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                   <EditableField label="Email" value={formData.email} field="email" onChange={handleChange} type="email" />
                   <EditableField label="Phone" value={formData.phone_number} field="phone_number" onChange={handleChange} type="tel" />
                   <EditableField label="NPI" value={formData.npi_number} field="npi_number" onChange={handleChange} />
-                  <EditableField label="Profession" value={formData.profession} field="profession" onChange={handleChange} />
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Profession</p>
+                    <Select value={formData.profession || ''} onValueChange={(v) => handleChange('profession', v)}>
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select profession" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROFESSION_OPTIONS.map(p => (
+                          <SelectItem key={p} value={p}>{p}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <EditableField label="CAQH Number" value={formData.caqh_number} field="caqh_number" onChange={handleChange} />
                   <EditableField label="Medallion ID" value={formData.medallion_id} field="medallion_id" onChange={handleChange} />
                 </>
@@ -336,9 +379,12 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                     <span className="text-sm text-muted-foreground">CAQH Managed</span>
                     <Switch checked={!!formData.has_caqh_management} onCheckedChange={(v) => handleChange('has_caqh_management', v)} />
                   </div>
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Link2 className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">Collab Agreements</span>
-                    <Switch checked={!!formData.has_collaborative_agreements} onCheckedChange={(v) => handleChange('has_collaborative_agreements', v)} />
+                    <Badge variant={agreementCount > 0 ? 'default' : 'secondary'}>
+                      {agreementCount > 0 ? `${agreementCount} active` : 'None'}
+                    </Badge>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground">Auto-Renew</span>
@@ -354,8 +400,9 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                     <span className="text-sm text-muted-foreground">CAQH Managed</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={provider.has_collaborative_agreements ? 'default' : 'secondary'}>
-                      {provider.has_collaborative_agreements ? 'Yes' : 'No'}
+                    <Link2 className="h-4 w-4 text-muted-foreground" />
+                    <Badge variant={agreementCount > 0 ? 'default' : 'secondary'}>
+                      {agreementCount > 0 ? `${agreementCount} active` : 'None'}
                     </Badge>
                     <span className="text-sm text-muted-foreground">Collab Agreements</span>
                   </div>
