@@ -259,9 +259,15 @@ const ProviderDirectoryPage = () => {
           aVal = a.full_name;
           bVal = b.full_name;
           break;
-        case 'profession':
-          aVal = a.profession || a.credentials;
-          bVal = b.profession || b.credentials;
+        case 'profession': {
+          const normProf = (v: string | null | undefined) => {
+            const val = (v || '').toUpperCase();
+            return (val === 'MD' || val === 'DO') ? 'PHYSICIAN' : val;
+          };
+          aVal = normProf(a.profession || a.credentials);
+          bVal = normProf(b.profession || b.credentials);
+          break;
+        }
           break;
         case 'employment_status':
           aVal = a.employment_status;
