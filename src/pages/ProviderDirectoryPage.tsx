@@ -415,6 +415,7 @@ const ProviderDirectoryPage = () => {
                   <ManagementTable
                     providers={(readinessData || []).filter(p => p.employment_status !== 'termed')}
                     agencyMap={agencyMap}
+                    initialSearch={searchParams.get('search') || ''}
                   />
                 )}
               </TabsContent>
