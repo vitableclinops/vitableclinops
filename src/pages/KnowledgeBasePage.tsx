@@ -329,7 +329,6 @@ export default function KnowledgeBasePage() {
   
   const { profile, roles } = useAuth();
   const userRole = roles.includes('admin') ? 'admin' : 
-                   roles.includes('leadership') ? 'leadership' : 
                    roles.includes('physician') ? 'physician' : 'provider';
 
   // Debounce search

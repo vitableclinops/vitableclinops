@@ -116,7 +116,7 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/grid" element={
-              <ProtectedRoute requiredRoles={['admin', 'leadership']}>
+              <ProtectedRoute requiredRoles={['admin']}>
                 <ProviderStateGridPage />
               </ProtectedRoute>
             } />

@@ -24,7 +24,6 @@ export default function ProviderStateGridPage() {
   const { data: stats, isLoading: statsLoading } = useActivationStats();
   
   const userRole = roles.includes('admin') ? 'admin' : 
-                   roles.includes('leadership') ? 'leadership' : 
                    roles.includes('physician') ? 'physician' : 'provider';
 
   return (

@@ -31,11 +31,11 @@ export function TaskAssignmentSelect({
 
   useEffect(() => {
     const fetchAssignees = async () => {
-      // Get all users with admin or leadership roles (team members who can be assigned tasks)
+      // Get all users with admin roles (team members who can be assigned tasks)
       const { data: teamRoles } = await supabase
         .from('user_roles')
         .select('user_id, role')
-        .in('role', ['admin', 'leadership']);
+        .in('role', ['admin']);
 
       if (teamRoles && teamRoles.length > 0) {
         // Deduplicate user_ids (users may have multiple roles)
