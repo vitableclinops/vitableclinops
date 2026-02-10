@@ -224,8 +224,12 @@ const ProviderDirectoryPage = () => {
 
       // Profession filter
       if (professionFilter !== 'all') {
-        const prof = p.profession || p.credentials;
-        if (prof !== professionFilter) return false;
+        const prof = (p.profession || p.credentials || '').toUpperCase();
+        if (professionFilter === 'physician') {
+          if (prof !== 'MD' && prof !== 'DO') return false;
+        } else {
+          if (prof !== professionFilter.toUpperCase()) return false;
+        }
       }
 
       // Status filter (admin only)
@@ -268,7 +272,6 @@ const ProviderDirectoryPage = () => {
           bVal = normProf(b.profession || b.credentials);
           break;
         }
-          break;
         case 'employment_status':
           aVal = a.employment_status;
           bVal = b.employment_status;

@@ -77,9 +77,12 @@ export const ProviderFilters = ({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Professions</SelectItem>
-          {availableProfessions.map(prof => (
-            <SelectItem key={prof} value={prof}>{prof}</SelectItem>
-          ))}
+          <SelectItem value="physician">Physician (MD/DO)</SelectItem>
+          {availableProfessions
+            .filter(prof => prof !== 'MD' && prof !== 'DO')
+            .map(prof => (
+              <SelectItem key={prof} value={prof}>{prof}</SelectItem>
+            ))}
         </SelectContent>
       </Select>
 
