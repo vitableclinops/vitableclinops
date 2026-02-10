@@ -3104,6 +3104,9 @@ export type Database = {
         | "pending_renewal"
         | "termination_initiated"
         | "terminated"
+        | "pending_setup"
+        | "pending_verification"
+        | "invalid"
       app_role: "admin" | "provider" | "physician"
       attestation_status: "pending" | "completed" | "overdue" | "excused"
       collab_requirement_type: "never" | "always" | "conditional"
@@ -3285,6 +3288,9 @@ export const Constants = {
         "pending_renewal",
         "termination_initiated",
         "terminated",
+        "pending_setup",
+        "pending_verification",
+        "invalid",
       ],
       app_role: ["admin", "provider", "physician"],
       attestation_status: ["pending", "completed", "overdue", "excused"],

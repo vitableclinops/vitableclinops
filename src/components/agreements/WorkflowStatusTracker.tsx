@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, Clock, FileSignature, Send, Users, Zap } from 'lucide-react';
+import { CheckCircle2, Circle, Clock, FileSignature, Send, Users, Zap, ShieldAlert, ClipboardCheck, XCircle, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,13 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
     statuses: ['draft'],
   },
   {
+    id: 'pending_setup',
+    label: 'Pending Setup',
+    description: 'Required tasks in progress',
+    icon: ClipboardCheck,
+    statuses: ['pending_setup'],
+  },
+  {
     id: 'signatures',
     label: 'Collecting Signatures',
     description: 'Awaiting all parties',
@@ -30,11 +37,11 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
     statuses: ['pending_signatures', 'awaiting_physician_signature', 'awaiting_provider_signatures'],
   },
   {
-    id: 'executed',
-    label: 'Fully Executed',
-    description: 'All signatures collected',
-    icon: CheckCircle2,
-    statuses: ['fully_executed'],
+    id: 'verification',
+    label: 'Pending Verification',
+    description: 'Admin verification required',
+    icon: ShieldAlert,
+    statuses: ['pending_verification', 'fully_executed'],
   },
   {
     id: 'active',
@@ -53,6 +60,9 @@ interface WorkflowStatusTrackerProps {
   providerSignatures?: { name: string; signed: boolean }[];
   className?: string;
   compact?: boolean;
+  pendingTaskCount?: number;
+  completedTaskCount?: number;
+  totalTaskCount?: number;
 }
 
 export function WorkflowStatusTracker({
@@ -63,11 +73,15 @@ export function WorkflowStatusTracker({
   providerSignatures = [],
   className,
   compact = false,
+  pendingTaskCount = 0,
+  completedTaskCount = 0,
+  totalTaskCount = 0,
 }: WorkflowStatusTrackerProps) {
   const isTerminated = status === 'terminated' || status === 'termination_initiated';
+  const isInvalid = status === 'invalid';
   
   const getStepState = (step: WorkflowStep): 'completed' | 'current' | 'pending' => {
-    if (isTerminated) return 'pending';
+    if (isTerminated || isInvalid) return 'pending';
     
     const stepIndex = WORKFLOW_STEPS.findIndex(s => s.id === step.id);
     const currentStepIndex = WORKFLOW_STEPS.findIndex(s => s.statuses.includes(status));
@@ -80,14 +94,17 @@ export function WorkflowStatusTracker({
   const getStatusBadge = () => {
     const statusConfig: Record<WorkflowStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
       draft: { label: 'Draft', variant: 'secondary' },
+      pending_setup: { label: 'Pending Setup', variant: 'default' },
       pending_signatures: { label: 'Pending Signatures', variant: 'default' },
       awaiting_physician_signature: { label: 'Awaiting Physician', variant: 'default' },
       awaiting_provider_signatures: { label: 'Awaiting Providers', variant: 'default' },
       fully_executed: { label: 'Executed', variant: 'outline' },
+      pending_verification: { label: 'Pending Verification', variant: 'default' },
       active: { label: 'Active', variant: 'outline' },
       pending_renewal: { label: 'Pending Renewal', variant: 'secondary' },
-      termination_initiated: { label: 'Termination Initiated', variant: 'destructive' },
+      termination_initiated: { label: 'Pending Termination', variant: 'destructive' },
       terminated: { label: 'Terminated', variant: 'destructive' },
+      invalid: { label: 'Invalid', variant: 'destructive' },
     };
     
     const config = statusConfig[status];
@@ -138,7 +155,14 @@ export function WorkflowStatusTracker({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base">Workflow Status</CardTitle>
-          {getStatusBadge()}
+          <div className="flex items-center gap-2">
+            {totalTaskCount > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {completedTaskCount}/{totalTaskCount} tasks
+              </span>
+            )}
+            {getStatusBadge()}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -199,6 +223,28 @@ export function WorkflowStatusTracker({
                     {step.description}
                   </p>
                   
+                  {/* Task progress for pending_setup step */}
+                  {step.id === 'pending_setup' && state === 'current' && totalTaskCount > 0 && (
+                    <div className="mt-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-primary rounded-full transition-all" 
+                            style={{ width: `${(completedTaskCount / totalTaskCount) * 100}%` }} 
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {completedTaskCount}/{totalTaskCount}
+                        </span>
+                      </div>
+                      {pendingTaskCount > 0 && (
+                        <p className="text-xs text-warning mt-1">
+                          {pendingTaskCount} task{pendingTaskCount !== 1 ? 's' : ''} remaining
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Signature details for signature step */}
                   {step.id === 'signatures' && state === 'current' && (
                     <div className="mt-3 space-y-2">
@@ -249,9 +295,21 @@ export function WorkflowStatusTracker({
           <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
             <p className="text-sm text-destructive font-medium">
               {status === 'termination_initiated' 
-                ? 'Termination has been initiated for this agreement.'
+                ? 'Termination has been initiated. Required tasks must be completed before finalizing.'
                 : 'This agreement has been terminated.'}
             </p>
+          </div>
+        )}
+
+        {/* Invalid notice */}
+        {isInvalid && (
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              <p className="text-sm text-destructive font-medium">
+                This agreement has been invalidated. Required conditions are no longer met. Remediation is required.
+              </p>
+            </div>
           </div>
         )}
       </CardContent>

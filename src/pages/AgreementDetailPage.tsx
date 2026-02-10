@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/hooks/useAuth';
 import { useAgreementTasks, AgreementTask } from '@/hooks/useAgreementTasks';
+import { useAgreementWorkflow } from '@/hooks/useAgreementWorkflow';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -32,6 +33,9 @@ import {
   User,
   Stethoscope,
   ClipboardList,
+  ShieldCheck,
+  ArrowRight,
+  Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -45,71 +49,137 @@ export default function AgreementDetailPage() {
   const { agreementId } = useParams<{ agreementId: string }>();
   const { profile, roles, hasRole } = useAuth();
   const { toast } = useToast();
-  const { tasks, loading: tasksLoading, generateAgreementTasks } = useAgreementTasks({ agreementId });
+  const { tasks, loading: tasksLoading, refetch: refetchTasks } = useAgreementTasks({ agreementId });
+  const { advanceStatus, checkTasksComplete } = useAgreementWorkflow();
 
   const [agreement, setAgreement] = useState<DbAgreement | null>(null);
   const [providers, setProviders] = useState<DbProvider[]>([]);
   const [meetings, setMeetings] = useState<DbMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [terminationOpen, setTerminationOpen] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
 
   const userRole = roles.includes('admin') ? 'admin' : 
                    roles.includes('physician') ? 'physician' : 'provider';
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     if (!agreementId) return;
+    setLoading(true);
 
-    const fetchData = async () => {
-      setLoading(true);
+    const [agreementRes, providersRes, meetingsRes] = await Promise.all([
+      supabase
+        .from('collaborative_agreements')
+        .select('*')
+        .eq('id', agreementId)
+        .maybeSingle(),
+      supabase
+        .from('agreement_providers')
+        .select('*')
+        .eq('agreement_id', agreementId),
+      supabase
+        .from('supervision_meetings')
+        .select('*')
+        .eq('agreement_id', agreementId)
+        .order('scheduled_date', { ascending: true }),
+    ]);
 
-      const [agreementRes, providersRes, meetingsRes] = await Promise.all([
-        supabase
-          .from('collaborative_agreements')
-          .select('*')
-          .eq('id', agreementId)
-          .maybeSingle(),
-        supabase
-          .from('agreement_providers')
-          .select('*')
-          .eq('agreement_id', agreementId),
-        supabase
-          .from('supervision_meetings')
-          .select('*')
-          .eq('agreement_id', agreementId)
-          .order('scheduled_date', { ascending: true }),
-      ]);
+    if (agreementRes.data) setAgreement(agreementRes.data);
+    if (providersRes.data) setProviders(providersRes.data);
+    if (meetingsRes.data) setMeetings(meetingsRes.data);
 
-      if (agreementRes.data) setAgreement(agreementRes.data);
-      if (providersRes.data) setProviders(providersRes.data);
-      if (meetingsRes.data) setMeetings(meetingsRes.data);
-
-      setLoading(false);
-    };
-
-    fetchData();
+    setLoading(false);
   }, [agreementId]);
 
-  const handleGenerateTasks = async () => {
-    if (!agreement) return;
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
+  // Task stats
+  const requiredTasks = tasks.filter(t => t.is_required);
+  const completedRequiredTasks = requiredTasks.filter(t => t.status === 'completed');
+  const pendingRequiredTasks = requiredTasks.filter(t => t.status !== 'completed');
+  const allRequiredComplete = requiredTasks.length > 0 && pendingRequiredTasks.length === 0;
+
+  // Determine next valid status transition
+  const getNextStatus = (): { status: string; label: string } | null => {
+    if (!agreement) return null;
+    switch (agreement.workflow_status) {
+      case 'pending_setup':
+        return allRequiredComplete ? { status: 'pending_verification', label: 'Submit for Verification' } : null;
+      case 'pending_verification':
+        return { status: 'active', label: 'Verify & Activate' };
+      case 'termination_initiated':
+        return allRequiredComplete ? { status: 'terminated', label: 'Finalize Termination' } : null;
+      default:
+        return null;
+    }
+  };
+
+  const handleAdvanceStatus = async () => {
+    if (!agreement || !agreementId) return;
+    const next = getNextStatus();
+    if (!next) return;
+
+    setAdvancing(true);
     try {
-      await generateAgreementTasks(
-        agreement.id,
-        agreement.state_abbreviation,
-        agreement.state_name,
-        providers[0]?.provider_id || null,
-        agreement.physician_id
+      const success = await advanceStatus(
+        agreementId,
+        next.status as any,
+        profile?.id
       );
-      toast({
-        title: 'Tasks generated',
-        description: 'Agreement lifecycle tasks have been created.',
-      });
+      if (success) {
+        toast({
+          title: 'Status updated',
+          description: `Agreement is now: ${next.status.replace(/_/g, ' ')}`,
+        });
+        await fetchData();
+        refetchTasks();
+      }
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to generate tasks.',
-        variant: 'destructive',
-      });
+      console.error('Error advancing status:', error);
+    } finally {
+      setAdvancing(false);
+    }
+  };
+
+  const handleCompleteTask = async (taskId: string) => {
+    if (!profile?.id) return;
+    try {
+      const { error } = await supabase
+        .from('agreement_tasks')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          completed_by: profile.id,
+        })
+        .eq('id', taskId);
+
+      if (error) throw error;
+      
+      toast({ title: 'Task completed' });
+      refetchTasks();
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to complete task', variant: 'destructive' });
+    }
+  };
+
+  const handleReopenTask = async (taskId: string) => {
+    try {
+      const { error } = await supabase
+        .from('agreement_tasks')
+        .update({
+          status: 'pending',
+          completed_at: null,
+          completed_by: null,
+        })
+        .eq('id', taskId);
+
+      if (error) throw error;
+      
+      toast({ title: 'Task reopened' });
+      refetchTasks();
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to reopen task', variant: 'destructive' });
     }
   };
 
@@ -124,10 +194,18 @@ export default function AgreementDetailPage() {
         return <Badge className="bg-success/10 text-success border-success/20">Active</Badge>;
       case 'draft':
         return <Badge variant="secondary">Draft</Badge>;
+      case 'pending_setup':
+        return <Badge variant="default">Pending Setup</Badge>;
+      case 'pending_verification':
+        return <Badge variant="default">Pending Verification</Badge>;
+      case 'termination_initiated':
+        return <Badge variant="destructive">Pending Termination</Badge>;
       case 'terminated':
         return <Badge variant="destructive">Terminated</Badge>;
+      case 'invalid':
+        return <Badge variant="destructive">Invalid</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return <Badge variant="outline">{status?.replace(/_/g, ' ')}</Badge>;
     }
   };
 
@@ -153,6 +231,8 @@ export default function AgreementDetailPage() {
     { label: agreement?.state_name || 'Agreement' },
   ];
 
+  const nextStatus = getNextStatus();
+
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar 
@@ -164,10 +244,8 @@ export default function AgreementDetailPage() {
       
       <main className="ml-16 lg:ml-64 transition-all duration-300">
         <div className="p-4 md:p-6 lg:p-8">
-          {/* Breadcrumbs */}
           <Breadcrumbs items={breadcrumbs} className="mb-4" />
 
-          {/* Back button */}
           <Link to="/admin/agreements" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4">
             <ArrowLeft className="h-4 w-4" />
             Back to Agreements
@@ -181,7 +259,7 @@ export default function AgreementDetailPage() {
           ) : agreement ? (
             <>
               {/* Header */}
-              <div className="flex items-start justify-between mb-8">
+              <div className="flex items-start justify-between mb-6">
                 <div className="flex items-center gap-4">
                   <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 text-2xl font-bold text-primary">
                     {agreement.state_abbreviation}
@@ -200,6 +278,20 @@ export default function AgreementDetailPage() {
                 </div>
                 
                 <div className="flex items-center gap-2">
+                  {hasRole('admin') && nextStatus && (
+                    <Button 
+                      onClick={handleAdvanceStatus}
+                      disabled={advancing}
+                      className={agreement.workflow_status === 'termination_initiated' ? 'bg-destructive hover:bg-destructive/90' : ''}
+                    >
+                      {advancing ? (
+                        <Clock className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <ArrowRight className="h-4 w-4 mr-2" />
+                      )}
+                      {nextStatus.label}
+                    </Button>
+                  )}
                   {hasRole('admin') && agreement.workflow_status === 'active' && (
                     <Button 
                       variant="outline" 
@@ -209,19 +301,34 @@ export default function AgreementDetailPage() {
                       Terminate Agreement
                     </Button>
                   )}
-                  {hasRole('admin') && (
-                    <Button variant="outline">
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit
-                    </Button>
-                  )}
                 </div>
               </div>
 
-              {/* Workflow Status - commented out pending prop fix */}
-              {/* <WorkflowStatusTracker agreementId={agreement.id} /> */}
+              {/* Blocker Banner */}
+              {(agreement.workflow_status === 'pending_setup' || agreement.workflow_status === 'termination_initiated') && pendingRequiredTasks.length > 0 && (
+                <div className="mb-6 p-4 rounded-lg border border-warning/30 bg-warning/5">
+                  <div className="flex items-center gap-2">
+                    <Lock className="h-5 w-5 text-warning" />
+                    <span className="font-medium">Status advancement blocked</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {pendingRequiredTasks.length} required task{pendingRequiredTasks.length !== 1 ? 's' : ''} must be completed before this agreement can advance.
+                  </p>
+                </div>
+              )}
 
-              <div className="grid gap-6 lg:grid-cols-3 mt-8">
+              {/* Workflow Status Tracker */}
+              <WorkflowStatusTracker
+                status={agreement.workflow_status}
+                physicianName={agreement.physician_name || undefined}
+                providerCount={activeProviders.length}
+                className="mb-6"
+                pendingTaskCount={pendingRequiredTasks.length}
+                completedTaskCount={completedRequiredTasks.length}
+                totalTaskCount={requiredTasks.length}
+              />
+
+              <div className="grid gap-6 lg:grid-cols-3 mt-6">
                 {/* Main content */}
                 <div className="lg:col-span-2 space-y-6">
                   {/* Agreement Details */}
@@ -288,24 +395,111 @@ export default function AgreementDetailPage() {
                     </CardContent>
                   </Card>
 
-                  <Tabs defaultValue="providers">
+                  <Tabs defaultValue="tasks">
                     <TabsList>
+                      <TabsTrigger value="tasks">
+                        Tasks ({tasks.length})
+                        {pendingRequiredTasks.length > 0 && (
+                          <Badge variant="destructive" className="ml-2 text-xs h-5 px-1.5">
+                            {pendingRequiredTasks.length}
+                          </Badge>
+                        )}
+                      </TabsTrigger>
                       <TabsTrigger value="providers">Providers ({activeProviders.length})</TabsTrigger>
-                      <TabsTrigger value="tasks">Tasks ({tasks.length})</TabsTrigger>
                       <TabsTrigger value="meetings">Meetings ({meetings.length})</TabsTrigger>
                       <TabsTrigger value="history">History</TabsTrigger>
                     </TabsList>
+
+                    <TabsContent value="tasks" className="mt-4">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Required Tasks</CardTitle>
+                          <CardDescription>
+                            {allRequiredComplete 
+                              ? 'All required tasks are complete. You may advance the agreement status.'
+                              : `${pendingRequiredTasks.length} of ${requiredTasks.length} required task(s) remaining`
+                            }
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {tasks.length > 0 ? (
+                            <div className="space-y-3">
+                              {tasks.map((task: AgreementTask) => (
+                                <div
+                                  key={task.id}
+                                  className={cn(
+                                    "flex items-start gap-4 p-4 rounded-lg border transition-colors",
+                                    task.status === 'completed' && "bg-success/5 border-success/20",
+                                    task.status === 'blocked' && "bg-destructive/5 border-destructive/20"
+                                  )}
+                                >
+                                  {getTaskStatusIcon(task.status)}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-medium text-foreground">{task.title}</p>
+                                      {task.is_required && (
+                                        <Badge variant="outline" className="text-xs">Required</Badge>
+                                      )}
+                                    </div>
+                                    {task.description && (
+                                      <p className="text-sm text-muted-foreground mt-0.5">{task.description}</p>
+                                    )}
+                                    {task.task_purpose && (
+                                      <p className="text-xs text-muted-foreground mt-1 italic">
+                                        Purpose: {task.task_purpose}
+                                      </p>
+                                    )}
+                                    {task.completed_at && (
+                                      <p className="text-xs text-success mt-1">
+                                        Completed {format(new Date(task.completed_at), 'MMM d, yyyy h:mm a')}
+                                      </p>
+                                    )}
+                                    {task.compliance_risk && task.status !== 'completed' && (
+                                      <p className="text-xs text-destructive mt-1">
+                                        ⚠ Risk: {task.compliance_risk}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <Badge variant="outline" className="capitalize text-xs">{task.category.replace(/_/g, ' ')}</Badge>
+                                    {hasRole('admin') && task.status !== 'completed' && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleCompleteTask(task.id)}
+                                      >
+                                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                                        Complete
+                                      </Button>
+                                    )}
+                                    {hasRole('admin') && task.status === 'completed' && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-muted-foreground"
+                                        onClick={() => handleReopenTask(task.id)}
+                                      >
+                                        Reopen
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8">
+                              <ClipboardList className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                              <p className="text-muted-foreground">No tasks found</p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
 
                     <TabsContent value="providers" className="mt-4">
                       <Card>
                         <CardHeader className="flex flex-row items-center justify-between">
                           <CardTitle>Active Providers</CardTitle>
-                          {hasRole('admin') && (
-                            <Button size="sm">
-                              <Plus className="h-4 w-4 mr-1" />
-                              Add Provider
-                            </Button>
-                          )}
                         </CardHeader>
                         <CardContent>
                           {activeProviders.length > 0 ? (
@@ -358,57 +552,6 @@ export default function AgreementDetailPage() {
                       </Card>
                     </TabsContent>
 
-                    <TabsContent value="tasks" className="mt-4">
-                      <Card>
-                        <CardHeader className="flex flex-row items-center justify-between">
-                          <CardTitle>Agreement Tasks</CardTitle>
-                          {hasRole('admin') && tasks.length === 0 && (
-                            <Button size="sm" onClick={handleGenerateTasks}>
-                              <Plus className="h-4 w-4 mr-1" />
-                              Generate Tasks
-                            </Button>
-                          )}
-                        </CardHeader>
-                        <CardContent>
-                          {tasks.length > 0 ? (
-                            <div className="space-y-3">
-                              {tasks.map((task: AgreementTask) => (
-                                <div
-                                  key={task.id}
-                                  className="flex items-center gap-4 p-4 rounded-lg border"
-                                >
-                                  {getTaskStatusIcon(task.status)}
-                                  <div className="flex-1">
-                                    <p className="font-medium text-foreground">{task.title}</p>
-                                    {task.description && (
-                                      <p className="text-sm text-muted-foreground">{task.description}</p>
-                                    )}
-                                  </div>
-                                  <Badge variant="outline" className="capitalize">{task.category.replace('_', ' ')}</Badge>
-                                  <Badge 
-                                    variant={task.status === 'completed' ? 'default' : 'secondary'}
-                                    className={task.status === 'completed' ? 'bg-success/10 text-success' : ''}
-                                  >
-                                    {task.status}
-                                  </Badge>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="text-center py-8">
-                              <ClipboardList className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                              <p className="text-muted-foreground">No tasks yet</p>
-                              {hasRole('admin') && (
-                                <Button className="mt-4" onClick={handleGenerateTasks}>
-                                  Generate Lifecycle Tasks
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-
                     <TabsContent value="meetings" className="mt-4">
                       <Card>
                         <CardHeader>
@@ -425,7 +568,7 @@ export default function AgreementDetailPage() {
                                     <span className="font-medium">
                                       {format(new Date(meeting.scheduled_date), 'EEEE, MMMM d, yyyy')}
                                     </span>
-                                    <Badge variant="outline">{meeting.time_slot?.toUpperCase()}</Badge>
+                                    <Badge variant="outline">{(meeting as any).time_slot?.toUpperCase()}</Badge>
                                   </div>
                                 ))}
                               </div>
@@ -456,22 +599,46 @@ export default function AgreementDetailPage() {
                     </TabsContent>
 
                     <TabsContent value="history" className="mt-4">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Audit History</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <p className="text-muted-foreground text-center py-8">
-                            Audit history will be displayed here
-                          </p>
-                        </CardContent>
-                      </Card>
+                      <AuditHistory agreementId={agreementId!} />
                     </TabsContent>
                   </Tabs>
                 </div>
 
                 {/* Sidebar */}
                 <div className="space-y-6">
+                  {/* Task Summary Card */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Compliance Status</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Required Tasks</span>
+                        <span className="text-sm font-medium">{completedRequiredTasks.length}/{requiredTasks.length}</span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div 
+                          className={cn(
+                            "h-full rounded-full transition-all",
+                            allRequiredComplete ? "bg-success" : "bg-primary"
+                          )}
+                          style={{ width: requiredTasks.length > 0 ? `${(completedRequiredTasks.length / requiredTasks.length) * 100}%` : '0%' }} 
+                        />
+                      </div>
+                      {allRequiredComplete ? (
+                        <div className="flex items-center gap-2 text-success text-sm">
+                          <ShieldCheck className="h-4 w-4" />
+                          All requirements met
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-warning text-sm">
+                          <AlertTriangle className="h-4 w-4" />
+                          {pendingRequiredTasks.length} task{pendingRequiredTasks.length !== 1 ? 's' : ''} blocking
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
                   <RelatedLinksCard
                     title="Related"
                     links={[
@@ -494,20 +661,6 @@ export default function AgreementDetailPage() {
                       })),
                     ]}
                   />
-
-                  {agreement.medallion_document_url && (
-                    <RelatedLinksCard
-                      title="Documents"
-                      links={[
-                        {
-                          label: 'Agreement Document',
-                          href: agreement.medallion_document_url,
-                          icon: FileText,
-                          external: true,
-                        },
-                      ]}
-                    />
-                  )}
                 </div>
               </div>
             </>
@@ -533,11 +686,70 @@ export default function AgreementDetailPage() {
           providers={providers.filter(p => p.is_active)}
           onSuccess={() => {
             setTerminationOpen(false);
-            // Refetch data
-            window.location.reload();
+            fetchData();
+            refetchTasks();
           }}
         />
       )}
     </div>
+  );
+}
+
+// Audit History sub-component
+function AuditHistory({ agreementId }: { agreementId: string }) {
+  const [logs, setLogs] = useState<Tables<'agreement_audit_log'>[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      const { data } = await supabase
+        .from('agreement_audit_log')
+        .select('*')
+        .eq('entity_id', agreementId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      setLogs(data || []);
+      setLoading(false);
+    };
+    fetchLogs();
+  }, [agreementId]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Audit History</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="animate-pulse space-y-3">
+            {[1, 2, 3].map(i => <div key={i} className="h-12 bg-muted rounded" />)}
+          </div>
+        ) : logs.length > 0 ? (
+          <div className="space-y-3">
+            {logs.map(log => (
+              <div key={log.id} className="flex items-start gap-3 p-3 rounded-lg border">
+                <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium capitalize">{log.action.replace(/_/g, ' ')}</p>
+                  {log.performed_by_name && (
+                    <p className="text-xs text-muted-foreground">by {log.performed_by_name}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {format(new Date(log.created_at), 'MMM d, yyyy h:mm a')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-center py-8">
+            No audit history yet
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
