@@ -449,8 +449,8 @@ export function BulkReassignDialog({
     getInitiationTasks('', 0).filter(t => t.is_required).length;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+    <Dialog open={open} onOpenChange={onOpenChange} modal={true}>
+      <DialogContent className="max-w-2xl overflow-visible">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
@@ -497,7 +497,7 @@ export function BulkReassignDialog({
               <SelectTrigger>
                 <SelectValue placeholder="Select physician..." />
               </SelectTrigger>
-              <SelectContent position="popper" className="z-[9999] max-h-60 overflow-y-auto">
+              <SelectContent className="z-[200] max-h-60 overflow-y-auto bg-popover">
                 {physicians.map(physician => (
                   <SelectItem key={physician.id} value={physician.id}>
                     Dr. {physician.name}
