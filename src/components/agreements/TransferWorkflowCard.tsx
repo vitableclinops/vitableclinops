@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,8 @@ import { TransferLifecycleEditor } from './TransferLifecycleEditor';
 import { TransferProviderSubtable } from './TransferProviderSubtable';
 import { TransferEffectiveDatesEditor } from './TransferEffectiveDatesEditor';
 import { EffectiveDateWarnings } from './EffectiveDateWarnings';
+import { WorkflowReadinessBanner } from '@/components/workflows/WorkflowReadinessBanner';
+import { computeTransferReadiness } from '@/hooks/useWorkflowReadiness';
 import { 
   ArrowRightLeft, 
   CheckCircle2, 
@@ -238,6 +240,12 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
     );
   };
 
+  // Compute workflow readiness
+  const readiness = useMemo(
+    () => computeTransferReadiness(transfer, tasks),
+    [transfer, tasks]
+  );
+
   return (
     <Card className="overflow-hidden">
       <CardHeader 
@@ -253,6 +261,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               <CardTitle className="text-base flex items-center gap-2">
                 {transfer.state_name} Transfer
                 {getStatusBadge(transfer.status)}
+                <WorkflowReadinessBanner readiness={readiness} compact />
               </CardTitle>
               <CardDescription className="flex items-center gap-2 mt-1 flex-wrap">
                 <span>{transfer.source_physician_name || 'Unassigned'}</span>
@@ -304,8 +313,17 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
         <CardContent className="pt-0">
           <Separator className="mb-4" />
           
+          {/* Workflow readiness banner with "What's Missing" */}
+          {!readiness.isComplete && (
+            <WorkflowReadinessBanner 
+              readiness={readiness} 
+              entityLabel={`${transfer.state_name} Transfer`}
+              className="mb-4"
+            />
+          )}
+
           {/* Completion blocking alert */}
-          {!allRequiredComplete && transfer.status !== 'completed' && (
+          {!allRequiredComplete && transfer.status !== 'completed' && readiness.canExecute && (
             <Alert className="mb-4">
               <Lock className="h-4 w-4" />
               <AlertDescription>

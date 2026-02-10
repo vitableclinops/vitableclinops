@@ -12,10 +12,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, Lock } from 'lucide-react';
 import { useUpdateActivationStatus, type EhrActivationStatus } from '@/hooks/useProviderStateStatus';
 import { useEmailNotifications } from '@/hooks/useEmailNotifications';
 import { supabase } from '@/integrations/supabase/client';
+import { computeActivationReadiness, logWorkflowOverride } from '@/hooks/useWorkflowReadiness';
+import { WorkflowReadinessBanner } from '@/components/workflows/WorkflowReadinessBanner';
 
 interface ActivationActionDialogProps {
   open: boolean;
@@ -83,10 +85,28 @@ export function ActivationActionDialog({
 
   const isNotReady = readinessStatus !== 'ready';
   const isActivating = actionType === 'activate' || actionType === 'request_activation';
+  const activationReadiness = computeActivationReadiness(readinessStatus, readinessReason, currentStatus);
+  const isHardBlocked = isActivating && isNotReady;
+
+  const [overrideReason, setOverrideReason] = useState('');
 
   const handleSubmit = async () => {
     if (!notes.trim()) return;
+
+    // If blocked, require override reason
+    if (isHardBlocked && !overrideReason.trim()) return;
     
+    // Log override if proceeding despite blockers
+    if (isHardBlocked) {
+      await logWorkflowOverride({
+        entityType: 'activation',
+        entityId: `${providerId}:${stateAbbreviation}`,
+        action: config.buttonText,
+        reason: overrideReason.trim(),
+        blockingReasons: activationReadiness.blockingReasons,
+      });
+    }
+
     await updateMutation.mutateAsync({
       providerId,
       stateAbbreviation,
@@ -120,6 +140,7 @@ export function ActivationActionDialog({
     setNotes('');
     setEffectiveDate('');
     setEvidenceLink('');
+    setOverrideReason('');
     onOpenChange(false);
   };
 
@@ -139,14 +160,11 @@ export function ActivationActionDialog({
             <p className="text-sm text-muted-foreground">{stateName} ({stateAbbreviation})</p>
           </div>
 
-          {isActivating && isNotReady && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <strong>Warning:</strong> This provider is not ready for activation.
-                {readinessReason && <span className="block mt-1">{readinessReason}</span>}
-              </AlertDescription>
-            </Alert>
+          {isHardBlocked && (
+            <WorkflowReadinessBanner 
+              readiness={activationReadiness}
+              entityLabel={`${providerName} — ${stateName}`}
+            />
           )}
 
           <div className="space-y-2">
@@ -182,6 +200,26 @@ export function ActivationActionDialog({
               />
             </div>
           </div>
+
+          {/* Admin override reason — only shown when hard-blocked */}
+          {isHardBlocked && (
+            <div className="space-y-2">
+              <Label htmlFor="overrideReason" className="flex items-center gap-2 text-destructive">
+                <Lock className="h-3.5 w-3.5" />
+                Override Reason (required to proceed)
+              </Label>
+              <Textarea
+                id="overrideReason"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="Explain why activation is safe despite unmet requirements..."
+                className="min-h-[80px] border-destructive/30"
+              />
+              <p className="text-xs text-muted-foreground">
+                This override will be logged to the audit trail.
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -189,12 +227,23 @@ export function ActivationActionDialog({
             Cancel
           </Button>
           <Button
-            variant={config.variant}
+            variant={isHardBlocked ? 'destructive' : config.variant}
             onClick={handleSubmit}
-            disabled={!notes.trim() || updateMutation.isPending}
+            disabled={
+              !notes.trim() || 
+              updateMutation.isPending || 
+              (isHardBlocked && !overrideReason.trim())
+            }
           >
             {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {config.buttonText}
+            {isHardBlocked ? (
+              <>
+                <Lock className="h-3.5 w-3.5 mr-1" />
+                Override & {config.buttonText}
+              </>
+            ) : (
+              config.buttonText
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
