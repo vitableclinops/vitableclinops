@@ -53,6 +53,8 @@ interface FullProvider {
   employment_end_date: string | null;
   employment_offer_date: string | null;
   employment_status: string | null;
+  employment_type: string | null;
+  agency_id: string | null;
   primary_specialty: string | null;
   board_certificates: string | null;
   caqh_number: string | null;

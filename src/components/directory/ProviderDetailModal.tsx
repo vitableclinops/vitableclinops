@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAgencies } from '@/hooks/useAgencies';
 import {
   Dialog,
   DialogContent,
@@ -63,6 +64,8 @@ interface FullProvider {
   employment_end_date: string | null;
   employment_offer_date: string | null;
   employment_status: string | null;
+  employment_type: string | null;
+  agency_id: string | null;
   primary_specialty: string | null;
   board_certificates: string | null;
   caqh_number: string | null;
@@ -155,6 +158,8 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Record<string, any>>({});
 
+  const { agencies } = useAgencies();
+
   // Fetch actual collaborative agreement count for this provider
   const { data: agreementCount = 0 } = useQuery({
     queryKey: ['provider-agreements-count', provider?.id],
@@ -225,6 +230,8 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
       emergency_contact_name: provider.emergency_contact_name,
       emergency_contact_phone: provider.emergency_contact_phone,
       employment_status: provider.employment_status,
+      employment_type: provider.employment_type,
+      agency_id: provider.agency_id,
       employment_offer_date: provider.employment_offer_date,
       employment_start_date: provider.employment_start_date,
       employment_end_date: provider.employment_end_date,
@@ -522,6 +529,40 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                       </SelectContent>
                     </Select>
                   </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Employment Type</p>
+                    <Select
+                      value={formData.employment_type || ''}
+                      onValueChange={(v) => {
+                        handleChange('employment_type', v);
+                        if (v !== 'agency') handleChange('agency_id', null);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="w2">W2 (Internal)</SelectItem>
+                        <SelectItem value="1099">1099 (Internal)</SelectItem>
+                        <SelectItem value="agency">Agency-Supplied</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {formData.employment_type === 'agency' && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Linked Agency</p>
+                      <Select value={formData.agency_id || ''} onValueChange={(v) => handleChange('agency_id', v)}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="Select agency" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {agencies.filter(a => a.is_active).map(a => (
+                            <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <EditableField label="Offer Date" value={formData.employment_offer_date} field="employment_offer_date" onChange={handleChange} type="date" />
                   <EditableField label="Start Date" value={formData.employment_start_date} field="employment_start_date" onChange={handleChange} type="date" />
                   <EditableField label="End Date" value={formData.employment_end_date} field="employment_end_date" onChange={handleChange} type="date" />
@@ -532,6 +573,20 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                     <p className="text-xs text-muted-foreground mb-0.5">Employment Status</p>
                     {getStatusBadge(provider.employment_status)}
                   </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Employment Type</p>
+                    <Badge variant={provider.employment_type === 'agency' ? 'secondary' : 'outline'}>
+                      {provider.employment_type === 'w2' ? 'W2 (Internal)' : provider.employment_type === '1099' ? '1099 (Internal)' : provider.employment_type === 'agency' ? 'Agency-Supplied' : 'Not Set'}
+                    </Badge>
+                  </div>
+                  {provider.employment_type === 'agency' && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-0.5">Linked Agency</p>
+                      <p className="font-medium text-sm">
+                        {agencies.find(a => a.id === provider.agency_id)?.name || 'Unknown'}
+                      </p>
+                    </div>
+                  )}
                   <InfoRow label="Offer Date" value={formatDate(provider.employment_offer_date)} />
                   <InfoRow label="Start Date" value={formatDate(provider.employment_start_date)} />
                   {provider.employment_status === 'termed' && (
