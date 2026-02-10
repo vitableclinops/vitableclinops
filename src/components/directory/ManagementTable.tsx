@@ -11,8 +11,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Search, Shield, AlertTriangle, Clock, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, MinusCircle, ArrowRight, CalendarDays, FileText,
-  Zap, Activity
+  CheckCircle2, XCircle, MinusCircle, ArrowRight, CalendarDays,
+  Activity
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ProviderReadiness, StateReadiness, ChecklistItem } from '@/hooks/useProviderReadiness';
@@ -27,20 +27,17 @@ interface ManagementTableProps {
 
 const filterConfig: { value: ManagementFilter; label: string; icon: React.ReactNode; variant: string }[] = [
   { value: 'all', label: 'All', icon: null, variant: '' },
-  { value: 'ready', label: 'Ready', icon: <Shield className="h-3.5 w-3.5" />, variant: 'text-success border-success/30 hover:bg-success/10' },
-  { value: 'in_progress', label: 'In Progress', icon: <Clock className="h-3.5 w-3.5" />, variant: 'text-warning border-warning/30 hover:bg-warning/10' },
-  { value: 'blocked', label: 'Blocked', icon: <AlertTriangle className="h-3.5 w-3.5" />, variant: 'text-destructive border-destructive/30 hover:bg-destructive/10' },
-  { value: 'blocked_license', label: 'Blocked: License', icon: <XCircle className="h-3.5 w-3.5" />, variant: 'text-destructive border-destructive/30 hover:bg-destructive/10' },
-  { value: 'blocked_collab', label: 'Blocked: Collab', icon: <FileText className="h-3.5 w-3.5" />, variant: 'text-destructive border-destructive/30 hover:bg-destructive/10' },
-  { value: 'active_non_compliant', label: 'Active but Non-Compliant', icon: <Zap className="h-3.5 w-3.5" />, variant: 'text-destructive border-destructive/30 hover:bg-destructive/10' },
-  { value: 'expiring_30', label: 'Expiring ≤30d', icon: <CalendarDays className="h-3.5 w-3.5" />, variant: 'text-warning border-warning/30 hover:bg-warning/10' },
   { value: 'needs_action', label: 'Needs Action', icon: <Activity className="h-3.5 w-3.5" />, variant: 'text-primary border-primary/30 hover:bg-primary/10' },
+  { value: 'blocked', label: 'Blocked', icon: <AlertTriangle className="h-3.5 w-3.5" />, variant: 'text-destructive border-destructive/30 hover:bg-destructive/10' },
+  { value: 'in_progress', label: 'In Progress', icon: <Clock className="h-3.5 w-3.5" />, variant: 'text-warning border-warning/30 hover:bg-warning/10' },
+  { value: 'ready', label: 'Ready', icon: <Shield className="h-3.5 w-3.5" />, variant: 'text-success border-success/30 hover:bg-success/10' },
+  { value: 'expiring_30', label: 'Expiring Soon', icon: <CalendarDays className="h-3.5 w-3.5" />, variant: 'text-warning border-warning/30 hover:bg-warning/10' },
 ];
 
 export function ManagementTable({ providers, agencyMap }: ManagementTableProps) {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<ManagementFilter>('all');
+  const [filter, setFilter] = useState<ManagementFilter>('needs_action');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {

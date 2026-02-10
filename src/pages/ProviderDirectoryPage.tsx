@@ -413,7 +413,7 @@ const ProviderDirectoryPage = () => {
                   </Card>
                 ) : (
                   <ManagementTable
-                    providers={readinessData || []}
+                    providers={(readinessData || []).filter(p => p.employment_status !== 'termed')}
                     agencyMap={agencyMap}
                   />
                 )}
