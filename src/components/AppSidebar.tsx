@@ -69,15 +69,14 @@ const navGroups: NavGroup[] = [
       { label: 'Admin Dashboard', icon: LayoutDashboard, href: '/admin', roles: ['admin'] },
       { label: 'My Dashboard', icon: ClipboardList, href: '/provider', roles: ['provider'] },
       { label: 'Physician Portal', icon: Stethoscope, href: '/physician', roles: ['physician'] },
-      { label: 'Provider Overview', icon: BarChart3, href: '/providers', roles: ['leadership'] },
+      { label: 'Provider Overview', icon: BarChart3, href: '/directory', roles: ['leadership'] },
     ],
   },
   {
     label: 'Providers',
     roles: ['admin', 'leadership'],
     items: [
-      { label: 'All Providers', icon: Users, href: '/providers', roles: ['admin'] },
-      { label: 'Provider Directory', icon: User, href: '/directory', roles: ['admin', 'leadership'] },
+      { label: 'Provider Directory', icon: Users, href: '/directory', roles: ['admin', 'leadership'] },
       { label: 'Provider Intake', icon: UserPlus, href: '/admin/intake', roles: ['admin'] },
       { label: 'Provider Grid', icon: Grid3X3, href: '/grid', roles: ['admin', 'leadership'] },
       { label: 'Activation Queue', icon: Power, href: '/admin/activation', roles: ['admin'] },

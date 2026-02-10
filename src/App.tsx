@@ -10,7 +10,7 @@ import AuthPage from "./pages/AuthPage";
 import ProviderDashboard from "./pages/ProviderDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import TaskDetailView from "./pages/TaskDetailView";
-import ProvidersListPage from "./pages/ProvidersListPage";
+
 import StateCompliancePage from "./pages/StateCompliancePage";
 import CollaborativeAgreementsPage from "./pages/CollaborativeAgreementsPage";
 import SystemSettingsPage from "./pages/SystemSettingsPage";
@@ -66,7 +66,7 @@ const App = () => (
             } />
             <Route path="/providers" element={
               <ProtectedRoute requiredRoles={['admin']}>
-                <ProvidersListPage />
+                <ProviderDirectoryPage />
               </ProtectedRoute>
             } />
             <Route path="/admin/states" element={
