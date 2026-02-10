@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.check-meeting-reminders]
 verify_jwt = false
+
+[functions.check-agreement-validity]
+verify_jwt = false
