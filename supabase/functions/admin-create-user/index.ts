@@ -54,14 +54,18 @@ Deno.serve(async (req) => {
     }
 
     // Parse request body
-    const { email, password, fullName, roles } = await req.json();
+    const { email, password: providedPassword, fullName, roles } = await req.json();
 
-    if (!email || !password) {
+    if (!email) {
       return new Response(
-        JSON.stringify({ error: 'Email and password are required' }),
+        JSON.stringify({ error: 'Email is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Generate a secure random password if none provided
+    const password = providedPassword || Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(36).padStart(2, '0')).join('').slice(0, 20) + '!A1';
 
     // Create admin client with service role
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
@@ -122,6 +126,7 @@ Deno.serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         userId: newUser.user?.id,
+        password,
         message: 'Account created successfully' 
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
