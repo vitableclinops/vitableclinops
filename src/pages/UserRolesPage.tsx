@@ -139,6 +139,52 @@ export default function UserRolesPage() {
           </div>
         </div>
 
+        <div className="grid gap-4 md:grid-cols-3 mb-6">
+          {ALL_ROLES.map(role => (
+            <Card key={role} className="border-l-4" style={{ borderLeftColor: role === 'admin' ? 'hsl(var(--destructive))' : role === 'physician' ? 'hsl(142 71% 45%)' : 'hsl(var(--primary))' }}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base capitalize">{role}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground space-y-1">
+                {role === 'admin' && (
+                  <>
+                    <p className="font-medium text-foreground">Clinical Operations & Leadership</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li>Assign and review licensure tasks</li>
+                      <li>Approve submissions and reimbursements</li>
+                      <li>Configure state requirements</li>
+                      <li>View analytics, reports, and demand metrics</li>
+                      <li>Manage user accounts and roles</li>
+                    </ul>
+                  </>
+                )}
+                {role === 'provider' && (
+                  <>
+                    <p className="font-medium text-foreground">Nurse Practitioners & Clinicians</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li>Complete onboarding and licensure tasks</li>
+                      <li>Upload documentation and evidence</li>
+                      <li>Track compliance across states</li>
+                      <li>Submit reimbursement requests</li>
+                    </ul>
+                  </>
+                )}
+                {role === 'physician' && (
+                  <>
+                    <p className="font-medium text-foreground">Collaborating / Supervising MDs</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li>Supervise NPs via physician portal</li>
+                      <li>Manage collaborative agreements</li>
+                      <li>Attend and track supervision meetings</li>
+                      <li>Review chart reviews</li>
+                    </ul>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
