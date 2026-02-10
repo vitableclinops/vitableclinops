@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.check-agreement-validity]
 verify_jwt = false
+
+[functions.generate-milestone-tasks]
+verify_jwt = false
