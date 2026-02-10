@@ -326,8 +326,8 @@ const CollaborativeAgreementsPage = () => {
   const physiciansForReassign = Array.from(
     new Map(
       dbAgreements
-        .filter(a => a.physician_name && a.physician_id)
-        .map(a => [a.physician_id, { id: a.physician_id!, name: a.physician_name!, email: a.physician_email || '' }])
+        .filter(a => a.physician_name)
+        .map(a => [a.physician_name, { id: a.physician_id || a.physician_name!, name: a.physician_name!, email: a.physician_email || '' }])
     ).values()
   );
 
