@@ -105,7 +105,7 @@ export const ProviderTable = ({
             <SortHeader column="actively_licensed_states" label="Licensed States" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>Home State</TableHead>
             {isAdmin && <SortHeader column="employment_status" label="Status" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
-            {isAdmin && <TableHead>Collab Agreements</TableHead>}
+            {isAdmin && <TableHead>Collaboration</TableHead>}
             {isAdmin && <TableHead>Email</TableHead>}
             {isAdmin && <TableHead>Phone</TableHead>}
           </TableRow>
@@ -157,11 +157,21 @@ export const ProviderTable = ({
                 {isAdmin && <TableCell>{getStatusBadge(provider.employment_status)}</TableCell>}
                 {isAdmin && (
                   <TableCell>
-                    {provider.has_collaborative_agreements ? (
-                      <Badge variant="secondary" className="bg-blue-500/10 text-blue-600">Yes</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">No</span>
-                    )}
+                    {(() => {
+                      const isMD = provider.profession === 'MD' || provider.credentials === 'MD';
+                      if (isMD) {
+                        return provider.has_collaborative_agreements ? (
+                          <Badge variant="secondary" className="bg-purple-500/10 text-purple-600 border-purple-200">Collaborating Physician</Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">Not supervising</span>
+                        );
+                      }
+                      return provider.has_collaborative_agreements ? (
+                        <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-blue-200">Has Collabs</Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">No</span>
+                      );
+                    })()}
                   </TableCell>
                 )}
                 {isAdmin && (
