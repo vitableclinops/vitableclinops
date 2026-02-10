@@ -108,6 +108,8 @@ const ProviderDirectoryPage = () => {
   const [stateFilter, setStateFilter] = useState('all');
   const [professionFilter, setProfessionFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [employmentTypeFilter, setEmploymentTypeFilter] = useState('all');
+  const [agencyFilter, setAgencyFilter] = useState('all');
   const [selectedManagementFilter, setSelectedManagementFilter] = useState<'all' | 'ready' | 'blocked' | 'pending'>('all');
   
   // Sorting
@@ -117,6 +119,24 @@ const ProviderDirectoryPage = () => {
   const userRole = roles[0] || 'provider';
   const userName = profile?.full_name || profile?.email || 'User';
   const userEmail = profile?.email || '';
+
+  // Agencies for filter and table display
+  const [agencies, setAgencies] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    const fetchAgencies = async () => {
+      const { data } = await supabase.from('agencies').select('id, name').eq('is_active', true).order('name');
+      if (data) setAgencies(data);
+    };
+    fetchAgencies();
+  }, []);
+
+  // Build agency lookup map
+  const agencyMap = useMemo(() => {
+    const map = new Map<string, string>();
+    agencies.forEach(a => map.set(a.id, a.name));
+    return map;
+  }, [agencies]);
 
   useEffect(() => {
     const fetchProviders = async () => {
@@ -250,6 +270,17 @@ const ProviderDirectoryPage = () => {
         if (p.employment_status !== statusFilter) return false;
       }
 
+      // Employment type filter
+      if (employmentTypeFilter !== 'all') {
+        const empType = (p as FullProvider).employment_type || 'w2';
+        if (empType !== employmentTypeFilter) return false;
+      }
+
+      // Agency filter
+      if (agencyFilter !== 'all') {
+        if ((p as FullProvider).agency_id !== agencyFilter) return false;
+      }
+
       return true;
     });
 
@@ -290,7 +321,7 @@ const ProviderDirectoryPage = () => {
     });
 
     return filtered;
-  }, [providers, publicProviders, isAdmin, activeTab, searchQuery, stateFilter, professionFilter, statusFilter, sortColumn, sortDirection]);
+  }, [providers, publicProviders, isAdmin, activeTab, searchQuery, stateFilter, professionFilter, statusFilter, employmentTypeFilter, agencyFilter, sortColumn, sortDirection]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -306,9 +337,11 @@ const ProviderDirectoryPage = () => {
     setStateFilter('all');
     setProfessionFilter('all');
     setStatusFilter('all');
+    setEmploymentTypeFilter('all');
+    setAgencyFilter('all');
   };
 
-  const hasActiveFilters = searchQuery !== '' || stateFilter !== 'all' || professionFilter !== 'all' || statusFilter !== 'all';
+  const hasActiveFilters = searchQuery !== '' || stateFilter !== 'all' || professionFilter !== 'all' || statusFilter !== 'all' || employmentTypeFilter !== 'all' || agencyFilter !== 'all';
 
   const getProviderInitials = (name: string | null) => {
     if (!name) return '?';
@@ -340,6 +373,8 @@ const ProviderDirectoryPage = () => {
     profession: p.profession,
     avatar_url: p.avatar_url,
     employment_status: p.employment_status,
+    employment_type: (p as FullProvider).employment_type || null,
+    agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
     actively_licensed_states: isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).actively_licensed_states,
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
@@ -616,8 +651,13 @@ const ProviderDirectoryPage = () => {
                     onProfessionChange={setProfessionFilter}
                     statusFilter={statusFilter}
                     onStatusChange={setStatusFilter}
+                    employmentTypeFilter={employmentTypeFilter}
+                    onEmploymentTypeChange={setEmploymentTypeFilter}
+                    agencyFilter={agencyFilter}
+                    onAgencyChange={setAgencyFilter}
                     availableStates={availableStates}
                     availableProfessions={availableProfessions}
+                    availableAgencies={agencies}
                     onClearFilters={handleClearFilters}
                     hasActiveFilters={hasActiveFilters}
                   />
@@ -727,8 +767,13 @@ const ProviderDirectoryPage = () => {
                   onProfessionChange={setProfessionFilter}
                   statusFilter={statusFilter}
                   onStatusChange={setStatusFilter}
+                  employmentTypeFilter={employmentTypeFilter}
+                  onEmploymentTypeChange={setEmploymentTypeFilter}
+                  agencyFilter={agencyFilter}
+                  onAgencyChange={setAgencyFilter}
                   availableStates={availableStates}
                   availableProfessions={availableProfessions}
+                  availableAgencies={agencies}
                   onClearFilters={handleClearFilters}
                   hasActiveFilters={hasActiveFilters}
                 />

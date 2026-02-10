@@ -3,6 +3,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Search, X } from 'lucide-react';
 
+interface AgencyOption {
+  id: string;
+  name: string;
+}
+
 interface ProviderFiltersProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
@@ -12,8 +17,13 @@ interface ProviderFiltersProps {
   onProfessionChange: (value: string) => void;
   statusFilter: string;
   onStatusChange: (value: string) => void;
+  employmentTypeFilter: string;
+  onEmploymentTypeChange: (value: string) => void;
+  agencyFilter: string;
+  onAgencyChange: (value: string) => void;
   availableStates: string[];
   availableProfessions: string[];
+  availableAgencies: AgencyOption[];
   onClearFilters: () => void;
   hasActiveFilters: boolean;
 }
@@ -27,8 +37,13 @@ export const ProviderFilters = ({
   onProfessionChange,
   statusFilter,
   onStatusChange,
+  employmentTypeFilter,
+  onEmploymentTypeChange,
+  agencyFilter,
+  onAgencyChange,
   availableStates,
   availableProfessions,
+  availableAgencies,
   onClearFilters,
   hasActiveFilters,
 }: ProviderFiltersProps) => {
@@ -79,6 +94,32 @@ export const ProviderFilters = ({
           <SelectItem value="termed">Terminated</SelectItem>
         </SelectContent>
       </Select>
+
+      <Select value={employmentTypeFilter} onValueChange={onEmploymentTypeChange}>
+        <SelectTrigger className="w-[160px]">
+          <SelectValue placeholder="Employment" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Employment</SelectItem>
+          <SelectItem value="w2">W2 — Internal</SelectItem>
+          <SelectItem value="1099">1099 — Internal</SelectItem>
+          <SelectItem value="agency">Agency-Supplied</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {employmentTypeFilter === 'agency' && availableAgencies.length > 0 && (
+        <Select value={agencyFilter} onValueChange={onAgencyChange}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Agency" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Agencies</SelectItem>
+            {availableAgencies.map(a => (
+              <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       {hasActiveFilters && (
         <Button variant="ghost" size="sm" onClick={onClearFilters} className="gap-1">

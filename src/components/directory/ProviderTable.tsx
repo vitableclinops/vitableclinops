@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ProviderClassificationBadge } from '@/components/ProviderClassificationBadge';
 
 export interface ProviderTableData {
   id: string;
@@ -22,6 +23,8 @@ export interface ProviderTableData {
   profession: string | null;
   avatar_url: string | null;
   employment_status: string | null;
+  employment_type: string | null;
+  agency_name: string | null;
   actively_licensed_states: string | null;
   primary_specialty: string | null;
   address_state: string | null;
@@ -102,6 +105,7 @@ export const ProviderTable = ({
             <SortHeader column="full_name" label="Provider" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <SortHeader column="profession" label="Type" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>NPI</TableHead>
+            <SortHeader column="employment_type" label="Employment" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <SortHeader column="actively_licensed_states" label="Licensed States" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>Home State</TableHead>
             {isAdmin && <SortHeader column="employment_status" label="Status" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
@@ -113,7 +117,7 @@ export const ProviderTable = ({
         <TableBody>
           {providers.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={isAdmin ? 9 : 5} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={isAdmin ? 10 : 6} className="text-center py-8 text-muted-foreground">
                 No providers found matching your filters
               </TableCell>
             </TableRow>
@@ -148,6 +152,14 @@ export const ProviderTable = ({
                   <Badge variant="outline">{provider.profession || provider.credentials || '-'}</Badge>
                 </TableCell>
                 <TableCell className="font-mono text-sm">{provider.npi_number || '-'}</TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-1">
+                    <ProviderClassificationBadge employmentType={provider.employment_type} compact />
+                    {provider.employment_type === 'agency' && provider.agency_name && (
+                      <span className="text-xs text-muted-foreground truncate max-w-[140px]">{provider.agency_name}</span>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>
                   <span className="text-sm max-w-[200px] truncate block">
                     {provider.actively_licensed_states || '-'}
