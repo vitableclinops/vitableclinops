@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { getCollabRequirementLabel, type CollabRequirementType } from '@/constants/stateRestrictions';
 import { Link } from 'react-router-dom';
 import { ExternalLink, Search, ChevronDown, ChevronUp, CheckCircle2, XCircle, Minus, Pencil, Save, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -51,6 +52,19 @@ const BoolCell = ({ value }: { value: boolean }) => (
   ) : (
     <XCircle className="h-4 w-4 text-muted-foreground/40 mx-auto" />
   )
+);
+
+const collabBadgeStyles: Record<CollabRequirementType, string> = {
+  always: 'bg-destructive/10 text-destructive border-destructive/20',
+  conditional: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
+  md_only: 'bg-muted text-muted-foreground border-border',
+  never: 'bg-success/10 text-success border-success/20',
+};
+
+const CollabBadge = ({ type }: { type: CollabRequirementType }) => (
+  <Badge variant="outline" className={cn('text-xs font-medium whitespace-nowrap', collabBadgeStyles[type])}>
+    {getCollabRequirementLabel(type)}
+  </Badge>
 );
 
 const EditableBoolCell = ({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) => (
@@ -298,7 +312,7 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange 
                     {editing && editValues ? (
                       <EditableBoolCell value={editValues.ca_required} onChange={v => updateField('ca_required', v)} />
                     ) : (
-                      <BoolCell value={state.ca_required} />
+                      <CollabBadge type={(state.collab_requirement_type as CollabRequirementType) || (state.ca_required ? 'always' : 'never')} />
                     )}
                   </TableCell>
 
