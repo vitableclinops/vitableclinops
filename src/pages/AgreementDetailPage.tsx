@@ -243,9 +243,8 @@ export default function AgreementDetailPage() {
   }
 
   // Build a descriptive breadcrumb: Provider ↔ Physician in State
-  const primaryProvider = activeProviders[0] || providers[0];
-  const breadcrumbLabel = primaryProvider
-    ? `${primaryProvider.provider_name} ↔ Dr. ${agreement?.physician_name} (${agreement?.state_abbreviation})`
+  const breadcrumbLabel = agreement?.provider_name
+    ? `${agreement.provider_name} ↔ Dr. ${agreement.physician_name} (${agreement.state_abbreviation})`
     : agreement?.state_name || 'Agreement';
 
   const breadcrumbs = [
@@ -295,20 +294,13 @@ export default function AgreementDetailPage() {
                     </div>
                     <div className="flex items-center gap-2 mt-1.5 text-muted-foreground">
                       <div className="flex items-center gap-1.5">
-                        <Stethoscope className="h-4 w-4" />
-                        <span className="font-medium text-foreground">Dr. {agreement.physician_name}</span>
+                        <User className="h-4 w-4" />
+                        <span className="font-medium text-foreground">{agreement.provider_name || 'Unassigned'}</span>
                       </div>
                       <span className="text-muted-foreground/50">↔</span>
                       <div className="flex items-center gap-1.5">
-                        <Users className="h-4 w-4" />
-                        <span>
-                          {activeProviders.length} provider{activeProviders.length !== 1 ? 's' : ''}
-                          {activeProviders.length > 0 && (
-                            <span className="text-foreground font-medium ml-1">
-                              ({activeProviders.map(p => p.provider_name).join(', ')})
-                            </span>
-                          )}
-                        </span>
+                        <Stethoscope className="h-4 w-4" />
+                        <span className="font-medium text-foreground">Dr. {agreement.physician_name}</span>
                       </div>
                       <span className="text-muted-foreground/50">•</span>
                       <div className="flex items-center gap-1.5">
@@ -316,9 +308,6 @@ export default function AgreementDetailPage() {
                         <span>{agreement.state_name}</span>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Each agreement represents a specific provider–physician collaboration in a given state.
-                    </p>
                   </div>
                 </div>
                 
