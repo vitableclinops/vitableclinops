@@ -75,7 +75,7 @@ const StateCompliancePage = () => {
   const [complianceTab, setComplianceTab] = useState('overview');
 
   const { profile, roles } = useAuth();
-  const { allData: complianceAllData, loading: complianceLoading } = useStateCompliance();
+  const { allData: complianceAllData, loading: complianceLoading, refetch: refetchCompliance } = useStateCompliance();
   const userRole = roles[0] || 'admin';
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
@@ -457,7 +457,7 @@ const StateCompliancePage = () => {
 
             {/* Requirements Matrix Tab */}
             <TabsContent value="requirements" className="space-y-6">
-              <RequirementsMatrixTable data={complianceAllData} loading={complianceLoading} />
+              <RequirementsMatrixTable data={complianceAllData} loading={complianceLoading} isAdmin={userRole === 'admin'} onDataChange={refetchCompliance} />
             </TabsContent>
 
             {/* Licensure Templates Tab */}

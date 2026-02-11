@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink, Search, ChevronDown, ChevronUp, CheckCircle2, XCircle, Minus } from 'lucide-react';
+import { ExternalLink, Search, ChevronDown, ChevronUp, CheckCircle2, XCircle, Minus, Pencil, Save, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -20,15 +21,29 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import type { StateCompliance } from '@/hooks/useStateCompliance';
 
 interface RequirementsMatrixTableProps {
   data: StateCompliance[];
   loading: boolean;
+  isAdmin?: boolean;
+  onDataChange?: () => void;
 }
 
 type SortField = 'state_name' | 'ca_required' | 'rxr_required' | 'nlc' | 'fpa_status' | 'ca_meeting_cadence';
 type SortDir = 'asc' | 'desc';
+
+type EditableFields = {
+  ca_required: boolean;
+  rxr_required: boolean;
+  nlc: boolean;
+  fpa_status: string;
+  np_md_ratio: string;
+  ca_meeting_cadence: string;
+  knowledge_base_url: string;
+};
 
 const BoolCell = ({ value }: { value: boolean }) => (
   value ? (
@@ -38,12 +53,30 @@ const BoolCell = ({ value }: { value: boolean }) => (
   )
 );
 
-const RequirementsMatrixTable = ({ data, loading }: RequirementsMatrixTableProps) => {
+const EditableBoolCell = ({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) => (
+  <div className="flex justify-center">
+    <Switch checked={value} onCheckedChange={onChange} />
+  </div>
+);
+
+const EditableTextCell = ({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) => (
+  <Input
+    value={value}
+    onChange={e => onChange(e.target.value)}
+    placeholder={placeholder || '—'}
+    className="h-8 text-sm min-w-[100px]"
+  />
+);
+
+const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange }: RequirementsMatrixTableProps) => {
   const [search, setSearch] = useState('');
   const [caFilter, setCaFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [nlcFilter, setNlcFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [sortField, setSortField] = useState<SortField>('state_name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<EditableFields | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -58,6 +91,58 @@ const RequirementsMatrixTable = ({ data, loading }: RequirementsMatrixTableProps
     if (sortField !== field) return null;
     return sortDir === 'asc' ? <ChevronUp className="h-3 w-3 inline ml-1" /> : <ChevronDown className="h-3 w-3 inline ml-1" />;
   };
+
+  const startEditing = useCallback((state: StateCompliance) => {
+    setEditingId(state.id);
+    setEditValues({
+      ca_required: state.ca_required,
+      rxr_required: state.rxr_required,
+      nlc: state.nlc,
+      fpa_status: state.fpa_status || '',
+      np_md_ratio: state.np_md_ratio || '',
+      ca_meeting_cadence: state.ca_meeting_cadence || '',
+      knowledge_base_url: state.knowledge_base_url || '',
+    });
+  }, []);
+
+  const cancelEditing = useCallback(() => {
+    setEditingId(null);
+    setEditValues(null);
+  }, []);
+
+  const saveEditing = useCallback(async () => {
+    if (!editingId || !editValues) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('state_compliance_requirements')
+        .update({
+          ca_required: editValues.ca_required,
+          rxr_required: editValues.rxr_required,
+          nlc: editValues.nlc,
+          fpa_status: editValues.fpa_status || null,
+          np_md_ratio: editValues.np_md_ratio || null,
+          ca_meeting_cadence: editValues.ca_meeting_cadence || null,
+          knowledge_base_url: editValues.knowledge_base_url || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingId);
+
+      if (error) throw error;
+      toast.success('State requirements updated');
+      setEditingId(null);
+      setEditValues(null);
+      onDataChange?.();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save changes');
+    } finally {
+      setSaving(false);
+    }
+  }, [editingId, editValues, onDataChange]);
+
+  const updateField = useCallback(<K extends keyof EditableFields>(field: K, value: EditableFields[K]) => {
+    setEditValues(prev => prev ? { ...prev, [field]: value } : prev);
+  }, []);
 
   const filtered = data
     .filter(s => {
@@ -86,6 +171,8 @@ const RequirementsMatrixTable = ({ data, loading }: RequirementsMatrixTableProps
     return <div className="py-12 text-center text-muted-foreground">Loading state requirements…</div>;
   }
 
+  const isEditing = (id: string) => editingId === id;
+
   return (
     <div className="space-y-4">
       {/* Summary badges */}
@@ -99,6 +186,12 @@ const RequirementsMatrixTable = ({ data, loading }: RequirementsMatrixTableProps
         <Badge variant="secondary" className="text-sm py-1 px-3">
           {nlcCount} NLC member{nlcCount !== 1 ? 's' : ''}
         </Badge>
+        {isAdmin && (
+          <Badge variant="outline" className="text-sm py-1 px-3 border-primary/30 text-primary">
+            <Pencil className="h-3 w-3 mr-1" />
+            Click row pencil to edit
+          </Badge>
+        )}
       </div>
 
       {/* Filters */}
@@ -180,63 +273,152 @@ const RequirementsMatrixTable = ({ data, loading }: RequirementsMatrixTableProps
                 Meeting Cadence <SortIcon field="ca_meeting_cadence" />
               </TableHead>
               <TableHead className="w-[60px] text-center">Guide</TableHead>
+              {isAdmin && <TableHead className="w-[90px] text-center">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map(state => (
-              <TableRow key={state.id} className="hover:bg-muted/30">
-                <TableCell>
-                  <Link 
-                    to={`/states/${state.state_abbreviation}`}
-                    className="flex items-center gap-2 font-medium text-foreground hover:text-primary transition-colors"
-                  >
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-xs font-bold text-primary shrink-0">
-                      {state.state_abbreviation}
-                    </span>
-                    {state.state_name}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-center"><BoolCell value={state.ca_required} /></TableCell>
-                <TableCell className="text-center"><BoolCell value={state.rxr_required} /></TableCell>
-                <TableCell className="text-center"><BoolCell value={state.nlc} /></TableCell>
-                <TableCell>
-                  {state.fpa_status && state.fpa_status !== 'NA' ? (
-                    <Badge variant="outline" className="text-xs whitespace-nowrap">
-                      {state.fpa_status}
-                    </Badge>
-                  ) : (
-                    <Minus className="h-4 w-4 text-muted-foreground/40" />
-                  )}
-                </TableCell>
-                <TableCell>
-                  <span className="text-sm text-muted-foreground">
-                    {state.np_md_ratio && state.np_md_ratio !== 'NA' ? state.np_md_ratio : '—'}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <span className="text-sm text-muted-foreground">
-                    {state.ca_meeting_cadence && state.ca_meeting_cadence !== 'NA' 
-                      ? state.ca_meeting_cadence 
-                      : '—'}
-                  </span>
-                </TableCell>
-                <TableCell className="text-center">
-                  {state.knowledge_base_url ? (
-                    <a
-                      href={state.knowledge_base_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:text-primary/80"
-                      onClick={e => e.stopPropagation()}
+            {filtered.map(state => {
+              const editing = isEditing(state.id);
+              return (
+                <TableRow key={state.id} className={cn("hover:bg-muted/30", editing && "bg-primary/5")}>
+                  <TableCell>
+                    <Link 
+                      to={`/states/${state.state_abbreviation}`}
+                      className="flex items-center gap-2 font-medium text-foreground hover:text-primary transition-colors"
                     >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  ) : (
-                    <Minus className="h-4 w-4 text-muted-foreground/40 mx-auto" />
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-xs font-bold text-primary shrink-0">
+                        {state.state_abbreviation}
+                      </span>
+                      {state.state_name}
+                    </Link>
+                  </TableCell>
+
+                  {/* CA Required */}
+                  <TableCell className="text-center">
+                    {editing && editValues ? (
+                      <EditableBoolCell value={editValues.ca_required} onChange={v => updateField('ca_required', v)} />
+                    ) : (
+                      <BoolCell value={state.ca_required} />
+                    )}
+                  </TableCell>
+
+                  {/* RxA Required */}
+                  <TableCell className="text-center">
+                    {editing && editValues ? (
+                      <EditableBoolCell value={editValues.rxr_required} onChange={v => updateField('rxr_required', v)} />
+                    ) : (
+                      <BoolCell value={state.rxr_required} />
+                    )}
+                  </TableCell>
+
+                  {/* NLC */}
+                  <TableCell className="text-center">
+                    {editing && editValues ? (
+                      <EditableBoolCell value={editValues.nlc} onChange={v => updateField('nlc', v)} />
+                    ) : (
+                      <BoolCell value={state.nlc} />
+                    )}
+                  </TableCell>
+
+                  {/* Practice Authority */}
+                  <TableCell>
+                    {editing && editValues ? (
+                      <EditableTextCell value={editValues.fpa_status} onChange={v => updateField('fpa_status', v)} placeholder="e.g. Full" />
+                    ) : (
+                      state.fpa_status && state.fpa_status !== 'NA' ? (
+                        <Badge variant="outline" className="text-xs whitespace-nowrap">
+                          {state.fpa_status}
+                        </Badge>
+                      ) : (
+                        <Minus className="h-4 w-4 text-muted-foreground/40" />
+                      )
+                    )}
+                  </TableCell>
+
+                  {/* NP:MD Ratio */}
+                  <TableCell>
+                    {editing && editValues ? (
+                      <EditableTextCell value={editValues.np_md_ratio} onChange={v => updateField('np_md_ratio', v)} placeholder="e.g. 4:1" />
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        {state.np_md_ratio && state.np_md_ratio !== 'NA' ? state.np_md_ratio : '—'}
+                      </span>
+                    )}
+                  </TableCell>
+
+                  {/* Meeting Cadence */}
+                  <TableCell>
+                    {editing && editValues ? (
+                      <EditableTextCell value={editValues.ca_meeting_cadence} onChange={v => updateField('ca_meeting_cadence', v)} placeholder="e.g. Monthly" />
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        {state.ca_meeting_cadence && state.ca_meeting_cadence !== 'NA' 
+                          ? state.ca_meeting_cadence 
+                          : '—'}
+                      </span>
+                    )}
+                  </TableCell>
+
+                  {/* Guide */}
+                  <TableCell className="text-center">
+                    {editing && editValues ? (
+                      <EditableTextCell value={editValues.knowledge_base_url} onChange={v => updateField('knowledge_base_url', v)} placeholder="URL" />
+                    ) : (
+                      state.knowledge_base_url ? (
+                        <a
+                          href={state.knowledge_base_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:text-primary/80"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      ) : (
+                        <Minus className="h-4 w-4 text-muted-foreground/40 mx-auto" />
+                      )
+                    )}
+                  </TableCell>
+
+                  {/* Admin Actions */}
+                  {isAdmin && (
+                    <TableCell className="text-center">
+                      {editing ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-success hover:text-success"
+                            onClick={saveEditing}
+                            disabled={saving}
+                          >
+                            <Save className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            onClick={cancelEditing}
+                            disabled={saving}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => startEditing(state)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </TableCell>
                   )}
-                </TableCell>
-              </TableRow>
-            ))}
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
