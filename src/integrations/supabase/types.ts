@@ -3669,7 +3669,12 @@ export type Database = {
         | "archived"
       app_role: "admin" | "provider" | "physician"
       attestation_status: "pending" | "completed" | "overdue" | "excused"
-      collab_requirement_type: "never" | "always" | "conditional"
+      collab_requirement_type:
+        | "never"
+        | "always"
+        | "conditional"
+        | "md_only"
+        | "ttp"
       ehr_activation_status:
         | "inactive"
         | "activation_requested"
@@ -3872,7 +3877,13 @@ export const Constants = {
       ],
       app_role: ["admin", "provider", "physician"],
       attestation_status: ["pending", "completed", "overdue", "excused"],
-      collab_requirement_type: ["never", "always", "conditional"],
+      collab_requirement_type: [
+        "never",
+        "always",
+        "conditional",
+        "md_only",
+        "ttp",
+      ],
       ehr_activation_status: [
         "inactive",
         "activation_requested",
