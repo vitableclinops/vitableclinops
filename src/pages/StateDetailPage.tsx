@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { InitiateLicensureDialog } from '@/components/licensure/InitiateLicensureDialog';
+import { useAllLicensureApplications } from '@/hooks/useLicensureApplications';
 import { useParams, Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
@@ -66,6 +68,8 @@ export default function StateDetailPage() {
   const stateCompliance = stateAbbr ? getStateCompliance(stateAbbr) : null;
   const [licenses, setLicenses] = useState<ProviderLicense[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showLicensureDialog, setShowLicensureDialog] = useState(false);
+  const { applications: licensureApps, refetch: refetchLicensure } = useAllLicensureApplications(stateAbbr || undefined);
 
   
 
@@ -208,10 +212,16 @@ export default function StateDetailPage() {
             </div>
             
             {roles.includes('admin') && (
-              <Button variant="outline">
-                <Edit className="h-4 w-4 mr-2" />
-                Edit State
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowLicensureDialog(true)}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Initiate Licensure
+                </Button>
+                <Button variant="outline">
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit State
+                </Button>
+              </div>
             )}
           </div>
 
@@ -252,6 +262,7 @@ export default function StateDetailPage() {
                   <TabsTrigger value="agreements">Agreements ({activeAgreements.length})</TabsTrigger>
                   <TabsTrigger value="providers">Providers ({uniqueProviders.length})</TabsTrigger>
                   <TabsTrigger value="licenses">Licenses ({licenses.length})</TabsTrigger>
+                  <TabsTrigger value="licensure">Licensure Pipeline ({licensureApps.length})</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="compliance" className="mt-4">
@@ -435,6 +446,52 @@ export default function StateDetailPage() {
                     </CardContent>
                   </Card>
                 </TabsContent>
+
+                <TabsContent value="licensure" className="mt-4">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <CardTitle>Licensure Applications</CardTitle>
+                      <Button size="sm" onClick={() => setShowLicensureDialog(true)}>
+                        <FileText className="h-4 w-4 mr-2" />
+                        New Application
+                      </Button>
+                    </CardHeader>
+                    <CardContent>
+                      {licensureApps.length > 0 ? (
+                        <div className="space-y-3">
+                          {licensureApps.map(app => (
+                            <Link
+                              key={app.id}
+                              to={`/licensure/${app.id}`}
+                              className="flex items-center gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors group"
+                            >
+                              <div className="flex-1">
+                                <p className="font-medium text-foreground group-hover:text-primary transition-colors">
+                                  {app.provider_name}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {app.designation_label} • {app.status.replace(/_/g, ' ')}
+                                </p>
+                              </div>
+                              <Badge variant="secondary" className={
+                                app.status === 'approved' ? 'bg-success/10 text-success' :
+                                app.status === 'in_progress' ? 'bg-warning/10 text-warning' :
+                                app.status === 'submitted' ? 'bg-primary/10 text-primary' : ''
+                              }>
+                                {app.status.replace(/_/g, ' ')}
+                              </Badge>
+                              <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground text-center py-8">
+                          No licensure applications for this state yet.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
               </Tabs>
             </div>
 
@@ -503,6 +560,13 @@ export default function StateDetailPage() {
           </div>
         </div>
       </main>
+
+      <InitiateLicensureDialog
+        open={showLicensureDialog}
+        onClose={() => setShowLicensureDialog(false)}
+        onSuccess={refetchLicensure}
+        preselectedState={stateAbbr}
+      />
     </div>
   );
 }

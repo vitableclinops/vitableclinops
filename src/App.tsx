@@ -33,6 +33,7 @@ import AgencyDetailPage from "./pages/AgencyDetailPage";
 import EnhancementRegistryPage from "./pages/EnhancementRegistryPage";
 import CalendarPage from "./pages/CalendarPage";
 import AdminAddProviderPage from "./pages/AdminAddProviderPage";
+import LicensureApplicationPage from "./pages/LicensureApplicationPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -175,6 +176,11 @@ const App = () => (
             <Route path="/admin/add-provider" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <AdminAddProviderPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/licensure/:applicationId" element={
+              <ProtectedRoute>
+                <LicensureApplicationPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
