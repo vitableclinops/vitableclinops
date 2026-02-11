@@ -4,14 +4,20 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { useCalendarEvents, type CalendarEvent } from '@/hooks/useCalendarEvents';
+import { useUpcomingMilestones } from '@/hooks/useMilestones';
 import { CalendarEventCard } from '@/components/calendar/CalendarEventCard';
 import { AllHandsEventForm } from '@/components/calendar/AllHandsEventForm';
-import { Calendar, Plus, Loader2 } from 'lucide-react';
+import { Calendar, Plus, Loader2, Cake, Trophy } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { format, differenceInDays } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 
 const CalendarPage = () => {
   const { profile, roles } = useAuth();
+  const navigate = useNavigate();
   const userRole = roles[0] || 'admin';
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
@@ -22,6 +28,7 @@ const CalendarPage = () => {
   const [activeTab, setActiveTab] = useState('upcoming');
 
   const { data: events, isLoading } = useCalendarEvents();
+  const { data: milestones, isLoading: milestonesLoading } = useUpcomingMilestones(60);
 
   const now = new Date();
   const allHandsEvents = events?.filter(e => e.event_type === 'provider_all_hands') || [];
@@ -30,6 +37,9 @@ const CalendarPage = () => {
 
   const filteredEvents = (activeTab === 'upcoming' ? upcomingEvents : pastEvents)
     .filter(e => statusFilter === 'all' || e.status === statusFilter);
+
+  // Milestones for the calendar view
+  const pendingMilestones = milestones?.filter(m => m.status === 'pending') || [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -46,10 +56,10 @@ const CalendarPage = () => {
             <div>
               <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                 <Calendar className="h-6 w-6" />
-                Provider All-Hands
+                Calendar
               </h1>
               <p className="text-muted-foreground mt-1">
-                Schedule events, track recordings, and manage provider attestations.
+                All-Hands events, provider milestones, and upcoming celebrations.
               </p>
             </div>
             {isAdmin && (
@@ -59,6 +69,72 @@ const CalendarPage = () => {
               </Button>
             )}
           </div>
+
+          {/* Milestone Banner */}
+          {pendingMilestones.length > 0 && (
+            <Card className="mb-6 border-pink-200 dark:border-pink-800 bg-pink-50/50 dark:bg-pink-950/20">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Cake className="h-5 w-5 text-pink-500" />
+                  Upcoming Milestones
+                  <Badge variant="secondary">{pendingMilestones.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {pendingMilestones.slice(0, 6).map(m => {
+                    const daysUntil = differenceInDays(new Date(m.milestone_date), new Date());
+                    const isBirthday = m.milestone_type === 'birthday';
+                    const isUrgent = daysUntil <= 1;
+                    
+                    return (
+                      <div
+                        key={m.id}
+                        className={cn(
+                          "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors cursor-pointer",
+                          isUrgent && "border-warning bg-warning/5",
+                          !m.assigned_to && "border-dashed border-destructive/40"
+                        )}
+                      >
+                        <div className={cn(
+                          "p-2 rounded-lg shrink-0",
+                          isBirthday
+                            ? "bg-pink-100 text-pink-600 dark:bg-pink-900 dark:text-pink-300"
+                            : "bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-300"
+                        )}>
+                          {isBirthday ? <Cake className="h-4 w-4" /> : <Trophy className="h-4 w-4" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{m.provider_name}</p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{isBirthday ? 'Birthday' : 'Anniversary'}</span>
+                            <span>·</span>
+                            <span>{format(new Date(m.milestone_date), 'MMM d')}</span>
+                          </div>
+                          {!m.assigned_to && (
+                            <Badge variant="outline" className="text-[10px] mt-1 border-destructive/40 text-destructive">
+                              Unassigned
+                            </Badge>
+                          )}
+                        </div>
+                        <Badge
+                          variant={isUrgent ? "destructive" : "secondary"}
+                          className="shrink-0 text-[10px]"
+                        >
+                          {daysUntil === 0 ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `${daysUntil}d`}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+                {pendingMilestones.length > 6 && (
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    + {pendingMilestones.length - 6} more milestones
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <div className="flex items-center justify-between mb-6">
