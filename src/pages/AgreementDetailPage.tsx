@@ -5,6 +5,7 @@ import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { RelatedLinksCard } from '@/components/navigation/RelatedLinksCard';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
 import { TerminationDialog } from '@/components/agreements/TerminationDialog';
+import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +17,7 @@ import { useAgreementTasks, AgreementTask } from '@/hooks/useAgreementTasks';
 import { useAgreementWorkflow } from '@/hooks/useAgreementWorkflow';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
 import {
   MapPin,
   Users,
@@ -36,6 +38,7 @@ import {
   ShieldCheck,
   ArrowRight,
   Lock,
+  Pencil,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -59,6 +62,25 @@ export default function AgreementDetailPage() {
   const [loading, setLoading] = useState(true);
   const [terminationOpen, setTerminationOpen] = useState(false);
   const [advancing, setAdvancing] = useState(false);
+  const [editingTask, setEditingTask] = useState<DashboardTaskItem | null>(null);
+
+  const taskToDashboardItem = (task: AgreementTask): DashboardTaskItem => ({
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    category: task.category,
+    state_name: task.state_name,
+    state_abbreviation: task.state_abbreviation,
+    assigned_to_name: task.assigned_to_name,
+    assigned_to: task.assigned_to,
+    priority: task.priority,
+    due_date: task.due_date,
+    provider_id: task.provider_id,
+    transfer_id: task.transfer_id,
+    escalated: task.escalated,
+    blocked_reason: task.blocked_reason,
+    description: task.description,
+  });
 
   const userRole = roles.includes('admin') ? 'admin' : 
                    roles.includes('physician') ? 'physician' : 'provider';
@@ -512,6 +534,15 @@ export default function AgreementDetailPage() {
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
                                           <Badge variant="outline" className="capitalize text-xs">{task.category.replace(/_/g, ' ')}</Badge>
+                                          {hasRole('admin') && (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={(e) => { e.stopPropagation(); setEditingTask(taskToDashboardItem(task)); }}
+                                            >
+                                              <Pencil className="h-3 w-3" />
+                                            </Button>
+                                          )}
                                           {hasRole('admin') && task.status !== 'completed' && (
                                             <Button
                                               size="sm"
@@ -815,6 +846,15 @@ export default function AgreementDetailPage() {
           }}
         />
       )}
+
+      <EditTaskDialog
+        task={editingTask}
+        onClose={() => setEditingTask(null)}
+        onSuccess={() => {
+          setEditingTask(null);
+          refetchTasks();
+        }}
+      />
     </div>
   );
 }
