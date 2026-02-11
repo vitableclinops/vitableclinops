@@ -73,9 +73,9 @@ const navGroups: NavGroup[] = [
   },
   {
     label: 'Providers',
-    roles: ['admin'],
+    roles: ['admin', 'provider'],
     items: [
-      { label: 'Provider Directory', icon: Users, href: '/directory', roles: ['admin'] },
+      { label: 'Provider Directory', icon: Users, href: '/directory', roles: ['admin', 'provider'] },
       { label: 'Provider Intake', icon: UserPlus, href: '/admin/intake', roles: ['admin'] },
       { label: 'Provider Grid', icon: Grid3X3, href: '/grid', roles: ['admin'] },
       { label: 'Activation Queue', icon: Power, href: '/admin/activation', roles: ['admin'] },
@@ -103,7 +103,6 @@ const navGroups: NavGroup[] = [
     roles: ['provider', 'admin'],
     items: [
       { label: 'Knowledge Base', icon: BookOpen, href: '/knowledge', roles: ['provider', 'admin'] },
-      { label: 'Provider Directory', icon: User, href: '/directory', roles: ['provider'] },
       { label: 'Enhancements', icon: Lightbulb, href: '/admin/enhancements', roles: ['admin'] },
     ],
   },
