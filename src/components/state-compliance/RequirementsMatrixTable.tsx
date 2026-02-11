@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink, Search, ChevronDown, ChevronUp, CheckCircle2, XCircle, Minus, Pencil, Save, X } from 'lucide-react';
+import { ExternalLink, Search, ChevronDown, ChevronUp, CheckCircle2, XCircle, Minus, Pencil, Save, X, Shield, Users, AlertTriangle, ShieldOff, HelpCircle } from 'lucide-react';
+import { getCollabRequirementType, getCollabRequirementLabel, type CollabRequirementType } from '@/constants/stateRestrictions';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -325,18 +326,46 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange 
                     )}
                   </TableCell>
 
-                  {/* Practice Authority */}
+                  {/* Practice Authority (derived from collab_requirement_type) */}
                   <TableCell>
                     {editing && editValues ? (
                       <EditableTextCell value={editValues.fpa_status} onChange={v => updateField('fpa_status', v)} placeholder="e.g. Full" />
                     ) : (
-                      state.fpa_status && state.fpa_status !== 'NA' ? (
-                        <Badge variant="outline" className="text-xs whitespace-nowrap">
-                          {state.fpa_status}
-                        </Badge>
-                      ) : (
-                        <Minus className="h-4 w-4 text-muted-foreground/40" />
-                      )
+                      (() => {
+                        const collabType: CollabRequirementType = (state.collab_requirement_type as CollabRequirementType) || getCollabRequirementType(state.state_abbreviation);
+                        switch (collabType) {
+                          case 'never':
+                            return (
+                              <Badge variant="outline" className="text-xs whitespace-nowrap border-success/40 text-success bg-success/5">
+                                <Shield className="h-3 w-3 mr-1" />
+                                No
+                              </Badge>
+                            );
+                          case 'conditional':
+                            return (
+                              <Badge variant="outline" className="text-xs whitespace-nowrap border-warning/40 text-warning bg-warning/5">
+                                <HelpCircle className="h-3 w-3 mr-1" />
+                                ?
+                              </Badge>
+                            );
+                          case 'md_only':
+                            return (
+                              <Badge variant="outline" className="text-xs whitespace-nowrap border-destructive/40 text-destructive bg-destructive/5">
+                                <ShieldOff className="h-3 w-3 mr-1" />
+                                MD Only
+                              </Badge>
+                            );
+                          case 'always':
+                            return (
+                              <Badge variant="outline" className="text-xs whitespace-nowrap border-primary/40 text-primary bg-primary/5">
+                                <Users className="h-3 w-3 mr-1" />
+                                Yes
+                              </Badge>
+                            );
+                          default:
+                            return <Minus className="h-4 w-4 text-muted-foreground/40" />;
+                        }
+                      })()
                     )}
                   </TableCell>
 
