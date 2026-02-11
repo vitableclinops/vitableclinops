@@ -7,11 +7,14 @@ import { UpcomingMilestonesWidget } from '@/components/milestones/UpcomingMilest
 import { ActiveTransfersWidget } from '@/components/agreements/ActiveTransfersWidget';
 import { useGenerateMilestoneTasks } from '@/hooks/useMilestones';
 import { useAdminDashboard } from '@/hooks/useAdminDashboard';
+import { ArchiveTaskDialog } from '@/components/admin/ArchiveTaskDialog';
+import { ReassignTaskDialog } from '@/components/admin/ReassignTaskDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { 
   Users, 
   AlertTriangle, 
@@ -29,7 +32,10 @@ import {
   Lock,
   ListChecks,
   UserPlus,
-  MapPin
+  MapPin,
+  MoreVertical,
+  Archive,
+  UserCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -44,6 +50,8 @@ const AdminDashboard = () => {
   const [taskFilter, setTaskFilter] = useState<'all' | 'unassigned' | 'mine' | 'blocked' | 'escalated'>('all');
   const generateMilestones = useGenerateMilestoneTasks();
   const { stats, actionableTasks, taskStatusCounts, loading, refetch } = useAdminDashboard();
+  const [archiveTarget, setArchiveTarget] = useState<{ id: string; title: string } | null>(null);
+  const [reassignTarget, setReassignTarget] = useState<{ id: string; title: string; assignee: string | null } | null>(null);
   
   const userRole = roles[0] || 'admin';
   const userName = profile?.full_name || profile?.email || 'Admin User';
@@ -97,6 +105,7 @@ const AdminDashboard = () => {
       case 'compliance': return <ShieldCheck className="h-3.5 w-3.5" />;
       case 'workflows': return <ArrowRightLeft className="h-3.5 w-3.5" />;
       case 'outreach': return <Users className="h-3.5 w-3.5" />;
+      case 'communication': return <Users className="h-3.5 w-3.5" />;
       case 'milestones': return <Cake className="h-3.5 w-3.5" />;
       case 'milestone': return <Cake className="h-3.5 w-3.5" />;
       default: return <ListChecks className="h-3.5 w-3.5" />;
@@ -346,33 +355,40 @@ const AdminDashboard = () => {
                                         )}
                                       </div>
 
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        {task.assigned_to_name ? (
-                                          <Badge variant="outline" className="text-xs">
-                                            {task.assigned_to_name}
-                                          </Badge>
-                                        ) : (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
-                                            onClick={() => handleSelfAssign(task.id)}
-                                          >
-                                            <UserPlus className="h-3 w-3" />
-                                            Claim
-                                          </Button>
-                                        )}
-                                        {task.transfer_id && (
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7 opacity-0 group-hover:opacity-100"
-                                            onClick={() => navigate('/admin/agreements')}
-                                          >
-                                            <ChevronRight className="h-4 w-4" />
-                                          </Button>
-                                        )}
-                                      </div>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                         {task.assigned_to_name ? (
+                                           <Badge variant="outline" className="text-xs">
+                                             {task.assigned_to_name}
+                                           </Badge>
+                                         ) : (
+                                           <Button
+                                             variant="ghost"
+                                             size="sm"
+                                             className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
+                                             onClick={() => handleSelfAssign(task.id)}
+                                           >
+                                             <UserPlus className="h-3 w-3" />
+                                             Claim
+                                           </Button>
+                                         )}
+                                         <DropdownMenu>
+                                           <DropdownMenuTrigger asChild>
+                                             <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
+                                               <MoreVertical className="h-3.5 w-3.5" />
+                                             </Button>
+                                           </DropdownMenuTrigger>
+                                           <DropdownMenuContent align="end">
+                                             <DropdownMenuItem onClick={() => setReassignTarget({ id: task.id, title: task.title, assignee: task.assigned_to })}>
+                                               <UserCog className="h-3.5 w-3.5 mr-2" />
+                                               Reassign
+                                             </DropdownMenuItem>
+                                             <DropdownMenuItem onClick={() => setArchiveTarget({ id: task.id, title: task.title })} className="text-destructive focus:text-destructive">
+                                               <Archive className="h-3.5 w-3.5 mr-2" />
+                                               Archive
+                                             </DropdownMenuItem>
+                                           </DropdownMenuContent>
+                                         </DropdownMenu>
+                                       </div>
                                     </div>
                                   ))}
                                 </div>
@@ -558,6 +574,20 @@ const AdminDashboard = () => {
           </Tabs>
         </div>
       </main>
+
+      <ArchiveTaskDialog
+        taskId={archiveTarget?.id || null}
+        taskTitle={archiveTarget?.title || ''}
+        onClose={() => setArchiveTarget(null)}
+        onSuccess={() => { setArchiveTarget(null); refetch(); }}
+      />
+      <ReassignTaskDialog
+        taskId={reassignTarget?.id || null}
+        taskTitle={reassignTarget?.title || ''}
+        currentAssignee={reassignTarget?.assignee || null}
+        onClose={() => setReassignTarget(null)}
+        onSuccess={() => { setReassignTarget(null); refetch(); }}
+      />
     </div>
   );
 };
