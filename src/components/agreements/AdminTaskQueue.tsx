@@ -26,6 +26,13 @@ import type { Tables } from '@/integrations/supabase/types';
 
 type Task = Tables<'agreement_tasks'>;
 
+interface AgreementContext {
+  id: string;
+  provider_name: string | null;
+  physician_name: string | null;
+  state_abbreviation: string;
+}
+
 interface AdminTaskQueueProps {
   className?: string;
   compact?: boolean;
@@ -35,6 +42,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
   const navigate = useNavigate();
   const { profile } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [agreementMap, setAgreementMap] = useState<Map<string, AgreementContext>>(new Map());
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'assigned' | 'overdue' | 'blocked' | 'thisWeek'>('assigned');
 
@@ -57,6 +65,21 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
 
       if (!error && data) {
         setTasks(data);
+
+        // Fetch agreement context for all tasks with agreement_ids
+        const agreementIds = [...new Set(data.map(t => t.agreement_id).filter(Boolean))] as string[];
+        if (agreementIds.length > 0) {
+          const { data: agreements } = await supabase
+            .from('collaborative_agreements')
+            .select('id, provider_name, physician_name, state_abbreviation')
+            .in('id', agreementIds);
+          
+          if (agreements) {
+            const map = new Map<string, AgreementContext>();
+            agreements.forEach(a => map.set(a.id, a));
+            setAgreementMap(map);
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching tasks:', error);
@@ -136,6 +159,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
 
   const TaskRow = ({ task }: { task: Task }) => {
     const isOverdue = task.due_date && isBefore(new Date(task.due_date), now);
+    const agreementCtx = task.agreement_id ? agreementMap.get(task.agreement_id) : null;
     
     return (
       <div 
@@ -169,8 +193,13 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
             )}
           </div>
           
-          <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-            {task.state_abbreviation && (
+          <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
+            {agreementCtx && (
+              <span className="text-xs text-muted-foreground truncate">
+                {agreementCtx.provider_name || 'Provider'} ↔ Dr. {agreementCtx.physician_name || 'Physician'} ({agreementCtx.state_abbreviation})
+              </span>
+            )}
+            {!agreementCtx && task.state_abbreviation && (
               <Badge variant="outline" className="text-[10px]">{task.state_abbreviation}</Badge>
             )}
             {task.transfer_id && (
