@@ -25,6 +25,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useStateCompliance } from '@/hooks/useStateCompliance';
 import { RequirementsMatrixTable } from '@/components/state-compliance/RequirementsMatrixTable';
 import { LicensureTemplateManager } from '@/components/state-compliance/LicensureTemplateManager';
+import { getCollabRequirementLabel, getCollabRequirementType } from '@/constants/stateRestrictions';
 import { 
   Search,
   MapPin,
@@ -352,7 +353,11 @@ const StateCompliancePage = () => {
                               <div className="flex items-center gap-3">
                                 <div className={cn(
                                   'flex h-12 w-12 items-center justify-center rounded-lg text-lg font-bold',
-                                  state.hasFPA ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'
+                                  (() => {
+                                    const dbState = complianceAllData.find(c => c.state_abbreviation === state.abbreviation);
+                                    const collabType = dbState?.collab_requirement_type || getCollabRequirementType(state.abbreviation);
+                                    return collabType === 'never' ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary';
+                                  })()
                                 )}>
                                   {state.abbreviation}
                                 </div>
@@ -375,17 +380,40 @@ const StateCompliancePage = () => {
                           </CardHeader>
                           <CardContent className="space-y-4">
                             <div className="flex flex-wrap gap-2">
-                              {state.hasFPA ? (
-                                <Badge className="text-xs bg-success/10 text-success border-0">
-                                  <Shield className="h-3 w-3 mr-1" />
-                                  FPA Available
-                                </Badge>
-                              ) : (
-                                <Badge variant="secondary" className="text-xs">
-                                  <Users className="h-3 w-3 mr-1" />
-                                  Collaboration Required
-                                </Badge>
-                              )}
+                              {(() => {
+                                const dbState = complianceAllData.find(c => c.state_abbreviation === state.abbreviation);
+                                const collabType = dbState?.collab_requirement_type || getCollabRequirementType(state.abbreviation);
+                                switch (collabType) {
+                                  case 'never':
+                                    return (
+                                      <Badge className="text-xs bg-success/10 text-success border-0">
+                                        <Shield className="h-3 w-3 mr-1" />
+                                        FPA Available
+                                      </Badge>
+                                    );
+                                  case 'conditional':
+                                    return (
+                                      <Badge variant="outline" className="text-xs border-warning text-warning">
+                                        <AlertTriangle className="h-3 w-3 mr-1" />
+                                        Unless Autonomous
+                                      </Badge>
+                                    );
+                                  case 'md_only':
+                                    return (
+                                      <Badge variant="secondary" className="text-xs bg-destructive/10 text-destructive border-0">
+                                        <ShieldCheck className="h-3 w-3 mr-1" />
+                                        MD Only
+                                      </Badge>
+                                    );
+                                  default:
+                                    return (
+                                      <Badge variant="secondary" className="text-xs">
+                                        <Users className="h-3 w-3 mr-1" />
+                                        Collaboration Required
+                                      </Badge>
+                                    );
+                                }
+                              })()}
                               {state.requiresPrescriptiveAuthority && (
                                 <Badge variant="outline" className="text-xs">
                                   <Pill className="h-3 w-3 mr-1" />
