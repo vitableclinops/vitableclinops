@@ -14,12 +14,12 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Pencil, Clock, MapPin, User, Flag, Archive, Link2 } from 'lucide-react';
+import { Loader2, Pencil, MapPin, Archive } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
 import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
 import type { Database } from '@/integrations/supabase/types';
+import { LinkedProviderEditor, type LinkedProviderItem } from './LinkedProviderEditor';
 
 type TaskCategory = Database['public']['Enums']['agreement_task_category'];
 
@@ -37,14 +37,6 @@ const CATEGORY_OPTIONS: { value: TaskCategory; label: string }[] = [
   { value: 'custom', label: 'Custom' },
 ];
 
-interface LinkedProvider {
-  id: string;
-  provider_id: string;
-  role_label: string;
-  full_name: string | null;
-  email: string | null;
-}
-
 interface EditTaskDialogProps {
   task: DashboardTaskItem | null;
   onClose: () => void;
@@ -60,7 +52,8 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
-  const [linkedProviders, setLinkedProviders] = useState<LinkedProvider[]>([]);
+  const [linkedProviders, setLinkedProviders] = useState<LinkedProviderItem[]>([]);
+  const [initialLinkedIds, setInitialLinkedIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   useEffect(() => {
@@ -80,7 +73,7 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
         .eq('task_id', task.id)
         .then(async ({ data: links }) => {
           if (!links || links.length === 0) {
-            // Fallback: show legacy provider_id if no junction rows
+            // Fallback: show legacy provider_id
             if (task.provider_id) {
               const { data: fallback } = await supabase
                 .from('profiles')
@@ -88,17 +81,20 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
                 .eq('id', task.provider_id)
                 .single();
               if (fallback) {
-                setLinkedProviders([{
+                const item: LinkedProviderItem = {
                   id: 'legacy',
                   provider_id: fallback.id,
-                  role_label: 'Provider',
+                  role_label: 'NP',
                   full_name: fallback.full_name,
                   email: fallback.email,
-                }]);
+                };
+                setLinkedProviders([item]);
+                setInitialLinkedIds(new Set([fallback.id]));
                 return;
               }
             }
             setLinkedProviders([]);
+            setInitialLinkedIds(new Set());
             return;
           }
           const providerIds = links.map(l => l.provider_id);
@@ -108,15 +104,15 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
             .in('id', providerIds);
 
           const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-          setLinkedProviders(
-            links.map(l => ({
-              id: l.id,
-              provider_id: l.provider_id,
-              role_label: l.role_label,
-              full_name: profileMap.get(l.provider_id)?.full_name || null,
-              email: profileMap.get(l.provider_id)?.email || null,
-            }))
-          );
+          const items: LinkedProviderItem[] = links.map(l => ({
+            id: l.id,
+            provider_id: l.provider_id,
+            role_label: l.role_label,
+            full_name: profileMap.get(l.provider_id)?.full_name || null,
+            email: profileMap.get(l.provider_id)?.email || null,
+          }));
+          setLinkedProviders(items);
+          setInitialLinkedIds(new Set(providerIds));
         });
     }
   }, [task]);
@@ -159,6 +155,41 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
           .from('agreement_tasks')
           .update(updatePayload)
           .eq('id', task.id);
+
+        // Sync linked providers
+        const currentIds = new Set(linkedProviders.map(lp => lp.provider_id));
+        
+        // Delete removed providers
+        const toRemove = [...initialLinkedIds].filter(id => !currentIds.has(id));
+        if (toRemove.length > 0) {
+          await supabase
+            .from('task_linked_providers')
+            .delete()
+            .eq('task_id', task.id)
+            .in('provider_id', toRemove);
+        }
+
+        // Insert new providers
+        const toAdd = linkedProviders.filter(lp => !initialLinkedIds.has(lp.provider_id));
+        if (toAdd.length > 0) {
+          await supabase.from('task_linked_providers').insert(
+            toAdd.map(lp => ({
+              task_id: task.id,
+              provider_id: lp.provider_id,
+              role_label: lp.role_label,
+            }))
+          );
+        }
+
+        // Update role labels for existing providers
+        const toUpdate = linkedProviders.filter(lp => initialLinkedIds.has(lp.provider_id) && !lp.id.startsWith('new-'));
+        for (const lp of toUpdate) {
+          await supabase
+            .from('task_linked_providers')
+            .update({ role_label: lp.role_label })
+            .eq('task_id', task.id)
+            .eq('provider_id', lp.provider_id);
+        }
       }
 
       toast({ title: 'Task updated', description: 'Changes saved successfully.' });
@@ -205,35 +236,14 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Linked Providers - read-only, always visible */}
-          {linkedProviders.length > 0 && (
-            <div className="space-y-2">
-              <Label className="flex items-center gap-1">
-                <Link2 className="h-3.5 w-3.5" />
-                Linked Providers
-              </Label>
-              <div className="space-y-1.5">
-                {linkedProviders.map((lp) => (
-                  <div
-                    key={lp.id}
-                    className="flex items-center gap-2 rounded-md border border-input bg-muted/50 px-3 py-2 text-sm"
-                  >
-                    <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium">{lp.full_name || 'Unknown'}</span>
-                    <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">
-                      {lp.role_label}
-                    </Badge>
-                    {lp.email && (
-                      <span className="text-muted-foreground text-xs ml-auto truncate">{lp.email}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Provider links cannot be removed. They ensure visibility on each provider's dashboard.
-              </p>
-            </div>
-          )}
+          {/* Linked Providers - editable */}
+          <LinkedProviderEditor
+            value={linkedProviders}
+            onChange={setLinkedProviders}
+            disabled={isArchived}
+          />
+
+          <Separator />
 
           <div className="space-y-2">
             <Label htmlFor="task-title">Title</Label>

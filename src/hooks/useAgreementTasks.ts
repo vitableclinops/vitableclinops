@@ -116,7 +116,7 @@ export const useAgreementTasks = (options: UseAgreementTasksOptions = {}) => {
     });
   };
 
-  // Generate tasks for a new agreement
+  // Generate tasks for a new agreement and auto-link providers
   const generateAgreementTasks = async (
     agreementId: string,
     stateAbbreviation: string,
@@ -180,6 +180,22 @@ export const useAgreementTasks = (options: UseAgreementTasksOptions = {}) => {
 
       if (error) throw error;
 
+      // Auto-link providers to each created task
+      if (data && data.length > 0) {
+        const links: { task_id: string; provider_id: string; role_label: string }[] = [];
+        for (const task of data) {
+          if (providerId) {
+            links.push({ task_id: task.id, provider_id: providerId, role_label: 'NP' });
+          }
+          if (physicianId) {
+            links.push({ task_id: task.id, provider_id: physicianId, role_label: 'Physician' });
+          }
+        }
+        if (links.length > 0) {
+          await supabase.from('task_linked_providers').insert(links);
+        }
+      }
+
       setTasks(prev => [...prev, ...(data || [])]);
       return data;
     } catch (error) {
@@ -236,6 +252,22 @@ export const useAgreementTasks = (options: UseAgreementTasksOptions = {}) => {
         .select();
 
       if (error) throw error;
+
+      // Auto-link providers to termination tasks
+      if (data && data.length > 0) {
+        const links: { task_id: string; provider_id: string; role_label: string }[] = [];
+        for (const task of data) {
+          if (providerId) {
+            links.push({ task_id: task.id, provider_id: providerId, role_label: 'NP' });
+          }
+          if (physicianId) {
+            links.push({ task_id: task.id, provider_id: physicianId, role_label: 'Physician' });
+          }
+        }
+        if (links.length > 0) {
+          await supabase.from('task_linked_providers').insert(links);
+        }
+      }
 
       setTasks(prev => [...prev, ...(data || [])]);
       return data;
