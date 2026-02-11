@@ -2807,6 +2807,7 @@ export type Database = {
           meeting_months: number[] | null
           nlc: boolean | null
           np_md_ratio: string | null
+          np_md_ratio_limit: number | null
           np_prohibited: boolean | null
           review_cadence_days: number | null
           review_notes: string | null
@@ -2837,6 +2838,7 @@ export type Database = {
           meeting_months?: number[] | null
           nlc?: boolean | null
           np_md_ratio?: string | null
+          np_md_ratio_limit?: number | null
           np_prohibited?: boolean | null
           review_cadence_days?: number | null
           review_notes?: string | null
@@ -2867,6 +2869,7 @@ export type Database = {
           meeting_months?: number[] | null
           nlc?: boolean | null
           np_md_ratio?: string | null
+          np_md_ratio_limit?: number | null
           np_prohibited?: boolean | null
           review_cadence_days?: number | null
           review_notes?: string | null
