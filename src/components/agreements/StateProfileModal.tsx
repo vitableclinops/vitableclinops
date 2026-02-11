@@ -206,21 +206,17 @@ export const StateProfileModal = ({
                 <div className="space-y-2">
                   <Label htmlFor="rxr_required">Prescriptive Authority (RxA)</Label>
                   {isEditing ? (
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id="rxr_required"
-                        checked={formData.rxr_required ?? false}
-                        onCheckedChange={(checked) =>
-                          setFormData({ ...formData, rxr_required: checked })
-                        }
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {formData.rxr_required ? 'Required' : 'Not Required'}
-                      </span>
-                    </div>
+                    <Input
+                      id="rxr_required"
+                      value={formData.rxr_required || ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, rxr_required: e.target.value || null })
+                      }
+                      placeholder="e.g. Separate License, In Nursys, etc."
+                    />
                   ) : (
                     <Badge variant={stateData.rxr_required ? 'default' : 'secondary'}>
-                      {stateData.rxr_required ? 'Required' : 'Not Required'}
+                      {stateData.rxr_required || 'N/A'}
                     </Badge>
                   )}
                 </div>

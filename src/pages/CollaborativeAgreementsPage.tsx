@@ -115,7 +115,7 @@ interface FlattenedAgreement {
   // State compliance fields
   caRequired: boolean;
   fpaStatus: string | null;
-  rxrRequired: boolean;
+  rxrRequired: string | null;
   nlc: boolean;
   npMdRatio: string | null;
 }
@@ -246,7 +246,7 @@ const CollaborativeAgreementsPage = () => {
       workflowStatus: agreement.workflow_status || 'draft',
       caRequired: stateCompliance?.ca_required ?? false,
       fpaStatus: stateCompliance?.fpa_status || null,
-      rxrRequired: stateCompliance?.rxr_required ?? false,
+      rxrRequired: stateCompliance?.rxr_required ?? null,
       nlc: stateCompliance?.nlc ?? false,
       npMdRatio: stateCompliance?.np_md_ratio || null,
     };

@@ -12,22 +12,18 @@ export const COLLAB_ALWAYS_STATES = [
   'CA', 'NC', 'NJ', 'NY', 'OH', 'OK', 'PA', 'TX', 'WI', 'WV'
 ] as const;
 
-// "Unless Autonomous" = conditional on autonomous practice verification
+// "Unless Autonomous" or "TTP" = conditional on autonomous practice verification
 export const COLLAB_CONDITIONAL_STATES = [
-  'CO', 'CT', 'FL', 'IL', 'KY', 'MA', 'MD', 'ME', 'MN', 'NE', 'SD', 'UT', 'VA', 'VT'
+  'AR', 'CO', 'CT', 'FL', 'IL', 'KY', 'MA', 'MD', 'ME', 'MN', 'NE', 'SD', 'UT', 'VA', 'VT'
 ] as const;
 
-// "TTP" = Transition to Practice (always required during transition period)
-export const COLLAB_TTP_STATES = ['AR'] as const;
-
-export type CollabRequirementType = 'never' | 'always' | 'conditional' | 'ttp' | 'md_only';
+export type CollabRequirementType = 'never' | 'always' | 'conditional' | 'md_only';
 
 export function getCollabRequirementType(stateAbbr: string): CollabRequirementType {
   if (NP_PROHIBITED_STATES.includes(stateAbbr as any)) return 'md_only';
   if (COLLAB_NEVER_STATES.includes(stateAbbr as any)) return 'never';
   if (COLLAB_ALWAYS_STATES.includes(stateAbbr as any)) return 'always';
   if (COLLAB_CONDITIONAL_STATES.includes(stateAbbr as any)) return 'conditional';
-  if (COLLAB_TTP_STATES.includes(stateAbbr as any)) return 'ttp';
   return 'never'; // Default to never if not found
 }
 
@@ -44,7 +40,6 @@ export function getCollabRequirementLabel(type: CollabRequirementType): string {
     case 'never': return 'No';
     case 'always': return 'Yes';
     case 'conditional': return 'Unless Autonomous';
-    case 'ttp': return 'TTP';
   }
 }
 
