@@ -8,6 +8,7 @@ import { SelfReportedLicenseCard } from '@/components/SelfReportedLicenseCard';
 import { MvpBanner } from '@/components/MvpBanner';
 import { ComplianceRiskSummaryCard } from '@/components/ComplianceRiskSummary';
 import { UpcomingMilestonesWidget } from '@/components/milestones/UpcomingMilestonesWidget';
+import { ActiveTransfersWidget } from '@/components/agreements/ActiveTransfersWidget';
 import { useGenerateMilestoneTasks } from '@/hooks/useMilestones';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -357,8 +358,11 @@ const AdminDashboard = () => {
                     </CardContent>
                   </Card>
 
-                  {/* Upcoming Milestones */}
-                  <UpcomingMilestonesWidget />
+                   {/* Active Transfers */}
+                   <ActiveTransfersWidget />
+
+                   {/* Upcoming Milestones */}
+                   <UpcomingMilestonesWidget />
                   
                   {/* Generate Milestone Tasks */}
                   <Card>

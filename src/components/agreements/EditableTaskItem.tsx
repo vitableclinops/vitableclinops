@@ -30,7 +30,8 @@ import {
   AlertTriangle,
   ExternalLink,
   Lock,
-  Unlock
+  Unlock,
+  UserPlus
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -518,15 +519,73 @@ export function EditableTaskItem({
         )}
       </div>
 
-      {/* Assignment */}
+      {/* Assignment / Self-assign */}
       {isAdmin && (
-        <TaskAssignmentSelect
-          taskId={task.id}
-          transferId={transferId}
-          currentAssigneeId={task.assigned_to}
-          currentAssigneeName={task.assigned_to_name}
-          onAssigned={onUpdate}
-        />
+        task.assigned_to ? (
+          <TaskAssignmentSelect
+            taskId={task.id}
+            transferId={transferId}
+            currentAssigneeId={task.assigned_to}
+            currentAssigneeName={task.assigned_to_name}
+            onAssigned={onUpdate}
+          />
+        ) : (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  const { data: { user } } = await supabase.auth.getUser();
+                  if (!user) return;
+                  const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('full_name, email')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+                  const displayName = profile?.full_name || profile?.email || user.email || 'Unknown';
+                  
+                  const { error } = await supabase
+                    .from('agreement_tasks')
+                    .update({
+                      assigned_to: user.id,
+                      assigned_to_name: displayName,
+                      assigned_at: new Date().toISOString(),
+                    })
+                    .eq('id', task.id);
+                  if (error) throw error;
+                  
+                  await supabase.from('transfer_activity_log').insert({
+                    transfer_id: transferId,
+                    task_id: task.id,
+                    activity_type: 'task_assigned',
+                    actor_id: user.id,
+                    actor_name: displayName,
+                    actor_role: 'admin',
+                    description: `Self-assigned: ${task.title}`,
+                  });
+                  
+                  toast({ title: 'Task claimed', description: `Assigned to ${displayName}` });
+                  onUpdate();
+                } catch (err: any) {
+                  toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                }
+              }}
+            >
+              <UserPlus className="h-3 w-3" />
+              Claim
+            </Button>
+            <TaskAssignmentSelect
+              taskId={task.id}
+              transferId={transferId}
+              currentAssigneeId={null}
+              currentAssigneeName={null}
+              onAssigned={onUpdate}
+            />
+          </div>
+        )
       )}
 
       {/* Completion info */}
