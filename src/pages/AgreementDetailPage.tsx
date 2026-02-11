@@ -6,6 +6,7 @@ import { RelatedLinksCard } from '@/components/navigation/RelatedLinksCard';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
 import { TerminationDialog } from '@/components/agreements/TerminationDialog';
 import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
+import { TaskAssignmentSelect } from '@/components/agreements/TaskAssignmentSelect';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -576,12 +577,20 @@ export default function AgreementDetailPage() {
                                               <p className="font-medium">{format(new Date(task.due_date), 'MMM d, yyyy')}</p>
                                             </div>
                                           )}
-                                          {task.assigned_to_name && (
-                                            <div>
-                                              <p className="text-xs text-muted-foreground">Assigned To</p>
-                                              <p className="font-medium">{task.assigned_to_name}</p>
-                                            </div>
-                                          )}
+                                          <div onClick={(e) => e.stopPropagation()}>
+                                            <p className="text-xs text-muted-foreground mb-1">Assigned To</p>
+                                            {hasRole('admin') ? (
+                                              <TaskAssignmentSelect
+                                                taskId={task.id}
+                                                transferId={task.transfer_id || ''}
+                                                currentAssigneeId={task.assigned_to}
+                                                currentAssigneeName={task.assigned_to_name}
+                                                onAssigned={refetchTasks}
+                                              />
+                                            ) : (
+                                              <p className="font-medium">{task.assigned_to_name || 'Unassigned'}</p>
+                                            )}
+                                          </div>
                                           {task.priority && (
                                             <div>
                                               <p className="text-xs text-muted-foreground">Priority</p>
