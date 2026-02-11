@@ -37,7 +37,7 @@ type SortDir = 'asc' | 'desc';
 
 type EditableFields = {
   ca_required: boolean;
-  rxr_required: boolean;
+  rxr_required: string | null;
   nlc: boolean;
   fpa_status: string;
   np_md_ratio: string;
@@ -305,9 +305,14 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange 
                   {/* RxA Required */}
                   <TableCell className="text-center">
                     {editing && editValues ? (
-                      <EditableBoolCell value={editValues.rxr_required} onChange={v => updateField('rxr_required', v)} />
+                      <Input
+                        value={editValues.rxr_required || ''}
+                        onChange={e => updateField('rxr_required', e.target.value || null)}
+                        className="h-7 text-xs"
+                        placeholder="e.g. Separate License"
+                      />
                     ) : (
-                      <BoolCell value={state.rxr_required} />
+                      <span className="text-xs">{state.rxr_required || '—'}</span>
                     )}
                   </TableCell>
 

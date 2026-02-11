@@ -7,7 +7,7 @@ export interface StateCompliance {
   state_name: string;
   ca_meeting_cadence: string | null;
   ca_required: boolean;
-  rxr_required: boolean;
+  rxr_required: string | null;
   nlc: boolean;
   np_md_ratio: string | null;
   licenses: string | null;

@@ -2813,7 +2813,7 @@ export type Database = {
           review_sources: string | null
           reviewed_by: string | null
           reviewed_by_name: string | null
-          rxr_required: boolean | null
+          rxr_required: string | null
           state_abbreviation: string
           state_name: string
           steps_to_confirm_eligibility: string | null
@@ -2843,7 +2843,7 @@ export type Database = {
           review_sources?: string | null
           reviewed_by?: string | null
           reviewed_by_name?: string | null
-          rxr_required?: boolean | null
+          rxr_required?: string | null
           state_abbreviation: string
           state_name: string
           steps_to_confirm_eligibility?: string | null
@@ -2873,7 +2873,7 @@ export type Database = {
           review_sources?: string | null
           reviewed_by?: string | null
           reviewed_by_name?: string | null
-          rxr_required?: boolean | null
+          rxr_required?: string | null
           state_abbreviation?: string
           state_name?: string
           steps_to_confirm_eligibility?: string | null
