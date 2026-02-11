@@ -96,6 +96,7 @@ const AdminDashboard = () => {
       case 'chart_review': return <ShieldCheck className="h-3.5 w-3.5" />;
       case 'compliance': return <ShieldCheck className="h-3.5 w-3.5" />;
       case 'workflows': return <ArrowRightLeft className="h-3.5 w-3.5" />;
+      case 'outreach': return <Users className="h-3.5 w-3.5" />;
       case 'milestones': return <Cake className="h-3.5 w-3.5" />;
       case 'milestone': return <Cake className="h-3.5 w-3.5" />;
       default: return <ListChecks className="h-3.5 w-3.5" />;
@@ -125,11 +126,11 @@ const AdminDashboard = () => {
 
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-foreground">
+            <h1 className="text-3xl font-bold text-foreground">
               Provider Operations Hub
             </h1>
-            <p className="text-muted-foreground mt-1">
-              Real-time overview of provider compliance, agreements, and operational tasks.
+            <p className="text-sm text-muted-foreground mt-2">
+              Real-time oversight of provider compliance, agreements, and operational workflows.
             </p>
           </div>
 
@@ -257,12 +258,15 @@ const AdminDashboard = () => {
                               transfer: 'workflows',
                               onboarding: 'workflows',
                               milestone: 'milestones',
+                              outreach: 'outreach',
+                              communication: 'outreach',
                             };
                             const groupLabels: Record<string, string> = {
                               documents: 'Documents & Signatures',
                               clinical: 'Clinical Oversight',
                               workflows: 'Workflows & Transfers',
                               milestones: 'Milestones',
+                              outreach: 'Outreach & Communication',
                               general: 'General',
                             };
                             const grouped = filteredTasks.reduce<Record<string, typeof filteredTasks>>((acc, task) => {
