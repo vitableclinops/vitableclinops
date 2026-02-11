@@ -373,6 +373,9 @@ export type Database = {
       agreement_tasks: {
         Row: {
           agreement_id: string | null
+          archived_at: string | null
+          archived_by: string | null
+          archived_reason: string | null
           assigned_at: string | null
           assigned_role: string | null
           assigned_to: string | null
@@ -420,6 +423,9 @@ export type Database = {
         }
         Insert: {
           agreement_id?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
+          archived_reason?: string | null
           assigned_at?: string | null
           assigned_role?: string | null
           assigned_to?: string | null
@@ -467,6 +473,9 @@ export type Database = {
         }
         Update: {
           agreement_id?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
+          archived_reason?: string | null
           assigned_at?: string | null
           assigned_role?: string | null
           assigned_to?: string | null
@@ -3246,6 +3255,7 @@ export type Database = {
         | "document"
         | "custom"
         | "all_hands_attestation"
+        | "communication"
       agreement_task_status:
         | "pending"
         | "in_progress"
@@ -3253,6 +3263,7 @@ export type Database = {
         | "blocked"
         | "cancelled"
         | "waiting_on_signature"
+        | "archived"
       agreement_workflow_status:
         | "draft"
         | "pending_signatures"
@@ -3428,6 +3439,7 @@ export const Constants = {
         "document",
         "custom",
         "all_hands_attestation",
+        "communication",
       ],
       agreement_task_status: [
         "pending",
@@ -3436,6 +3448,7 @@ export const Constants = {
         "blocked",
         "cancelled",
         "waiting_on_signature",
+        "archived",
       ],
       agreement_workflow_status: [
         "draft",
