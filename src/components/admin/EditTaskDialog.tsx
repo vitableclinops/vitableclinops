@@ -80,6 +80,24 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
         .eq('task_id', task.id)
         .then(async ({ data: links }) => {
           if (!links || links.length === 0) {
+            // Fallback: show legacy provider_id if no junction rows
+            if (task.provider_id) {
+              const { data: fallback } = await supabase
+                .from('profiles')
+                .select('id, full_name, email')
+                .eq('id', task.provider_id)
+                .single();
+              if (fallback) {
+                setLinkedProviders([{
+                  id: 'legacy',
+                  provider_id: fallback.id,
+                  role_label: 'Provider',
+                  full_name: fallback.full_name,
+                  email: fallback.email,
+                }]);
+                return;
+              }
+            }
             setLinkedProviders([]);
             return;
           }
