@@ -273,12 +273,6 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange 
               >
                 NLC <SortIcon field="nlc" />
               </TableHead>
-              <TableHead 
-                className="cursor-pointer hover:bg-muted/50 min-w-[140px]"
-                onClick={() => toggleSort('fpa_status')}
-              >
-                Practice Authority <SortIcon field="fpa_status" />
-              </TableHead>
               <TableHead className="min-w-[100px]">NP:MD Ratio</TableHead>
               <TableHead 
                 className="cursor-pointer hover:bg-muted/50 min-w-[180px]"
@@ -339,24 +333,6 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange 
                     )}
                   </TableCell>
 
-                  {/* Practice Authority */}
-                  <TableCell>
-                    {editing && editValues ? (
-                      <EditableTextCell value={editValues.fpa_status} onChange={v => updateField('fpa_status', v)} placeholder="e.g. Full" />
-                    ) : (
-                      (state.collab_requirement_type === 'md_only') ? (
-                        <Badge variant="outline" className={cn('text-xs whitespace-nowrap', collabBadgeStyles['md_only'])}>
-                          MD Only
-                        </Badge>
-                      ) : state.fpa_status && state.fpa_status !== 'NA' ? (
-                        <Badge variant="outline" className="text-xs whitespace-nowrap">
-                          {state.fpa_status}
-                        </Badge>
-                      ) : (
-                        <Minus className="h-4 w-4 text-muted-foreground/40" />
-                      )
-                    )}
-                  </TableCell>
 
                   {/* NP:MD Ratio */}
                   <TableCell>
