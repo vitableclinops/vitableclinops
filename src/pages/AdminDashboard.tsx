@@ -88,11 +88,16 @@ const AdminDashboard = () => {
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
+      case 'documents': return <FileText className="h-3.5 w-3.5" />;
       case 'document': return <FileText className="h-3.5 w-3.5" />;
-      case 'supervision_meeting': return <Calendar className="h-3.5 w-3.5" />;
       case 'signature': return <FileText className="h-3.5 w-3.5" />;
+      case 'clinical': return <ShieldCheck className="h-3.5 w-3.5" />;
+      case 'supervision_meeting': return <Calendar className="h-3.5 w-3.5" />;
       case 'chart_review': return <ShieldCheck className="h-3.5 w-3.5" />;
       case 'compliance': return <ShieldCheck className="h-3.5 w-3.5" />;
+      case 'workflows': return <ArrowRightLeft className="h-3.5 w-3.5" />;
+      case 'milestones': return <Cake className="h-3.5 w-3.5" />;
+      case 'milestone': return <Cake className="h-3.5 w-3.5" />;
       default: return <ListChecks className="h-3.5 w-3.5" />;
     }
   };
@@ -243,18 +248,25 @@ const AdminDashboard = () => {
                       ) : filteredTasks.length > 0 ? (
                         <div className="space-y-4">
                           {(() => {
-                            const categoryLabels: Record<string, string> = {
-                              document: 'Documents',
-                              signature: 'Signatures',
-                              supervision_meeting: 'Supervision Meetings',
-                              chart_review: 'Chart Reviews',
-                              compliance: 'Compliance',
-                              transfer: 'Transfers',
-                              onboarding: 'Onboarding',
+                            const groupMap: Record<string, string> = {
+                              document: 'documents',
+                              signature: 'documents',
+                              supervision_meeting: 'clinical',
+                              chart_review: 'clinical',
+                              compliance: 'clinical',
+                              transfer: 'workflows',
+                              onboarding: 'workflows',
+                              milestone: 'milestones',
+                            };
+                            const groupLabels: Record<string, string> = {
+                              documents: 'Documents & Signatures',
+                              clinical: 'Clinical Oversight',
+                              workflows: 'Workflows & Transfers',
+                              milestones: 'Milestones',
                               general: 'General',
                             };
                             const grouped = filteredTasks.reduce<Record<string, typeof filteredTasks>>((acc, task) => {
-                              const cat = task.category || 'general';
+                              const cat = groupMap[task.category] || 'general';
                               if (!acc[cat]) acc[cat] = [];
                               acc[cat].push(task);
                               return acc;
@@ -264,7 +276,7 @@ const AdminDashboard = () => {
                                 <div className="flex items-center gap-2 mb-2">
                                   <span className="text-muted-foreground">{getCategoryIcon(category)}</span>
                                   <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    {categoryLabels[category] || category.replace(/_/g, ' ')}
+                                    {groupLabels[category] || category.replace(/_/g, ' ')}
                                   </h4>
                                   <Badge variant="outline" className="text-[10px] px-1">{tasks.length}</Badge>
                                 </div>
