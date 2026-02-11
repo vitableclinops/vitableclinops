@@ -241,93 +241,124 @@ const AdminDashboard = () => {
                           ))}
                         </div>
                       ) : filteredTasks.length > 0 ? (
-                        <div className="space-y-2">
-                          {filteredTasks.map(task => (
-                            <div 
-                              key={task.id}
-                              className={cn(
-                                "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group",
-                                task.escalated && "border-destructive/30 bg-destructive/5",
-                                (task.status === 'blocked' || task.status === 'waiting_on_signature') && "border-warning/30 bg-warning/5"
-                              )}
-                            >
-                              <div className={cn("text-muted-foreground", getPriorityColor(task.priority))}>
-                                {getCategoryIcon(task.category)}
-                              </div>
-                              
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="text-sm font-medium truncate">{task.title}</p>
-                                  {task.escalated && (
-                                    <Badge variant="destructive" className="text-[10px] gap-0.5 px-1">
-                                      <Flag className="h-2.5 w-2.5" /> Escalated
-                                    </Badge>
-                                  )}
-                                  {(task.status === 'blocked' || task.status === 'waiting_on_signature') && (
-                                    <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-0.5 px-1">
-                                      <Lock className="h-2.5 w-2.5" /> {task.status === 'waiting_on_signature' ? 'Waiting Signature' : 'Blocked'}
-                                    </Badge>
-                                  )}
+                        <div className="space-y-4">
+                          {(() => {
+                            const categoryLabels: Record<string, string> = {
+                              document: 'Documents',
+                              signature: 'Signatures',
+                              supervision_meeting: 'Supervision Meetings',
+                              chart_review: 'Chart Reviews',
+                              compliance: 'Compliance',
+                              transfer: 'Transfers',
+                              onboarding: 'Onboarding',
+                              general: 'General',
+                            };
+                            const grouped = filteredTasks.reduce<Record<string, typeof filteredTasks>>((acc, task) => {
+                              const cat = task.category || 'general';
+                              if (!acc[cat]) acc[cat] = [];
+                              acc[cat].push(task);
+                              return acc;
+                            }, {});
+                            return Object.entries(grouped).map(([category, tasks]) => (
+                              <div key={category}>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-muted-foreground">{getCategoryIcon(category)}</span>
+                                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                    {categoryLabels[category] || category.replace(/_/g, ' ')}
+                                  </h4>
+                                  <Badge variant="outline" className="text-[10px] px-1">{tasks.length}</Badge>
                                 </div>
-                                <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                                  {task.state_name && (
-                                    <span className="flex items-center gap-0.5">
-                                      <MapPin className="h-3 w-3" />
-                                      {task.state_abbreviation || task.state_name}
-                                    </span>
-                                  )}
-                                  {task.provider_name && (
-                                    <span>• {task.provider_name}</span>
-                                  )}
-                                  {task.transfer_id && (
-                                    <Badge variant="outline" className="text-[10px] px-1">Transfer</Badge>
-                                  )}
-                                  {task.due_date && (
-                                    <span className={cn(
-                                      "flex items-center gap-0.5",
-                                      new Date(task.due_date) < new Date() && "text-destructive"
-                                    )}>
-                                      <Clock className="h-3 w-3" />
-                                      Due {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                    </span>
-                                  )}
-                                </div>
-                                {task.blocked_reason && (
-                                  <p className="text-xs text-warning mt-0.5 truncate">
-                                    {task.blocked_reason}
-                                  </p>
-                                )}
-                              </div>
+                                <div className="space-y-1.5">
+                                  {tasks.map(task => (
+                                    <div 
+                                      key={task.id}
+                                      className={cn(
+                                        "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group",
+                                        task.escalated && "border-destructive/30 bg-destructive/5",
+                                        (task.status === 'blocked' || task.status === 'waiting_on_signature') && "border-warning/30 bg-warning/5"
+                                      )}
+                                    >
+                                      <div className={cn("text-muted-foreground", getPriorityColor(task.priority))}>
+                                        {task.priority === 'critical' ? <Flag className="h-3.5 w-3.5" /> : getCategoryIcon(task.category)}
+                                      </div>
+                                      
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <p className="text-sm font-medium truncate">{task.title}</p>
+                                          {task.escalated && (
+                                            <Badge variant="destructive" className="text-[10px] gap-0.5 px-1">
+                                              <Flag className="h-2.5 w-2.5" /> Escalated
+                                            </Badge>
+                                          )}
+                                          {(task.status === 'blocked' || task.status === 'waiting_on_signature') && (
+                                            <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-0.5 px-1">
+                                              <Lock className="h-2.5 w-2.5" /> {task.status === 'waiting_on_signature' ? 'Waiting Signature' : 'Blocked'}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                                          {task.state_name && (
+                                            <span className="flex items-center gap-0.5">
+                                              <MapPin className="h-3 w-3" />
+                                              {task.state_abbreviation || task.state_name}
+                                            </span>
+                                          )}
+                                          {task.provider_name && (
+                                            <span>• {task.provider_name}</span>
+                                          )}
+                                          {task.transfer_id && (
+                                            <Badge variant="outline" className="text-[10px] px-1">Transfer</Badge>
+                                          )}
+                                          {task.due_date && (
+                                            <span className={cn(
+                                              "flex items-center gap-0.5",
+                                              new Date(task.due_date) < new Date() && "text-destructive"
+                                            )}>
+                                              <Clock className="h-3 w-3" />
+                                              Due {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {task.blocked_reason && (
+                                          <p className="text-xs text-warning mt-0.5 truncate">
+                                            {task.blocked_reason}
+                                          </p>
+                                        )}
+                                      </div>
 
-                              <div className="flex items-center gap-2 shrink-0">
-                                {task.assigned_to_name ? (
-                                  <Badge variant="outline" className="text-xs">
-                                    {task.assigned_to_name}
-                                  </Badge>
-                                ) : (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
-                                    onClick={() => handleSelfAssign(task.id)}
-                                  >
-                                    <UserPlus className="h-3 w-3" />
-                                    Claim
-                                  </Button>
-                                )}
-                                {task.transfer_id && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 opacity-0 group-hover:opacity-100"
-                                    onClick={() => navigate('/admin/agreements')}
-                                  >
-                                    <ChevronRight className="h-4 w-4" />
-                                  </Button>
-                                )}
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        {task.assigned_to_name ? (
+                                          <Badge variant="outline" className="text-xs">
+                                            {task.assigned_to_name}
+                                          </Badge>
+                                        ) : (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
+                                            onClick={() => handleSelfAssign(task.id)}
+                                          >
+                                            <UserPlus className="h-3 w-3" />
+                                            Claim
+                                          </Button>
+                                        )}
+                                        {task.transfer_id && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7 opacity-0 group-hover:opacity-100"
+                                            onClick={() => navigate('/admin/agreements')}
+                                          >
+                                            <ChevronRight className="h-4 w-4" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            ));
+                          })()}
                         </div>
                       ) : (
                         <div className="py-12 text-center">
