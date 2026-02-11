@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ interface AdminTaskQueueProps {
 }
 
 export function AdminTaskQueue({ className, compact = false }: AdminTaskQueueProps) {
+  const navigate = useNavigate();
   const { profile } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,13 +140,21 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
     return (
       <div 
         className={cn(
-          "flex items-center gap-3 p-3 border-b last:border-0 hover:bg-muted/30 transition-colors group",
+          "flex items-center gap-3 p-3 border-b last:border-0 hover:bg-muted/30 transition-colors group cursor-pointer",
           isOverdue && "bg-destructive/5"
         )}
+        onClick={() => {
+          if (task.agreement_id) {
+            navigate(`/admin/agreements/${task.agreement_id}`);
+          }
+        }}
       >
         <Checkbox
           checked={task.status === 'completed'}
-          onCheckedChange={() => handleToggleComplete(task)}
+          onCheckedChange={(e) => {
+            e && handleToggleComplete(task);
+          }}
+          onClick={(e) => e.stopPropagation()}
         />
         
         <div className="flex-1 min-w-0">
@@ -191,7 +201,9 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
               }
             </span>
           )}
-          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
+          {task.agreement_id && (
+            <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
+          )}
         </div>
       </div>
     );
