@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { Tables } from '@/integrations/supabase/types';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
@@ -487,65 +488,126 @@ export default function AgreementDetailPage() {
                           {tasks.length > 0 ? (
                             <div className="space-y-3">
                               {tasks.map((task: AgreementTask) => (
-                                <div
-                                  key={task.id}
-                                  className={cn(
-                                    "flex items-start gap-4 p-4 rounded-lg border transition-colors",
-                                    task.status === 'completed' && "bg-success/5 border-success/20",
-                                    task.status === 'blocked' && "bg-destructive/5 border-destructive/20"
-                                  )}
-                                >
-                                  {getTaskStatusIcon(task.status)}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <p className="font-medium text-foreground">{task.title}</p>
-                                      {task.is_required && (
-                                        <Badge variant="outline" className="text-xs">Required</Badge>
-                                      )}
-                                    </div>
-                                    {task.description && (
-                                      <p className="text-sm text-muted-foreground mt-0.5">{task.description}</p>
+                                <Collapsible key={task.id}>
+                                  <div
+                                    className={cn(
+                                      "rounded-lg border transition-colors",
+                                      task.status === 'completed' && "bg-success/5 border-success/20",
+                                      task.status === 'blocked' && "bg-destructive/5 border-destructive/20"
                                     )}
-                                    {task.task_purpose && (
-                                      <p className="text-xs text-muted-foreground mt-1 italic">
-                                        Purpose: {task.task_purpose}
-                                      </p>
-                                    )}
-                                    {task.completed_at && (
-                                      <p className="text-xs text-success mt-1">
-                                        Completed {format(new Date(task.completed_at), 'MMM d, yyyy h:mm a')}
-                                      </p>
-                                    )}
-                                    {task.compliance_risk && task.status !== 'completed' && (
-                                      <p className="text-xs text-destructive mt-1">
-                                        ⚠ Risk: {task.compliance_risk}
-                                      </p>
-                                    )}
+                                  >
+                                    <CollapsibleTrigger asChild>
+                                      <div className="flex items-start gap-4 p-4 cursor-pointer hover:bg-muted/30 transition-colors">
+                                        {getTaskStatusIcon(task.status)}
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <p className="font-medium text-foreground">{task.title}</p>
+                                            {task.is_required && (
+                                              <Badge variant="outline" className="text-xs">Required</Badge>
+                                            )}
+                                          </div>
+                                          {task.description && (
+                                            <p className="text-sm text-muted-foreground mt-0.5">{task.description}</p>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <Badge variant="outline" className="capitalize text-xs">{task.category.replace(/_/g, ' ')}</Badge>
+                                          {hasRole('admin') && task.status !== 'completed' && (
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={(e) => { e.stopPropagation(); handleCompleteTask(task.id); }}
+                                            >
+                                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                                              Complete
+                                            </Button>
+                                          )}
+                                          {hasRole('admin') && task.status === 'completed' && (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="text-muted-foreground"
+                                              onClick={(e) => { e.stopPropagation(); handleReopenTask(task.id); }}
+                                            >
+                                              Reopen
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </CollapsibleTrigger>
+
+                                    <CollapsibleContent>
+                                      <div className="px-4 pb-4 pt-0 border-t border-border/50 mt-0">
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-3 text-sm">
+                                          {task.due_date && (
+                                            <div>
+                                              <p className="text-xs text-muted-foreground">Due Date</p>
+                                              <p className="font-medium">{format(new Date(task.due_date), 'MMM d, yyyy')}</p>
+                                            </div>
+                                          )}
+                                          {task.assigned_to_name && (
+                                            <div>
+                                              <p className="text-xs text-muted-foreground">Assigned To</p>
+                                              <p className="font-medium">{task.assigned_to_name}</p>
+                                            </div>
+                                          )}
+                                          {task.priority && (
+                                            <div>
+                                              <p className="text-xs text-muted-foreground">Priority</p>
+                                              <p className="font-medium capitalize">{task.priority}</p>
+                                            </div>
+                                          )}
+                                          {task.assigned_role && (
+                                            <div>
+                                              <p className="text-xs text-muted-foreground">Assigned Role</p>
+                                              <p className="font-medium capitalize">{task.assigned_role}</p>
+                                            </div>
+                                          )}
+                                          {task.status === 'blocked' && task.blocked_reason && (
+                                            <div className="col-span-2">
+                                              <p className="text-xs text-destructive">Blocked Reason</p>
+                                              <p className="font-medium text-destructive">{task.blocked_reason}</p>
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {task.task_purpose && (
+                                          <p className="text-xs text-muted-foreground mt-3 italic">
+                                            Purpose: {task.task_purpose}
+                                          </p>
+                                        )}
+                                        {task.notes && (
+                                          <div className="mt-3">
+                                            <p className="text-xs text-muted-foreground">Notes</p>
+                                            <p className="text-sm mt-0.5">{task.notes}</p>
+                                          </div>
+                                        )}
+                                        {task.compliance_risk && task.status !== 'completed' && (
+                                          <p className="text-xs text-destructive mt-2">
+                                            ⚠ Compliance Risk: {task.compliance_risk}
+                                          </p>
+                                        )}
+                                        {task.external_url && (
+                                          <a
+                                            href={task.external_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-2"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <ExternalLink className="h-3 w-3" />
+                                            Open external link
+                                          </a>
+                                        )}
+                                        {task.completed_at && (
+                                          <p className="text-xs text-success mt-2">
+                                            ✓ Completed {format(new Date(task.completed_at), 'MMM d, yyyy h:mm a')}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </CollapsibleContent>
                                   </div>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <Badge variant="outline" className="capitalize text-xs">{task.category.replace(/_/g, ' ')}</Badge>
-                                    {hasRole('admin') && task.status !== 'completed' && (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => handleCompleteTask(task.id)}
-                                      >
-                                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                                        Complete
-                                      </Button>
-                                    )}
-                                    {hasRole('admin') && task.status === 'completed' && (
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="text-muted-foreground"
-                                        onClick={() => handleReopenTask(task.id)}
-                                      >
-                                        Reopen
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
+                                </Collapsible>
                               ))}
                             </div>
                           ) : (
