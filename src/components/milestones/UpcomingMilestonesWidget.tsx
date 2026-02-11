@@ -35,7 +35,8 @@ export function UpcomingMilestonesWidget({ className, compact = false }: Upcomin
       const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, date_of_birth, birthday, start_date_on_network, employment_start_date, employment_type')
-        .in('employment_type', ['w2', '1099']);
+        .in('employment_type', ['w2', '1099'])
+        .neq('activation_status', 'Terminated');
 
       if (error) throw error;
 
