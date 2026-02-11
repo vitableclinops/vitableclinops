@@ -4,6 +4,7 @@ import { StatCard } from '@/components/StatCard';
 import { ReadinessScreen } from '@/components/ReadinessScreen';
 import { ProviderMeetingRSVP } from '@/components/meetings/ProviderMeetingRSVP';
 import { ProviderAttestationCard } from '@/components/calendar/ProviderAttestationCard';
+import { LicensureApplicationsWidget } from '@/components/licensure/LicensureApplicationsWidget';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -338,6 +339,7 @@ const ProviderDashboard = () => {
 
               {/* Sidebar */}
               <div className="space-y-6">
+                {profile?.id && <LicensureApplicationsWidget providerId={profile.id} />}
                 <ProviderAttestationCard />
                 <ProviderMeetingRSVP />
 

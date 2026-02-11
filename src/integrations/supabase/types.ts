@@ -1543,6 +1543,206 @@ export type Database = {
         }
         Relationships: []
       }
+      licensure_application_steps: {
+        Row: {
+          admin_notes: string | null
+          application_id: string
+          completed_at: string | null
+          created_at: string
+          description: string | null
+          fee_amount: number | null
+          fee_receipt_uploaded_at: string | null
+          fee_receipt_url: string | null
+          id: string
+          is_required: boolean
+          provider_notes: string | null
+          reimbursement_request_id: string | null
+          reimbursement_status: string | null
+          sort_order: number
+          started_at: string | null
+          status: Database["public"]["Enums"]["licensure_step_status"]
+          submitted_date: string | null
+          title: string
+          updated_at: string
+          uploaded_at: string | null
+          uploaded_file_name: string | null
+          uploaded_file_url: string | null
+        }
+        Insert: {
+          admin_notes?: string | null
+          application_id: string
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          fee_amount?: number | null
+          fee_receipt_uploaded_at?: string | null
+          fee_receipt_url?: string | null
+          id?: string
+          is_required?: boolean
+          provider_notes?: string | null
+          reimbursement_request_id?: string | null
+          reimbursement_status?: string | null
+          sort_order?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["licensure_step_status"]
+          submitted_date?: string | null
+          title: string
+          updated_at?: string
+          uploaded_at?: string | null
+          uploaded_file_name?: string | null
+          uploaded_file_url?: string | null
+        }
+        Update: {
+          admin_notes?: string | null
+          application_id?: string
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          fee_amount?: number | null
+          fee_receipt_uploaded_at?: string | null
+          fee_receipt_url?: string | null
+          id?: string
+          is_required?: boolean
+          provider_notes?: string | null
+          reimbursement_request_id?: string | null
+          reimbursement_status?: string | null
+          sort_order?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["licensure_step_status"]
+          submitted_date?: string | null
+          title?: string
+          updated_at?: string
+          uploaded_at?: string | null
+          uploaded_file_name?: string | null
+          uploaded_file_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "licensure_application_steps_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "licensure_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "licensure_application_steps_reimbursement_request_id_fkey"
+            columns: ["reimbursement_request_id"]
+            isOneToOne: false
+            referencedRelation: "reimbursement_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      licensure_applications: {
+        Row: {
+          admin_notes: string | null
+          agreement_task_id: string | null
+          approved_at: string | null
+          ca_awareness_dismissed: boolean | null
+          ca_requirement_type: string | null
+          created_at: string
+          designation_label: string
+          designation_type: string
+          id: string
+          initiated_at: string
+          initiated_by: string | null
+          kb_article_id: string | null
+          license_id: string | null
+          notes: string | null
+          provider_email: string | null
+          provider_id: string
+          provider_name: string
+          started_at: string | null
+          state_abbreviation: string
+          state_name: string
+          status: Database["public"]["Enums"]["licensure_application_status"]
+          submitted_at: string | null
+          template_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          agreement_task_id?: string | null
+          approved_at?: string | null
+          ca_awareness_dismissed?: boolean | null
+          ca_requirement_type?: string | null
+          created_at?: string
+          designation_label?: string
+          designation_type?: string
+          id?: string
+          initiated_at?: string
+          initiated_by?: string | null
+          kb_article_id?: string | null
+          license_id?: string | null
+          notes?: string | null
+          provider_email?: string | null
+          provider_id: string
+          provider_name: string
+          started_at?: string | null
+          state_abbreviation: string
+          state_name: string
+          status?: Database["public"]["Enums"]["licensure_application_status"]
+          submitted_at?: string | null
+          template_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          admin_notes?: string | null
+          agreement_task_id?: string | null
+          approved_at?: string | null
+          ca_awareness_dismissed?: boolean | null
+          ca_requirement_type?: string | null
+          created_at?: string
+          designation_label?: string
+          designation_type?: string
+          id?: string
+          initiated_at?: string
+          initiated_by?: string | null
+          kb_article_id?: string | null
+          license_id?: string | null
+          notes?: string | null
+          provider_email?: string | null
+          provider_id?: string
+          provider_name?: string
+          started_at?: string | null
+          state_abbreviation?: string
+          state_name?: string
+          status?: Database["public"]["Enums"]["licensure_application_status"]
+          submitted_at?: string | null
+          template_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "licensure_applications_agreement_task_id_fkey"
+            columns: ["agreement_task_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "licensure_applications_kb_article_id_fkey"
+            columns: ["kb_article_id"]
+            isOneToOne: false
+            referencedRelation: "kb_articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "licensure_applications_license_id_fkey"
+            columns: ["license_id"]
+            isOneToOne: false
+            referencedRelation: "provider_licenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "licensure_applications_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "state_licensure_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meeting_attendees: {
         Row: {
           assigned_slot: string | null
@@ -2681,6 +2881,68 @@ export type Database = {
         }
         Relationships: []
       }
+      state_licensure_templates: {
+        Row: {
+          application_url: string | null
+          created_at: string
+          designation_label: string
+          designation_type: string
+          estimated_fee: number | null
+          estimated_timeline: string | null
+          id: string
+          is_active: boolean
+          kb_article_id: string | null
+          notes: string | null
+          required_documents: string[] | null
+          sort_order: number
+          state_abbreviation: string
+          steps: Json
+          updated_at: string
+        }
+        Insert: {
+          application_url?: string | null
+          created_at?: string
+          designation_label?: string
+          designation_type?: string
+          estimated_fee?: number | null
+          estimated_timeline?: string | null
+          id?: string
+          is_active?: boolean
+          kb_article_id?: string | null
+          notes?: string | null
+          required_documents?: string[] | null
+          sort_order?: number
+          state_abbreviation: string
+          steps?: Json
+          updated_at?: string
+        }
+        Update: {
+          application_url?: string | null
+          created_at?: string
+          designation_label?: string
+          designation_type?: string
+          estimated_fee?: number | null
+          estimated_timeline?: string | null
+          id?: string
+          is_active?: boolean
+          kb_article_id?: string | null
+          notes?: string | null
+          required_documents?: string[] | null
+          sort_order?: number
+          state_abbreviation?: string
+          steps?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "state_licensure_templates_kb_article_id_fkey"
+            columns: ["kb_article_id"]
+            isOneToOne: false
+            referencedRelation: "kb_articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supervision_meetings: {
         Row: {
           agreement_id: string
@@ -3414,6 +3676,19 @@ export type Database = {
         | "active"
         | "deactivation_requested"
         | "deactivated"
+      licensure_application_status:
+        | "not_started"
+        | "in_progress"
+        | "submitted"
+        | "approved"
+        | "blocked"
+        | "withdrawn"
+      licensure_step_status:
+        | "not_started"
+        | "in_progress"
+        | "submitted"
+        | "approved"
+        | "skipped"
       mismatch_type:
         | "active_but_not_ready"
         | "ready_but_inactive"
@@ -3604,6 +3879,21 @@ export const Constants = {
         "active",
         "deactivation_requested",
         "deactivated",
+      ],
+      licensure_application_status: [
+        "not_started",
+        "in_progress",
+        "submitted",
+        "approved",
+        "blocked",
+        "withdrawn",
+      ],
+      licensure_step_status: [
+        "not_started",
+        "in_progress",
+        "submitted",
+        "approved",
+        "skipped",
       ],
       mismatch_type: [
         "active_but_not_ready",
