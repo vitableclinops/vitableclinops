@@ -1,112 +1,108 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { StatCard } from '@/components/StatCard';
-import { StatusBadge } from '@/components/StatusBadge';
-import { CategoryBadge } from '@/components/CategoryBadge';
-import { DemandTagBadge } from '@/components/DemandTagBadge';
-import { SelfReportedLicenseCard } from '@/components/SelfReportedLicenseCard';
 import { MvpBanner } from '@/components/MvpBanner';
-import { ComplianceRiskSummaryCard } from '@/components/ComplianceRiskSummary';
 import { UpcomingMilestonesWidget } from '@/components/milestones/UpcomingMilestonesWidget';
 import { ActiveTransfersWidget } from '@/components/agreements/ActiveTransfersWidget';
 import { useGenerateMilestoneTasks } from '@/hooks/useMilestones';
+import { useAdminDashboard } from '@/hooks/useAdminDashboard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  providers, 
-  getAllTasks, 
-  states, 
-  collaborativeAgreements,
-  selfReportedLicenses,
-  getPendingLicenseVerifications
-} from '@/data/mockData';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   Users, 
-  ClipboardList, 
   AlertTriangle, 
   CheckCircle2,
-  Search,
-  Filter,
   ChevronRight,
-  MapPin,
-  Receipt,
   Clock,
-  Shield,
   FileText,
   Calendar,
   ShieldCheck,
   Cake,
   RefreshCw,
-  Loader2
+  Loader2,
+  ArrowRightLeft,
+  Flag,
+  Lock,
+  ListChecks,
+  UserPlus,
+  MapPin
 } from 'lucide-react';
-import type { Task, TaskStatus, Provider, TaskCategory } from '@/types';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 const AdminDashboard = () => {
   const { profile, roles } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('review');
-  const [categoryFilter, setCategoryFilter] = useState<TaskCategory | 'all'>('all');
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState('tasks');
+  const [taskFilter, setTaskFilter] = useState<'all' | 'unassigned' | 'mine' | 'blocked' | 'escalated'>('all');
   const generateMilestones = useGenerateMilestoneTasks();
+  const { stats, actionableTasks, taskStatusCounts, loading, refetch } = useAdminDashboard();
   
   const userRole = roles[0] || 'admin';
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
-  
-  // Calculate admin stats
-  const allTasks = getAllTasks();
-  const tasksByStatus: Record<TaskStatus, number> = {
-    not_started: allTasks.filter(t => t.status === 'not_started').length,
-    in_progress: allTasks.filter(t => t.status === 'in_progress').length,
-    submitted: allTasks.filter(t => t.status === 'submitted').length,
-    verified: allTasks.filter(t => t.status === 'verified').length,
-    approved: allTasks.filter(t => t.status === 'approved').length,
-    blocked: allTasks.filter(t => t.status === 'blocked').length,
-  };
+  const userId = profile?.id;
 
-  const tasksByCategory: Record<TaskCategory, number> = {
-    licensure: allTasks.filter(t => t.category === 'licensure').length,
-    collaborative: allTasks.filter(t => t.category === 'collaborative').length,
-    compliance: allTasks.filter(t => t.category === 'compliance').length,
-  };
-  
-  const pendingReimbursements = allTasks.filter(t => 
-    t.reimbursement?.status === 'pending'
-  ).length;
-  
-  const providersWithBlockers = providers.filter(p => 
-    p.states.some(s => s.tasks.some(t => t.status === 'blocked'))
-  );
-  
-  const providersReadyForActivation = providers.filter(p =>
-    p.states.some(s => s.isReadyForActivation)
-  );
-
-  const pendingLicenseVerifications = getPendingLicenseVerifications();
-  const pendingRenewalAgreements = collaborativeAgreements.filter(a => a.status === 'pending_renewal');
-  const nonCompliantProviders = providers.filter(p => !p.complianceStatus?.isCompliant);
-
-  // Tasks needing review (submitted status)
-  const tasksNeedingReview = allTasks.filter(t => {
-    const matchesCategory = categoryFilter === 'all' || t.category === categoryFilter;
-    return t.status === 'submitted' && matchesCategory;
+  // Filter tasks based on active filter
+  const filteredTasks = actionableTasks.filter(task => {
+    switch (taskFilter) {
+      case 'unassigned': return !task.assigned_to;
+      case 'mine': return task.assigned_to === userId;
+      case 'blocked': return task.status === 'blocked' || task.status === 'waiting_on_signature';
+      case 'escalated': return task.escalated;
+      default: return true;
+    }
   });
 
-  const getInitials = (firstName: string, lastName: string) => {
-    return `${firstName[0]}${lastName[0]}`.toUpperCase();
+  const unassignedCount = actionableTasks.filter(t => !t.assigned_to).length;
+  const myTaskCount = actionableTasks.filter(t => t.assigned_to === userId).length;
+  const blockedCount = actionableTasks.filter(t => t.status === 'blocked' || t.status === 'waiting_on_signature').length;
+  const escalatedCount = actionableTasks.filter(t => t.escalated).length;
+
+  const handleSelfAssign = async (taskId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: prof } = await supabase.from('profiles').select('full_name, email').eq('user_id', user.id).maybeSingle();
+      const displayName = prof?.full_name || prof?.email || user.email || 'Unknown';
+      
+      await supabase.from('agreement_tasks').update({
+        assigned_to: user.id,
+        assigned_to_name: displayName,
+        assigned_at: new Date().toISOString(),
+      }).eq('id', taskId);
+
+      toast({ title: 'Task claimed', description: `Assigned to ${displayName}` });
+      refetch();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
   };
 
-  const getProviderFromTask = (task: Task): Provider | undefined => {
-    return providers.find(p => p.id === task.providerId);
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'document': return <FileText className="h-3.5 w-3.5" />;
+      case 'supervision_meeting': return <Calendar className="h-3.5 w-3.5" />;
+      case 'signature': return <FileText className="h-3.5 w-3.5" />;
+      case 'chart_review': return <ShieldCheck className="h-3.5 w-3.5" />;
+      case 'compliance': return <ShieldCheck className="h-3.5 w-3.5" />;
+      default: return <ListChecks className="h-3.5 w-3.5" />;
+    }
   };
 
-  const getStateFromTask = (task: Task) => {
-    return states.find(s => s.id === task.stateId);
+  const getPriorityColor = (priority: string | null) => {
+    switch (priority) {
+      case 'critical': return 'text-destructive';
+      case 'high': return 'text-warning';
+      default: return 'text-muted-foreground';
+    }
   };
 
   return (
@@ -120,7 +116,6 @@ const AdminDashboard = () => {
       
       <main className="pl-64 transition-all duration-300">
         <div className="p-8">
-          {/* MVP Banner */}
           <MvpBanner />
 
           {/* Header */}
@@ -129,170 +124,218 @@ const AdminDashboard = () => {
               Provider Operations Hub
             </h1>
             <p className="text-muted-foreground mt-1">
-              Manage provider licensure, agreements, compliance, and track progress.
+              Real-time overview of provider compliance, agreements, and operational tasks.
             </p>
           </div>
 
           {/* Stats Grid */}
-          <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-8">
-            <StatCard
-              title="Total Providers"
-              value={providers.length}
-              subtitle={`${providersReadyForActivation.length} ready`}
-              icon={Users}
-              variant="default"
-            />
-            <StatCard
-              title="Needs Review"
-              value={tasksByStatus.submitted}
-              subtitle="Submitted tasks"
-              icon={Clock}
-              variant={tasksByStatus.submitted > 0 ? 'warning' : 'default'}
-            />
-            <StatCard
-              title="License Verifications"
-              value={pendingLicenseVerifications.length}
-              subtitle="Self-reported"
-              icon={FileText}
-              variant={pendingLicenseVerifications.length > 0 ? 'warning' : 'default'}
-            />
-            <StatCard
-              title="Agreement Renewals"
-              value={pendingRenewalAgreements.length}
-              subtitle="Pending renewal"
-              icon={Calendar}
-              variant={pendingRenewalAgreements.length > 0 ? 'warning' : 'default'}
-            />
-            <StatCard
-              title="Non-Compliant"
-              value={nonCompliantProviders.length}
-              subtitle="Providers"
-              icon={ShieldCheck}
-              variant={nonCompliantProviders.length > 0 ? 'danger' : 'success'}
-            />
-            <StatCard
-              title="Blocked"
-              value={tasksByStatus.blocked}
-              subtitle={`${providersWithBlockers.length} providers`}
-              icon={AlertTriangle}
-              variant={tasksByStatus.blocked > 0 ? 'danger' : 'default'}
-            />
-          </div>
+          {loading ? (
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-8">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-24 rounded-lg" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-8">
+              <StatCard
+                title="Internal Providers"
+                value={stats.totalInternalProviders}
+                subtitle={`${stats.w2Count} W2 · ${stats.contractorCount} 1099`}
+                icon={Users}
+                variant="default"
+              />
+              <StatCard
+                title="Active Agreements"
+                value={stats.activeAgreements}
+                subtitle={`${stats.draftAgreements} draft · ${stats.pendingSetupAgreements} pending`}
+                icon={FileText}
+                variant="default"
+              />
+              <StatCard
+                title="Active Transfers"
+                value={stats.activeTransfers}
+                subtitle="In progress"
+                icon={ArrowRightLeft}
+                variant={stats.activeTransfers > 0 ? 'warning' : 'default'}
+              />
+              <StatCard
+                title="Open Tasks"
+                value={actionableTasks.length}
+                subtitle={`${unassignedCount} unassigned`}
+                icon={ListChecks}
+                variant={unassignedCount > 0 ? 'warning' : 'default'}
+              />
+              <StatCard
+                title="Blocked"
+                value={blockedCount}
+                subtitle={`${escalatedCount} escalated`}
+                icon={AlertTriangle}
+                variant={blockedCount > 0 ? 'danger' : 'default'}
+              />
+              <StatCard
+                title="Completed"
+                value={taskStatusCounts['completed'] || 0}
+                subtitle="Total tasks done"
+                icon={CheckCircle2}
+                variant="success"
+              />
+            </div>
+          )}
 
-          {/* Compliance Risk Summary */}
-          <div className="mb-8">
-            <ComplianceRiskSummaryCard />
-          </div>
-
-          {/* Tabs */}
+          {/* Main Content */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-6">
-              <TabsTrigger value="review" className="gap-2">
-                <Clock className="h-4 w-4" />
-                Review Queue
+              <TabsTrigger value="tasks" className="gap-2">
+                <ListChecks className="h-4 w-4" />
+                Task Queue
+                {actionableTasks.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5">{actionableTasks.length}</Badge>
+                )}
               </TabsTrigger>
-              <TabsTrigger value="activation" className="gap-2">
-                <Shield className="h-4 w-4" />
-                Activation Ready
-              </TabsTrigger>
-              <TabsTrigger value="blocked" className="gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                Blocked
+              <TabsTrigger value="compliance" className="gap-2">
+                <ShieldCheck className="h-4 w-4" />
+                Compliance
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="review">
+            <TabsContent value="tasks">
               <div className="grid gap-8 lg:grid-cols-3">
-                {/* Tasks needing review */}
+                {/* Task Queue */}
                 <div className="lg:col-span-2">
                   <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-4">
-                      <CardTitle className="text-lg">Tasks Needing Review</CardTitle>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          <Button 
-                            variant={categoryFilter === 'all' ? 'secondary' : 'ghost'} 
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">Actionable Tasks</CardTitle>
+                        <Button variant="ghost" size="sm" onClick={refetch}>
+                          <RefreshCw className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-1 mt-2 flex-wrap">
+                        {[
+                          { key: 'all', label: 'All', count: actionableTasks.length },
+                          { key: 'unassigned', label: 'Unassigned', count: unassignedCount },
+                          { key: 'mine', label: 'My Tasks', count: myTaskCount },
+                          { key: 'blocked', label: 'Blocked', count: blockedCount },
+                          { key: 'escalated', label: 'Escalated', count: escalatedCount },
+                        ].map(f => (
+                          <Button
+                            key={f.key}
+                            variant={taskFilter === f.key ? 'secondary' : 'ghost'}
                             size="sm"
-                            onClick={() => setCategoryFilter('all')}
+                            className="text-xs h-7"
+                            onClick={() => setTaskFilter(f.key as any)}
                           >
-                            All
+                            {f.label}
+                            {f.count > 0 && (
+                              <Badge variant="outline" className="ml-1 text-[10px] px-1">{f.count}</Badge>
+                            )}
                           </Button>
-                          <Button 
-                            variant={categoryFilter === 'licensure' ? 'secondary' : 'ghost'} 
-                            size="sm"
-                            onClick={() => setCategoryFilter('licensure')}
-                          >
-                            Licensure
-                          </Button>
-                          <Button 
-                            variant={categoryFilter === 'collaborative' ? 'secondary' : 'ghost'} 
-                            size="sm"
-                            onClick={() => setCategoryFilter('collaborative')}
-                          >
-                            Collaborative
-                          </Button>
-                          <Button 
-                            variant={categoryFilter === 'compliance' ? 'secondary' : 'ghost'} 
-                            size="sm"
-                            onClick={() => setCategoryFilter('compliance')}
-                          >
-                            Compliance
-                          </Button>
-                        </div>
+                        ))}
                       </div>
                     </CardHeader>
                     <CardContent>
-                      {tasksNeedingReview.length > 0 ? (
+                      {loading ? (
                         <div className="space-y-3">
-                          {tasksNeedingReview.map(task => {
-                            const provider = getProviderFromTask(task);
-                            const state = getStateFromTask(task);
-                            
-                            return (
-                              <div 
-                                key={task.id}
-                                className="flex items-center gap-4 p-4 rounded-lg border bg-card hover:shadow-md transition-shadow cursor-pointer group"
-                              >
-                                <Avatar className="h-10 w-10">
-                                  <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                                    {provider ? getInitials(provider.firstName, provider.lastName) : '??'}
-                                  </AvatarFallback>
-                                </Avatar>
-                                
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="font-medium text-foreground">
-                                      {provider?.firstName} {provider?.lastName}
-                                    </span>
-                                    <span className="text-muted-foreground">•</span>
-                                    <Badge variant="secondary" className="text-xs">
-                                      {state?.abbreviation}
-                                    </Badge>
-                                    {state?.demandTag && state.demandTag !== 'stable' && (
-                                      <DemandTagBadge tag={state.demandTag} size="sm" showLabel={false} />
-                                    )}
-                                  </div>
-                                  <p className="text-sm text-muted-foreground truncate">
-                                    {task.title}
-                                  </p>
-                                </div>
-                                
-                                <div className="flex items-center gap-3">
-                                  <CategoryBadge category={task.category} size="sm" />
-                                  <span className="text-xs text-muted-foreground">
-                                    {task.evidence.length} file{task.evidence.length !== 1 ? 's' : ''}
-                                  </span>
-                                  <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </div>
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Skeleton key={i} className="h-16 rounded-lg" />
+                          ))}
+                        </div>
+                      ) : filteredTasks.length > 0 ? (
+                        <div className="space-y-2">
+                          {filteredTasks.map(task => (
+                            <div 
+                              key={task.id}
+                              className={cn(
+                                "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group",
+                                task.escalated && "border-destructive/30 bg-destructive/5",
+                                (task.status === 'blocked' || task.status === 'waiting_on_signature') && "border-warning/30 bg-warning/5"
+                              )}
+                            >
+                              <div className={cn("text-muted-foreground", getPriorityColor(task.priority))}>
+                                {getCategoryIcon(task.category)}
                               </div>
-                            );
-                          })}
+                              
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm font-medium truncate">{task.title}</p>
+                                  {task.escalated && (
+                                    <Badge variant="destructive" className="text-[10px] gap-0.5 px-1">
+                                      <Flag className="h-2.5 w-2.5" /> Escalated
+                                    </Badge>
+                                  )}
+                                  {(task.status === 'blocked' || task.status === 'waiting_on_signature') && (
+                                    <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-0.5 px-1">
+                                      <Lock className="h-2.5 w-2.5" /> {task.status === 'waiting_on_signature' ? 'Waiting Signature' : 'Blocked'}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                                  {task.state_name && (
+                                    <span className="flex items-center gap-0.5">
+                                      <MapPin className="h-3 w-3" />
+                                      {task.state_abbreviation || task.state_name}
+                                    </span>
+                                  )}
+                                  {task.provider_name && (
+                                    <span>• {task.provider_name}</span>
+                                  )}
+                                  {task.transfer_id && (
+                                    <Badge variant="outline" className="text-[10px] px-1">Transfer</Badge>
+                                  )}
+                                  {task.due_date && (
+                                    <span className={cn(
+                                      "flex items-center gap-0.5",
+                                      new Date(task.due_date) < new Date() && "text-destructive"
+                                    )}>
+                                      <Clock className="h-3 w-3" />
+                                      Due {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    </span>
+                                  )}
+                                </div>
+                                {task.blocked_reason && (
+                                  <p className="text-xs text-warning mt-0.5 truncate">
+                                    {task.blocked_reason}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                {task.assigned_to_name ? (
+                                  <Badge variant="outline" className="text-xs">
+                                    {task.assigned_to_name}
+                                  </Badge>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
+                                    onClick={() => handleSelfAssign(task.id)}
+                                  >
+                                    <UserPlus className="h-3 w-3" />
+                                    Claim
+                                  </Button>
+                                )}
+                                {task.transfer_id && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 opacity-0 group-hover:opacity-100"
+                                    onClick={() => navigate('/admin/agreements')}
+                                  >
+                                    <ChevronRight className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       ) : (
                         <div className="py-12 text-center">
                           <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-3" />
                           <p className="text-muted-foreground">
-                            No tasks pending review. You're all caught up!
+                            {taskFilter === 'all' 
+                              ? "No open tasks. You're all caught up!" 
+                              : `No ${taskFilter} tasks found.`}
                           </p>
                         </div>
                       )}
@@ -302,67 +345,36 @@ const AdminDashboard = () => {
 
                 {/* Sidebar */}
                 <div className="space-y-6">
-                  {/* Pending license verifications */}
-                  {pendingLicenseVerifications.length > 0 && (
-                    <Card className="border-warning/30">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <FileText className="h-4 w-4 text-warning" />
-                          License Verifications
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {pendingLicenseVerifications.slice(0, 3).map(license => (
-                          <SelfReportedLicenseCard 
-                            key={license.id}
-                            license={license}
-                          />
-                        ))}
-                        {pendingLicenseVerifications.length > 3 && (
-                          <Button variant="ghost" className="w-full" size="sm">
-                            View all ({pendingLicenseVerifications.length})
-                            <ChevronRight className="h-4 w-4 ml-1" />
-                          </Button>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
+                  {/* Active Transfers */}
+                  <ActiveTransfersWidget />
 
-                  {/* Quick stats by category */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Tasks by Category</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {Object.entries(tasksByCategory).map(([category, count]) => (
-                        <div key={category} className="flex items-center justify-between">
-                          <CategoryBadge category={category as TaskCategory} size="sm" />
-                          <span className="text-sm font-medium text-foreground">{count}</span>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-
-                  {/* Task distribution */}
+                  {/* Task Distribution */}
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">Task Status Distribution</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-3">
-                      {Object.entries(tasksByStatus).map(([status, count]) => (
+                    <CardContent className="space-y-2">
+                      {Object.entries(taskStatusCounts).map(([status, count]) => (
                         <div key={status} className="flex items-center justify-between">
-                          <StatusBadge status={status as TaskStatus} size="sm" />
-                          <span className="text-sm font-medium text-foreground">{count}</span>
+                          <div className="flex items-center gap-2">
+                            <div className={cn(
+                              "h-2 w-2 rounded-full",
+                              status === 'completed' && "bg-success",
+                              status === 'pending' && "bg-muted-foreground",
+                              status === 'in_progress' && "bg-primary",
+                              status === 'blocked' && "bg-warning",
+                              status === 'waiting_on_signature' && "bg-warning",
+                            )} />
+                            <span className="text-sm capitalize">{status.replace(/_/g, ' ')}</span>
+                          </div>
+                          <span className="text-sm font-medium">{count}</span>
                         </div>
                       ))}
                     </CardContent>
                   </Card>
 
-                   {/* Active Transfers */}
-                   <ActiveTransfersWidget />
-
-                   {/* Upcoming Milestones */}
-                   <UpcomingMilestonesWidget />
+                  {/* Upcoming Milestones */}
+                  <UpcomingMilestonesWidget />
                   
                   {/* Generate Milestone Tasks */}
                   <Card>
@@ -396,132 +408,100 @@ const AdminDashboard = () => {
               </div>
             </TabsContent>
 
-            <TabsContent value="activation">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <Shield className="h-5 w-5 text-success" />
-                    Providers Ready for Activation
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {providersReadyForActivation.length > 0 ? (
-                    <div className="space-y-4">
-                      {providersReadyForActivation.map(provider => {
-                        const readyStates = provider.states.filter(s => s.isReadyForActivation);
-                        
-                        return (
-                          <div 
-                            key={provider.id}
-                            className="flex items-center gap-4 p-4 rounded-lg border bg-success/5 border-success/20 hover:shadow-md transition-shadow cursor-pointer group"
-                          >
-                            <Avatar className="h-12 w-12">
-                              <AvatarFallback className="bg-success/20 text-success">
-                                {getInitials(provider.firstName, provider.lastName)}
-                              </AvatarFallback>
-                            </Avatar>
-                            
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-foreground">
-                                {provider.firstName} {provider.lastName}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {provider.specialty}
-                              </p>
-                              <div className="flex flex-wrap gap-2 mt-2">
-                                {readyStates.map(ps => (
-                                  <Badge key={ps.id} className="bg-success/10 text-success border-0">
-                                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                                    {ps.state.abbreviation}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                              <Button size="sm">Activate</Button>
-                              <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                          </div>
-                        );
-                      })}
+            <TabsContent value="compliance">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Users className="h-5 w-5 text-primary" />
+                      Internal Provider Compliance
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Compliance is monitored for all internal (W2 and 1099) providers. Agency-supplied providers are managed externally.
+                    </p>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center p-4 rounded-lg bg-primary/5 border">
+                        <p className="text-2xl font-bold text-primary">{stats.totalInternalProviders}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Internal Providers</p>
+                      </div>
+                      <div className="text-center p-4 rounded-lg bg-muted/50 border">
+                        <p className="text-2xl font-bold">{stats.w2Count}</p>
+                        <p className="text-xs text-muted-foreground mt-1">W2 Employees</p>
+                      </div>
+                      <div className="text-center p-4 rounded-lg bg-muted/50 border">
+                        <p className="text-2xl font-bold">{stats.contractorCount}</p>
+                        <p className="text-xs text-muted-foreground mt-1">1099 Contractors</p>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="py-12 text-center">
-                      <Clock className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                      <p className="text-muted-foreground">
-                        No providers are currently ready for activation.
-                      </p>
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border text-sm">
+                      <ShieldCheck className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-muted-foreground">
+                        {stats.agencyCount} agency-supplied provider{stats.agencyCount !== 1 ? 's' : ''} excluded from internal compliance tracking.
+                      </span>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
+                    <Button variant="outline" className="w-full" onClick={() => navigate('/admin/directory')}>
+                      View Provider Directory
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </CardContent>
+                </Card>
 
-            <TabsContent value="blocked">
-              <Card className="border-destructive/30">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <AlertTriangle className="h-5 w-5 text-destructive" />
-                    Blocked Providers
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {providersWithBlockers.length > 0 ? (
-                    <div className="space-y-4">
-                      {providersWithBlockers.map(provider => {
-                        const blockedStates = provider.states.filter(s => 
-                          s.tasks.some(t => t.status === 'blocked')
-                        );
-                        const blockedTasks = provider.states.flatMap(s => 
-                          s.tasks.filter(t => t.status === 'blocked')
-                        );
-                        
-                        return (
-                          <div 
-                            key={provider.id}
-                            className="flex items-center gap-4 p-4 rounded-lg border bg-destructive/5 border-destructive/20 hover:shadow-md transition-shadow cursor-pointer group"
-                          >
-                            <Avatar className="h-12 w-12">
-                              <AvatarFallback className="bg-destructive/20 text-destructive">
-                                {getInitials(provider.firstName, provider.lastName)}
-                              </AvatarFallback>
-                            </Avatar>
-                            
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-foreground">
-                                {provider.firstName} {provider.lastName}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {blockedTasks.length} blocked task{blockedTasks.length !== 1 ? 's' : ''} in {blockedStates.map(s => s.state.abbreviation).join(', ')}
-                              </p>
-                              <div className="mt-2">
-                                {blockedTasks.slice(0, 2).map(task => (
-                                  <p key={task.id} className="text-xs text-muted-foreground truncate">
-                                    • {task.title}
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                              <Button variant="outline" size="sm">Resolve</Button>
-                              <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <FileText className="h-5 w-5 text-primary" />
+                      Agreement Overview
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2.5 w-2.5 rounded-full bg-success" />
+                          <span className="text-sm">Active Agreements</span>
+                        </div>
+                        <span className="text-sm font-bold">{stats.activeAgreements}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2.5 w-2.5 rounded-full bg-muted-foreground" />
+                          <span className="text-sm">Draft</span>
+                        </div>
+                        <span className="text-sm font-bold">{stats.draftAgreements}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2.5 w-2.5 rounded-full bg-warning" />
+                          <span className="text-sm">Pending Setup / Verification</span>
+                        </div>
+                        <span className="text-sm font-bold">{stats.pendingSetupAgreements}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2.5 w-2.5 rounded-full bg-primary" />
+                          <span className="text-sm">Active Transfers</span>
+                        </div>
+                        <span className="text-sm font-bold">{stats.activeTransfers}</span>
+                      </div>
+                      {stats.upcomingRenewals > 0 && (
+                        <div className="flex items-center justify-between p-3 rounded-lg border border-warning/30 bg-warning/5">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-warning" />
+                            <span className="text-sm">Renewals (next 90 days)</span>
                           </div>
-                        );
-                      })}
+                          <span className="text-sm font-bold text-warning">{stats.upcomingRenewals}</span>
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="py-12 text-center">
-                      <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-3" />
-                      <p className="text-muted-foreground">
-                        No providers are currently blocked!
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                    <Button variant="outline" className="w-full" onClick={() => navigate('/admin/agreements')}>
+                      Manage Agreements
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
           </Tabs>
         </div>
