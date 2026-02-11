@@ -968,6 +968,11 @@ const CollaborativeAgreementsPage = () => {
                             
                             {/* Actions - combined doc + menu */}
                             <div className="flex justify-end items-center gap-1">
+                              <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+                                <Link to={`/admin/agreements/${agreement.agreementId}`} title="View Agreement Details">
+                                  <ChevronRight className="h-4 w-4" />
+                                </Link>
+                              </Button>
                               {hasDocument && (
                                 <Button variant="ghost" size="icon" asChild className="text-success h-8 w-8">
                                   <a href={documentLink!} target="_blank" rel="noopener noreferrer" title="View Document">
@@ -987,6 +992,13 @@ const CollaborativeAgreementsPage = () => {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
+                                  <DropdownMenuItem asChild>
+                                    <Link to={`/admin/agreements/${agreement.agreementId}`}>
+                                      <Eye className="h-4 w-4 mr-2" />
+                                      View Details
+                                    </Link>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
                                   <DropdownMenuItem
                                     onClick={() => {
                                       setSelectedFlatAgreement(agreement);
