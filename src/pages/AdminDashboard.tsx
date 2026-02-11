@@ -240,13 +240,17 @@ const AdminDashboard = () => {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      {loading ? (
-                        <div className="space-y-3">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <Skeleton key={i} className="h-16 rounded-lg" />
-                          ))}
-                        </div>
-                      ) : filteredTasks.length > 0 ? (
+                       {loading ? (
+                         <div className="space-y-3">
+                           {Array.from({ length: 3 }).map((_, i) => (
+                             <div key={i} className="space-y-2">
+                               <Skeleton className="h-4 w-20 rounded" />
+                               <Skeleton className="h-20 rounded-lg" />
+                               <Skeleton className="h-20 rounded-lg" />
+                             </div>
+                           ))}
+                         </div>
+                       ) : filteredTasks.length > 0 ? (
                         <div className="space-y-4">
                           {(() => {
                             const groupMap: Record<string, string> = {
@@ -376,14 +380,15 @@ const AdminDashboard = () => {
                             ));
                           })()}
                         </div>
-                      ) : (
-                        <div className="py-12 text-center">
-                          <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-3" />
-                          <p className="text-muted-foreground">
-                            {taskFilter === 'all' 
-                              ? "No open tasks. You're all caught up!" 
-                              : `No ${taskFilter} tasks found.`}
-                          </p>
+                       ) : (
+                         <div className="flex flex-col items-center justify-center py-12 text-center">
+                           <ListChecks className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                           <p className="text-sm font-medium text-muted-foreground">No tasks found</p>
+                           <p className="text-xs text-muted-foreground/70 mt-1">
+                             {taskFilter === 'all' 
+                               ? 'All tasks are completed — great work!' 
+                               : `No ${taskFilter} tasks at this time`}
+                           </p>
                         </div>
                       )}
                     </CardContent>
