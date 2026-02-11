@@ -59,7 +59,7 @@ const CalendarPage = () => {
                 Calendar
               </h1>
               <p className="text-muted-foreground mt-1">
-                All-Hands events, provider milestones, and upcoming celebrations.
+                Events, provider milestones, and celebrations.
               </p>
             </div>
             {isAdmin && (
@@ -167,12 +167,12 @@ const CalendarPage = () => {
                       <CardContent className="py-12 text-center">
                         <Calendar className="h-12 w-12 mx-auto text-muted-foreground/30 mb-3" />
                         <p className="text-muted-foreground">No upcoming events</p>
-                        {isAdmin && (
-                          <Button variant="outline" className="mt-4" onClick={() => setCreateDialogOpen(true)}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Schedule an All-Hands
-                          </Button>
-                        )}
+                         {isAdmin && (
+                           <Button variant="outline" className="mt-4" onClick={() => setCreateDialogOpen(true)}>
+                             <Plus className="h-4 w-4 mr-2" />
+                             Schedule an Event
+                           </Button>
+                         )}
                       </CardContent>
                     </Card>
                   ) : (
