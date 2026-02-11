@@ -210,59 +210,47 @@ const CollaborativeAgreementsPage = () => {
     fetchDbAgreements();
   }, []);
 
-  // Create flattened agreements - each provider-state-physician combo is one row
-  // Use state compliance data for meeting cadences when available
-  // Next meeting dates come from actual scheduled meetings in the database
-  const flattenedAgreements: FlattenedAgreement[] = dbProviders.map(provider => {
-    const agreement = dbAgreements.find(a => a.id === provider.agreement_id);
-    if (!agreement) return null;
-    
-    // Use state compliance cadence if available, otherwise fall back to agreement cadence
+  // Each agreement row now represents one provider–physician–state combo directly
+  const flattenedAgreements: FlattenedAgreement[] = dbAgreements.map(agreement => {
     const stateCadence = getStateMeetingCadence(agreement.state_abbreviation, stateComplianceData);
     const effectiveCadence = stateCadence || agreement.meeting_cadence;
-    
-    // Get next meeting from scheduled meetings in database (not auto-calculated)
     const nextScheduledMeeting = getNextMeetingForAgreement(agreement.id);
     const nextMeetingDate = nextScheduledMeeting ? new Date(nextScheduledMeeting.scheduled_date) : null;
-    
-    const renewalDate = calculateRenewalDate(provider.start_date);
-    
-    // Get state compliance info
+    const renewalDate = calculateRenewalDate(agreement.start_date);
     const stateCompliance = stateComplianceData.find(c => c.state_abbreviation === agreement.state_abbreviation);
     
     return {
-      id: `${provider.id}-${agreement.id}`,
-      providerId: provider.id,
-      providerName: provider.provider_name,
-      providerEmail: provider.provider_email,
-      providerNpi: provider.provider_npi,
+      id: agreement.id,
+      providerId: agreement.id,
+      providerName: agreement.provider_name || 'Unassigned',
+      providerEmail: agreement.provider_email || '',
+      providerNpi: agreement.provider_npi || null,
       providerCredentials: null,
-      physicianName: agreement.physician_name,
-      physicianEmail: agreement.physician_email,
+      physicianName: agreement.physician_name || 'Unassigned',
+      physicianEmail: agreement.physician_email || '',
       stateAbbreviation: agreement.state_abbreviation,
       stateName: agreement.state_name,
-      startDate: provider.start_date,
-      terminatedAt: provider.removed_at,
-      removedReason: provider.removed_reason,
-      isActive: provider.is_active ?? true,
-      meetingCadence: effectiveCadence, // Use state-derived cadence for display
+      startDate: agreement.start_date,
+      terminatedAt: agreement.terminated_at,
+      removedReason: agreement.termination_reason,
+      isActive: !agreement.terminated_at,
+      meetingCadence: effectiveCadence,
       chartReviewFrequency: agreement.chart_review_frequency,
-      documentUrl: provider.medallion_document_url,
+      documentUrl: agreement.agreement_document_url,
       medallionDocumentUrl: agreement.medallion_document_url,
       agreementId: agreement.id,
-      nextMeetingDate, // Now from actual scheduled meetings
+      nextMeetingDate,
       renewalDate,
       daysUntilMeeting: getDaysUntil(nextMeetingDate),
       daysUntilRenewal: getDaysUntil(renewalDate),
       workflowStatus: agreement.workflow_status || 'draft',
-      // Add state compliance info
       caRequired: stateCompliance?.ca_required ?? false,
       fpaStatus: stateCompliance?.fpa_status || null,
       rxrRequired: stateCompliance?.rxr_required ?? false,
       nlc: stateCompliance?.nlc ?? false,
       npMdRatio: stateCompliance?.np_md_ratio || null,
     };
-  }).filter(Boolean) as FlattenedAgreement[];
+  });
 
   // Extract unique values for filters
   const uniqueStates = [...new Set(flattenedAgreements.map(a => a.stateAbbreviation))].sort();

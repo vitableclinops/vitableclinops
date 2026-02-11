@@ -1015,9 +1015,13 @@ export type Database = {
           physician_name: string | null
           physician_npi: string | null
           physician_signed_at: string | null
+          provider_email: string | null
+          provider_id: string | null
           provider_message: string | null
           provider_message_sent_at: string | null
           provider_message_sent_by: string | null
+          provider_name: string | null
+          provider_npi: string | null
           readiness_last_checked_at: string | null
           readiness_status: string
           renewal_cadence: string | null
@@ -1058,9 +1062,13 @@ export type Database = {
           physician_name?: string | null
           physician_npi?: string | null
           physician_signed_at?: string | null
+          provider_email?: string | null
+          provider_id?: string | null
           provider_message?: string | null
           provider_message_sent_at?: string | null
           provider_message_sent_by?: string | null
+          provider_name?: string | null
+          provider_npi?: string | null
           readiness_last_checked_at?: string | null
           readiness_status?: string
           renewal_cadence?: string | null
@@ -1101,9 +1109,13 @@ export type Database = {
           physician_name?: string | null
           physician_npi?: string | null
           physician_signed_at?: string | null
+          provider_email?: string | null
+          provider_id?: string | null
           provider_message?: string | null
           provider_message_sent_at?: string | null
           provider_message_sent_by?: string | null
+          provider_name?: string | null
+          provider_npi?: string | null
           readiness_last_checked_at?: string | null
           readiness_status?: string
           renewal_cadence?: string | null
@@ -3117,6 +3129,9 @@ export type Database = {
           physician_email: string | null
           physician_id: string | null
           physician_name: string | null
+          provider_email: string | null
+          provider_id: string | null
+          provider_name: string | null
           start_date: string | null
           state_abbreviation: string | null
           state_name: string | null
