@@ -22,6 +22,9 @@ import {
 } from '@/components/ui/select';
 import { states as initialStates, providers, getAllTasks } from '@/data/mockData';
 import { useAuth } from '@/hooks/useAuth';
+import { useStateCompliance } from '@/hooks/useStateCompliance';
+import { RequirementsMatrixTable } from '@/components/state-compliance/RequirementsMatrixTable';
+import { LicensureTemplateManager } from '@/components/state-compliance/LicensureTemplateManager';
 import { 
   Search,
   MapPin,
@@ -40,7 +43,9 @@ import {
   X,
   Download,
   Upload,
-  ShieldCheck
+  ShieldCheck,
+  TableIcon,
+  GraduationCap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { State, DemandTag, Task, Provider } from '@/types';
@@ -70,6 +75,7 @@ const StateCompliancePage = () => {
   const [complianceTab, setComplianceTab] = useState('overview');
 
   const { profile, roles } = useAuth();
+  const { allData: complianceAllData, loading: complianceLoading } = useStateCompliance();
   const userRole = roles[0] || 'admin';
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
@@ -193,6 +199,14 @@ const StateCompliancePage = () => {
               <TabsTrigger value="states" className="gap-2">
                 <MapPin className="h-4 w-4" />
                 State Directory
+              </TabsTrigger>
+              <TabsTrigger value="requirements" className="gap-2">
+                <TableIcon className="h-4 w-4" />
+                Requirements Matrix
+              </TabsTrigger>
+              <TabsTrigger value="templates" className="gap-2">
+                <GraduationCap className="h-4 w-4" />
+                Licensure Templates
               </TabsTrigger>
               <TabsTrigger value="compliance" className="gap-2">
                 <ShieldCheck className="h-4 w-4" />
@@ -439,6 +453,16 @@ const StateCompliancePage = () => {
                   )}
                 </div>
               </div>
+            </TabsContent>
+
+            {/* Requirements Matrix Tab */}
+            <TabsContent value="requirements" className="space-y-6">
+              <RequirementsMatrixTable data={complianceAllData} loading={complianceLoading} />
+            </TabsContent>
+
+            {/* Licensure Templates Tab */}
+            <TabsContent value="templates" className="space-y-6">
+              <LicensureTemplateManager />
             </TabsContent>
 
             {/* Compliance Tab */}
