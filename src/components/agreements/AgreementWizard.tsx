@@ -41,6 +41,9 @@ export interface AgreementFormData {
   meetingCadence: 'weekly' | 'biweekly' | 'monthly' | 'quarterly';
   chartReviewRequired: boolean;
   chartReviewFrequency: string;
+  
+  // Provider Message
+  providerMessage: string;
 }
 
 const STEPS = [
@@ -66,6 +69,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
     meetingCadence: 'monthly',
     chartReviewRequired: false,
     chartReviewFrequency: '',
+    providerMessage: '',
   });
 
   const progress = ((currentStep + 1) / STEPS.length) * 100;
@@ -126,10 +130,11 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
         {
           chartReviewRequired: formData.chartReviewRequired,
           meetingCadence: formData.meetingCadence,
+          providerMessage: formData.providerMessage || undefined,
         }
       );
 
-      toast.success('Agreement created in Pending Setup', {
+      toast.success('Agreement created — In Progress', {
         description: `Required tasks have been generated for ${formData.selectedState.name}. Complete all tasks to activate.`,
       });
 
@@ -149,6 +154,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
         meetingCadence: 'monthly',
         chartReviewRequired: false,
         chartReviewFrequency: '',
+        providerMessage: '',
       });
     } catch (error) {
       console.error('Error creating agreement:', error);
@@ -171,7 +177,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
       case 3:
         return <AgreementDetailsStep formData={formData} updateFormData={updateFormData} />;
       case 4:
-        return <ReviewStep formData={formData} />;
+        return <ReviewStep formData={formData} updateFormData={updateFormData} />;
       default:
         return null;
     }

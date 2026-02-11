@@ -104,7 +104,15 @@ export default function AgreementDetailPage() {
   const getNextStatus = (): { status: string; label: string } | null => {
     if (!agreement) return null;
     switch (agreement.workflow_status) {
+      case 'draft':
+        return { status: 'in_progress', label: 'Start Setup' };
+      case 'in_progress':
       case 'pending_setup':
+        return allRequiredComplete ? { status: 'pending_signatures', label: 'Advance to Signatures' } : null;
+      case 'pending_signatures':
+      case 'awaiting_physician_signature':
+      case 'awaiting_provider_signatures':
+      case 'fully_executed':
         return allRequiredComplete ? { status: 'pending_verification', label: 'Submit for Verification' } : null;
       case 'pending_verification':
         return { status: 'active', label: 'Verify & Activate' };
@@ -194,14 +202,22 @@ export default function AgreementDetailPage() {
         return <Badge className="bg-success/10 text-success border-success/20">Active</Badge>;
       case 'draft':
         return <Badge variant="secondary">Draft</Badge>;
+      case 'in_progress':
+        return <Badge variant="default">In Progress</Badge>;
       case 'pending_setup':
         return <Badge variant="default">Pending Setup</Badge>;
+      case 'pending_signatures':
+        return <Badge variant="default">Pending Signatures</Badge>;
       case 'pending_verification':
         return <Badge variant="default">Pending Verification</Badge>;
       case 'termination_initiated':
         return <Badge variant="destructive">Pending Termination</Badge>;
       case 'terminated':
         return <Badge variant="destructive">Terminated</Badge>;
+      case 'cancelled':
+        return <Badge variant="destructive">Cancelled</Badge>;
+      case 'archived':
+        return <Badge variant="secondary">Archived</Badge>;
       case 'invalid':
         return <Badge variant="destructive">Invalid</Badge>;
       default:
@@ -301,11 +317,26 @@ export default function AgreementDetailPage() {
                       Terminate Agreement
                     </Button>
                   )}
+                  {hasRole('admin') && ['draft', 'in_progress', 'pending_setup'].includes(agreement.workflow_status) && (
+                    <Button 
+                      variant="outline" 
+                      className="text-destructive hover:text-destructive"
+                      onClick={async () => {
+                        const success = await advanceStatus(agreement.id, 'cancelled' as any, profile?.id);
+                        if (success) {
+                          toast({ title: 'Agreement cancelled' });
+                          fetchData();
+                        }
+                      }}
+                    >
+                      Cancel Agreement
+                    </Button>
+                  )}
                 </div>
               </div>
 
               {/* Blocker Banner */}
-              {(agreement.workflow_status === 'pending_setup' || agreement.workflow_status === 'termination_initiated') && pendingRequiredTasks.length > 0 && (
+              {(['in_progress', 'pending_setup', 'pending_signatures', 'termination_initiated'].includes(agreement.workflow_status)) && pendingRequiredTasks.length > 0 && (
                 <div className="mb-6 p-4 rounded-lg border border-warning/30 bg-warning/5">
                   <div className="flex items-center gap-2">
                     <Lock className="h-5 w-5 text-warning" />
@@ -314,6 +345,19 @@ export default function AgreementDetailPage() {
                   <p className="text-sm text-muted-foreground mt-1">
                     {pendingRequiredTasks.length} required task{pendingRequiredTasks.length !== 1 ? 's' : ''} must be completed before this agreement can advance.
                   </p>
+                </div>
+              )}
+
+              {/* Provider Message */}
+              {agreement.provider_message && (
+                <div className="mb-6 p-4 rounded-lg border bg-muted/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Provider Message</span>
+                  </div>
+                  <pre className="text-sm text-muted-foreground whitespace-pre-wrap font-sans bg-background p-3 rounded border">
+                    {agreement.provider_message}
+                  </pre>
                 </div>
               )}
 
