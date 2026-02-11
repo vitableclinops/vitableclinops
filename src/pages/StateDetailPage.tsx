@@ -259,6 +259,7 @@ export default function StateDetailPage() {
               <Tabs defaultValue="compliance">
                 <TabsList>
                   <TabsTrigger value="compliance">Compliance Requirements</TabsTrigger>
+                  <TabsTrigger value="instructions">Licensure Instructions</TabsTrigger>
                   <TabsTrigger value="agreements">Agreements ({activeAgreements.length})</TabsTrigger>
                   <TabsTrigger value="providers">Providers ({uniqueProviders.length})</TabsTrigger>
                   <TabsTrigger value="licenses">Licenses ({licenses.length})</TabsTrigger>
@@ -324,6 +325,47 @@ export default function StateDetailPage() {
                             View State Nursing Board
                           </a>
                         </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="instructions" className="mt-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <BookOpen className="h-5 w-5" />
+                        Step-by-Step Licensure Instructions
+                      </CardTitle>
+                      <CardDescription>
+                        Provider-facing instructions for {stateCompliance?.state_name || stateAbbr} licensure
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {stateCompliance?.knowledge_base_url ? (
+                        <div className="space-y-4">
+                          <div className="bg-muted/50 p-4 rounded-lg border border-muted">
+                            <p className="text-sm text-muted-foreground mb-3">
+                              Detailed step-by-step instructions and resources for applying for a license in {stateCompliance?.state_name}:
+                            </p>
+                            <Button variant="outline" asChild>
+                              <a href={stateCompliance.knowledge_base_url} target="_blank" rel="noopener noreferrer">
+                                <BookOpen className="h-4 w-4 mr-2" />
+                                View Full Licensure Guide
+                              </a>
+                            </Button>
+                          </div>
+                          
+                          <div className="bg-secondary/10 border border-secondary/30 p-4 rounded-lg">
+                            <p className="text-sm text-secondary">
+                              <strong>Note:</strong> Providers can access detailed instructions when they begin their licensure application. Admins can also link to this resource when initiating a licensure task.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground text-center py-8">
+                          No licensure instructions available. Please configure knowledge base resources for this state.
+                        </p>
                       )}
                     </CardContent>
                   </Card>
