@@ -11,6 +11,7 @@ export interface StateCompliance {
   rxr_required: string | null;
   nlc: boolean;
   np_md_ratio: string | null;
+  np_md_ratio_limit: number | null;
   licenses: string | null;
   fpa_status: string | null;
   knowledge_base_url: string | null;

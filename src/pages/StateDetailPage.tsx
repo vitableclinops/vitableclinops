@@ -29,7 +29,9 @@ import {
   Edit,
   ArrowLeft,
   BookOpen,
+  Gauge,
 } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 interface AgreementWithProviders {
@@ -148,6 +150,21 @@ export default function StateDetailPage() {
   const uniqueProviders = [...new Map(activeProviders.map(p => [p.provider_email, p])).values()];
   const uniquePhysicians = [...new Map(agreements.map(a => [a.physician_email, a])).values()];
 
+  // Physician capacity: count active providers per physician in this state
+  const ratioLimit = stateCompliance?.np_md_ratio_limit;
+  const physicianCapacity = activeAgreements.map(a => {
+    const activeCount = a.providers.filter(p => p.is_active).length;
+    return {
+      name: a.physician_name,
+      email: a.physician_email,
+      agreementId: a.id,
+      activeProviders: activeCount,
+      limit: ratioLimit,
+      atCapacity: ratioLimit != null && activeCount >= ratioLimit,
+      utilization: ratioLimit != null ? Math.round((activeCount / ratioLimit) * 100) : null,
+    };
+  });
+
   const breadcrumbs = [
     { label: 'States', href: '/admin/states' },
     { label: stateCompliance?.state_name || stateAbbr || 'State' },
@@ -256,6 +273,57 @@ export default function StateDetailPage() {
                 </Card>
               </div>
 
+              {/* Physician Capacity */}
+              {ratioLimit != null && physicianCapacity.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Gauge className="h-4 w-4" />
+                      Physician Capacity
+                      <Badge variant="outline" className="ml-auto text-xs font-normal">
+                        Limit: {ratioLimit} NPs per physician
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {physicianCapacity.map(physician => (
+                      <Link
+                        key={physician.agreementId}
+                        to={`/admin/agreements/${physician.agreementId}`}
+                        className="flex items-center gap-4 p-3 rounded-lg border hover:bg-muted/50 transition-colors group"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">
+                              Dr. {physician.name}
+                            </p>
+                            {physician.atCapacity && (
+                              <Badge variant="destructive" className="text-xs shrink-0">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                At Capacity
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-1.5">
+                            <Progress
+                              value={physician.utilization ?? 0}
+                              className={cn('h-2 flex-1', physician.atCapacity && '[&>div]:bg-destructive')}
+                            />
+                            <span className={cn(
+                              'text-xs font-medium shrink-0',
+                              physician.atCapacity ? 'text-destructive' : 'text-muted-foreground'
+                            )}>
+                              {physician.activeProviders}/{ratioLimit}
+                            </span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                      </Link>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
               <Tabs defaultValue="compliance">
                 <TabsList>
                   <TabsTrigger value="compliance">Compliance Requirements</TabsTrigger>
@@ -290,8 +358,12 @@ export default function StateDetailPage() {
                           <p className="font-medium">{stateCompliance?.ca_meeting_cadence || 'Not specified'}</p>
                         </div>
                         <div>
-                          <p className="text-sm text-muted-foreground">NP:MD Ratio</p>
-                          <p className="font-medium">{stateCompliance?.np_md_ratio || 'Not specified'}</p>
+                          <p className="text-sm text-muted-foreground">NP:MD Ratio Limit</p>
+                          <p className="font-medium">
+                            {stateCompliance?.np_md_ratio_limit != null 
+                              ? `${stateCompliance.np_md_ratio_limit} NPs per physician` 
+                              : 'No limit'}
+                          </p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Rx Authority Required</p>
