@@ -8,6 +8,8 @@ import { ProviderSelectionStep } from './wizard/ProviderSelectionStep';
 import { AgreementDetailsStep } from './wizard/AgreementDetailsStep';
 import { ReviewStep } from './wizard/ReviewStep';
 import { useAgreementWorkflow } from '@/hooks/useAgreementWorkflow';
+import { useStateCompliance } from '@/hooks/useStateCompliance';
+import { usePhysicianCapacity } from '@/hooks/usePhysicianCapacity';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, Check, Loader2 } from 'lucide-react';
 import type { State } from '@/types';
@@ -58,6 +60,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { createAgreementWithTasks } = useAgreementWorkflow();
+  const { getStateCompliance } = useStateCompliance();
   const [formData, setFormData] = useState<AgreementFormData>({
     selectedState: null,
     physicianName: '',
@@ -72,6 +75,15 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
     providerMessage: '',
   });
 
+  // Check physician capacity
+  const stateCompliance = formData.selectedState ? 
+    getStateCompliance(formData.selectedState.abbreviation) : null;
+  const { capacity } = usePhysicianCapacity(
+    formData.physicianEmail,
+    formData.selectedState?.abbreviation,
+    stateCompliance?.np_md_ratio_limit ?? null
+  );
+
   const progress = ((currentStep + 1) / STEPS.length) * 100;
 
   const updateFormData = (updates: Partial<AgreementFormData>) => {
@@ -83,6 +95,10 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
       case 0:
         return formData.selectedState !== null;
       case 1:
+        // Block if physician is at capacity
+        if (capacity?.isAtCapacity) {
+          return false;
+        }
         return formData.physicianName.trim() !== '' && formData.physicianEmail.trim() !== '';
       case 2:
         return formData.providers.length > 0;
