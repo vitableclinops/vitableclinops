@@ -34,9 +34,10 @@ export function UpcomingMilestonesWidget({ className, compact = false }: Upcomin
       // Fetch internal providers with birthday or start date
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, date_of_birth, birthday, start_date_on_network, employment_start_date, employment_type')
+        .select('id, full_name, date_of_birth, birthday, start_date_on_network, employment_start_date, employment_type, activation_status, employment_status')
         .in('employment_type', ['w2', '1099'])
-        .neq('activation_status', 'Terminated');
+        .neq('activation_status', 'Terminated')
+        .neq('employment_status', 'termed');
 
       if (error) throw error;
 

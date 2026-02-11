@@ -100,7 +100,9 @@ export function useAdminDashboard() {
         supabase
           .from('profiles')
           .select('id, full_name, date_of_birth, birthday, start_date_on_network, employment_start_date, employment_type, pod_id')
-          .in('employment_type', ['w2', '1099']),
+          .in('employment_type', ['w2', '1099'])
+          .neq('activation_status', 'Terminated')
+          .neq('employment_status', 'termed'),
       ]);
 
       // Provider stats
