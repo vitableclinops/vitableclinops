@@ -1,7 +1,11 @@
+import { useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { UserRound, Mail, Hash, Info } from 'lucide-react';
+import { UserRound, Mail, Hash, Info, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useStateCompliance } from '@/hooks/useStateCompliance';
+import { usePhysicianCapacity } from '@/hooks/usePhysicianCapacity';
 import type { AgreementFormData } from '../AgreementWizard';
 
 interface PhysicianInfoStepProps {
@@ -10,6 +14,14 @@ interface PhysicianInfoStepProps {
 }
 
 export const PhysicianInfoStep = ({ formData, updateFormData }: PhysicianInfoStepProps) => {
+  const { getStateCompliance } = useStateCompliance();
+  const stateCompliance = formData.selectedState ? 
+    getStateCompliance(formData.selectedState.abbreviation) : null;
+  const { capacity, loading: capacityLoading } = usePhysicianCapacity(
+    formData.physicianEmail,
+    formData.selectedState?.abbreviation,
+    stateCompliance?.np_md_ratio_limit ?? null
+  );
   return (
     <div className="space-y-6">
       {/* Info card */}
@@ -42,22 +54,32 @@ export const PhysicianInfoStep = ({ formData, updateFormData }: PhysicianInfoSte
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="physician-email" className="flex items-center gap-2">
-            <Mail className="h-4 w-4" />
-            Email Address <span className="text-destructive">*</span>
-          </Label>
-          <Input
-            id="physician-email"
-            type="email"
-            placeholder="jane.smith@hospital.com"
-            value={formData.physicianEmail}
-            onChange={(e) => updateFormData({ physicianEmail: e.target.value })}
-          />
-          <p className="text-xs text-muted-foreground">
-            The physician will receive agreement documents at this email.
-          </p>
-        </div>
+         <div className="space-y-2">
+           <Label htmlFor="physician-email" className="flex items-center gap-2">
+             <Mail className="h-4 w-4" />
+             Email Address <span className="text-destructive">*</span>
+           </Label>
+           <Input
+             id="physician-email"
+             type="email"
+             placeholder="jane.smith@hospital.com"
+             value={formData.physicianEmail}
+             onChange={(e) => updateFormData({ physicianEmail: e.target.value })}
+           />
+           <p className="text-xs text-muted-foreground">
+             The physician will receive agreement documents at this email.
+           </p>
+         </div>
+
+         {/* Capacity Warning */}
+         {!capacityLoading && capacity && capacity.isAtCapacity && (
+           <Alert variant="destructive" className="border-destructive/50">
+             <AlertCircle className="h-4 w-4" />
+             <AlertDescription>
+               <strong>{capacity.physicianName}</strong> has reached the NP:MD supervision capacity limit for {formData.selectedState?.name} ({capacity.activeProviderCount}/{capacity.capacityLimit} NPs). No new agreements can be created until a provider is removed or transferred.
+             </AlertDescription>
+           </Alert>
+         )}
 
         <div className="space-y-2">
           <Label htmlFor="physician-npi" className="flex items-center gap-2">
