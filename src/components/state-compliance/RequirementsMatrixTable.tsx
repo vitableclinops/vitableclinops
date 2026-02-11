@@ -344,7 +344,11 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange 
                     {editing && editValues ? (
                       <EditableTextCell value={editValues.fpa_status} onChange={v => updateField('fpa_status', v)} placeholder="e.g. Full" />
                     ) : (
-                      state.fpa_status && state.fpa_status !== 'NA' ? (
+                      (state.collab_requirement_type === 'md_only') ? (
+                        <Badge variant="outline" className={cn('text-xs whitespace-nowrap', collabBadgeStyles['md_only'])}>
+                          MD Only
+                        </Badge>
+                      ) : state.fpa_status && state.fpa_status !== 'NA' ? (
                         <Badge variant="outline" className="text-xs whitespace-nowrap">
                           {state.fpa_status}
                         </Badge>
