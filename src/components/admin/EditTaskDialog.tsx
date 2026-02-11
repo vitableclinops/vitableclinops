@@ -14,11 +14,28 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Pencil, Clock, MapPin, User, Flag, Archive } from 'lucide-react';
+import { Loader2, Pencil, Clock, MapPin, User, Flag, Archive, Link2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
+import type { Database } from '@/integrations/supabase/types';
+
+type TaskCategory = Database['public']['Enums']['agreement_task_category'];
+
+const CATEGORY_OPTIONS: { value: TaskCategory; label: string }[] = [
+  { value: 'agreement_creation', label: 'Agreement Creation' },
+  { value: 'signature', label: 'Signature' },
+  { value: 'supervision_meeting', label: 'Supervision Meeting' },
+  { value: 'chart_review', label: 'Chart Review' },
+  { value: 'renewal', label: 'Renewal' },
+  { value: 'termination', label: 'Termination' },
+  { value: 'compliance', label: 'Compliance' },
+  { value: 'document', label: 'Document' },
+  { value: 'communication', label: 'Communication' },
+  { value: 'all_hands_attestation', label: 'All-Hands Attestation' },
+  { value: 'custom', label: 'Custom' },
+];
 
 interface EditTaskDialogProps {
   task: DashboardTaskItem | null;
@@ -31,9 +48,11 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('medium');
   const [status, setStatus] = useState('pending');
+  const [category, setCategory] = useState<string>('custom');
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [linkedProvider, setLinkedProvider] = useState<{ id: string; full_name: string | null; email: string } | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -42,8 +61,21 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
       setDescription(task.description || '');
       setPriority(task.priority || 'medium');
       setStatus(task.status || 'pending');
+      setCategory(task.category || 'custom');
       setDueDate(task.due_date ? task.due_date.split('T')[0] : '');
       setNotes('');
+
+      // Fetch linked provider
+      if (task.provider_id) {
+        supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .eq('id', task.provider_id)
+          .single()
+          .then(({ data }) => setLinkedProvider(data || null));
+      } else {
+        setLinkedProvider(null);
+      }
     }
   }, [task]);
 
@@ -68,6 +100,7 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
           description: description || null,
           priority,
           status: status as any,
+          category: category as any,
           due_date: dueDate || null,
         };
 
@@ -159,6 +192,19 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
             />
           </div>
 
+          {linkedProvider && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1">
+                <Link2 className="h-3.5 w-3.5" />
+                Linked Provider
+              </Label>
+              <div className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">
+                <span className="font-medium">{linkedProvider.full_name || 'Unknown'}</span>
+                <span className="text-muted-foreground ml-2">({linkedProvider.email})</span>
+              </div>
+            </div>
+          )}
+
           <Separator />
 
           <div className="grid grid-cols-2 gap-4">
@@ -195,6 +241,24 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
               </div>
             )}
           </div>
+
+          {!isMilestone && (
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={category} onValueChange={setCategory} disabled={isArchived}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="task-due-date">Due Date</Label>
