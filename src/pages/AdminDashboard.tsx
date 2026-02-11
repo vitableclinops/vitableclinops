@@ -37,6 +37,7 @@ import {
   MoreVertical,
   Archive,
   UserCog,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -333,16 +334,24 @@ const AdminDashboard = () => {
                                             </Badge>
                                           )}
                                         </div>
-                                        <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                                        <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
                                           {task.state_name && (
                                             <span className="flex items-center gap-0.5">
                                               <MapPin className="h-3 w-3" />
                                               {task.state_abbreviation || task.state_name}
                                             </span>
                                           )}
-                                          {task.provider_name && (
+                                          {task.linked_providers && task.linked_providers.length > 0 ? (
+                                            task.linked_providers.map((lp, i) => (
+                                              <Badge key={i} variant="outline" className="text-[10px] px-1.5 gap-0.5 font-normal">
+                                                <User className="h-2.5 w-2.5" />
+                                                {lp.full_name || 'Unknown'}
+                                                <span className="text-muted-foreground">({lp.role_label})</span>
+                                              </Badge>
+                                            ))
+                                          ) : task.provider_name ? (
                                             <span>• {task.provider_name}</span>
-                                          )}
+                                          ) : null}
                                           {task.transfer_id && (
                                             <Badge variant="outline" className="text-[10px] px-1">Transfer</Badge>
                                           )}

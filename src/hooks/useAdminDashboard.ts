@@ -16,6 +16,12 @@ export interface DashboardStats {
   upcomingRenewals: number;
 }
 
+export interface TaskLinkedProvider {
+  provider_id: string;
+  role_label: string;
+  full_name: string | null;
+}
+
 export interface DashboardTaskItem {
   id: string;
   title: string;
@@ -33,6 +39,7 @@ export interface DashboardTaskItem {
   blocked_reason: string | null;
   description: string | null;
   provider_name?: string;
+  linked_providers?: TaskLinkedProvider[];
 }
 
 export function useAdminDashboard() {
@@ -160,6 +167,40 @@ export function useAdminDashboard() {
             t.provider_name = nameMap.get(t.provider_id) || undefined;
           }
         });
+      }
+
+      // Enrich tasks with linked providers from junction table
+      const taskIds = tasks.map(t => t.id);
+      if (taskIds.length > 0) {
+        const { data: links } = await supabase
+          .from('task_linked_providers')
+          .select('task_id, provider_id, role_label')
+          .in('task_id', taskIds);
+
+        if (links && links.length > 0) {
+          const lpProviderIds = [...new Set(links.map(l => l.provider_id))];
+          const { data: lpProfiles } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', lpProviderIds);
+
+          const lpNameMap = new Map((lpProfiles || []).map(p => [p.id, p.full_name]));
+
+          const taskLinksMap = new Map<string, TaskLinkedProvider[]>();
+          links.forEach(l => {
+            const arr = taskLinksMap.get(l.task_id) || [];
+            arr.push({
+              provider_id: l.provider_id,
+              role_label: l.role_label,
+              full_name: lpNameMap.get(l.provider_id) || null,
+            });
+            taskLinksMap.set(l.task_id, arr);
+          });
+
+          tasks.forEach(t => {
+            t.linked_providers = taskLinksMap.get(t.id) || [];
+          });
+        }
       }
 
       // Generate milestone tasks from provider profiles

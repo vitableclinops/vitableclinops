@@ -2750,6 +2750,38 @@ export type Database = {
         }
         Relationships: []
       }
+      task_linked_providers: {
+        Row: {
+          created_at: string
+          id: string
+          provider_id: string
+          role_label: string
+          task_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider_id: string
+          role_label?: string
+          task_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider_id?: string
+          role_label?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_linked_providers_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transfer_activity_log: {
         Row: {
           activity_type: string
