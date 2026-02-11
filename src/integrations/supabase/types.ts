@@ -701,6 +701,9 @@ export type Database = {
           meeting_cadence: string | null
           new_agreement_renewal_date: string | null
           notes: string | null
+          provider_message: string | null
+          provider_message_sent_at: string | null
+          provider_message_sent_by: string | null
           readiness_last_checked_at: string | null
           readiness_status: string
           source_agreement_id: string
@@ -739,6 +742,9 @@ export type Database = {
           meeting_cadence?: string | null
           new_agreement_renewal_date?: string | null
           notes?: string | null
+          provider_message?: string | null
+          provider_message_sent_at?: string | null
+          provider_message_sent_by?: string | null
           readiness_last_checked_at?: string | null
           readiness_status?: string
           source_agreement_id: string
@@ -777,6 +783,9 @@ export type Database = {
           meeting_cadence?: string | null
           new_agreement_renewal_date?: string | null
           notes?: string | null
+          provider_message?: string | null
+          provider_message_sent_at?: string | null
+          provider_message_sent_by?: string | null
           readiness_last_checked_at?: string | null
           readiness_status?: string
           source_agreement_id?: string
@@ -1006,6 +1015,9 @@ export type Database = {
           physician_name: string | null
           physician_npi: string | null
           physician_signed_at: string | null
+          provider_message: string | null
+          provider_message_sent_at: string | null
+          provider_message_sent_by: string | null
           readiness_last_checked_at: string | null
           readiness_status: string
           renewal_cadence: string | null
@@ -1046,6 +1058,9 @@ export type Database = {
           physician_name?: string | null
           physician_npi?: string | null
           physician_signed_at?: string | null
+          provider_message?: string | null
+          provider_message_sent_at?: string | null
+          provider_message_sent_by?: string | null
           readiness_last_checked_at?: string | null
           readiness_status?: string
           renewal_cadence?: string | null
@@ -1086,6 +1101,9 @@ export type Database = {
           physician_name?: string | null
           physician_npi?: string | null
           physician_signed_at?: string | null
+          provider_message?: string | null
+          provider_message_sent_at?: string | null
+          provider_message_sent_by?: string | null
           readiness_last_checked_at?: string | null
           readiness_status?: string
           renewal_cadence?: string | null
@@ -1867,6 +1885,8 @@ export type Database = {
           primary_specialty: string | null
           profession: string | null
           pronoun: string | null
+          reimbursement_config: Json | null
+          renewal_handling: string | null
           secondary_contact_email: string | null
           service_offerings: string | null
           services_offered: string | null
@@ -1928,6 +1948,8 @@ export type Database = {
           primary_specialty?: string | null
           profession?: string | null
           pronoun?: string | null
+          reimbursement_config?: Json | null
+          renewal_handling?: string | null
           secondary_contact_email?: string | null
           service_offerings?: string | null
           services_offered?: string | null
@@ -1989,6 +2011,8 @@ export type Database = {
           primary_specialty?: string | null
           profession?: string | null
           pronoun?: string | null
+          reimbursement_config?: Json | null
+          renewal_handling?: string | null
           secondary_contact_email?: string | null
           service_offerings?: string | null
           services_offered?: string | null
@@ -2566,11 +2590,17 @@ export type Database = {
           id: string
           independent_practice_requirements: string | null
           knowledge_base_url: string | null
+          last_reviewed_at: string | null
           licenses: string | null
           meeting_months: number[] | null
           nlc: boolean | null
           np_md_ratio: string | null
           np_prohibited: boolean | null
+          review_cadence_days: number | null
+          review_notes: string | null
+          review_sources: string | null
+          reviewed_by: string | null
+          reviewed_by_name: string | null
           rxr_required: boolean | null
           state_abbreviation: string
           state_name: string
@@ -2590,11 +2620,17 @@ export type Database = {
           id?: string
           independent_practice_requirements?: string | null
           knowledge_base_url?: string | null
+          last_reviewed_at?: string | null
           licenses?: string | null
           meeting_months?: number[] | null
           nlc?: boolean | null
           np_md_ratio?: string | null
           np_prohibited?: boolean | null
+          review_cadence_days?: number | null
+          review_notes?: string | null
+          review_sources?: string | null
+          reviewed_by?: string | null
+          reviewed_by_name?: string | null
           rxr_required?: boolean | null
           state_abbreviation: string
           state_name: string
@@ -2614,11 +2650,17 @@ export type Database = {
           id?: string
           independent_practice_requirements?: string | null
           knowledge_base_url?: string | null
+          last_reviewed_at?: string | null
           licenses?: string | null
           meeting_months?: number[] | null
           nlc?: boolean | null
           np_md_ratio?: string | null
           np_prohibited?: boolean | null
+          review_cadence_days?: number | null
+          review_notes?: string | null
+          review_sources?: string | null
+          reviewed_by?: string | null
+          reviewed_by_name?: string | null
           rxr_required?: boolean | null
           state_abbreviation?: string
           state_name?: string
@@ -2982,6 +3024,42 @@ export type Database = {
         }
         Relationships: []
       }
+      workflow_message_templates: {
+        Row: {
+          body_template: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_default: boolean | null
+          subject_template: string
+          template_name: string
+          updated_at: string
+          workflow_type: string
+        }
+        Insert: {
+          body_template: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_default?: boolean | null
+          subject_template?: string
+          template_name: string
+          updated_at?: string
+          workflow_type: string
+        }
+        Update: {
+          body_template?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_default?: boolean | null
+          subject_template?: string
+          template_name?: string
+          updated_at?: string
+          workflow_type?: string
+        }
+        Relationships: []
+      }
       workflow_overrides: {
         Row: {
           action: string
@@ -3309,6 +3387,9 @@ export type Database = {
         | "pending_setup"
         | "pending_verification"
         | "invalid"
+        | "in_progress"
+        | "cancelled"
+        | "archived"
       app_role: "admin" | "provider" | "physician"
       attestation_status: "pending" | "completed" | "overdue" | "excused"
       collab_requirement_type: "never" | "always" | "conditional"
@@ -3495,6 +3576,9 @@ export const Constants = {
         "pending_setup",
         "pending_verification",
         "invalid",
+        "in_progress",
+        "cancelled",
+        "archived",
       ],
       app_role: ["admin", "provider", "physician"],
       attestation_status: ["pending", "completed", "overdue", "excused"],

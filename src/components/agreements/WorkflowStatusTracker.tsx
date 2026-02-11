@@ -23,15 +23,15 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
     statuses: ['draft'],
   },
   {
-    id: 'pending_setup',
-    label: 'Pending Setup',
-    description: 'Required tasks in progress',
+    id: 'in_progress',
+    label: 'In Progress',
+    description: 'Setup tasks being completed',
     icon: ClipboardCheck,
-    statuses: ['pending_setup'],
+    statuses: ['in_progress', 'pending_setup'],
   },
   {
     id: 'signatures',
-    label: 'Collecting Signatures',
+    label: 'Pending Signatures',
     description: 'Awaiting all parties',
     icon: Send,
     statuses: ['pending_signatures', 'awaiting_physician_signature', 'awaiting_provider_signatures'],
@@ -79,9 +79,11 @@ export function WorkflowStatusTracker({
 }: WorkflowStatusTrackerProps) {
   const isTerminated = status === 'terminated' || status === 'termination_initiated';
   const isInvalid = status === 'invalid';
+  const isCancelled = status === 'cancelled';
+  const isArchived = status === 'archived';
   
   const getStepState = (step: WorkflowStep): 'completed' | 'current' | 'pending' => {
-    if (isTerminated || isInvalid) return 'pending';
+    if (isTerminated || isInvalid || isCancelled || isArchived) return 'pending';
     
     const stepIndex = WORKFLOW_STEPS.findIndex(s => s.id === step.id);
     const currentStepIndex = WORKFLOW_STEPS.findIndex(s => s.statuses.includes(status));
@@ -94,6 +96,7 @@ export function WorkflowStatusTracker({
   const getStatusBadge = () => {
     const statusConfig: Record<WorkflowStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
       draft: { label: 'Draft', variant: 'secondary' },
+      in_progress: { label: 'In Progress', variant: 'default' },
       pending_setup: { label: 'Pending Setup', variant: 'default' },
       pending_signatures: { label: 'Pending Signatures', variant: 'default' },
       awaiting_physician_signature: { label: 'Awaiting Physician', variant: 'default' },
@@ -104,6 +107,8 @@ export function WorkflowStatusTracker({
       pending_renewal: { label: 'Pending Renewal', variant: 'secondary' },
       termination_initiated: { label: 'Pending Termination', variant: 'destructive' },
       terminated: { label: 'Terminated', variant: 'destructive' },
+      cancelled: { label: 'Cancelled', variant: 'destructive' },
+      archived: { label: 'Archived', variant: 'secondary' },
       invalid: { label: 'Invalid', variant: 'destructive' },
     };
     

@@ -300,22 +300,49 @@ export const useAgreementWorkflow = () => {
     targetStatus: WorkflowStatus,
     adminId?: string
   ): Promise<boolean> => {
-    // Determine which trigger to check based on target status
-    let trigger: string | null = null;
-    
-    if (['pending_verification', 'active'].includes(targetStatus)) {
-      trigger = 'agreement_creation';
-    } else if (targetStatus === 'terminated') {
-      trigger = 'agreement_termination';
+    // Hard blocker validation by target status
+    if (['pending_signatures', 'pending_verification', 'active'].includes(targetStatus)) {
+      const { allComplete, pending } = await checkTasksComplete(agreementId, 'agreement_creation');
+      
+      // For active: ALL required tasks must be complete (signed doc uploaded + provider notified)
+      if (targetStatus === 'active' && !allComplete) {
+        toast({
+          title: 'Cannot activate agreement',
+          description: `${pending} required task(s) must be completed first, including signed document upload and provider notification.`,
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      // For pending_signatures: at minimum confirm-required and send-for-signature tasks
+      if (targetStatus === 'pending_signatures' && !allComplete) {
+        // Allow advancing to signatures if only signature tasks remain
+        const { data: nonSigTasks } = await supabase
+          .from('agreement_tasks')
+          .select('id, status, category')
+          .eq('agreement_id', agreementId)
+          .eq('auto_trigger', 'agreement_creation')
+          .eq('is_required', true)
+          .neq('category', 'signature')
+          .neq('status', 'completed');
+        
+        if (nonSigTasks && nonSigTasks.length > 0) {
+          toast({
+            title: 'Cannot advance to signatures',
+            description: `${nonSigTasks.length} non-signature task(s) must be completed first.`,
+            variant: 'destructive',
+          });
+          return false;
+        }
+      }
     }
 
-    if (trigger) {
-      const { allComplete, pending } = await checkTasksComplete(agreementId, trigger);
-      
+    if (targetStatus === 'terminated') {
+      const { allComplete, pending } = await checkTasksComplete(agreementId, 'agreement_termination');
       if (!allComplete) {
         toast({
-          title: 'Cannot advance status',
-          description: `${pending} required task(s) must be completed first.`,
+          title: 'Cannot finalize termination',
+          description: `${pending} required termination task(s) must be completed first.`,
           variant: 'destructive',
         });
         return false;
@@ -326,6 +353,11 @@ export const useAgreementWorkflow = () => {
     const updateData: Record<string, any> = { workflow_status: targetStatus };
     
     if (targetStatus === 'terminated') {
+      updateData.terminated_at = new Date().toISOString();
+      if (adminId) updateData.terminated_by = adminId;
+    }
+
+    if (targetStatus === 'cancelled') {
       updateData.terminated_at = new Date().toISOString();
       if (adminId) updateData.terminated_by = adminId;
     }
@@ -362,7 +394,7 @@ export const useAgreementWorkflow = () => {
   const createAgreementWithTasks = useCallback(async (
     agreementData: Record<string, any>,
     providers: Array<{ id?: string; name: string; email: string; npi?: string }>,
-    options?: { chartReviewRequired?: boolean; meetingCadence?: string }
+    options?: { chartReviewRequired?: boolean; meetingCadence?: string; providerMessage?: string }
   ) => {
     // Step 1: Create agreement in Draft
     const { data: agreement, error: agreementError } = await supabase
@@ -370,6 +402,7 @@ export const useAgreementWorkflow = () => {
       .insert({
         ...agreementData,
         workflow_status: 'draft' as const,
+        provider_message: options?.providerMessage || null,
       } as any)
       .select()
       .single();
@@ -399,20 +432,37 @@ export const useAgreementWorkflow = () => {
       agreementData.state_abbreviation,
       agreementData.state_name,
       providers[0]?.id || null,
-      null, // physician_id not always available
+      agreementData.physician_id || null,
       options
     );
 
-    const { error: tasksError } = await supabase
+    const { data: createdTasks, error: tasksError } = await supabase
       .from('agreement_tasks')
-      .insert(setupTasks);
+      .insert(setupTasks)
+      .select();
 
     if (tasksError) throw tasksError;
+
+    // Auto-link providers to tasks
+    if (createdTasks && createdTasks.length > 0) {
+      const links: { task_id: string; provider_id: string; role_label: string }[] = [];
+      for (const task of createdTasks) {
+        for (const p of providers) {
+          if (p.id) links.push({ task_id: task.id, provider_id: p.id, role_label: 'NP' });
+        }
+        if (agreementData.physician_id) {
+          links.push({ task_id: task.id, provider_id: agreementData.physician_id, role_label: 'Physician' });
+        }
+      }
+      if (links.length > 0) {
+        await supabase.from('task_linked_providers').insert(links);
+      }
+    }
 
     // Step 4: Create workflow steps
     const workflowSteps = [
       { step_number: 1, step_name: 'Agreement Created', step_description: 'Initial agreement draft created', status: 'completed', agreement_id: agreement.id, completed_at: new Date().toISOString() },
-      { step_number: 2, step_name: 'Pending Setup', step_description: 'Required setup tasks in progress', status: 'in_progress', agreement_id: agreement.id },
+      { step_number: 2, step_name: 'In Progress', step_description: 'Required setup tasks in progress', status: 'in_progress', agreement_id: agreement.id },
       { step_number: 3, step_name: 'Pending Signatures', step_description: 'Awaiting all party signatures', status: 'pending', agreement_id: agreement.id },
       { step_number: 4, step_name: 'Pending Verification', step_description: 'Admin verification required', status: 'pending', agreement_id: agreement.id },
       { step_number: 5, step_name: 'Active', step_description: 'Agreement is active and in effect', status: 'pending', agreement_id: agreement.id },
@@ -420,10 +470,10 @@ export const useAgreementWorkflow = () => {
 
     await supabase.from('agreement_workflow_steps').insert(workflowSteps);
 
-    // Step 5: Transition to pending_setup
+    // Step 5: Transition to in_progress (NOT active)
     await supabase
       .from('collaborative_agreements')
-      .update({ workflow_status: 'pending_setup' })
+      .update({ workflow_status: 'in_progress' })
       .eq('id', agreement.id);
 
     // Step 6: Log creation
@@ -434,6 +484,7 @@ export const useAgreementWorkflow = () => {
       changes: {
         state: agreementData.state_abbreviation,
         tasks_generated: setupTasks.length,
+        initial_status: 'in_progress',
       },
     });
 

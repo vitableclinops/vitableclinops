@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   AlertTriangle, 
   FileText, 
@@ -48,6 +49,7 @@ export function TerminationDialog({
   const { initiateTermination } = useAgreementWorkflow();
   const [reason, setReason] = useState('');
   const [effectiveDate, setEffectiveDate] = useState('');
+  const [providerMessage, setProviderMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [tasksGenerated, setTasksGenerated] = useState(0);
@@ -74,6 +76,14 @@ export function TerminationDialog({
     setLoading(true);
 
     try {
+      // Save provider message on the agreement
+      if (providerMessage.trim()) {
+        await supabase
+          .from('collaborative_agreements')
+          .update({ provider_message: providerMessage })
+          .eq('id', agreement.id);
+      }
+
       const taskCount = await initiateTermination(
         agreement.id,
         agreement,
@@ -107,6 +117,7 @@ export function TerminationDialog({
     setTimeout(() => {
       setReason('');
       setEffectiveDate('');
+      setProviderMessage('');
       setCompleted(false);
       setTasksGenerated(0);
     }, 300);
@@ -146,12 +157,26 @@ export function TerminationDialog({
 
             <div className="space-y-2">
               <Label htmlFor="effectiveDate">Termination Effective Date *</Label>
-              <Input
+              <Input 
                 id="effectiveDate"
                 type="date"
                 value={effectiveDate}
                 onChange={(e) => setEffectiveDate(e.target.value)}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="providerMessage">Provider-Facing Message</Label>
+              <Textarea
+                id="providerMessage"
+                placeholder="Message to send to affected providers about this termination..."
+                value={providerMessage}
+                onChange={(e) => setProviderMessage(e.target.value)}
+                rows={4}
+              />
+              <p className="text-xs text-muted-foreground">
+                This message will be stored on the agreement record and can be used as a copy/paste email template.
+              </p>
             </div>
 
             <div className="p-3 rounded-lg bg-muted/50 border">
