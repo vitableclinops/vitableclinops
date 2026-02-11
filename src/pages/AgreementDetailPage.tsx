@@ -242,9 +242,15 @@ export default function AgreementDetailPage() {
     return <div>Agreement not found</div>;
   }
 
+  // Build a descriptive breadcrumb: Provider ↔ Physician in State
+  const primaryProvider = activeProviders[0] || providers[0];
+  const breadcrumbLabel = primaryProvider
+    ? `${primaryProvider.provider_name} ↔ Dr. ${agreement?.physician_name} (${agreement?.state_abbreviation})`
+    : agreement?.state_name || 'Agreement';
+
   const breadcrumbs = [
     { label: 'Agreements', href: '/admin/agreements' },
-    { label: agreement?.state_name || 'Agreement' },
+    { label: breadcrumbLabel },
   ];
 
   const nextStatus = getNextStatus();
@@ -274,7 +280,7 @@ export default function AgreementDetailPage() {
             </div>
           ) : agreement ? (
             <>
-              {/* Header */}
+              {/* Header — clearly shows Provider ↔ Physician ↔ State */}
               <div className="flex items-start justify-between mb-6">
                 <div className="flex items-center gap-4">
                   <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 text-2xl font-bold text-primary">
@@ -282,13 +288,36 @@ export default function AgreementDetailPage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-3">
-                      <h1 className="text-3xl font-bold text-foreground">
-                        {agreement.state_name} Agreement
+                      <h1 className="text-2xl font-bold text-foreground">
+                        {agreement.state_name} Collaborative Agreement
                       </h1>
                       {getStatusBadge(agreement.workflow_status)}
                     </div>
-                    <p className="text-muted-foreground mt-1">
-                      Dr. {agreement.physician_name} • {activeProviders.length} active provider{activeProviders.length !== 1 ? 's' : ''}
+                    <div className="flex items-center gap-2 mt-1.5 text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <Stethoscope className="h-4 w-4" />
+                        <span className="font-medium text-foreground">Dr. {agreement.physician_name}</span>
+                      </div>
+                      <span className="text-muted-foreground/50">↔</span>
+                      <div className="flex items-center gap-1.5">
+                        <Users className="h-4 w-4" />
+                        <span>
+                          {activeProviders.length} provider{activeProviders.length !== 1 ? 's' : ''}
+                          {activeProviders.length > 0 && (
+                            <span className="text-foreground font-medium ml-1">
+                              ({activeProviders.map(p => p.provider_name).join(', ')})
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      <span className="text-muted-foreground/50">•</span>
+                      <div className="flex items-center gap-1.5">
+                        <MapPin className="h-4 w-4" />
+                        <span>{agreement.state_name}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Each agreement represents a specific provider–physician collaboration in a given state.
                     </p>
                   </div>
                 </div>
