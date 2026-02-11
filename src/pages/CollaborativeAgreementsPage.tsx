@@ -111,6 +111,7 @@ interface FlattenedAgreement {
   renewalDate: Date | null;
   daysUntilMeeting: number | null;
   daysUntilRenewal: number | null;
+  workflowStatus: string;
   // State compliance fields
   caRequired: boolean;
   fpaStatus: string | null;
@@ -253,6 +254,7 @@ const CollaborativeAgreementsPage = () => {
       renewalDate,
       daysUntilMeeting: getDaysUntil(nextMeetingDate),
       daysUntilRenewal: getDaysUntil(renewalDate),
+      workflowStatus: agreement.workflow_status || 'draft',
       // Add state compliance info
       caRequired: stateCompliance?.ca_required ?? false,
       fpaStatus: stateCompliance?.fpa_status || null,
@@ -492,22 +494,39 @@ const CollaborativeAgreementsPage = () => {
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   })();
 
-  const getStatusBadge = (status: string) => {
+  const getWorkflowBadge = (status: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="bg-success/10 text-success border-success/20">Active</Badge>;
+        return <Badge className="bg-success/10 text-success border-success/20 text-[10px]">Active</Badge>;
+      case 'in_progress':
+      case 'pending_setup':
+        return <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px]">In Progress</Badge>;
       case 'draft':
-        return <Badge variant="secondary">Draft</Badge>;
+        return <Badge variant="secondary" className="text-[10px]">Draft</Badge>;
       case 'pending_signatures':
       case 'awaiting_physician_signature':
       case 'awaiting_provider_signatures':
-        return <Badge className="bg-warning/10 text-warning border-warning/20">Pending</Badge>;
+        return <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px]">Signatures</Badge>;
+      case 'pending_verification':
+      case 'fully_executed':
+        return <Badge className="bg-info/10 text-info border-info/20 text-[10px]">Verification</Badge>;
+      case 'pending_renewal':
+        return <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px]">Renewal</Badge>;
       case 'terminated':
-        return <Badge variant="destructive">Terminated</Badge>;
+      case 'termination_initiated':
+        return <Badge variant="destructive" className="text-[10px]">Terminated</Badge>;
+      case 'cancelled':
+        return <Badge variant="destructive" className="text-[10px]">Cancelled</Badge>;
+      case 'archived':
+        return <Badge variant="secondary" className="text-[10px]">Archived</Badge>;
+      case 'invalid':
+        return <Badge variant="destructive" className="text-[10px]">Invalid</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return <Badge variant="outline" className="text-[10px]">{status}</Badge>;
     }
   };
+
+  const getStatusBadge = getWorkflowBadge;
 
   return (
     <div className="min-h-screen bg-background">
@@ -793,7 +812,7 @@ const CollaborativeAgreementsPage = () => {
               <Card>
                 <CardContent className="p-0 overflow-x-auto">
                   {/* Header */}
-                  <div className="grid grid-cols-12 gap-3 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground min-w-[900px]">
+                  <div className="grid grid-cols-[auto_minmax(0,2fr)_80px_100px_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_80px] gap-3 p-4 border-b bg-muted/50 text-sm font-medium text-muted-foreground min-w-[900px]">
                     {hasRole('admin') && (
                       <div className="flex items-center">
                         <Checkbox
@@ -803,11 +822,12 @@ const CollaborativeAgreementsPage = () => {
                         />
                       </div>
                     )}
-                    <div className={hasRole('admin') ? 'col-span-3' : 'col-span-4'}>Provider</div>
+                    <div>Provider</div>
                     <div>State</div>
-                    <div className="col-span-2">Physician</div>
-                    <div className="col-span-2">Next Meeting</div>
-                    <div className="col-span-2">Renewal Due</div>
+                    <div>Status</div>
+                    <div>Physician</div>
+                    <div>Next Meeting</div>
+                    <div>Renewal Due</div>
                     <div className="text-right">Actions</div>
                   </div>
                   
@@ -832,15 +852,22 @@ const CollaborativeAgreementsPage = () => {
                         const renewalDueSoon = agreement.daysUntilRenewal !== null && agreement.daysUntilRenewal <= 30;
                         
                         return (
-                          <div 
-                            key={agreement.id} 
-                            className={`grid grid-cols-12 gap-3 p-4 border-b hover:bg-muted/30 transition-colors items-center group min-w-[900px] ${
+                          <Link 
+                            key={agreement.id}
+                            to={`/admin/agreements/${agreement.agreementId}`}
+                            className={`grid grid-cols-[auto_minmax(0,2fr)_80px_100px_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_80px] gap-3 p-4 border-b hover:bg-muted/30 transition-colors items-center group min-w-[900px] cursor-pointer ${
                               !agreement.isActive ? 'opacity-60 bg-muted/10' : ''
                             } ${selectedIds.has(agreement.id) ? 'bg-primary/5' : ''}`}
+                            onClick={(e) => {
+                              // Prevent navigation when clicking checkboxes or action buttons
+                              if ((e.target as HTMLElement).closest('[data-no-navigate]')) {
+                                e.preventDefault();
+                              }
+                            }}
                           >
                             {/* Checkbox */}
                             {hasRole('admin') && (
-                              <div>
+                              <div data-no-navigate>
                                 <Checkbox
                                   checked={selectedIds.has(agreement.id)}
                                   onCheckedChange={() => toggleSelect(agreement.id)}
@@ -849,11 +876,8 @@ const CollaborativeAgreementsPage = () => {
                               </div>
                             )}
                             {/* Provider */}
-                            <div className={hasRole('admin') ? 'col-span-3' : 'col-span-4'}>
-                              <Link 
-                                to={`/directory?search=${encodeURIComponent(agreement.providerEmail)}`}
-                                className="flex items-center gap-3 group/provider"
-                              >
+                            <div>
+                              <div className="flex items-center gap-3">
                                 <div className={`h-9 w-9 rounded-full flex items-center justify-center font-semibold text-xs shrink-0 ${
                                   agreement.isActive 
                                     ? 'bg-success/10 text-success' 
@@ -862,52 +886,49 @@ const CollaborativeAgreementsPage = () => {
                                   {agreement.providerName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="font-medium text-sm truncate group-hover/provider:text-primary transition-colors">{agreement.providerName}</p>
+                                  <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{agreement.providerName}</p>
                                   <div className="flex items-center gap-2">
-                                    {!agreement.isActive && (
-                                      <Badge variant="secondary" className="text-[10px] px-1 py-0">Ended</Badge>
-                                    )}
                                     {!hasDocument && agreement.isActive && (
                                       <Badge variant="outline" className="text-[10px] px-1 py-0 text-warning border-warning/30">No Doc</Badge>
                                     )}
                                   </div>
                                 </div>
-                              </Link>
+                              </div>
                             </div>
                             
-                            {/* State with CA requirement indicator */}
+                            {/* State */}
                             <div>
                               <div className="flex flex-col gap-1">
-                                <Link to={`/states/${agreement.stateAbbreviation}`}>
-                                  <Badge variant="outline" className="font-bold text-xs w-fit hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer">
-                                    {agreement.stateAbbreviation}
-                                  </Badge>
-                                </Link>
+                                <Badge variant="outline" className="font-bold text-xs w-fit">
+                                  {agreement.stateAbbreviation}
+                                </Badge>
                                 {agreement.caRequired && (
                                   <span className="text-[10px] text-muted-foreground">CA Req</span>
                                 )}
                               </div>
                             </div>
+
+                            {/* Workflow Status */}
+                            <div>
+                              {getWorkflowBadge(agreement.workflowStatus)}
+                            </div>
                             
-                            {/* Physician with state-derived cadence */}
-                            <div className="col-span-2">
-                              <Link 
-                                to={`/physicians/${encodeURIComponent(agreement.physicianEmail)}`}
-                                className="text-sm hover:text-primary hover:underline transition-colors"
-                              >
+                            {/* Physician */}
+                            <div>
+                              <p className="text-sm">
                                 Dr. {agreement.physicianName.split(' ')[1] || agreement.physicianName}
-                              </Link>
+                              </p>
                               <p className="text-xs text-muted-foreground">
                                 {formatCadence(agreement.meetingCadence)}
                               </p>
                             </div>
                             
-                            {/* Next Meeting - Clean display with hover for details */}
-                            <div className="col-span-2">
+                            {/* Next Meeting */}
+                            <div>
                               {!agreement.isActive ? (
                                 <span className="text-sm text-muted-foreground">—</span>
                               ) : agreement.nextMeetingDate ? (
-                                <div className="group/meeting relative cursor-default">
+                                <div>
                                   <div className="flex items-center gap-1.5">
                                     {meetingOverdue && <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
                                     {meetingUrgent && !meetingOverdue && <Clock className="h-3.5 w-3.5 text-warning shrink-0" />}
@@ -918,76 +939,37 @@ const CollaborativeAgreementsPage = () => {
                                       {agreement.nextMeetingDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                     </span>
                                   </div>
-                                  {/* Tooltip on hover */}
-                                  <div className="absolute left-0 top-full mt-1 bg-popover border rounded-md shadow-md p-2 text-xs z-10 hidden group-hover/meeting:block whitespace-nowrap">
-                                    {meetingOverdue ? (
-                                      <span className="text-destructive">{Math.abs(agreement.daysUntilMeeting!)} days overdue</span>
-                                    ) : agreement.daysUntilMeeting === 0 ? (
-                                      <span className="text-warning">Meeting today</span>
-                                    ) : (
-                                      <span>In {agreement.daysUntilMeeting} days</span>
-                                    )}
-                                  </div>
                                 </div>
                               ) : (
                                 <span className="text-sm text-muted-foreground">None scheduled</span>
                               )}
                             </div>
                             
-                            {/* Renewal Due - Clean display with hover for details */}
-                            <div className="col-span-2">
+                            {/* Renewal Due */}
+                            <div>
                               {!agreement.isActive ? (
                                 <span className="text-sm text-muted-foreground">—</span>
                               ) : agreement.renewalDate ? (
-                                <div className="group/renewal relative cursor-default">
-                                  <div className="flex items-center gap-1.5">
-                                    {renewalOverdue && <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />}
-                                    {renewalDueSoon && !renewalOverdue && <Clock className="h-3.5 w-3.5 text-warning shrink-0" />}
-                                    <span className={`text-sm ${
-                                      renewalOverdue ? 'text-destructive font-medium' : 
-                                      renewalDueSoon ? 'text-warning font-medium' : ''
-                                    }`}>
-                                      {agreement.renewalDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
-                                    </span>
-                                  </div>
-                                  {/* Tooltip on hover */}
-                                  <div className="absolute left-0 top-full mt-1 bg-popover border rounded-md shadow-md p-2 text-xs z-10 hidden group-hover/renewal:block whitespace-nowrap">
-                                    {renewalOverdue ? (
-                                      <span className="text-destructive font-medium">{Math.abs(agreement.daysUntilRenewal!)} days overdue - needs new agreement!</span>
-                                    ) : agreement.daysUntilRenewal! <= 30 ? (
-                                      <span className="text-warning">{agreement.daysUntilRenewal} days until renewal</span>
-                                    ) : (
-                                      <span>{agreement.daysUntilRenewal} days remaining</span>
-                                    )}
-                                  </div>
+                                <div className="flex items-center gap-1.5">
+                                  {renewalOverdue && <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+                                  {renewalDueSoon && !renewalOverdue && <Clock className="h-3.5 w-3.5 text-warning shrink-0" />}
+                                  <span className={`text-sm ${
+                                    renewalOverdue ? 'text-destructive font-medium' : 
+                                    renewalDueSoon ? 'text-warning font-medium' : ''
+                                  }`}>
+                                    {agreement.renewalDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                                  </span>
                                 </div>
                               ) : (
                                 <span className="text-sm text-muted-foreground">Not set</span>
                               )}
                             </div>
                             
-                            {/* Actions - combined doc + menu */}
-                            <div className="flex justify-end items-center gap-1">
-                              <Button variant="ghost" size="icon" asChild className="h-8 w-8">
-                                <Link to={`/admin/agreements/${agreement.agreementId}`} title="View Agreement Details">
-                                  <ChevronRight className="h-4 w-4" />
-                                </Link>
-                              </Button>
-                              {hasDocument && (
-                                <Button variant="ghost" size="icon" asChild className="text-success h-8 w-8">
-                                  <a href={documentLink!} target="_blank" rel="noopener noreferrer" title="View Document">
-                                    <Eye className="h-4 w-4" />
-                                  </a>
-                                </Button>
-                              )}
-                              {!hasDocument && agreement.isActive && (
-                                <div className="flex items-center gap-1 text-warning text-xs mr-1" title="Missing documentation">
-                                  <AlertCircle className="h-4 w-4" />
-                                </div>
-                              )}
+                            {/* Actions */}
+                            <div className="flex justify-end items-center gap-1" data-no-navigate>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm">
+                                  <Button variant="ghost" size="sm" onClick={(e) => e.preventDefault()}>
                                     <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -1035,7 +1017,7 @@ const CollaborativeAgreementsPage = () => {
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </div>
-                          </div>
+                          </Link>
                         );
                       })
                     )}
