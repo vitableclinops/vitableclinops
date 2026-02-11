@@ -546,7 +546,7 @@ const CollaborativeAgreementsPage = () => {
                 Collaborative Agreements
               </h1>
               <p className="text-muted-foreground mt-1">
-                Manage physician collaborations, supervision schedules, and compliance.
+                Each agreement links a specific provider to a supervising physician in a given state.
               </p>
             </div>
             <div className="flex gap-2">
