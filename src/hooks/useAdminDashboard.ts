@@ -62,6 +62,7 @@ export function useAdminDashboard() {
         taskRes,
         taskCountRes,
         renewalRes,
+        milestoneProfilesRes,
       ] = await Promise.all([
         // Provider counts by employment type
         supabase
@@ -95,6 +96,11 @@ export function useAdminDashboard() {
           .eq('workflow_status', 'active')
           .not('next_renewal_date', 'is', null)
           .lt('next_renewal_date', new Date(Date.now() + 90 * 86400000).toISOString()),
+        // Providers with milestone dates for task creation
+        supabase
+          .from('profiles')
+          .select('id, full_name, date_of_birth, birthday, start_date_on_network, employment_start_date, employment_type, pod_id')
+          .in('employment_type', ['w2', '1099']),
       ]);
 
       // Provider stats
@@ -145,8 +151,140 @@ export function useAdminDashboard() {
         });
       }
 
+      // Generate milestone tasks from provider profiles
+      const milestoneProfiles = milestoneProfilesRes.data || [];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Fetch pod leads for assignment
+      const podIds = [...new Set(milestoneProfiles.map(p => p.pod_id).filter(Boolean))] as string[];
+      let podLeadMap = new Map<string, { id: string | null; name: string | null }>();
+      if (podIds.length > 0) {
+        const { data: pods } = await supabase
+          .from('pods')
+          .select('id, pod_lead_id, pod_lead_name')
+          .in('id', podIds);
+        (pods || []).forEach(pod => {
+          podLeadMap.set(pod.id, { id: pod.pod_lead_id, name: pod.pod_lead_name });
+        });
+      }
+
+      // Check which milestone tasks already exist
+      const currentYear = today.getFullYear();
+      const { data: existingMilestones } = await supabase
+        .from('milestone_tasks')
+        .select('provider_id, milestone_type, milestone_year')
+        .eq('milestone_year', currentYear)
+        .in('status', ['pending', 'completed']);
+
+      const existingSet = new Set(
+        (existingMilestones || []).map(m => `${m.provider_id}-${m.milestone_type}-${m.milestone_year}`)
+      );
+
+      const milestonesToCreate: any[] = [];
+
+      for (const p of milestoneProfiles) {
+        const name = p.full_name || 'Unknown Provider';
+        const dob = p.date_of_birth || p.birthday;
+        const startDate = p.start_date_on_network || p.employment_start_date;
+        const podLead = p.pod_id ? podLeadMap.get(p.pod_id) : null;
+
+        if (dob) {
+          const bday = new Date(dob);
+          let nextBday = new Date(bday);
+          nextBday.setFullYear(today.getFullYear());
+          if (nextBday < today) nextBday.setFullYear(today.getFullYear() + 1);
+          
+          const daysUntil = Math.floor((nextBday.getTime() - today.getTime()) / 86400000);
+          const taskYear = nextBday.getFullYear();
+          const key = `${p.id}-birthday-${taskYear}`;
+
+          if (daysUntil <= 14 && !existingSet.has(key)) {
+            milestonesToCreate.push({
+              provider_id: p.id,
+              provider_name: name,
+              milestone_type: 'birthday',
+              milestone_date: nextBday.toISOString().split('T')[0],
+              milestone_year: taskYear,
+              title: `Wish ${name} a Happy Birthday`,
+              due_date: nextBday.toISOString().split('T')[0],
+              assigned_to: podLead?.id || null,
+              assigned_to_name: podLead?.name || null,
+              pod_id: p.pod_id || null,
+              status: 'pending',
+              slack_template: `🎂 Happy Birthday, ${name}! Wishing you a wonderful day! 🎉`,
+            });
+            existingSet.add(key);
+          }
+        }
+
+        if (startDate) {
+          const start = new Date(startDate);
+          let nextAnniv = new Date(start);
+          nextAnniv.setFullYear(today.getFullYear());
+          if (nextAnniv < today) nextAnniv.setFullYear(today.getFullYear() + 1);
+          
+          const yearsCount = nextAnniv.getFullYear() - start.getFullYear();
+          const daysUntil = Math.floor((nextAnniv.getTime() - today.getTime()) / 86400000);
+          const taskYear = nextAnniv.getFullYear();
+          const key = `${p.id}-anniversary-${taskYear}`;
+
+          if (daysUntil <= 14 && yearsCount > 0 && !existingSet.has(key)) {
+            milestonesToCreate.push({
+              provider_id: p.id,
+              provider_name: name,
+              milestone_type: 'anniversary',
+              milestone_date: nextAnniv.toISOString().split('T')[0],
+              milestone_year: taskYear,
+              title: `Wish ${name} a Happy ${yearsCount}-Year Anniversary`,
+              due_date: nextAnniv.toISOString().split('T')[0],
+              assigned_to: podLead?.id || null,
+              assigned_to_name: podLead?.name || null,
+              pod_id: p.pod_id || null,
+              status: 'pending',
+              slack_template: `🏆 Congratulations ${name} on ${yearsCount} year${yearsCount > 1 ? 's' : ''} with us! Thank you for your dedication! 🎉`,
+            });
+            existingSet.add(key);
+          }
+        }
+      }
+
+      // Batch insert new milestone tasks
+      if (milestonesToCreate.length > 0) {
+        await supabase.from('milestone_tasks').insert(milestonesToCreate);
+      }
+
+      // Now fetch pending milestone tasks and merge into actionable tasks
+      const { data: pendingMilestones } = await supabase
+        .from('milestone_tasks')
+        .select('*')
+        .eq('status', 'pending')
+        .order('due_date', { ascending: true })
+        .limit(20);
+
+      const milestoneTasks: DashboardTaskItem[] = (pendingMilestones || []).map(m => ({
+        id: m.id,
+        title: m.title,
+        status: 'pending',
+        category: 'milestone' as any,
+        state_name: null,
+        state_abbreviation: null,
+        assigned_to_name: m.assigned_to_name,
+        assigned_to: m.assigned_to,
+        priority: 'medium',
+        due_date: m.due_date,
+        provider_id: m.provider_id,
+        transfer_id: null,
+        escalated: false,
+        blocked_reason: null,
+        description: m.description,
+        provider_name: m.provider_name,
+      }));
+
+      const allTasks = [...tasks, ...milestoneTasks];
+
       // Sort: escalated first, then blocked, then overdue, then by priority
-      tasks.sort((a, b) => {
+      allTasks.sort((a, b) => {
         if (a.escalated && !b.escalated) return -1;
         if (!a.escalated && b.escalated) return 1;
         if ((a.status === 'blocked') !== (b.status === 'blocked')) return a.status === 'blocked' ? -1 : 1;
@@ -154,7 +292,7 @@ export function useAdminDashboard() {
         return (prioOrder[a.priority || 'medium'] || 2) - (prioOrder[b.priority || 'medium'] || 2);
       });
 
-      setActionableTasks(tasks);
+      setActionableTasks(allTasks);
       setTaskStatusCounts(statusCounts);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
