@@ -40,6 +40,7 @@ export function useUpcomingMilestones(days: number = 14) {
     queryKey: ['upcoming-milestones', days],
     queryFn: async () => {
       const today = new Date();
+      today.setHours(0, 0, 0, 0);
       const endDate = new Date(today);
       endDate.setDate(endDate.getDate() + days);
 
@@ -48,7 +49,6 @@ export function useUpcomingMilestones(days: number = 14) {
         .select('*')
         .gte('milestone_date', today.toISOString().split('T')[0])
         .lte('milestone_date', endDate.toISOString().split('T')[0])
-        .eq('status', 'pending')
         .order('milestone_date', { ascending: true });
 
       if (error) throw error;
