@@ -49,7 +49,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
       const { data, error } = await supabase
         .from('agreement_tasks')
         .select('*')
-        .neq('status', 'completed')
+        .not('status', 'in', '("completed","archived")')
         .order('due_date', { ascending: true, nullsFirst: false })
         .order('priority', { ascending: false });
 

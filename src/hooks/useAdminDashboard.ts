@@ -48,6 +48,7 @@ export function useAdminDashboard() {
     upcomingRenewals: 0,
   });
   const [actionableTasks, setActionableTasks] = useState<DashboardTaskItem[]>([]);
+  const [archivedTasks, setArchivedTasks] = useState<DashboardTaskItem[]>([]);
   const [taskStatusCounts, setTaskStatusCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
@@ -63,6 +64,7 @@ export function useAdminDashboard() {
         taskCountRes,
         renewalRes,
         milestoneProfilesRes,
+        archivedRes,
       ] = await Promise.all([
         // Provider counts by employment type
         supabase
@@ -103,6 +105,13 @@ export function useAdminDashboard() {
           .in('employment_type', ['w2', '1099'])
           .neq('activation_status', 'Terminated')
           .neq('employment_status', 'termed'),
+        // Archived tasks
+        supabase
+          .from('agreement_tasks')
+          .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, provider_id, transfer_id, escalated, blocked_reason, description, archived_reason, archived_at')
+          .eq('status', 'archived' as any)
+          .order('archived_at', { ascending: false })
+          .limit(50),
       ]);
 
       // Provider stats
@@ -295,6 +304,7 @@ export function useAdminDashboard() {
       });
 
       setActionableTasks(allTasks);
+      setArchivedTasks((archivedRes.data || []) as DashboardTaskItem[]);
       setTaskStatusCounts(statusCounts);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -307,5 +317,5 @@ export function useAdminDashboard() {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  return { stats, actionableTasks, taskStatusCounts, loading, refetch: fetchDashboard };
+  return { stats, actionableTasks, archivedTasks, taskStatusCounts, loading, refetch: fetchDashboard };
 }

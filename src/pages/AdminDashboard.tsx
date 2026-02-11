@@ -9,6 +9,7 @@ import { useGenerateMilestoneTasks } from '@/hooks/useMilestones';
 import { useAdminDashboard } from '@/hooks/useAdminDashboard';
 import { ArchiveTaskDialog } from '@/components/admin/ArchiveTaskDialog';
 import { ReassignTaskDialog } from '@/components/admin/ReassignTaskDialog';
+import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -47,11 +48,12 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('tasks');
-  const [taskFilter, setTaskFilter] = useState<'all' | 'unassigned' | 'mine' | 'blocked' | 'escalated'>('all');
+  const [taskFilter, setTaskFilter] = useState<'all' | 'unassigned' | 'mine' | 'blocked' | 'escalated' | 'archived'>('all');
   const generateMilestones = useGenerateMilestoneTasks();
-  const { stats, actionableTasks, taskStatusCounts, loading, refetch } = useAdminDashboard();
+  const { stats, actionableTasks, archivedTasks, taskStatusCounts, loading, refetch } = useAdminDashboard();
   const [archiveTarget, setArchiveTarget] = useState<{ id: string; title: string } | null>(null);
   const [reassignTarget, setReassignTarget] = useState<{ id: string; title: string; assignee: string | null } | null>(null);
+  const [editTarget, setEditTarget] = useState<typeof actionableTasks[0] | null>(null);
   
   const userRole = roles[0] || 'admin';
   const userName = profile?.full_name || profile?.email || 'Admin User';
@@ -59,20 +61,23 @@ const AdminDashboard = () => {
   const userId = profile?.id;
 
   // Filter tasks based on active filter
-  const filteredTasks = actionableTasks.filter(task => {
-    switch (taskFilter) {
-      case 'unassigned': return !task.assigned_to;
-      case 'mine': return task.assigned_to === userId;
-      case 'blocked': return task.status === 'blocked' || task.status === 'waiting_on_signature';
-      case 'escalated': return task.escalated;
-      default: return true;
-    }
-  });
+  const filteredTasks = taskFilter === 'archived'
+    ? archivedTasks
+    : actionableTasks.filter(task => {
+        switch (taskFilter) {
+          case 'unassigned': return !task.assigned_to;
+          case 'mine': return task.assigned_to === userId;
+          case 'blocked': return task.status === 'blocked' || task.status === 'waiting_on_signature';
+          case 'escalated': return task.escalated;
+          default: return true;
+        }
+      });
 
   const unassignedCount = actionableTasks.filter(t => !t.assigned_to).length;
   const myTaskCount = actionableTasks.filter(t => t.assigned_to === userId).length;
   const blockedCount = actionableTasks.filter(t => t.status === 'blocked' || t.status === 'waiting_on_signature').length;
   const escalatedCount = actionableTasks.filter(t => t.escalated).length;
+  const archivedCount = archivedTasks.length;
 
   const handleSelfAssign = async (taskId: string) => {
     try {
@@ -232,6 +237,7 @@ const AdminDashboard = () => {
                           { key: 'mine', label: 'My Tasks', count: myTaskCount },
                           { key: 'blocked', label: 'Blocked', count: blockedCount },
                           { key: 'escalated', label: 'Escalated', count: escalatedCount },
+                          { key: 'archived', label: 'Archived', count: archivedCount },
                         ].map(f => (
                           <Button
                             key={f.key}
@@ -302,10 +308,12 @@ const AdminDashboard = () => {
                                     <div 
                                       key={task.id}
                                       className={cn(
-                                        "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group",
+                                        "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group cursor-pointer",
                                         task.escalated && "border-destructive/30 bg-destructive/5",
-                                        (task.status === 'blocked' || task.status === 'waiting_on_signature') && "border-warning/30 bg-warning/5"
+                                        (task.status === 'blocked' || task.status === 'waiting_on_signature') && "border-warning/30 bg-warning/5",
+                                        task.status === 'archived' && "opacity-60"
                                       )}
+                                      onClick={() => setEditTarget(task)}
                                     >
                                       <div className={cn("text-muted-foreground", getPriorityColor(task.priority))}>
                                         {task.priority === 'critical' ? <Flag className="h-3.5 w-3.5" /> : getCategoryIcon(task.category)}
@@ -355,7 +363,7 @@ const AdminDashboard = () => {
                                         )}
                                       </div>
 
-                                      <div className="flex items-center gap-1.5 shrink-0">
+                                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                                          {task.assigned_to_name ? (
                                            <Badge variant="outline" className="text-xs">
                                              {task.assigned_to_name}
@@ -371,23 +379,25 @@ const AdminDashboard = () => {
                                              Claim
                                            </Button>
                                          )}
-                                         <DropdownMenu>
-                                           <DropdownMenuTrigger asChild>
-                                             <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
-                                               <MoreVertical className="h-3.5 w-3.5" />
-                                             </Button>
-                                           </DropdownMenuTrigger>
-                                           <DropdownMenuContent align="end">
-                                             <DropdownMenuItem onClick={() => setReassignTarget({ id: task.id, title: task.title, assignee: task.assigned_to })}>
-                                               <UserCog className="h-3.5 w-3.5 mr-2" />
-                                               Reassign
-                                             </DropdownMenuItem>
-                                             <DropdownMenuItem onClick={() => setArchiveTarget({ id: task.id, title: task.title })} className="text-destructive focus:text-destructive">
-                                               <Archive className="h-3.5 w-3.5 mr-2" />
-                                               Archive
-                                             </DropdownMenuItem>
-                                           </DropdownMenuContent>
-                                         </DropdownMenu>
+                                         {task.status !== 'archived' && (
+                                           <DropdownMenu>
+                                             <DropdownMenuTrigger asChild>
+                                               <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
+                                                 <MoreVertical className="h-3.5 w-3.5" />
+                                               </Button>
+                                             </DropdownMenuTrigger>
+                                             <DropdownMenuContent align="end">
+                                               <DropdownMenuItem onClick={() => setReassignTarget({ id: task.id, title: task.title, assignee: task.assigned_to })}>
+                                                 <UserCog className="h-3.5 w-3.5 mr-2" />
+                                                 Reassign
+                                               </DropdownMenuItem>
+                                               <DropdownMenuItem onClick={() => setArchiveTarget({ id: task.id, title: task.title })} className="text-destructive focus:text-destructive">
+                                                 <Archive className="h-3.5 w-3.5 mr-2" />
+                                                 Archive
+                                               </DropdownMenuItem>
+                                             </DropdownMenuContent>
+                                           </DropdownMenu>
+                                         )}
                                        </div>
                                     </div>
                                   ))}
@@ -587,6 +597,11 @@ const AdminDashboard = () => {
         currentAssignee={reassignTarget?.assignee || null}
         onClose={() => setReassignTarget(null)}
         onSuccess={() => { setReassignTarget(null); refetch(); }}
+      />
+      <EditTaskDialog
+        task={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSuccess={() => { setEditTarget(null); refetch(); }}
       />
     </div>
   );
