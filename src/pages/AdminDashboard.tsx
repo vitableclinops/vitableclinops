@@ -10,6 +10,7 @@ import { useAdminDashboard } from '@/hooks/useAdminDashboard';
 import { ArchiveTaskDialog } from '@/components/admin/ArchiveTaskDialog';
 import { ReassignTaskDialog } from '@/components/admin/ReassignTaskDialog';
 import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
+import { AddTaskDialog } from '@/components/admin/AddTaskDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -38,6 +39,7 @@ import {
   Archive,
   UserCog,
   User,
+  Plus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -55,6 +57,7 @@ const AdminDashboard = () => {
   const [archiveTarget, setArchiveTarget] = useState<{ id: string; title: string } | null>(null);
   const [reassignTarget, setReassignTarget] = useState<{ id: string; title: string; assignee: string | null } | null>(null);
   const [editTarget, setEditTarget] = useState<typeof actionableTasks[0] | null>(null);
+  const [showAddTask, setShowAddTask] = useState(false);
   
   const userRole = roles[0] || 'admin';
   const userName = profile?.full_name || profile?.email || 'Admin User';
@@ -227,9 +230,15 @@ const AdminDashboard = () => {
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-lg">Actionable Tasks</CardTitle>
-                        <Button variant="ghost" size="sm" onClick={refetch}>
-                          <RefreshCw className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => setShowAddTask(true)}>
+                            <Plus className="h-3.5 w-3.5" />
+                            Add Task
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={refetch}>
+                            <RefreshCw className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                       <div className="flex items-center gap-1 mt-2 flex-wrap">
                         {[
@@ -611,6 +620,11 @@ const AdminDashboard = () => {
         task={editTarget}
         onClose={() => setEditTarget(null)}
         onSuccess={() => { setEditTarget(null); refetch(); }}
+      />
+      <AddTaskDialog
+        open={showAddTask}
+        onClose={() => setShowAddTask(false)}
+        onSuccess={() => { setShowAddTask(false); refetch(); }}
       />
     </div>
   );
