@@ -79,6 +79,11 @@ interface FullProvider {
   medallion_id: string | null;
   chart_review_folder_url: string | null;
   created_at: string;
+  activation_status: string | null;
+  collaborative_physician: string | null;
+  renewal_handling: string | null;
+  languages: string | null;
+  bio: string | null;
 }
 
 interface ProviderDetailModalProps {
@@ -307,8 +312,9 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
         </DialogHeader>
 
         <Tabs defaultValue="professional" className="mt-4">
-          <TabsList className="w-full grid grid-cols-4">
+          <TabsList className="w-full grid grid-cols-5">
             <TabsTrigger value="professional">Professional</TabsTrigger>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="licenses">Licenses</TabsTrigger>
             <TabsTrigger value="personal">Personal</TabsTrigger>
             <TabsTrigger value="employment">Employment</TabsTrigger>
@@ -424,7 +430,36 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
             </div>
           </TabsContent>
 
-          {/* Licenses Tab */}
+          {/* Overview Tab - Quick summary with enriched fields */}
+          <TabsContent value="overview" className="mt-4 space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <InfoRow label="Activation Status" value={
+                provider.activation_status === 'ready' ? 'Ready' :
+                provider.activation_status === 'pending_onboarding' ? 'Pending Onboarding' :
+                provider.activation_status || 'Not Set'
+              } />
+              <InfoRow label="Collaborative Physician" value={provider.collaborative_physician} />
+              <InfoRow label="Renewal Handling" value={
+                provider.renewal_handling === 'self' ? 'Self-Managed' :
+                provider.renewal_handling === 'medallion' ? 'Medallion-Managed' :
+                provider.renewal_handling === 'internal' ? 'Internal Admin' :
+                provider.renewal_handling || 'Not Set'
+              } />
+              <InfoRow label="Languages" value={provider.languages} />
+              <InfoRow label="Licensed States" value={provider.actively_licensed_states} />
+              <InfoRow label="Home State" value={provider.address_state} />
+            </div>
+            {provider.bio && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Bio</p>
+                  <p className="text-sm">{provider.bio}</p>
+                </div>
+              </>
+            )}
+          </TabsContent>
+
           <TabsContent value="licenses" className="mt-4 space-y-4">
             {isEditing ? (
               <>

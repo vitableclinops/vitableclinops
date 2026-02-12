@@ -58,12 +58,29 @@ export function CalendarEventCard({ event, showDetails = false, isAdmin = false 
     switch (event.event_type) {
       case 'provider_all_hands':
         return 'All-Hands';
+      case 'supervision_meeting':
+        return 'Supervision';
+      case 'pod_meeting':
+        return 'Pod Meeting';
       case 'training':
         return 'Training';
       case 'town_hall':
         return 'Town Hall';
       default:
         return event.event_type;
+    }
+  };
+
+  const getEventTypeColor = () => {
+    switch (event.event_type) {
+      case 'provider_all_hands':
+        return 'bg-primary/10 text-primary border-primary/20';
+      case 'supervision_meeting':
+        return 'bg-purple-500/10 text-purple-600 border-purple-200';
+      case 'pod_meeting':
+        return 'bg-amber-500/10 text-amber-600 border-amber-200';
+      default:
+        return '';
     }
   };
 
@@ -86,7 +103,7 @@ export function CalendarEventCard({ event, showDetails = false, isAdmin = false 
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline">{getEventTypeLabel()}</Badge>
+              <Badge variant="outline" className={getEventTypeColor()}>{getEventTypeLabel()}</Badge>
               {getStatusBadge()}
             </div>
           </div>
