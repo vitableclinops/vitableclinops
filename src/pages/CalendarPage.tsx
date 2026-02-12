@@ -28,6 +28,7 @@ const CalendarPage = () => {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('upcoming');
 
   const { data: events, isLoading } = useCalendarEvents();
@@ -57,7 +58,8 @@ const CalendarPage = () => {
   const pastEvents = allRelevantEvents.filter(e => new Date(e.starts_at) < now && e.status !== 'scheduled');
 
   const filteredEvents = (activeTab === 'upcoming' ? upcomingEvents : pastEvents)
-    .filter(e => statusFilter === 'all' || e.status === statusFilter);
+    .filter(e => statusFilter === 'all' || e.status === statusFilter)
+    .filter(e => eventTypeFilter === 'all' || e.event_type === eventTypeFilter);
 
   // Filter milestones: pod leads see only their pod, admins see all
   const pendingMilestones = (milestones?.filter(m => m.status === 'pending') || []).filter(m => {
@@ -177,6 +179,17 @@ const CalendarPage = () => {
                 <TabsTrigger value="upcoming">Upcoming ({upcomingEvents.length})</TabsTrigger>
                 <TabsTrigger value="past">Past ({pastEvents.length})</TabsTrigger>
               </TabsList>
+              <Select value={eventTypeFilter} onValueChange={setEventTypeFilter}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Event type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="provider_all_hands">All-Hands</SelectItem>
+                  <SelectItem value="supervision_meeting">Supervision</SelectItem>
+                  <SelectItem value="pod_meeting">Pod Meeting</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-[160px]">
                   <SelectValue placeholder="Filter status" />

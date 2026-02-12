@@ -29,6 +29,11 @@ export interface ProviderTableData {
   primary_specialty: string | null;
   address_state: string | null;
   has_collaborative_agreements: boolean | null;
+  activation_status: string | null;
+  collaborative_physician: string | null;
+  renewal_handling: string | null;
+  languages: string | null;
+  pod_name: string | null;
 }
 
 interface ProviderTableProps {
@@ -60,6 +65,34 @@ const getStatusBadge = (status: string | null) => {
       return <Badge variant="destructive">Terminated</Badge>;
     default:
       return <Badge variant="outline">Unknown</Badge>;
+  }
+};
+
+const getActivationBadge = (status: string | null) => {
+  switch (status) {
+    case 'ready':
+      return <Badge className="bg-success/10 text-success border-success/20 text-[10px]">Ready</Badge>;
+    case 'pending_onboarding':
+      return <Badge variant="secondary" className="text-[10px]">Onboarding</Badge>;
+    case 'pending_activation':
+      return <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px]">Pending</Badge>;
+    case 'Terminated':
+      return <Badge variant="destructive" className="text-[10px]">Termed</Badge>;
+    default:
+      return status ? <Badge variant="outline" className="text-[10px]">{status}</Badge> : null;
+  }
+};
+
+const getRenewalBadge = (handling: string | null) => {
+  switch (handling) {
+    case 'self':
+      return <Badge variant="outline" className="text-[10px]">Self</Badge>;
+    case 'medallion':
+      return <Badge variant="secondary" className="text-[10px]">Medallion</Badge>;
+    case 'internal':
+      return <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px]">Internal</Badge>;
+    default:
+      return null;
   }
 };
 
@@ -108,16 +141,17 @@ export const ProviderTable = ({
             <SortHeader column="employment_type" label="Employment" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <SortHeader column="actively_licensed_states" label="Licensed States" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>Home State</TableHead>
+            {isAdmin && <SortHeader column="activation_status" label="Activation" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
             {isAdmin && <SortHeader column="employment_status" label="Status" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
             {isAdmin && <TableHead>Collaboration</TableHead>}
+            {isAdmin && <TableHead>Renewals</TableHead>}
             {isAdmin && <TableHead>Email</TableHead>}
-            {isAdmin && <TableHead>Phone</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
           {providers.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={isAdmin ? 10 : 6} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={isAdmin ? 11 : 6} className="text-center py-8 text-muted-foreground">
                 No providers found matching your filters
               </TableCell>
             </TableRow>
@@ -166,6 +200,7 @@ export const ProviderTable = ({
                   </span>
                 </TableCell>
                 <TableCell>{provider.address_state || '-'}</TableCell>
+                {isAdmin && <TableCell>{getActivationBadge(provider.activation_status)}</TableCell>}
                 {isAdmin && <TableCell>{getStatusBadge(provider.employment_status)}</TableCell>}
                 {isAdmin && (
                   <TableCell>
@@ -178,6 +213,16 @@ export const ProviderTable = ({
                           <span className="text-muted-foreground text-sm">Not supervising</span>
                         );
                       }
+                      if (provider.collaborative_physician) {
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            {provider.has_collaborative_agreements && (
+                              <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-blue-200 text-[10px]">Has Collabs</Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground truncate max-w-[120px]">{provider.collaborative_physician}</span>
+                          </div>
+                        );
+                      }
                       return provider.has_collaborative_agreements ? (
                         <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-blue-200">Has Collabs</Badge>
                       ) : (
@@ -186,11 +231,9 @@ export const ProviderTable = ({
                     })()}
                   </TableCell>
                 )}
+                {isAdmin && <TableCell>{getRenewalBadge(provider.renewal_handling)}</TableCell>}
                 {isAdmin && (
                   <TableCell className="text-muted-foreground text-sm">{provider.email}</TableCell>
-                )}
-                {isAdmin && (
-                  <TableCell className="text-muted-foreground text-sm">{provider.phone_number || '-'}</TableCell>
                 )}
               </TableRow>
             ))

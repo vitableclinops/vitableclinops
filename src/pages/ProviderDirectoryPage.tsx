@@ -69,6 +69,11 @@ interface FullProvider {
   medallion_id: string | null;
   chart_review_folder_url: string | null;
   created_at: string;
+  activation_status: string | null;
+  collaborative_physician: string | null;
+  renewal_handling: string | null;
+  languages: string | null;
+  bio: string | null;
 }
 
 interface DirectoryProvider {
@@ -360,6 +365,11 @@ const ProviderDirectoryPage = () => {
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
     has_collaborative_agreements: isAdmin ? (p as FullProvider).has_collaborative_agreements : null,
+    activation_status: isAdmin ? ((p as any).activation_status || null) : null,
+    collaborative_physician: isAdmin ? ((p as any).collaborative_physician || null) : null,
+    renewal_handling: isAdmin ? ((p as any).renewal_handling || null) : null,
+    languages: isAdmin ? ((p as any).languages || null) : null,
+    pod_name: null, // Could enrich with pod lookup
   }));
 
   const handleRowClick = (provider: ProviderTableData) => {
