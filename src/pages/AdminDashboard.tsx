@@ -7,6 +7,8 @@ import { AdminComplianceTab } from '@/components/admin/AdminComplianceTab';
 import { AdminDashboardSidebar } from '@/components/admin/AdminDashboardSidebar';
 import { ArchiveTaskDialog } from '@/components/admin/ArchiveTaskDialog';
 import { ReassignTaskDialog } from '@/components/admin/ReassignTaskDialog';
+import { BulkReassignDialog } from '@/components/admin/BulkReassignDialog';
+import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
 import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
 import { AddTaskDialog } from '@/components/admin/AddTaskDialog';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +26,8 @@ const AdminDashboard = () => {
   const [reassignTarget, setReassignTarget] = useState<{ id: string; title: string; assignee: string | null } | null>(null);
   const [editTarget, setEditTarget] = useState<DashboardTaskItem | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [bulkReassignIds, setBulkReassignIds] = useState<string[]>([]);
+  const [bulkArchiveIds, setBulkArchiveIds] = useState<string[]>([]);
 
   const isAdmin = hasRole('admin');
   const isPodLead = hasRole('pod_lead') && !isAdmin;
@@ -110,6 +114,8 @@ const AdminDashboard = () => {
                     onArchiveTask={setArchiveTarget}
                     onReassignTask={setReassignTarget}
                     onAddTask={() => setShowAddTask(true)}
+                    onBulkReassign={(ids) => setBulkReassignIds(ids)}
+                    onBulkArchive={(ids) => setBulkArchiveIds(ids)}
                   />
                 </div>
                 <AdminDashboardSidebar taskStatusCounts={taskStatusCounts} />
@@ -135,6 +141,18 @@ const AdminDashboard = () => {
         currentAssignee={reassignTarget?.assignee || null}
         onClose={() => setReassignTarget(null)}
         onSuccess={() => { setReassignTarget(null); refetch(); }}
+      />
+      <BulkReassignDialog
+        taskIds={bulkReassignIds}
+        open={bulkReassignIds.length > 0}
+        onClose={() => setBulkReassignIds([])}
+        onSuccess={() => { setBulkReassignIds([]); refetch(); }}
+      />
+      <BulkArchiveDialog
+        taskIds={bulkArchiveIds}
+        open={bulkArchiveIds.length > 0}
+        onClose={() => setBulkArchiveIds([])}
+        onSuccess={() => { setBulkArchiveIds([]); refetch(); }}
       />
       <EditTaskDialog
         task={editTarget}
