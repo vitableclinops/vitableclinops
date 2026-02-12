@@ -166,15 +166,30 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
 
   const { agencies } = useAgencies();
 
-  // Fetch pod leads (all profiles that can be assigned as pod leads)
+  // Fetch pod leads (profiles with pod_lead role)
   const { data: podLeads = [] } = useQuery({
     queryKey: ['pod-leads'],
     queryFn: async () => {
+      // First get all user IDs with pod_lead role
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'pod_lead');
+      
+      if (roleError) throw roleError;
+      
+      const podLeadUserIds = (roleData || []).map(r => r.user_id);
+      
+      if (podLeadUserIds.length === 0) return [];
+      
+      // Then get profiles for those user IDs
       const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, email')
+        .in('id', podLeadUserIds)
         .not('full_name', 'is', null)
         .order('full_name');
+      
       if (error) throw error;
       return data || [];
     },
