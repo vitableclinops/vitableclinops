@@ -340,10 +340,22 @@ export function useAdminDashboard() {
       const allTasks = [...tasks, ...milestoneTasks];
 
       // Sort: escalated first, then blocked, then overdue, then by priority
+      const now = new Date();
       allTasks.sort((a, b) => {
+        // Escalated comes first
         if (a.escalated && !b.escalated) return -1;
         if (!a.escalated && b.escalated) return 1;
+        
+        // Then blocked
         if ((a.status === 'blocked') !== (b.status === 'blocked')) return a.status === 'blocked' ? -1 : 1;
+        
+        // Then overdue
+        const aIsOverdue = a.due_date && new Date(a.due_date) < now;
+        const bIsOverdue = b.due_date && new Date(b.due_date) < now;
+        if (aIsOverdue && !bIsOverdue) return -1;
+        if (!aIsOverdue && bIsOverdue) return 1;
+        
+        // Then by priority
         const prioOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
         return (prioOrder[a.priority || 'medium'] || 2) - (prioOrder[b.priority || 'medium'] || 2);
       });

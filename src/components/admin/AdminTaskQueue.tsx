@@ -159,12 +159,28 @@ export function AdminTaskQueue({
     }
   };
 
+  const now = new Date();
+  
   const grouped = filteredTasks.reduce<Record<string, DashboardTaskItem[]>>((acc, task) => {
     const cat = GROUP_MAP[task.category] || 'general';
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(task);
     return acc;
   }, {});
+
+  // Sort tasks within each group: overdue first, then escalated, then blocked
+  Object.keys(grouped).forEach(cat => {
+    grouped[cat].sort((a, b) => {
+      const aIsOverdue = a.due_date && new Date(a.due_date) < now;
+      const bIsOverdue = b.due_date && new Date(b.due_date) < now;
+      if (aIsOverdue && !bIsOverdue) return -1;
+      if (!aIsOverdue && bIsOverdue) return 1;
+      if (a.escalated && !b.escalated) return -1;
+      if (!a.escalated && b.escalated) return 1;
+      if ((a.status === 'blocked') !== (b.status === 'blocked')) return a.status === 'blocked' ? -1 : 1;
+      return 0;
+    });
+  });
 
   return (
     <Card>
@@ -265,15 +281,16 @@ export function AdminTaskQueue({
                 <CollapsibleContent>
                   <div className="space-y-1.5">
                     {tasks.map(task => (
-                      <div
-                        key={task.id}
-                        className={cn(
-                          "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group cursor-pointer",
-                          task.escalated && "border-destructive/30 bg-destructive/5",
-                          (task.status === 'blocked' || task.status === 'waiting_on_signature') && "border-warning/30 bg-warning/5",
-                          task.status === 'archived' && "opacity-60",
-                          selectedIds.has(task.id) && "ring-2 ring-primary/40 bg-primary/5"
-                        )}
+                       <div
+                         key={task.id}
+                         className={cn(
+                           "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group cursor-pointer",
+                           task.due_date && new Date(task.due_date) < now && "border-destructive/50 bg-destructive/10 ring-1 ring-destructive/30",
+                           task.escalated && !task.due_date && "border-destructive/30 bg-destructive/5",
+                           (task.status === 'blocked' || task.status === 'waiting_on_signature') && !task.due_date && "border-warning/30 bg-warning/5",
+                           task.status === 'archived' && "opacity-60",
+                           selectedIds.has(task.id) && "ring-2 ring-primary/40 bg-primary/5"
+                         )}
                         onClick={() => {
                           if (isSelectionMode) {
                             toggleSelect(task.id);
@@ -296,19 +313,24 @@ export function AdminTaskQueue({
                           {task.priority === 'critical' ? <Flag className="h-3.5 w-3.5" /> : getCategoryIcon(task.category)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-medium truncate">{task.title}</p>
-                            {task.escalated && (
-                              <Badge variant="destructive" className="text-[10px] gap-0.5 px-1">
-                                <Flag className="h-2.5 w-2.5" /> Escalated
-                              </Badge>
-                            )}
-                            {(task.status === 'blocked' || task.status === 'waiting_on_signature') && (
-                              <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-0.5 px-1">
-                                <Lock className="h-2.5 w-2.5" /> {task.status === 'waiting_on_signature' ? 'Waiting Signature' : 'Blocked'}
-                              </Badge>
-                            )}
-                          </div>
+                           <div className="flex items-center gap-2 flex-wrap">
+                             <p className="text-sm font-medium truncate">{task.title}</p>
+                             {task.due_date && new Date(task.due_date) < now && (
+                               <Badge variant="destructive" className="text-[10px] gap-0.5 px-1 animate-pulse">
+                                 <Clock className="h-2.5 w-2.5" /> Overdue
+                               </Badge>
+                             )}
+                             {task.escalated && (
+                               <Badge variant="destructive" className="text-[10px] gap-0.5 px-1">
+                                 <Flag className="h-2.5 w-2.5" /> Escalated
+                               </Badge>
+                             )}
+                             {(task.status === 'blocked' || task.status === 'waiting_on_signature') && (
+                               <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-0.5 px-1">
+                                 <Lock className="h-2.5 w-2.5" /> {task.status === 'waiting_on_signature' ? 'Waiting Signature' : 'Blocked'}
+                               </Badge>
+                             )}
+                           </div>
                           <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
                             {task.state_name && (
                               <span className="flex items-center gap-0.5">
