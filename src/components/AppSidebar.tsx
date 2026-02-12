@@ -89,15 +89,15 @@ const navGroups: NavGroup[] = [
       { label: 'Agreements', icon: Shield, href: '/admin/agreements', roles: ['admin', 'physician'] },
     ],
   },
-  {
-    label: 'Operations',
-    roles: ['provider', 'admin'],
-    items: [
-      { label: 'Reimbursements', icon: Receipt, href: '/reimbursements', roles: ['provider', 'admin'] },
-      { label: 'Agencies', icon: Building2, href: '/admin/agencies', roles: ['admin'] },
-      { label: 'All-Hands Calendar', icon: Calendar, href: '/admin/calendar', roles: ['admin'] },
-    ],
-  },
+   {
+     label: 'Operations',
+     roles: ['provider', 'admin'],
+     items: [
+       { label: 'Reimbursements', icon: Receipt, href: '/reimbursements', roles: ['provider', 'admin'] },
+       { label: 'Agencies', icon: Building2, href: '/admin/agencies', roles: ['admin'] },
+       { label: 'Calendar', icon: Calendar, href: '/admin/calendar', roles: ['admin'] },
+     ],
+   },
   {
     label: 'Resources',
     roles: ['provider', 'admin'],
