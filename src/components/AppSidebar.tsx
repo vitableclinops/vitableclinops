@@ -39,6 +39,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
+// Pod leads get access to specific admin sections
 import { useAuth } from '@/hooks/useAuth';
 
 interface AppSidebarProps {
@@ -64,18 +65,19 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: 'Home',
-    roles: ['provider', 'admin', 'physician'],
+    roles: ['provider', 'admin', 'physician', 'pod_lead'],
     items: [
       { label: 'Admin Dashboard', icon: LayoutDashboard, href: '/admin', roles: ['admin'] },
+      { label: 'Pod Lead Dashboard', icon: LayoutDashboard, href: '/admin', roles: ['pod_lead'] },
       { label: 'My Dashboard', icon: ClipboardList, href: '/provider', roles: ['provider'] },
       { label: 'Physician Portal', icon: Stethoscope, href: '/physician', roles: ['physician'] },
     ],
   },
   {
     label: 'Providers',
-    roles: ['admin', 'provider'],
+    roles: ['admin', 'provider', 'pod_lead'],
     items: [
-      { label: 'Provider Directory', icon: Users, href: '/directory', roles: ['admin', 'provider'] },
+      { label: 'Provider Directory', icon: Users, href: '/directory', roles: ['admin', 'provider', 'pod_lead'] },
       { label: 'Provider Intake', icon: UserPlus, href: '/admin/intake', roles: ['admin'] },
       { label: 'Provider Grid', icon: Grid3X3, href: '/grid', roles: ['admin'] },
       { label: 'Activation Queue', icon: Power, href: '/admin/activation', roles: ['admin'] },
@@ -89,15 +91,15 @@ const navGroups: NavGroup[] = [
       { label: 'Agreements', icon: Shield, href: '/admin/agreements', roles: ['admin', 'physician'] },
     ],
   },
-   {
-     label: 'Operations',
-     roles: ['provider', 'admin'],
-     items: [
-       { label: 'Reimbursements', icon: Receipt, href: '/reimbursements', roles: ['provider', 'admin'] },
-       { label: 'Agencies', icon: Building2, href: '/admin/agencies', roles: ['admin'] },
-       { label: 'Calendar', icon: Calendar, href: '/admin/calendar', roles: ['admin'] },
-     ],
-   },
+  {
+    label: 'Operations',
+    roles: ['provider', 'admin', 'pod_lead'],
+    items: [
+      { label: 'Reimbursements', icon: Receipt, href: '/reimbursements', roles: ['provider', 'admin'] },
+      { label: 'Agencies', icon: Building2, href: '/admin/agencies', roles: ['admin'] },
+      { label: 'Calendar', icon: Calendar, href: '/admin/calendar', roles: ['admin', 'pod_lead'] },
+    ],
+  },
   {
     label: 'Resources',
     roles: ['provider', 'admin'],

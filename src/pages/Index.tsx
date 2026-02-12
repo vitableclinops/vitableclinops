@@ -60,6 +60,8 @@ const Index = () => {
     if (userRoles.length > 0) {
       if (userRoles.includes('admin')) {
         navigate('/admin', { replace: true });
+      } else if (userRoles.includes('pod_lead')) {
+        navigate('/admin', { replace: true });
       } else if (userRoles.includes('provider')) {
         navigate('/provider', { replace: true });
       } else if (userRoles.includes('physician')) {

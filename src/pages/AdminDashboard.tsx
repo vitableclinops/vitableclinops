@@ -59,15 +59,22 @@ const AdminDashboard = () => {
   const [editTarget, setEditTarget] = useState<typeof actionableTasks[0] | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   
+  const isAdmin = roles.includes('admin');
+  const isPodLead = roles.includes('pod_lead') && !isAdmin;
   const userRole = roles[0] || 'admin';
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
   const userId = profile?.id;
 
+  // For pod leads, only show tasks assigned to them
+  const visibleTasks = isPodLead 
+    ? actionableTasks.filter(t => t.assigned_to === userId)
+    : actionableTasks;
+
   // Filter tasks based on active filter
   const filteredTasks = taskFilter === 'archived'
     ? archivedTasks
-    : actionableTasks.filter(task => {
+    : visibleTasks.filter(task => {
         switch (taskFilter) {
           case 'unassigned': return !task.assigned_to;
           case 'mine': return task.assigned_to === userId;
@@ -77,10 +84,10 @@ const AdminDashboard = () => {
         }
       });
 
-  const unassignedCount = actionableTasks.filter(t => !t.assigned_to).length;
-  const myTaskCount = actionableTasks.filter(t => t.assigned_to === userId).length;
-  const blockedCount = actionableTasks.filter(t => t.status === 'blocked' || t.status === 'waiting_on_signature').length;
-  const escalatedCount = actionableTasks.filter(t => t.escalated).length;
+  const unassignedCount = visibleTasks.filter(t => !t.assigned_to).length;
+  const myTaskCount = visibleTasks.filter(t => t.assigned_to === userId).length;
+  const blockedCount = visibleTasks.filter(t => t.status === 'blocked' || t.status === 'waiting_on_signature').length;
+  const escalatedCount = visibleTasks.filter(t => t.escalated).length;
   const archivedCount = archivedTasks.length;
 
   const handleSelfAssign = async (taskId: string) => {
@@ -145,65 +152,69 @@ const AdminDashboard = () => {
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-foreground">
-              Provider Operations Hub
+              {isPodLead ? 'Pod Lead Dashboard' : 'Provider Operations Hub'}
             </h1>
             <p className="text-sm text-muted-foreground mt-2">
-              Real-time oversight of provider compliance, agreements, and operational workflows.
+              {isPodLead 
+                ? 'Your milestone tasks and team celebrations.'
+                : 'Real-time oversight of provider compliance, agreements, and operational workflows.'}
             </p>
           </div>
 
-          {/* Stats Grid */}
-          {loading ? (
-            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-8">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-24 rounded-lg" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-8">
-              <StatCard
-                title="Internal Providers"
-                value={stats.totalInternalProviders}
-                subtitle={`${stats.w2Count} W2 · ${stats.contractorCount} 1099`}
-                icon={Users}
-                variant="default"
-              />
-              <StatCard
-                title="Active Agreements"
-                value={stats.activeAgreements}
-                subtitle={`${stats.draftAgreements} draft · ${stats.pendingSetupAgreements} pending`}
-                icon={FileText}
-                variant="default"
-              />
-              <StatCard
-                title="Active Transfers"
-                value={stats.activeTransfers}
-                subtitle="In progress"
-                icon={ArrowRightLeft}
-                variant={stats.activeTransfers > 0 ? 'warning' : 'default'}
-              />
-              <StatCard
-                title="Open Tasks"
-                value={actionableTasks.length}
-                subtitle={`${unassignedCount} unassigned`}
-                icon={ListChecks}
-                variant={unassignedCount > 0 ? 'warning' : 'default'}
-              />
-              <StatCard
-                title="Blocked"
-                value={blockedCount}
-                subtitle={`${escalatedCount} escalated`}
-                icon={AlertTriangle}
-                variant={blockedCount > 0 ? 'danger' : 'default'}
-              />
-              <StatCard
-                title="Completed"
-                value={taskStatusCounts['completed'] || 0}
-                subtitle="Total tasks done"
-                icon={CheckCircle2}
-                variant="success"
-              />
-            </div>
+          {/* Stats Grid - only for admins */}
+          {!isPodLead && (
+            loading ? (
+              <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-8">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-24 rounded-lg" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-8">
+                <StatCard
+                  title="Internal Providers"
+                  value={stats.totalInternalProviders}
+                  subtitle={`${stats.w2Count} W2 · ${stats.contractorCount} 1099`}
+                  icon={Users}
+                  variant="default"
+                />
+                <StatCard
+                  title="Active Agreements"
+                  value={stats.activeAgreements}
+                  subtitle={`${stats.draftAgreements} draft · ${stats.pendingSetupAgreements} pending`}
+                  icon={FileText}
+                  variant="default"
+                />
+                <StatCard
+                  title="Active Transfers"
+                  value={stats.activeTransfers}
+                  subtitle="In progress"
+                  icon={ArrowRightLeft}
+                  variant={stats.activeTransfers > 0 ? 'warning' : 'default'}
+                />
+                <StatCard
+                  title="Open Tasks"
+                  value={actionableTasks.length}
+                  subtitle={`${unassignedCount} unassigned`}
+                  icon={ListChecks}
+                  variant={unassignedCount > 0 ? 'warning' : 'default'}
+                />
+                <StatCard
+                  title="Blocked"
+                  value={blockedCount}
+                  subtitle={`${escalatedCount} escalated`}
+                  icon={AlertTriangle}
+                  variant={blockedCount > 0 ? 'danger' : 'default'}
+                />
+                <StatCard
+                  title="Completed"
+                  value={taskStatusCounts['completed'] || 0}
+                  subtitle="Total tasks done"
+                  icon={CheckCircle2}
+                  variant="success"
+                />
+              </div>
+            )
           )}
 
           {/* Main Content */}
@@ -211,15 +222,17 @@ const AdminDashboard = () => {
             <TabsList className="mb-6">
               <TabsTrigger value="tasks" className="gap-2">
                 <ListChecks className="h-4 w-4" />
-                Task Queue
-                {actionableTasks.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5">{actionableTasks.length}</Badge>
+                {isPodLead ? 'My Tasks' : 'Task Queue'}
+                {visibleTasks.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5">{visibleTasks.length}</Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="compliance" className="gap-2">
-                <ShieldCheck className="h-4 w-4" />
-                Compliance
-              </TabsTrigger>
+              {!isPodLead && (
+                <TabsTrigger value="compliance" className="gap-2">
+                  <ShieldCheck className="h-4 w-4" />
+                  Compliance
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="tasks">

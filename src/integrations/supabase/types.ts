@@ -3670,7 +3670,7 @@ export type Database = {
         | "in_progress"
         | "cancelled"
         | "archived"
-      app_role: "admin" | "provider" | "physician"
+      app_role: "admin" | "provider" | "physician" | "pod_lead"
       attestation_status: "pending" | "completed" | "overdue" | "excused"
       collab_requirement_type:
         | "never"
@@ -3878,7 +3878,7 @@ export const Constants = {
         "cancelled",
         "archived",
       ],
-      app_role: ["admin", "provider", "physician"],
+      app_role: ["admin", "provider", "physician", "pod_lead"],
       attestation_status: ["pending", "completed", "overdue", "excused"],
       collab_requirement_type: [
         "never",
