@@ -186,7 +186,7 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
       const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, email')
-        .in('id', podLeadUserIds)
+        .in('user_id', podLeadUserIds)
         .not('full_name', 'is', null)
         .order('full_name');
       
