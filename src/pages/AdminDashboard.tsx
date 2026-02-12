@@ -118,7 +118,7 @@ const AdminDashboard = () => {
                     onBulkArchive={(ids) => setBulkArchiveIds(ids)}
                   />
                 </div>
-                <AdminDashboardSidebar taskStatusCounts={taskStatusCounts} />
+                <AdminDashboardSidebar taskStatusCounts={taskStatusCounts} tasks={visibleTasks} />
               </div>
             </TabsContent>
 
