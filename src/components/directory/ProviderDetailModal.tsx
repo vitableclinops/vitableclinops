@@ -84,6 +84,7 @@ interface FullProvider {
   renewal_handling: string | null;
   languages: string | null;
   bio: string | null;
+  pod_lead_id: string | null;
 }
 
 interface ProviderDetailModalProps {
@@ -165,6 +166,20 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
 
   const { agencies } = useAgencies();
 
+  // Fetch pod leads (all profiles that can be assigned as pod leads)
+  const { data: podLeads = [] } = useQuery({
+    queryKey: ['pod-leads'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .not('full_name', 'is', null)
+        .order('full_name');
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   // Fetch actual collaborative agreement count for this provider
   const { data: agreementCount = 0 } = useQuery({
     queryKey: ['provider-agreements-count', provider?.id],
@@ -245,6 +260,7 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
       auto_renew_licenses: provider.auto_renew_licenses,
       chart_review_folder_url: provider.chart_review_folder_url,
       actively_licensed_states: provider.actively_licensed_states,
+      pod_lead_id: provider.pod_lead_id,
     });
     setIsEditing(true);
   };
@@ -600,7 +616,21 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                   )}
                   <EditableField label="Offer Date" value={formData.employment_offer_date} field="employment_offer_date" onChange={handleChange} type="date" />
                   <EditableField label="Start Date" value={formData.employment_start_date} field="employment_start_date" onChange={handleChange} type="date" />
-                  <EditableField label="End Date" value={formData.employment_end_date} field="employment_end_date" onChange={handleChange} type="date" />
+                   <EditableField label="End Date" value={formData.employment_end_date} field="employment_end_date" onChange={handleChange} type="date" />
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Pod Lead</p>
+                    <Select value={formData.pod_lead_id || 'none'} onValueChange={(v) => handleChange('pod_lead_id', v === 'none' ? null : v)}>
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select pod lead" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {podLeads.map(pl => (
+                          <SelectItem key={pl.id} value={pl.id}>{pl.full_name || pl.email}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </>
               ) : (
                 <>
@@ -627,7 +657,8 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                   {provider.employment_status === 'termed' && (
                     <InfoRow label="End Date" value={formatDate(provider.employment_end_date)} />
                   )}
-                  <InfoRow label="Profile Created" value={formatDate(provider.created_at)} />
+                   <InfoRow label="Profile Created" value={formatDate(provider.created_at)} />
+                  <InfoRow label="Pod Lead" value={podLeads.find(pl => pl.id === provider.pod_lead_id)?.full_name || 'Not Assigned'} />
                 </>
               )}
             </div>

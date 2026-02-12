@@ -34,6 +34,8 @@ export interface ProviderTableData {
   renewal_handling: string | null;
   languages: string | null;
   pod_name: string | null;
+  pod_lead_id: string | null;
+  pod_lead_name: string | null;
 }
 
 interface ProviderTableProps {
@@ -145,13 +147,14 @@ export const ProviderTable = ({
             {isAdmin && <SortHeader column="employment_status" label="Status" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
             {isAdmin && <TableHead>Collaboration</TableHead>}
             {isAdmin && <TableHead>Renewals</TableHead>}
+            {isAdmin && <TableHead>Pod Lead</TableHead>}
             {isAdmin && <TableHead>Email</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
           {providers.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={isAdmin ? 11 : 6} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={isAdmin ? 12 : 6} className="text-center py-8 text-muted-foreground">
                 No providers found matching your filters
               </TableCell>
             </TableRow>
@@ -232,6 +235,11 @@ export const ProviderTable = ({
                   </TableCell>
                 )}
                 {isAdmin && <TableCell>{getRenewalBadge(provider.renewal_handling)}</TableCell>}
+                {isAdmin && (
+                  <TableCell className="text-sm">
+                    {provider.pod_lead_name || <span className="text-muted-foreground">—</span>}
+                  </TableCell>
+                )}
                 {isAdmin && (
                   <TableCell className="text-muted-foreground text-sm">{provider.email}</TableCell>
                 )}
