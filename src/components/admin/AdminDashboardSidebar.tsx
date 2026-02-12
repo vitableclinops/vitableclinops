@@ -2,6 +2,7 @@ import { ActiveTransfersWidget } from '@/components/agreements/ActiveTransfersWi
 import { UpcomingMilestonesWidget } from '@/components/milestones/UpcomingMilestonesWidget';
 import { TaskCompletionTrend } from '@/components/admin/TaskCompletionTrend';
 import { StaleTaskAlerts } from '@/components/admin/StaleTaskAlerts';
+import { RecentActivityFeed } from '@/components/admin/RecentActivityFeed';
 import { useGenerateMilestoneTasks } from '@/hooks/useMilestones';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ export function AdminDashboardSidebar({ taskStatusCounts, tasks = [] }: AdminDas
     <div className="space-y-6">
       <TaskCompletionTrend />
       <StaleTaskAlerts tasks={tasks} />
+      <RecentActivityFeed />
       <ActiveTransfersWidget />
 
       <Card>

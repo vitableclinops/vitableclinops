@@ -16,7 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
 
-type TaskFilter = 'all' | 'unassigned' | 'mine' | 'blocked' | 'escalated' | 'archived';
+type TaskFilter = 'all' | 'overdue' | 'unassigned' | 'mine' | 'blocked' | 'escalated' | 'archived';
 
 interface AdminTaskQueueProps {
   actionableTasks: DashboardTaskItem[];
@@ -82,6 +82,8 @@ export function AdminTaskQueue({
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  const filterNow = new Date();
+  const overdueCount = actionableTasks.filter(t => t.due_date && new Date(t.due_date) < filterNow).length;
   const unassignedCount = actionableTasks.filter(t => !t.assigned_to).length;
   const myTaskCount = actionableTasks.filter(t => t.assigned_to === userId).length;
   const blockedCount = actionableTasks.filter(t => t.status === 'blocked' || t.status === 'waiting_on_signature').length;
@@ -91,6 +93,7 @@ export function AdminTaskQueue({
     ? archivedTasks
     : actionableTasks.filter(task => {
         switch (taskFilter) {
+          case 'overdue': return task.due_date && new Date(task.due_date) < filterNow;
           case 'unassigned': return !task.assigned_to;
           case 'mine': return task.assigned_to === userId;
           case 'blocked': return task.status === 'blocked' || task.status === 'waiting_on_signature';
@@ -199,6 +202,7 @@ export function AdminTaskQueue({
         <div className="flex items-center gap-1 mt-2 flex-wrap">
           {([
             { key: 'all' as const, label: 'All', count: actionableTasks.length },
+            { key: 'overdue' as const, label: 'Overdue', count: overdueCount },
             { key: 'unassigned' as const, label: 'Unassigned', count: unassignedCount },
             { key: 'mine' as const, label: 'My Tasks', count: myTaskCount },
             { key: 'blocked' as const, label: 'Blocked', count: blockedCount },
