@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Clock, FileText, Calendar, ShieldCheck, Cake, ArrowRightLeft,
   Flag, Lock, ListChecks, UserPlus, MapPin, MoreVertical,
-  Archive, UserCog, User, Plus, ChevronDown, RefreshCw, Users,
+  Archive, UserCog, User, Plus, ChevronDown, RefreshCw, Users, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,6 +28,8 @@ interface AdminTaskQueueProps {
   onArchiveTask: (task: { id: string; title: string }) => void;
   onReassignTask: (task: { id: string; title: string; assignee: string | null }) => void;
   onAddTask: () => void;
+  onBulkReassign: (taskIds: string[]) => void;
+  onBulkArchive: (taskIds: string[]) => void;
 }
 
 const GROUP_MAP: Record<string, string> = {
@@ -73,9 +76,11 @@ function getPriorityColor(priority: string | null) {
 export function AdminTaskQueue({
   actionableTasks, archivedTasks, loading, userId, refetch,
   onEditTask, onArchiveTask, onReassignTask, onAddTask,
+  onBulkReassign, onBulkArchive,
 }: AdminTaskQueueProps) {
   const { toast } = useToast();
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const unassignedCount = actionableTasks.filter(t => !t.assigned_to).length;
   const myTaskCount = actionableTasks.filter(t => t.assigned_to === userId).length;
@@ -93,6 +98,48 @@ export function AdminTaskQueue({
           default: return true;
         }
       });
+
+  const isSelectionMode = selectedIds.size > 0;
+  const allFilteredSelected = filteredTasks.length > 0 && filteredTasks.every(t => selectedIds.has(t.id));
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (allFilteredSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredTasks.map(t => t.id)));
+    }
+  }, [allFilteredSelected, filteredTasks]);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const handleBulkClaim = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: prof } = await supabase.from('profiles').select('full_name, email').eq('user_id', user.id).maybeSingle();
+      const displayName = prof?.full_name || prof?.email || user.email || 'Unknown';
+      const ids = Array.from(selectedIds);
+      await supabase.from('agreement_tasks').update({
+        assigned_to: user.id,
+        assigned_to_name: displayName,
+        assigned_at: new Date().toISOString(),
+      }).in('id', ids);
+      toast({ title: 'Tasks claimed', description: `${ids.length} task(s) assigned to ${displayName}` });
+      clearSelection();
+      refetch();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
 
   const handleSelfAssign = async (taskId: string) => {
     try {
@@ -147,7 +194,7 @@ export function AdminTaskQueue({
               variant={taskFilter === f.key ? 'secondary' : 'ghost'}
               size="sm"
               className="text-xs h-7"
-              onClick={() => setTaskFilter(f.key)}
+              onClick={() => { setTaskFilter(f.key); clearSelection(); }}
             >
               {f.label}
               {f.count > 0 && <Badge variant="outline" className="ml-1 text-[10px] px-1">{f.count}</Badge>}
@@ -156,6 +203,43 @@ export function AdminTaskQueue({
         </div>
       </CardHeader>
       <CardContent>
+        {/* Bulk action bar */}
+        {isSelectionMode && taskFilter !== 'archived' && (
+          <div className="flex items-center gap-2 mb-3 p-2.5 rounded-lg border bg-muted/50 animate-in fade-in slide-in-from-top-1 duration-200">
+            <Checkbox
+              checked={allFilteredSelected}
+              onCheckedChange={toggleSelectAll}
+              aria-label="Select all visible"
+            />
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            <div className="flex-1" />
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleBulkClaim}>
+              <UserPlus className="h-3 w-3" /> Claim
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => onBulkReassign(Array.from(selectedIds))}>
+              <UserCog className="h-3 w-3" /> Reassign
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => onBulkArchive(Array.from(selectedIds))}>
+              <Archive className="h-3 w-3" /> Archive
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearSelection}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
+
+        {/* Select all toggle when not yet selecting */}
+        {!isSelectionMode && filteredTasks.length > 0 && taskFilter !== 'archived' && (
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <Checkbox
+              checked={false}
+              onCheckedChange={toggleSelectAll}
+              aria-label="Select all"
+            />
+            <span className="text-xs text-muted-foreground">Select tasks for bulk actions</span>
+          </div>
+        )}
+
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -187,10 +271,27 @@ export function AdminTaskQueue({
                           "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group cursor-pointer",
                           task.escalated && "border-destructive/30 bg-destructive/5",
                           (task.status === 'blocked' || task.status === 'waiting_on_signature') && "border-warning/30 bg-warning/5",
-                          task.status === 'archived' && "opacity-60"
+                          task.status === 'archived' && "opacity-60",
+                          selectedIds.has(task.id) && "ring-2 ring-primary/40 bg-primary/5"
                         )}
-                        onClick={() => onEditTask(task)}
+                        onClick={() => {
+                          if (isSelectionMode) {
+                            toggleSelect(task.id);
+                          } else {
+                            onEditTask(task);
+                          }
+                        }}
                       >
+                        {/* Checkbox for selection */}
+                        {taskFilter !== 'archived' && (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedIds.has(task.id)}
+                              onCheckedChange={() => toggleSelect(task.id)}
+                              aria-label={`Select ${task.title}`}
+                            />
+                          </div>
+                        )}
                         <div className={cn("text-muted-foreground", getPriorityColor(task.priority))}>
                           {task.priority === 'critical' ? <Flag className="h-3.5 w-3.5" /> : getCategoryIcon(task.category)}
                         </div>
