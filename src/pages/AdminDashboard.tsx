@@ -13,6 +13,7 @@ import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
 import { AddTaskDialog } from '@/components/admin/AddTaskDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,6 +41,7 @@ import {
   UserCog,
   User,
   Plus,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -318,14 +320,16 @@ const AdminDashboard = () => {
                               return acc;
                             }, {});
                             return Object.entries(grouped).map(([category, tasks]) => (
-                              <div key={category}>
-                                <div className="flex items-center gap-2 mb-2">
+                              <Collapsible key={category} defaultOpen>
+                                <CollapsibleTrigger className="flex items-center gap-2 mb-2 w-full group/collapse hover:bg-muted/30 rounded px-1 py-1 transition-colors">
+                                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=closed]/collapse:-rotate-90" />
                                   <span className="text-muted-foreground">{getCategoryIcon(category)}</span>
                                   <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                                     {groupLabels[category] || category.replace(/_/g, ' ')}
                                   </h4>
                                   <Badge variant="outline" className="text-[10px] px-1">{tasks.length}</Badge>
-                                </div>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
                                 <div className="space-y-1.5">
                                   {tasks.map(task => (
                                     <div 
@@ -433,7 +437,8 @@ const AdminDashboard = () => {
                                     </div>
                                   ))}
                                 </div>
-                              </div>
+                                </CollapsibleContent>
+                              </Collapsible>
                             ));
                           })()}
                         </div>
