@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: ReactNode;
-  requiredRoles?: Array<'admin' | 'provider' | 'physician'>;
+  requiredRoles?: Array<'admin' | 'provider' | 'physician' | 'pod_lead'>;
 }
 
 export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps) {
@@ -37,7 +37,7 @@ export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps)
   // Skip if already on onboarding page or if user has admin/physician role
   const isOnboardingPage = location.pathname === '/onboarding';
   const isProviderRole = roles.includes('provider');
-  const isNonProviderRole = roles.includes('admin') || roles.includes('physician');
+  const isNonProviderRole = roles.includes('admin') || roles.includes('physician') || roles.includes('pod_lead');
   const hasCompletedOnboarding = profile?.onboarding_completed === true;
 
   // Only enforce onboarding for pure provider users who haven't completed it

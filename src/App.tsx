@@ -58,7 +58,7 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/admin" element={
-              <ProtectedRoute requiredRoles={['admin']}>
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
                 <AdminDashboard />
               </ProtectedRoute>
             } />
@@ -164,7 +164,7 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/admin/calendar" element={
-              <ProtectedRoute requiredRoles={['admin']}>
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
                 <CalendarPage />
               </ProtectedRoute>
             } />

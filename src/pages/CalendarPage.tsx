@@ -7,13 +7,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { useCalendarEvents, type CalendarEvent } from '@/hooks/useCalendarEvents';
-import { useUpcomingMilestones } from '@/hooks/useMilestones';
+import { useUpcomingMilestones, type MilestoneTask } from '@/hooks/useMilestones';
 import { CalendarEventCard } from '@/components/calendar/CalendarEventCard';
 import { AllHandsEventForm } from '@/components/calendar/AllHandsEventForm';
-import { Calendar, Plus, Loader2, Cake, Trophy } from 'lucide-react';
+import { Calendar, Plus, Loader2, Cake, Trophy, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, differenceInDays } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 const CalendarPage = () => {
   const { profile, roles } = useAuth();
@@ -22,6 +24,7 @@ const CalendarPage = () => {
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
   const isAdmin = roles.includes('admin');
+  const isPodLead = roles.includes('pod_lead');
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -30,19 +33,42 @@ const CalendarPage = () => {
   const { data: events, isLoading } = useCalendarEvents();
   const { data: milestones, isLoading: milestonesLoading } = useUpcomingMilestones(60);
 
+  // Fetch pod lead's pod to filter milestones
+  const { data: myPod } = useQuery({
+    queryKey: ['my-pod-for-calendar', profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return null;
+      const { data } = await supabase
+        .from('pods')
+        .select('id, name')
+        .eq('pod_lead_id', profile.id)
+        .maybeSingle();
+      return data;
+    },
+    enabled: isPodLead && !!profile?.id,
+  });
+
   const now = new Date();
-   // Include all-hands, pod meetings, and collaborative meetings
-   const allRelevantEvents = events?.filter(e => 
-     ['provider_all_hands', 'pod_meeting', 'supervision_meeting'].includes(e.event_type)
-   ) || [];
-   const upcomingEvents = allRelevantEvents.filter(e => new Date(e.starts_at) >= now || e.status === 'scheduled');
-   const pastEvents = allRelevantEvents.filter(e => new Date(e.starts_at) < now && e.status !== 'scheduled');
+  // Include all-hands, pod meetings, and collaborative meetings
+  const allRelevantEvents = events?.filter(e => 
+    ['provider_all_hands', 'pod_meeting', 'supervision_meeting'].includes(e.event_type)
+  ) || [];
+  const upcomingEvents = allRelevantEvents.filter(e => new Date(e.starts_at) >= now || e.status === 'scheduled');
+  const pastEvents = allRelevantEvents.filter(e => new Date(e.starts_at) < now && e.status !== 'scheduled');
 
   const filteredEvents = (activeTab === 'upcoming' ? upcomingEvents : pastEvents)
     .filter(e => statusFilter === 'all' || e.status === statusFilter);
 
-  // Milestones for the calendar view
-  const pendingMilestones = milestones?.filter(m => m.status === 'pending') || [];
+  // Filter milestones: pod leads see only their pod, admins see all
+  const pendingMilestones = (milestones?.filter(m => m.status === 'pending') || []).filter(m => {
+    if (isAdmin) return true;
+    if (isPodLead && myPod) return m.pod_id === myPod.id;
+    return false;
+  });
+
+  // Separate birthday milestones for calendar display
+  const birthdayMilestones = pendingMilestones.filter(m => m.milestone_type === 'birthday');
+  const anniversaryMilestones = pendingMilestones.filter(m => m.milestone_type === 'anniversary');
 
   return (
     <div className="min-h-screen bg-background">
@@ -61,9 +87,9 @@ const CalendarPage = () => {
                 <Calendar className="h-6 w-6" />
                 Calendar
               </h1>
-               <p className="text-muted-foreground mt-1">
-                 Team meetings, provider milestones, and upcoming celebrations.
-               </p>
+              <p className="text-muted-foreground mt-1">
+                Team meetings, provider milestones, and upcoming celebrations.
+              </p>
             </div>
             {isAdmin && (
               <Button onClick={() => setCreateDialogOpen(true)}>
@@ -73,7 +99,7 @@ const CalendarPage = () => {
             )}
           </div>
 
-          {/* Milestone Banner */}
+          {/* Milestone Banner - Birthdays & Anniversaries */}
           {pendingMilestones.length > 0 && (
             <Card className="mb-6 border-pink-200 dark:border-pink-800 bg-pink-50/50 dark:bg-pink-950/20">
               <CardHeader className="pb-2">
@@ -81,6 +107,11 @@ const CalendarPage = () => {
                   <Cake className="h-5 w-5 text-pink-500" />
                   Upcoming Milestones
                   <Badge variant="secondary">{pendingMilestones.length}</Badge>
+                  {isPodLead && myPod && (
+                    <Badge variant="outline" className="text-[10px] ml-1">
+                      {myPod.name}
+                    </Badge>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -98,6 +129,7 @@ const CalendarPage = () => {
                           isUrgent && "border-warning bg-warning/5",
                           !m.assigned_to && "border-dashed border-destructive/40"
                         )}
+                        onClick={() => navigate(`/directory`)}
                       >
                         <div className={cn(
                           "p-2 rounded-lg shrink-0",
