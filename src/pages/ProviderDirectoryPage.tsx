@@ -74,6 +74,7 @@ interface FullProvider {
   renewal_handling: string | null;
   languages: string | null;
   bio: string | null;
+  pod_lead_id: string | null;
 }
 
 interface DirectoryProvider {
@@ -128,7 +129,7 @@ const ProviderDirectoryPage = () => {
 
   // Agencies for filter and table display
   const [agencies, setAgencies] = useState<{ id: string; name: string }[]>([]);
-
+  const [podLeadMap, setPodLeadMap] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     const fetchAgencies = async () => {
       const { data } = await supabase.from('agencies').select('id, name').eq('is_active', true).order('name');
@@ -156,6 +157,20 @@ const ProviderDirectoryPage = () => {
 
         if (!error && data) {
           setProviders(data as FullProvider[]);
+          
+          // Build pod lead name lookup from unique pod_lead_ids
+          const podLeadIds = [...new Set(data.map((p: any) => p.pod_lead_id).filter(Boolean))] as string[];
+          if (podLeadIds.length > 0) {
+            const { data: leads } = await supabase
+              .from('profiles')
+              .select('id, full_name')
+              .in('id', podLeadIds);
+            if (leads) {
+              const map = new Map<string, string>();
+              leads.forEach((l: any) => map.set(l.id, l.full_name || l.id));
+              setPodLeadMap(map);
+            }
+          }
         }
       }
       
@@ -369,7 +384,9 @@ const ProviderDirectoryPage = () => {
     collaborative_physician: isAdmin ? ((p as any).collaborative_physician || null) : null,
     renewal_handling: isAdmin ? ((p as any).renewal_handling || null) : null,
     languages: isAdmin ? ((p as any).languages || null) : null,
-    pod_name: null, // Could enrich with pod lookup
+    pod_name: null,
+    pod_lead_id: isAdmin ? ((p as any).pod_lead_id || null) : null,
+    pod_lead_name: isAdmin ? (podLeadMap.get((p as any).pod_lead_id) || null) : null,
   }));
 
   const handleRowClick = (provider: ProviderTableData) => {

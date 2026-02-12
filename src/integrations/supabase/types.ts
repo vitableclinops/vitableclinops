@@ -2091,6 +2091,7 @@ export type Database = {
           personal_email: string | null
           phone_number: string | null
           pod_id: string | null
+          pod_lead_id: string | null
           postal_code: string | null
           practice_restrictions: string | null
           preferred_name: string | null
@@ -2154,6 +2155,7 @@ export type Database = {
           personal_email?: string | null
           phone_number?: string | null
           pod_id?: string | null
+          pod_lead_id?: string | null
           postal_code?: string | null
           practice_restrictions?: string | null
           preferred_name?: string | null
@@ -2217,6 +2219,7 @@ export type Database = {
           personal_email?: string | null
           phone_number?: string | null
           pod_id?: string | null
+          pod_lead_id?: string | null
           postal_code?: string | null
           practice_restrictions?: string | null
           preferred_name?: string | null
@@ -2245,6 +2248,27 @@ export type Database = {
             columns: ["pod_id"]
             isOneToOne: false
             referencedRelation: "pods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_pod_lead_id_fkey"
+            columns: ["pod_lead_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_pod_lead_id_fkey"
+            columns: ["pod_lead_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_pod_lead_id_fkey"
+            columns: ["pod_lead_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
             referencedColumns: ["id"]
           },
         ]
