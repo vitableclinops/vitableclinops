@@ -40,6 +40,8 @@ export interface DashboardTaskItem {
   description: string | null;
   provider_name?: string;
   linked_providers?: TaskLinkedProvider[];
+  milestone_type?: string;
+  slack_template?: string | null;
 }
 
 export function useAdminDashboard() {
@@ -331,6 +333,8 @@ export function useAdminDashboard() {
         blocked_reason: null,
         description: m.description,
         provider_name: m.provider_name,
+        milestone_type: m.milestone_type,
+        slack_template: m.slack_template,
       }));
 
       const allTasks = [...tasks, ...milestoneTasks];

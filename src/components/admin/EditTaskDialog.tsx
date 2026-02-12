@@ -14,9 +14,10 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Pencil, MapPin, Archive } from 'lucide-react';
+import { Loader2, Pencil, MapPin, Archive, Copy, Search, Cake, Trophy } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
 import type { Database } from '@/integrations/supabase/types';
 import { LinkedProviderEditor, type LinkedProviderItem } from './LinkedProviderEditor';
@@ -332,6 +333,60 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
               disabled={isArchived}
             />
           </div>
+
+          {isMilestone && (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  {task.milestone_type === 'birthday' ? <Cake className="h-3.5 w-3.5 text-pink-500" /> : <Trophy className="h-3.5 w-3.5 text-amber-500" />}
+                  Celebration Helper
+                </Label>
+                {task.slack_template && (
+                  <div className="bg-muted/40 rounded-md p-3 text-sm text-muted-foreground whitespace-pre-line">
+                    {task.slack_template}
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => {
+                          const message = task.slack_template || task.title;
+                          navigator.clipboard.writeText(message);
+                          toast({ title: 'Copied to clipboard', description: 'Celebration message copied!' });
+                        }}
+                      >
+                        <Copy className="h-3 w-3" />
+                        Copy Message
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Copy celebration message to clipboard</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => {
+                          const term = task.milestone_type === 'birthday' ? 'happy birthday celebration' : 'work anniversary congratulations';
+                          window.open(`https://giphy.com/search/${encodeURIComponent(term)}`, '_blank');
+                        }}
+                      >
+                        <Search className="h-3 w-3" />
+                        Find GIF
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Search for a celebration GIF</TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
+            </>
+          )}
 
           {!isMilestone && !isArchived && (
             <div className="space-y-2">
