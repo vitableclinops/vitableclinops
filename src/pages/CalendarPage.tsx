@@ -31,9 +31,12 @@ const CalendarPage = () => {
   const { data: milestones, isLoading: milestonesLoading } = useUpcomingMilestones(60);
 
   const now = new Date();
-  const allHandsEvents = events?.filter(e => e.event_type === 'provider_all_hands') || [];
-  const upcomingEvents = allHandsEvents.filter(e => new Date(e.starts_at) >= now || e.status === 'scheduled');
-  const pastEvents = allHandsEvents.filter(e => new Date(e.starts_at) < now && e.status !== 'scheduled');
+   // Include all-hands, pod meetings, and collaborative meetings
+   const allRelevantEvents = events?.filter(e => 
+     ['provider_all_hands', 'pod_meeting', 'supervision_meeting'].includes(e.event_type)
+   ) || [];
+   const upcomingEvents = allRelevantEvents.filter(e => new Date(e.starts_at) >= now || e.status === 'scheduled');
+   const pastEvents = allRelevantEvents.filter(e => new Date(e.starts_at) < now && e.status !== 'scheduled');
 
   const filteredEvents = (activeTab === 'upcoming' ? upcomingEvents : pastEvents)
     .filter(e => statusFilter === 'all' || e.status === statusFilter);
@@ -58,9 +61,9 @@ const CalendarPage = () => {
                 <Calendar className="h-6 w-6" />
                 Calendar
               </h1>
-              <p className="text-muted-foreground mt-1">
-                All-Hands events, provider milestones, and upcoming celebrations.
-              </p>
+               <p className="text-muted-foreground mt-1">
+                 Team meetings, provider milestones, and upcoming celebrations.
+               </p>
             </div>
             {isAdmin && (
               <Button onClick={() => setCreateDialogOpen(true)}>
