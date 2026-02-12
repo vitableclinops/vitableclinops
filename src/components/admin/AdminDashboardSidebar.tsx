@@ -1,20 +1,26 @@
 import { ActiveTransfersWidget } from '@/components/agreements/ActiveTransfersWidget';
 import { UpcomingMilestonesWidget } from '@/components/milestones/UpcomingMilestonesWidget';
+import { TaskCompletionTrend } from '@/components/admin/TaskCompletionTrend';
+import { StaleTaskAlerts } from '@/components/admin/StaleTaskAlerts';
 import { useGenerateMilestoneTasks } from '@/hooks/useMilestones';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Cake, RefreshCw, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
 
 interface AdminDashboardSidebarProps {
   taskStatusCounts: Record<string, number>;
+  tasks?: DashboardTaskItem[];
 }
 
-export function AdminDashboardSidebar({ taskStatusCounts }: AdminDashboardSidebarProps) {
+export function AdminDashboardSidebar({ taskStatusCounts, tasks = [] }: AdminDashboardSidebarProps) {
   const generateMilestones = useGenerateMilestoneTasks();
 
   return (
     <div className="space-y-6">
+      <TaskCompletionTrend />
+      <StaleTaskAlerts tasks={tasks} />
       <ActiveTransfersWidget />
 
       <Card>
