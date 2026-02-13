@@ -93,7 +93,7 @@ const ProfileSettingsPage = () => {
         setNpiNumber(p.npi_number || '');
         setCredentials(p.credentials || '');
         setPreferredName(p.preferred_name || '');
-        setBirthday(p.birthday ? new Date(p.birthday) : undefined);
+        setBirthday(p.birthday ? (() => { const [y,m,d] = p.birthday.split('-').map(Number); return new Date(y, m-1, d); })() : undefined);
         setHomeAddress(p.home_address || '');
         setEmergencyContactName(p.emergency_contact_name || '');
         setEmergencyContactPhone(p.emergency_contact_phone || '');

@@ -110,10 +110,16 @@ const getStatusBadge = (status: string | null) => {
   }
 };
 
+/** Parse a YYYY-MM-DD string as a local date to avoid UTC timezone shift */
+function parseLocalDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return '-';
   try {
-    return format(new Date(dateStr), 'MMMM d, yyyy');
+    return format(parseLocalDate(dateStr), 'MMMM d, yyyy');
   } catch {
     return dateStr;
   }
