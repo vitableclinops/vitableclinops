@@ -13,13 +13,13 @@ export interface PhysicianCapacityInfo {
 export const usePhysicianCapacity = (
   physicianEmail: string,
   stateAbbreviation: string | undefined,
-  ratioLimit: number | null
+  _ratioLimitFallback: number | null
 ) => {
   const [capacity, setCapacity] = useState<PhysicianCapacityInfo | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!physicianEmail || !stateAbbreviation || !ratioLimit) {
+    if (!physicianEmail || !stateAbbreviation) {
       setCapacity(null);
       return;
     }
@@ -27,6 +27,20 @@ export const usePhysicianCapacity = (
     const fetchCapacity = async () => {
       try {
         setLoading(true);
+
+        // Always fetch the latest ratio from the DB to avoid stale cache
+        const { data: stateConfig } = await supabase
+          .from('state_compliance_requirements')
+          .select('np_md_ratio_limit')
+          .eq('state_abbreviation', stateAbbreviation)
+          .single();
+
+        const ratioLimit = stateConfig?.np_md_ratio_limit ?? _ratioLimitFallback;
+        if (!ratioLimit) {
+          setCapacity(null);
+          setLoading(false);
+          return;
+        }
 
         // Get all active collaborative agreements for this physician in this state
         const { data: agreements, error } = await supabase
@@ -59,7 +73,7 @@ export const usePhysicianCapacity = (
     };
 
     fetchCapacity();
-  }, [physicianEmail, stateAbbreviation, ratioLimit]);
+  }, [physicianEmail, stateAbbreviation, _ratioLimitFallback]);
 
   return { capacity, loading };
 };
