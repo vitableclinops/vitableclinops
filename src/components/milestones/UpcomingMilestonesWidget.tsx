@@ -10,6 +10,12 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
+
+/** Parse a YYYY-MM-DD string as a local date to avoid UTC timezone shift */
+function parseLocalDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
 import { cn } from '@/lib/utils';
 import { useUpcomingMilestones } from '@/hooks/useMilestones';
 
@@ -74,7 +80,7 @@ export function UpcomingMilestonesWidget({ className, compact = false }: Upcomin
           <ScrollArea className={compact ? "h-[220px]" : "h-[340px]"}>
             <div className="space-y-2">
               {pending.map(task => {
-                const daysUntil = differenceInDays(new Date(task.milestone_date), new Date());
+                const daysUntil = differenceInDays(parseLocalDate(task.milestone_date), new Date());
                 const isUrgent = daysUntil <= 1;
                 const isBirthday = task.milestone_type === 'birthday';
 
@@ -102,7 +108,7 @@ export function UpcomingMilestonesWidget({ className, compact = false }: Upcomin
                           {isBirthday ? 'Birthday' : 'Anniversary'}
                           {' · '}
                           <Calendar className="h-3 w-3" />
-                          {format(new Date(task.milestone_date), 'MMM d')}
+                          {format(parseLocalDate(task.milestone_date), 'MMM d')}
                         </p>
                       </div>
                     </div>

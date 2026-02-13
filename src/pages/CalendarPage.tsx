@@ -13,6 +13,12 @@ import { AllHandsEventForm } from '@/components/calendar/AllHandsEventForm';
 import { Calendar, Plus, Loader2, Cake, Trophy, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, differenceInDays } from 'date-fns';
+
+/** Parse a YYYY-MM-DD string as a local date to avoid UTC timezone shift */
+function parseLocalDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -119,7 +125,7 @@ const CalendarPage = () => {
               <CardContent>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {pendingMilestones.slice(0, 6).map(m => {
-                    const daysUntil = differenceInDays(new Date(m.milestone_date), new Date());
+                    const daysUntil = differenceInDays(parseLocalDate(m.milestone_date), new Date());
                     const isBirthday = m.milestone_type === 'birthday';
                     const isUrgent = daysUntil <= 1;
                     
@@ -146,7 +152,7 @@ const CalendarPage = () => {
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <span>{isBirthday ? 'Birthday' : 'Anniversary'}</span>
                             <span>·</span>
-                            <span>{format(new Date(m.milestone_date), 'MMM d')}</span>
+                            <span>{format(parseLocalDate(m.milestone_date), 'MMM d')}</span>
                           </div>
                           {!m.assigned_to && (
                             <Badge variant="outline" className="text-[10px] mt-1 border-destructive/40 text-destructive">
