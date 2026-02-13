@@ -1,0 +1,1 @@
+UPDATE public.state_compliance_requirements SET np_md_ratio = 7 WHERE state_abbreviation = 'TX';
