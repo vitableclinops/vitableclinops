@@ -210,6 +210,9 @@ const CollaborativeAgreementsPage = () => {
     fetchDbAgreements();
   }, []);
 
+  // Incomplete agreements (shell records with no provider assigned)
+  const incompleteAgreements = dbAgreements.filter(a => !a.provider_name && !a.provider_email);
+
   // Each agreement row now represents one provider–physician–state combo directly
   const flattenedAgreements: FlattenedAgreement[] = dbAgreements.map(agreement => {
     const stateCadence = getStateMeetingCadence(agreement.state_abbreviation, stateComplianceData);
@@ -619,6 +622,22 @@ const CollaborativeAgreementsPage = () => {
             />
           </div>
 
+          {/* Data Integrity Warning */}
+          {incompleteAgreements.length > 0 && (
+            <div className="mb-6 flex items-start gap-3 p-4 rounded-lg border border-destructive/30 bg-destructive/5">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-destructive">
+                  {incompleteAgreements.length} incomplete agreement{incompleteAgreements.length !== 1 ? 's' : ''} detected
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  These agreements have no provider assigned. Open each agreement and link a provider from the directory to maintain referential integrity.
+                  {incompleteAgreements.map(a => ` · ${a.state_abbreviation} (${a.physician_name || 'Unknown physician'})`).join('')}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Main Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-6 h-12">
@@ -863,25 +882,37 @@ const CollaborativeAgreementsPage = () => {
                                 />
                               </div>
                             )}
-                            {/* Provider */}
+                             {/* Provider */}
                             <div>
-                              <div className="flex items-center gap-3">
-                                <div className={`h-9 w-9 rounded-full flex items-center justify-center font-semibold text-xs shrink-0 ${
-                                  agreement.isActive 
-                                    ? 'bg-success/10 text-success' 
-                                    : 'bg-muted text-muted-foreground'
-                                }`}>
-                                  {agreement.providerName.split(' ').map(n => n[0]).slice(0, 2).join('')}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{agreement.providerName}</p>
-                                  <div className="flex items-center gap-2">
-                                    {!hasDocument && agreement.isActive && (
-                                      <Badge variant="outline" className="text-[10px] px-1 py-0 text-warning border-warning/30">No Doc</Badge>
-                                    )}
+                              {agreement.providerName === 'Unassigned' ? (
+                                <div className="flex items-center gap-3">
+                                  <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 bg-destructive/10 text-destructive">
+                                    <AlertTriangle className="h-4 w-4" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-sm text-destructive">No provider linked</p>
+                                    <Badge variant="outline" className="text-[10px] px-1 py-0 text-destructive border-destructive/30">Incomplete</Badge>
                                   </div>
                                 </div>
-                              </div>
+                              ) : (
+                                <div className="flex items-center gap-3">
+                                  <div className={`h-9 w-9 rounded-full flex items-center justify-center font-semibold text-xs shrink-0 ${
+                                    agreement.isActive 
+                                      ? 'bg-success/10 text-success' 
+                                      : 'bg-muted text-muted-foreground'
+                                  }`}>
+                                    {agreement.providerName.split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('')}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{agreement.providerName}</p>
+                                    <div className="flex items-center gap-2">
+                                      {!hasDocument && agreement.isActive && (
+                                        <Badge variant="outline" className="text-[10px] px-1 py-0 text-warning border-warning/30">No Doc</Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                             
                             {/* State */}
@@ -901,11 +932,17 @@ const CollaborativeAgreementsPage = () => {
                               {getWorkflowBadge(agreement.workflowStatus)}
                             </div>
                             
-                            {/* Physician */}
+                             {/* Physician */}
                             <div>
-                              <p className="text-sm">
-                                Dr. {agreement.physicianName.split(' ')[1] || agreement.physicianName}
-                              </p>
+                              {agreement.physicianName === 'Unassigned' ? (
+                                <p className="text-sm text-destructive font-medium">No physician</p>
+                              ) : (
+                                <p className="text-sm truncate">
+                                  {agreement.physicianName.startsWith('Dr.') 
+                                    ? agreement.physicianName 
+                                    : `Dr. ${agreement.physicianName}`}
+                                </p>
+                              )}
                               <p className="text-xs text-muted-foreground">
                                 {formatCadence(agreement.meetingCadence)}
                               </p>
