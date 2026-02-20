@@ -110,7 +110,7 @@ export function useAdminDashboard() {
         // Providers with milestone dates for task creation
         supabase
           .from('profiles')
-          .select('id, full_name, date_of_birth, birthday, start_date_on_network, employment_start_date, employment_type, pod_id')
+          .select('id, full_name, birthday, start_date_on_network, employment_start_date, employment_type, pod_id')
           .in('employment_type', ['w2', '1099'])
           .neq('activation_status', 'Terminated')
           .neq('employment_status', 'termed'),
@@ -240,7 +240,7 @@ export function useAdminDashboard() {
 
       for (const p of milestoneProfiles) {
         const name = p.full_name || 'Unknown Provider';
-        const dob = p.date_of_birth || p.birthday;
+        const dob = p.birthday;
         const startDate = p.start_date_on_network || p.employment_start_date;
         const podLead = p.pod_id ? podLeadMap.get(p.pod_id) : null;
 

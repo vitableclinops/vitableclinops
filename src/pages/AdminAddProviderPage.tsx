@@ -124,7 +124,7 @@ export default function AdminAddProviderPage() {
           employment_type: formData.employmentType || null,
           agency_id: formData.employmentType === 'agency' ? formData.agencyId || null : null,
           employment_status: 'active',
-          actively_licensed_states: formData.selectedStates.join(',') || null,
+          // actively_licensed_states removed — derived from provider_state_status
           activation_status: activationStatus,
           user_id: userId,
           onboarding_completed: false,

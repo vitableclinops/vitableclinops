@@ -321,7 +321,7 @@ const AgencyDetailPage = () => {
                               </Badge>
                             </TableCell>
                             <TableCell className="font-mono text-sm">{p.npi_number || '—'}</TableCell>
-                            <TableCell className="max-w-[200px] truncate text-sm">{p.actively_licensed_states || '—'}</TableCell>
+                            <TableCell className="max-w-[200px] truncate text-sm">—</TableCell>
                             <TableCell>
                               <Badge variant={p.employment_status === 'active' ? 'default' : 'secondary'}>
                                 {p.employment_status || 'Unknown'}

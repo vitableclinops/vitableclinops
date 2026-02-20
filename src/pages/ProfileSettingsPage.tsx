@@ -29,7 +29,6 @@ interface ExtendedProfile {
   npi_number: string | null;
   credentials: string | null;
   birthday: string | null;
-  home_address: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   preferred_name: string | null;
@@ -94,7 +93,7 @@ const ProfileSettingsPage = () => {
         setCredentials(p.credentials || '');
         setPreferredName(p.preferred_name || '');
         setBirthday(p.birthday ? (() => { const [y,m,d] = p.birthday.split('-').map(Number); return new Date(y, m-1, d); })() : undefined);
-        setHomeAddress(p.home_address || '');
+        // home_address removed from schema
         setEmergencyContactName(p.emergency_contact_name || '');
         setEmergencyContactPhone(p.emergency_contact_phone || '');
         setPatientAgePreference(p.patient_age_preference || '');
@@ -191,7 +190,7 @@ const ProfileSettingsPage = () => {
           credentials: credentials || null,
           preferred_name: preferredName || null,
           birthday: birthday ? birthday.toISOString().split('T')[0] : null,
-          home_address: homeAddress || null,
+          // home_address removed from schema
           emergency_contact_name: emergencyContactName || null,
           emergency_contact_phone: emergencyContactPhone || null,
           patient_age_preference: patientAgePreference || null,

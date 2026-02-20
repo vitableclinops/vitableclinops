@@ -802,7 +802,78 @@ export type Database = {
           termination_effective_date?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "agreement_transfers_source_agreement_id_fkey"
+            columns: ["source_agreement_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_transfers_source_agreement_id_fkey"
+            columns: ["source_agreement_id"]
+            isOneToOne: false
+            referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_transfers_source_physician_id_fkey"
+            columns: ["source_physician_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_transfers_source_physician_id_fkey"
+            columns: ["source_physician_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_transfers_source_physician_id_fkey"
+            columns: ["source_physician_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_transfers_target_agreement_id_fkey"
+            columns: ["target_agreement_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_transfers_target_agreement_id_fkey"
+            columns: ["target_agreement_id"]
+            isOneToOne: false
+            referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_transfers_target_physician_id_fkey"
+            columns: ["target_physician_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_transfers_target_physician_id_fkey"
+            columns: ["target_physician_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agreement_transfers_target_physician_id_fkey"
+            columns: ["target_physician_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       agreement_workflow_steps: {
         Row: {
@@ -2045,7 +2116,6 @@ export type Database = {
       profiles: {
         Row: {
           activation_status: string | null
-          actively_licensed_states: string | null
           address_city: string | null
           address_line_1: string | null
           address_line_2: string | null
@@ -2058,10 +2128,8 @@ export type Database = {
           board_certificates: string | null
           caqh_number: string | null
           chart_review_folder_url: string | null
-          collaborative_physician: string | null
           created_at: string
           credentials: string | null
-          date_of_birth: string | null
           email: string
           emergency_contact_name: string | null
           emergency_contact_phone: string | null
@@ -2074,7 +2142,6 @@ export type Database = {
           full_name: string | null
           has_caqh_management: boolean | null
           has_collaborative_agreements: boolean | null
-          home_address: string | null
           id: string
           languages: string | null
           last_name: string | null
@@ -2109,7 +2176,6 @@ export type Database = {
         }
         Insert: {
           activation_status?: string | null
-          actively_licensed_states?: string | null
           address_city?: string | null
           address_line_1?: string | null
           address_line_2?: string | null
@@ -2122,10 +2188,8 @@ export type Database = {
           board_certificates?: string | null
           caqh_number?: string | null
           chart_review_folder_url?: string | null
-          collaborative_physician?: string | null
           created_at?: string
           credentials?: string | null
-          date_of_birth?: string | null
           email: string
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
@@ -2138,7 +2202,6 @@ export type Database = {
           full_name?: string | null
           has_caqh_management?: boolean | null
           has_collaborative_agreements?: boolean | null
-          home_address?: string | null
           id?: string
           languages?: string | null
           last_name?: string | null
@@ -2173,7 +2236,6 @@ export type Database = {
         }
         Update: {
           activation_status?: string | null
-          actively_licensed_states?: string | null
           address_city?: string | null
           address_line_1?: string | null
           address_line_2?: string | null
@@ -2186,10 +2248,8 @@ export type Database = {
           board_certificates?: string | null
           caqh_number?: string | null
           chart_review_folder_url?: string | null
-          collaborative_physician?: string | null
           created_at?: string
           credentials?: string | null
-          date_of_birth?: string | null
           email?: string
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
@@ -2202,7 +2262,6 @@ export type Database = {
           full_name?: string | null
           has_caqh_management?: boolean | null
           has_collaborative_agreements?: boolean | null
-          home_address?: string | null
           id?: string
           languages?: string | null
           last_name?: string | null
@@ -3503,7 +3562,6 @@ export type Database = {
       provider_directory_public: {
         Row: {
           activation_status: string | null
-          actively_licensed_states: string | null
           address_city: string | null
           address_line_1: string | null
           address_line_2: string | null
@@ -3514,7 +3572,6 @@ export type Database = {
           birthday: string | null
           created_at: string | null
           credentials: string | null
-          date_of_birth: string | null
           email: string | null
           emergency_contact_name: string | null
           emergency_contact_phone: string | null
@@ -3522,7 +3579,6 @@ export type Database = {
           employment_type: string | null
           first_name: string | null
           full_name: string | null
-          home_address: string | null
           id: string | null
           languages: string | null
           last_name: string | null
@@ -3546,7 +3602,6 @@ export type Database = {
         }
         Insert: {
           activation_status?: string | null
-          actively_licensed_states?: string | null
           address_city?: never
           address_line_1?: never
           address_line_2?: never
@@ -3557,7 +3612,6 @@ export type Database = {
           birthday?: never
           created_at?: string | null
           credentials?: string | null
-          date_of_birth?: never
           email?: string | null
           emergency_contact_name?: never
           emergency_contact_phone?: never
@@ -3565,7 +3619,6 @@ export type Database = {
           employment_type?: string | null
           first_name?: string | null
           full_name?: string | null
-          home_address?: never
           id?: string | null
           languages?: string | null
           last_name?: string | null
@@ -3589,7 +3642,6 @@ export type Database = {
         }
         Update: {
           activation_status?: string | null
-          actively_licensed_states?: string | null
           address_city?: never
           address_line_1?: never
           address_line_2?: never
@@ -3600,7 +3652,6 @@ export type Database = {
           birthday?: never
           created_at?: string | null
           credentials?: string | null
-          date_of_birth?: never
           email?: string | null
           emergency_contact_name?: never
           emergency_contact_phone?: never
@@ -3608,7 +3659,6 @@ export type Database = {
           employment_type?: string | null
           first_name?: string | null
           full_name?: string | null
-          home_address?: never
           id?: string | null
           languages?: string | null
           last_name?: string | null

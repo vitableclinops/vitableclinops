@@ -50,7 +50,6 @@ interface FullProvider {
   profession: string | null;
   avatar_url: string | null;
   birthday: string | null;
-  home_address: string | null;
   address_line_1: string | null;
   address_line_2: string | null;
   address_city: string | null;
@@ -75,12 +74,10 @@ interface FullProvider {
   auto_renew_licenses: boolean | null;
   practice_restrictions: string | null;
   secondary_contact_email: string | null;
-  actively_licensed_states: string | null;
   medallion_id: string | null;
   chart_review_folder_url: string | null;
   created_at: string;
   activation_status: string | null;
-  collaborative_physician: string | null;
   renewal_handling: string | null;
   languages: string | null;
   bio: string | null;
@@ -280,7 +277,6 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
       has_collaborative_agreements: provider.has_collaborative_agreements,
       auto_renew_licenses: provider.auto_renew_licenses,
       chart_review_folder_url: provider.chart_review_folder_url,
-      actively_licensed_states: provider.actively_licensed_states,
       pod_lead_id: provider.pod_lead_id,
     });
     setIsEditing(true);
@@ -302,9 +298,7 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
     provider.address_line_1,
     provider.address_line_2,
     provider.address_city,
-    provider.address_state,
-    provider.postal_code,
-  ].filter(Boolean).join(', ') || provider.home_address;
+  ].filter(Boolean).join(', ');
 
   return (
     <Dialog open={!!provider} onOpenChange={() => { cancelEditing(); onClose(); }}>
@@ -475,7 +469,7 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                 provider.activation_status === 'pending_onboarding' ? 'Pending Onboarding' :
                 provider.activation_status || 'Not Set'
               } />
-              <InfoRow label="Collaborative Physician" value={provider.collaborative_physician} />
+              <InfoRow label="Collaborative Physician" value={null} />
               <InfoRow label="Renewal Handling" value={
                 provider.renewal_handling === 'self' ? 'Self-Managed' :
                 provider.renewal_handling === 'medallion' ? 'Medallion-Managed' :
@@ -483,7 +477,7 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                 provider.renewal_handling || 'Not Set'
               } />
               <InfoRow label="Languages" value={provider.languages} />
-              <InfoRow label="Licensed States" value={provider.actively_licensed_states} />
+              <InfoRow label="Licensed States" value={null} />
               <InfoRow label="Home State" value={provider.address_state} />
             </div>
             {provider.bio && (
@@ -500,12 +494,11 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
           <TabsContent value="licenses" className="mt-4 space-y-4">
             {isEditing ? (
               <>
-                <EditableField label="Actively Licensed States" value={formData.actively_licensed_states} field="actively_licensed_states" onChange={handleChange} />
                 <EditableField label="Chart Review Folder URL" value={formData.chart_review_folder_url} field="chart_review_folder_url" onChange={handleChange} />
               </>
             ) : (
               <>
-                <InfoRow label="Actively Licensed States" value={provider.actively_licensed_states} />
+                {/* Licensed states now derived from provider_state_status */}
                 {provider.chart_review_folder_url && (
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">Chart Reviews:</span>
