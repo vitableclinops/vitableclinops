@@ -38,6 +38,7 @@ import {
   Stethoscope,
   Building2,
   FolderOpen,
+  ListChecks,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -96,6 +97,7 @@ const navGroups: NavGroup[] = [
     label: 'Operations',
     roles: ['provider', 'admin', 'pod_lead'],
     items: [
+      { label: 'Task Repository', icon: ListChecks, href: '/admin/tasks', roles: ['admin', 'pod_lead'] },
       { label: 'Reimbursements', icon: Receipt, href: '/reimbursements', roles: ['provider', 'admin'] },
       { label: 'Agencies', icon: Building2, href: '/admin/agencies', roles: ['admin'] },
       { label: 'Calendar', icon: Calendar, href: '/admin/calendar', roles: ['admin', 'pod_lead'] },
