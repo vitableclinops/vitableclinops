@@ -5,6 +5,8 @@ import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { RelatedLinksCard } from '@/components/navigation/RelatedLinksCard';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
 import { TerminationDialog } from '@/components/agreements/TerminationDialog';
+import { VerificationChecklistDialog } from '@/components/agreements/VerificationChecklistDialog';
+import { generateAuditReport } from '@/components/agreements/AuditReportGenerator';
 import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
 import { TaskAssignmentSelect } from '@/components/agreements/TaskAssignmentSelect';
 import { Button } from '@/components/ui/button';
@@ -38,6 +40,7 @@ import {
   ClipboardList,
   ShieldCheck,
   ArrowRight,
+  Download,
   Lock,
   Pencil,
 } from 'lucide-react';
@@ -62,6 +65,7 @@ export default function AgreementDetailPage() {
   const [meetings, setMeetings] = useState<DbMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [terminationOpen, setTerminationOpen] = useState(false);
+  const [verificationOpen, setVerificationOpen] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [editingTask, setEditingTask] = useState<DashboardTaskItem | null>(null);
 
@@ -336,19 +340,36 @@ export default function AgreementDetailPage() {
                 </div>
                 
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => generateAuditReport(agreementId!)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Audit Report
+                  </Button>
                   {hasRole('admin') && nextStatus && (
-                    <Button 
-                      onClick={handleAdvanceStatus}
-                      disabled={advancing}
-                      className={agreement.workflow_status === 'termination_initiated' ? 'bg-destructive hover:bg-destructive/90' : ''}
-                    >
-                      {advancing ? (
-                        <Clock className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <ArrowRight className="h-4 w-4 mr-2" />
-                      )}
-                      {nextStatus.label}
-                    </Button>
+                    nextStatus.status === 'active' ? (
+                      <Button 
+                        onClick={() => setVerificationOpen(true)}
+                        disabled={advancing}
+                      >
+                        <ShieldCheck className="h-4 w-4 mr-2" />
+                        {nextStatus.label}
+                      </Button>
+                    ) : (
+                      <Button 
+                        onClick={handleAdvanceStatus}
+                        disabled={advancing}
+                        className={agreement.workflow_status === 'termination_initiated' ? 'bg-destructive hover:bg-destructive/90' : ''}
+                      >
+                        {advancing ? (
+                          <Clock className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <ArrowRight className="h-4 w-4 mr-2" />
+                        )}
+                        {nextStatus.label}
+                      </Button>
+                    )
                   )}
                   {hasRole('admin') && agreement.workflow_status === 'active' && (
                     <Button 
@@ -852,6 +873,28 @@ export default function AgreementDetailPage() {
             setTerminationOpen(false);
             fetchData();
             refetchTasks();
+          }}
+        />
+      )}
+
+      {agreement && (
+        <VerificationChecklistDialog
+          open={verificationOpen}
+          onOpenChange={setVerificationOpen}
+          agreementId={agreementId!}
+          agreement={{
+            state_abbreviation: agreement.state_abbreviation,
+            state_name: agreement.state_name,
+            physician_email: agreement.physician_email,
+            physician_name: agreement.physician_name,
+            physician_id: agreement.physician_id,
+            provider_id: agreement.provider_id,
+            agreement_document_url: agreement.agreement_document_url,
+            meeting_cadence: agreement.meeting_cadence,
+          }}
+          onApprove={async () => {
+            setVerificationOpen(false);
+            await handleAdvanceStatus();
           }}
         />
       )}

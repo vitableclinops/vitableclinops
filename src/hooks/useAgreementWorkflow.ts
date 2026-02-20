@@ -261,6 +261,26 @@ export const getTerminationTasks = (
     expected_outcome: 'All regulatory requirements for termination confirmed',
     sort_order: 4,
   },
+  {
+    agreement_id: agreementId,
+    provider_id: providerId,
+    physician_id: physicianId,
+    title: 'Deactivate provider in EHR system',
+    description: 'Confirm the provider has been deactivated in the EHR for this state. Must be completed before termination is finalized.',
+    category: 'termination',
+    status: 'pending',
+    priority: 'urgent',
+    assigned_role: 'admin',
+    is_auto_generated: true,
+    is_required: true,
+    auto_trigger: 'agreement_termination',
+    state_abbreviation: stateAbbreviation,
+    state_name: stateName,
+    task_purpose: 'Provider must be removed from EHR to prevent unauthorized practice',
+    compliance_risk: 'Provider may continue seeing patients under a terminated agreement',
+    expected_outcome: 'Provider deactivated in EHR and confirmation documented',
+    sort_order: 5,
+  },
 ];
 
 /**
