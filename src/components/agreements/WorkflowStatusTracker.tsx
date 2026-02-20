@@ -88,6 +88,9 @@ export function WorkflowStatusTracker({
     const stepIndex = WORKFLOW_STEPS.findIndex(s => s.id === step.id);
     const currentStepIndex = WORKFLOW_STEPS.findIndex(s => s.statuses.includes(status));
     
+    // When status is 'active', all steps including Active are completed
+    if (status === 'active') return stepIndex <= currentStepIndex ? 'completed' : 'pending';
+    
     if (stepIndex < currentStepIndex) return 'completed';
     if (stepIndex === currentStepIndex) return 'current';
     return 'pending';
