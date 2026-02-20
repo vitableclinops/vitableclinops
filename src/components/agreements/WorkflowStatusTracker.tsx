@@ -228,13 +228,16 @@ export function WorkflowStatusTracker({
                     {step.description}
                   </p>
                   
-                  {/* Task progress for pending_setup step */}
-                  {step.id === 'pending_setup' && state === 'current' && totalTaskCount > 0 && (
+                  {/* Task progress for in-progress steps */}
+                  {(step.id === 'in_progress' || step.id === 'signatures') && state === 'current' && totalTaskCount > 0 && (
                     <div className="mt-2 text-sm">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                           <div 
-                            className="h-full bg-primary rounded-full transition-all" 
+                            className={cn(
+                              "h-full rounded-full transition-all",
+                              completedTaskCount === totalTaskCount ? "bg-success" : "bg-primary"
+                            )}
                             style={{ width: `${(completedTaskCount / totalTaskCount) * 100}%` }} 
                           />
                         </div>
@@ -245,6 +248,11 @@ export function WorkflowStatusTracker({
                       {pendingTaskCount > 0 && (
                         <p className="text-xs text-warning mt-1">
                           {pendingTaskCount} task{pendingTaskCount !== 1 ? 's' : ''} remaining
+                        </p>
+                      )}
+                      {pendingTaskCount === 0 && (
+                        <p className="text-xs text-success mt-1">
+                          ✓ All tasks complete — ready to advance
                         </p>
                       )}
                     </div>
