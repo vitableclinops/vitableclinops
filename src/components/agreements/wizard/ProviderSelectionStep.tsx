@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, X, UserPlus, Users, Search, Check } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Plus, X, UserPlus, Users, Search, Check, AlertTriangle } from 'lucide-react';
 import type { AgreementFormData } from '../AgreementWizard';
 
 interface ProviderSelectionStepProps {
@@ -108,14 +109,25 @@ export const ProviderSelectionStep = ({ formData, updateFormData }: ProviderSele
           </span>
         </div>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => setShowManualAdd(!showManualAdd)}
+          className="text-muted-foreground text-xs"
         >
           <UserPlus className="h-4 w-4 mr-1" />
-          Add New
+          Not in directory?
         </Button>
       </div>
+
+      {/* Warning when manual add is opened */}
+      {showManualAdd && (
+        <Alert className="border-destructive/30 bg-destructive/5">
+          <AlertTriangle className="h-4 w-4 text-destructive" />
+          <AlertDescription className="text-destructive text-xs">
+            <strong>Manual providers are not profile-linked.</strong> This means the provider will appear unlinked on the agreement and cannot be navigated to from their profile. Please add the provider to the <strong>Provider Directory</strong> first, then search for them here.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Manual add form */}
       {showManualAdd && (
@@ -252,14 +264,10 @@ export const ProviderSelectionStep = ({ formData, updateFormData }: ProviderSele
         {!isLoading && filteredProviders.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">No providers found</p>
-            <Button
-              variant="link"
-              size="sm"
-              onClick={() => setShowManualAdd(true)}
-            >
-              Add a provider manually
-            </Button>
+            <p className="text-sm">No providers found matching your search</p>
+            <p className="text-xs mt-1">
+              If the provider isn't in the directory, add them there first.
+            </p>
           </div>
         )}
       </div>

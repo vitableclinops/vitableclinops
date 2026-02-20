@@ -25,6 +25,7 @@ export interface AgreementFormData {
   selectedState: State | null;
   
   // Physician
+  physicianId: string | null;
   physicianName: string;
   physicianEmail: string;
   physicianNpi: string;
@@ -63,6 +64,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
   const { getStateCompliance } = useStateCompliance();
   const [formData, setFormData] = useState<AgreementFormData>({
     selectedState: null,
+    physicianId: null,
     physicianName: '',
     physicianEmail: '',
     physicianNpi: '',
@@ -133,6 +135,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
           state_id: formData.selectedState.id,
           state_name: formData.selectedState.name,
           state_abbreviation: formData.selectedState.abbreviation,
+          physician_id: formData.physicianId || null,
           physician_name: formData.physicianName,
           physician_email: formData.physicianEmail,
           physician_npi: formData.physicianNpi || null,
@@ -161,6 +164,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
       setCurrentStep(0);
       setFormData({
         selectedState: null,
+        physicianId: null,
         physicianName: '',
         physicianEmail: '',
         physicianNpi: '',
