@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 
-type TaskStatus = 'all' | 'pending' | 'in_progress' | 'completed' | 'blocked' | 'waiting_on_signature' | 'archived';
+type TaskStatus = 'active' | 'all' | 'pending' | 'in_progress' | 'completed' | 'blocked' | 'waiting_on_signature' | 'archived';
 type TaskCategory = 'all' | 'document' | 'signature' | 'supervision_meeting' | 'chart_review' | 'compliance' | 'transfer' | 'onboarding' | 'milestone' | 'outreach' | 'communication' | 'custom';
 
 interface RepoTask {
@@ -71,6 +71,7 @@ function getStatusBadge(status: string) {
 }
 
 const STATUS_COUNTS_DISPLAY: { key: TaskStatus; label: string }[] = [
+  { key: 'active', label: 'Active' },
   { key: 'all', label: 'All' },
   { key: 'pending', label: 'Pending' },
   { key: 'in_progress', label: 'In Progress' },
@@ -97,7 +98,7 @@ export default function TaskRepositoryPage() {
   const [page, setPage] = useState(0);
 
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<TaskStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<TaskStatus>('active' as TaskStatus);
   const [categoryFilter, setCategoryFilter] = useState<TaskCategory>('all');
   const [sortBy, setSortBy] = useState<'updated_at' | 'due_date' | 'created_at'>('updated_at');
 
@@ -112,7 +113,11 @@ export default function TaskRepositoryPage() {
         .from('agreement_tasks')
         .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, completed_at, archived_at, provider_id, transfer_id, escalated, blocked_reason, description, archived_reason, created_at, updated_at', { count: 'exact' });
 
-      if (statusFilter !== 'all') q = q.eq('status', statusFilter as any);
+      if (statusFilter === 'active') {
+        q = q.not('status', 'in', '("completed","archived")');
+      } else if (statusFilter !== 'all') {
+        q = q.eq('status', statusFilter as any);
+      }
       if (categoryFilter !== 'all') q = q.eq('category', categoryFilter as any);
       if (search.trim()) q = q.ilike('title', `%${search.trim()}%`);
 
@@ -139,9 +144,23 @@ export default function TaskRepositoryPage() {
           .from('milestone_tasks')
           .select('id, title, status, milestone_type, due_date, completed_at, created_at, updated_at, provider_id, provider_name, assigned_to, assigned_to_name, description, slack_template');
 
-        if (statusFilter !== 'all') {
-          if (statusFilter === 'pending' || statusFilter === 'completed') mq = mq.eq('status', statusFilter);
-          else { milestoneTasks = []; }
+        if (statusFilter === 'active') {
+          mq = mq.not('status', 'in', '("completed","archived")');
+        } else if (statusFilter !== 'all') {
+          // Only include milestone tasks if the status is one they support (pending/completed)
+          if (statusFilter === 'pending' || statusFilter === 'completed') {
+            mq = mq.eq('status', statusFilter);
+          } else {
+            // Milestones don't support in_progress/blocked/waiting_on_signature/archived — skip
+            milestoneTasks = [];
+            // skip the query
+            const all = [...enriched].sort((a, b) =>
+              new Date(b[sortBy] || b.updated_at).getTime() - new Date(a[sortBy] || a.updated_at).getTime()
+            );
+            setTasks(all);
+            setTotal(count || 0);
+            return;
+          }
         }
         if (search.trim()) mq = mq.ilike('title', `%${search.trim()}%`);
 
@@ -232,6 +251,7 @@ export default function TaskRepositoryPage() {
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="active">Active (excludes completed/archived)</SelectItem>
                     <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="in_progress">In Progress</SelectItem>
