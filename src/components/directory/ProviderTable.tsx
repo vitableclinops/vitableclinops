@@ -25,12 +25,12 @@ export interface ProviderTableData {
   employment_status: string | null;
   employment_type: string | null;
   agency_name: string | null;
-  actively_licensed_states: string | null;
+  actively_licensed_states: string | null; // Now derived, may be null
   primary_specialty: string | null;
   address_state: string | null;
   has_collaborative_agreements: boolean | null;
   activation_status: string | null;
-  collaborative_physician: string | null;
+  collaborative_physician: string | null; // Now derived from agreements
   renewal_handling: string | null;
   languages: string | null;
   pod_name: string | null;

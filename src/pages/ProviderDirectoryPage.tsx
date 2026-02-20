@@ -40,7 +40,6 @@ interface FullProvider {
   profession: string | null;
   avatar_url: string | null;
   birthday: string | null;
-  home_address: string | null;
   address_line_1: string | null;
   address_line_2: string | null;
   address_city: string | null;
@@ -65,12 +64,10 @@ interface FullProvider {
   auto_renew_licenses: boolean | null;
   practice_restrictions: string | null;
   secondary_contact_email: string | null;
-  actively_licensed_states: string | null;
   medallion_id: string | null;
   chart_review_folder_url: string | null;
   created_at: string;
   activation_status: string | null;
-  collaborative_physician: string | null;
   renewal_handling: string | null;
   languages: string | null;
   bio: string | null;
@@ -89,7 +86,6 @@ interface DirectoryProvider {
   agency_id: string | null;
   profession: string | null;
   primary_specialty: string | null;
-  actively_licensed_states: string | null;
   address_state: string | null;
 }
 
@@ -201,13 +197,7 @@ const ProviderDirectoryPage = () => {
     const professions = new Set<string>();
 
     data.forEach(p => {
-      const statesField = isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).actively_licensed_states;
-      if (statesField) {
-        statesField.split(',').forEach(s => {
-          const trimmed = s.trim();
-          if (trimmed && trimmed.length === 2) states.add(trimmed);
-        });
-      }
+      // States are no longer available from profile fields - skip state extraction for now
       const prof = p.profession || p.credentials;
       if (prof) professions.add(prof);
     });
@@ -236,10 +226,10 @@ const ProviderDirectoryPage = () => {
         }
       }
 
-      // State filter
+      // State filter - skip for now since actively_licensed_states was removed
       if (stateFilter !== 'all') {
-        const statesField = isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).actively_licensed_states;
-        if (!statesField?.includes(stateFilter)) return false;
+        // TODO: derive from provider_state_status
+        return false;
       }
 
       // Profession filter
@@ -304,8 +294,8 @@ const ProviderDirectoryPage = () => {
           bVal = b.employment_status;
           break;
         case 'actively_licensed_states':
-          aVal = isAdmin ? (a as FullProvider).actively_licensed_states : (a as DirectoryProvider).actively_licensed_states;
-          bVal = isAdmin ? (b as FullProvider).actively_licensed_states : (b as DirectoryProvider).actively_licensed_states;
+          aVal = '';
+          bVal = '';
           break;
         default:
           aVal = a.full_name;
@@ -376,12 +366,12 @@ const ProviderDirectoryPage = () => {
     employment_status: p.employment_status,
     employment_type: (p as FullProvider).employment_type || null,
     agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
-    actively_licensed_states: isAdmin ? (p as FullProvider).actively_licensed_states : (p as DirectoryProvider).actively_licensed_states,
+    actively_licensed_states: null, // Derived from provider_state_status now
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
     has_collaborative_agreements: isAdmin ? (p as FullProvider).has_collaborative_agreements : null,
     activation_status: isAdmin ? ((p as any).activation_status || null) : null,
-    collaborative_physician: isAdmin ? ((p as any).collaborative_physician || null) : null,
+    collaborative_physician: null, // Derived from collaborative_agreements now
     renewal_handling: isAdmin ? ((p as any).renewal_handling || null) : null,
     languages: isAdmin ? ((p as any).languages || null) : null,
     pod_name: null,
@@ -561,14 +551,7 @@ const ProviderDirectoryPage = () => {
                               {provider.npi_number && (
                                 <p className="text-xs text-muted-foreground mt-1 font-mono">NPI: {provider.npi_number}</p>
                               )}
-                              {(isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).actively_licensed_states) && (
-                                <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-                                  <MapPin className="h-3 w-3 flex-shrink-0" />
-                                  <span className="truncate">
-                                    {isAdmin ? (provider as FullProvider).actively_licensed_states : (provider as DirectoryProvider).actively_licensed_states}
-                                  </span>
-                                </div>
-                              )}
+              {/* Licensed states removed from profile - derived from provider_state_status */}
                             </div>
                           </div>
                         </CardContent>
@@ -670,12 +653,7 @@ const ProviderDirectoryPage = () => {
                             {provider.primary_specialty && (
                               <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>
                             )}
-                            {(provider as DirectoryProvider).actively_licensed_states && (
-                              <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-                                <MapPin className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">{(provider as DirectoryProvider).actively_licensed_states}</span>
-                              </div>
-                            )}
+              {/* Licensed states removed from profile */}
                           </div>
                         </div>
                       </CardContent>

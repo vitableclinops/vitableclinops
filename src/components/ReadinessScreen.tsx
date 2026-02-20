@@ -118,7 +118,7 @@ export function ReadinessScreen() {
 
         // Licenses by state
         const statesWithLicenses = new Set((licenseData || []).map(l => l.state_abbreviation));
-        const selectedStates = profile.actively_licensed_states?.split(',').filter(Boolean) || [];
+        const selectedStates = Array.from(new Set((licenseData || []).map(l => l.state_abbreviation)));
         
         selectedStates.forEach(state => {
           const license = licenseData?.find(l => l.state_abbreviation === state);
@@ -168,7 +168,7 @@ export function ReadinessScreen() {
     };
 
     fetchReadinessData();
-  }, [profile?.id, profile?.onboarding_completed, profile?.bio, profile?.avatar_url, profile?.actively_licensed_states]);
+  }, [profile?.id, profile?.onboarding_completed, profile?.bio, profile?.avatar_url]);
 
   const completedCount = readinessItems.filter(i => i.status === 'completed').length;
   const totalCount = readinessItems.length;

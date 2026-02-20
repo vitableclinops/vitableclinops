@@ -7,7 +7,6 @@ interface RealProvider {
   full_name: string | null;
   email: string;
   credentials: string | null;
-  actively_licensed_states: string | null;
 }
 
 interface RealStateConfig {
@@ -73,7 +72,7 @@ export function useRealGridData() {
       ] = await Promise.all([
         supabase
           .from('profiles')
-          .select('id, full_name, email, credentials, actively_licensed_states')
+          .select('id, full_name, email, credentials')
           .eq('employment_status', 'active')
           .order('full_name'),
         supabase

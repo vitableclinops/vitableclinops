@@ -75,7 +75,7 @@ export function useProviderReadiness() {
         { data: meetings },
         { data: meetingAttendees },
       ] = await Promise.all([
-        supabase.from('profiles').select('id, full_name, email, credentials, profession, avatar_url, employment_type, employment_status, agency_id, npi_number, chart_review_folder_url, actively_licensed_states').order('full_name'),
+        supabase.from('profiles').select('id, full_name, email, credentials, profession, avatar_url, employment_type, employment_status, agency_id, npi_number, chart_review_folder_url').order('full_name'),
         supabase.from('provider_licenses').select('profile_id, state_abbreviation, status, expiration_date, license_number, updated_at'),
         supabase.from('state_compliance_requirements').select('state_abbreviation, ca_required, collab_requirement_type'),
         supabase.from('collaborative_agreements').select('id, physician_name, state_abbreviation, workflow_status, start_date, end_date, terminated_at, physician_signed_at'),
@@ -136,10 +136,11 @@ export function useProviderReadiness() {
       const results: ProviderReadiness[] = [];
 
       for (const provider of profiles) {
-        // Parse licensed states
-        const stateAbbrs = provider.actively_licensed_states
-          ? provider.actively_licensed_states.split(',').map(s => s.trim()).filter(s => s.length === 2)
-          : [];
+        // Derive licensed states from provider_state_status + provider_licenses
+        const stateAbbrs = Array.from(new Set([
+          ...(providerStatuses?.filter(s => s.provider_id === provider.id).map(s => s.state_abbreviation) || []),
+          ...(licenses?.filter(l => l.profile_id === provider.id).map(l => l.state_abbreviation) || []),
+        ]));
 
         const stateReadiness: StateReadiness[] = [];
         let totalChecklist = 0;

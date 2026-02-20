@@ -91,7 +91,7 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
         providerName: profile.full_name || '',
         providerEmail: profile.email,
         npiNumber: profile.npi_number || '',
-        selectedStates: profile.actively_licensed_states?.split(',').filter(Boolean) || [],
+        selectedStates: [],
         reportedLicenses: [],
         avatarUrl: profile.avatar_url || undefined,
         bio: profile.bio || undefined,
@@ -240,7 +240,7 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
         avatar_url: data.avatarUrl || null,
         bio: data.bio || null,
         min_patient_age: data.minPatientAge || null,
-        actively_licensed_states: data.selectedStates.join(','),
+        // actively_licensed_states removed — derived from provider_state_status
         onboarding_completed: true,
         onboarding_completed_at: new Date().toISOString(),
         activation_status: activationStatus,

@@ -38,7 +38,6 @@ export interface LinkedProvider {
   credentials: string | null;
   profession: string | null;
   employment_status: string | null;
-  actively_licensed_states: string | null;
   activation_status: string | null;
   npi_number: string | null;
 }
@@ -67,7 +66,7 @@ export const useAgencyDetail = (agencyId: string | undefined) => {
           .order('created_at', { ascending: false }),
         supabase
           .from('profiles')
-          .select('id, full_name, email, credentials, profession, employment_status, actively_licensed_states, activation_status, npi_number')
+          .select('id, full_name, email, credentials, profession, employment_status, activation_status, npi_number')
           .eq('agency_id', agencyId)
           .eq('employment_type', 'agency')
           .order('full_name'),
