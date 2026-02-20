@@ -114,13 +114,14 @@ export function useAdminDashboard() {
           .in('employment_type', ['w2', '1099'])
           .neq('activation_status', 'Terminated')
           .neq('employment_status', 'termed'),
-        // Archived tasks
+        // Completed + archived tasks from last 7 days
         supabase
           .from('agreement_tasks')
-          .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, provider_id, transfer_id, escalated, blocked_reason, description, archived_reason, archived_at')
-          .eq('status', 'archived' as any)
-          .order('archived_at', { ascending: false })
-          .limit(50),
+          .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, provider_id, transfer_id, escalated, blocked_reason, description, archived_reason, archived_at, completed_at')
+          .in('status', ['completed', 'archived'] as any[])
+          .gte('updated_at', new Date(Date.now() - 7 * 86400000).toISOString())
+          .order('updated_at', { ascending: false })
+          .limit(100),
       ]);
 
       // Provider stats

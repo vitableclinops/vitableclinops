@@ -207,7 +207,7 @@ export function AdminTaskQueue({
             { key: 'mine' as const, label: 'My Tasks', count: myTaskCount },
             { key: 'blocked' as const, label: 'Blocked', count: blockedCount },
             { key: 'escalated' as const, label: 'Escalated', count: escalatedCount },
-            { key: 'archived' as const, label: 'Archived', count: archivedTasks.length },
+            { key: 'archived' as const, label: 'Completed (7d)', count: archivedTasks.length },
           ]).map(f => (
             <Button
               key={f.key}
