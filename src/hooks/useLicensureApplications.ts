@@ -210,13 +210,14 @@ export async function initiateLicensureApplication(params: {
     await supabase
       .from('licensure_application_steps')
       .insert(
-        steps.map((s) => ({
+        steps.map((s: any) => ({
           application_id: app.id,
           title: s.title,
           description: s.description,
           is_required: s.is_required,
           sort_order: s.sort_order,
           status: 'not_started' as any,
+          fee_amount: s.fee_amount ?? null,
         }))
       );
 
