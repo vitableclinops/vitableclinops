@@ -8,11 +8,14 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { useCalendarEvents, type CalendarEvent } from '@/hooks/useCalendarEvents';
 import { useUpcomingMilestones, type MilestoneTask } from '@/hooks/useMilestones';
+import { useScheduledMeetings } from '@/hooks/useScheduledMeetings';
 import { CalendarEventCard } from '@/components/calendar/CalendarEventCard';
 import { AllHandsEventForm } from '@/components/calendar/AllHandsEventForm';
-import { Calendar, Plus, Loader2, Cake, Trophy, User } from 'lucide-react';
+import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard';
+import { ProviderComplianceView } from '@/components/meetings/ProviderComplianceView';
+import { Calendar, Plus, Loader2, Cake, Trophy, User, Users, Video, Clock, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format, differenceInDays } from 'date-fns';
+import { format, differenceInDays, isFuture } from 'date-fns';
 
 /** Parse a YYYY-MM-DD string as a local date to avoid UTC timezone shift */
 function parseLocalDate(dateStr: string): Date {
@@ -33,12 +36,16 @@ const CalendarPage = () => {
   const isPodLead = roles.includes('pod_lead');
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [meetingWizardOpen, setMeetingWizardOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('upcoming');
+  const [complianceViewOpen, setComplianceViewOpen] = useState(false);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | undefined>();
 
   const { data: events, isLoading } = useCalendarEvents();
   const { data: milestones, isLoading: milestonesLoading } = useUpcomingMilestones(60);
+  const { meetings: supervisionMeetings, attendees, loading: meetingsLoading, refetch: refetchMeetings } = useScheduledMeetings();
 
   // Fetch pod lead's pod to filter milestones
   const { data: myPod } = useQuery({
@@ -63,9 +70,24 @@ const CalendarPage = () => {
   const upcomingEvents = allRelevantEvents.filter(e => new Date(e.starts_at) >= now || e.status === 'scheduled');
   const pastEvents = allRelevantEvents.filter(e => new Date(e.starts_at) < now && e.status !== 'scheduled');
 
+  // Company-wide supervision meetings from supervision_meetings table
+  const companyWideMeetings = supervisionMeetings.filter(m => m.is_company_wide);
+  const upcomingSupervision = companyWideMeetings.filter(m => 
+    new Date(m.scheduled_date) >= now && m.status !== 'cancelled'
+  );
+  const pastSupervision = companyWideMeetings.filter(m => 
+    new Date(m.scheduled_date) < now || m.status === 'completed'
+  );
+
   const filteredEvents = (activeTab === 'upcoming' ? upcomingEvents : pastEvents)
     .filter(e => statusFilter === 'all' || e.status === statusFilter)
     .filter(e => eventTypeFilter === 'all' || e.event_type === eventTypeFilter);
+
+  // When filtering by supervision, also show supervision_meetings
+  const showSupervisionMeetings = eventTypeFilter === 'all' || eventTypeFilter === 'supervision_meeting';
+  const filteredSupervision = showSupervisionMeetings
+    ? (activeTab === 'upcoming' ? upcomingSupervision : pastSupervision)
+    : [];
 
   // Filter milestones: pod leads see only their pod, admins see all
   const pendingMilestones = (milestones?.filter(m => m.status === 'pending') || []).filter(m => {
@@ -100,10 +122,16 @@ const CalendarPage = () => {
               </p>
             </div>
             {isAdmin && (
-              <Button onClick={() => setCreateDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Event
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => setMeetingWizardOpen(true)}>
+                  <Users className="h-4 w-4 mr-2" />
+                  Schedule Collaborative Meeting
+                </Button>
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Event
+                </Button>
+              </div>
             )}
           </div>
 
@@ -182,8 +210,12 @@ const CalendarPage = () => {
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <div className="flex items-center justify-between mb-6">
               <TabsList>
-                <TabsTrigger value="upcoming">Upcoming ({upcomingEvents.length})</TabsTrigger>
-                <TabsTrigger value="past">Past ({pastEvents.length})</TabsTrigger>
+                <TabsTrigger value="upcoming">
+                  Upcoming ({upcomingEvents.length + upcomingSupervision.length})
+                </TabsTrigger>
+                <TabsTrigger value="past">
+                  Past ({pastEvents.length + pastSupervision.length})
+                </TabsTrigger>
               </TabsList>
               <Select value={eventTypeFilter} onValueChange={setEventTypeFilter}>
                 <SelectTrigger className="w-[160px]">
@@ -209,28 +241,100 @@ const CalendarPage = () => {
               </Select>
             </div>
 
-            {isLoading ? (
+            {isLoading || meetingsLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : (
               <>
                 <TabsContent value="upcoming">
-                  {filteredEvents.length === 0 ? (
+                  {filteredEvents.length === 0 && filteredSupervision.length === 0 ? (
                     <Card>
                       <CardContent className="py-12 text-center">
                         <Calendar className="h-12 w-12 mx-auto text-muted-foreground/30 mb-3" />
                         <p className="text-muted-foreground">No upcoming events</p>
                         {isAdmin && (
-                          <Button variant="outline" className="mt-4" onClick={() => setCreateDialogOpen(true)}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Schedule an All-Hands
-                          </Button>
+                          <div className="flex items-center gap-2 justify-center mt-4">
+                            <Button variant="outline" onClick={() => setMeetingWizardOpen(true)}>
+                              <Users className="h-4 w-4 mr-2" />
+                              Schedule Collaborative Meeting
+                            </Button>
+                            <Button variant="outline" onClick={() => setCreateDialogOpen(true)}>
+                              <Plus className="h-4 w-4 mr-2" />
+                              Schedule an All-Hands
+                            </Button>
+                          </div>
                         )}
                       </CardContent>
                     </Card>
                   ) : (
                     <div className="space-y-4">
+                      {/* Supervision meetings from supervision_meetings table */}
+                      {filteredSupervision.map(meeting => {
+                        const meetingAttendees = attendees.filter(a => a.meeting_id === meeting.id);
+                        const rsvpCount = meetingAttendees.filter(a => a.has_rsvped).length;
+                        
+                        return (
+                          <Card key={`supervision-${meeting.id}`} className="border-purple-200 dark:border-purple-800">
+                            <CardContent className="p-5">
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-4">
+                                  <div className="p-2.5 rounded-lg bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300">
+                                    <Users className="h-5 w-5" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <h3 className="font-semibold text-foreground">
+                                        Collaborative Meeting — {meeting.meeting_month ? format(new Date(meeting.meeting_month), 'MMMM yyyy') : format(new Date(meeting.scheduled_date), 'MMMM yyyy')}
+                                      </h3>
+                                      <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300">
+                                        Supervision
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                      <div className="flex items-center gap-1">
+                                        <Calendar className="h-3.5 w-3.5" />
+                                        {format(new Date(meeting.scheduled_date), 'EEEE, MMMM d, yyyy')}
+                                      </div>
+                                      {meeting.time_slot && (
+                                        <div className="flex items-center gap-1">
+                                          <Clock className="h-3.5 w-3.5" />
+                                          {meeting.time_slot === 'am' ? '10:00 AM' : '2:00 PM'} CT
+                                        </div>
+                                      )}
+                                      {meeting.state_name && (
+                                        <div className="flex items-center gap-1">
+                                          <MapPin className="h-3.5 w-3.5" />
+                                          {meeting.state_name}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                                      <span>{meetingAttendees.length} invited</span>
+                                      <span>·</span>
+                                      <span>{rsvpCount} RSVP'd</span>
+                                      {meeting.video_link && (
+                                        <>
+                                          <span>·</span>
+                                          <a href={meeting.video_link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                                            <Video className="h-3 w-3" />
+                                            Join
+                                          </a>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <Badge variant={meeting.status === 'completed' ? 'secondary' : 'outline'}>
+                                  {meeting.status || 'scheduled'}
+                                </Badge>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                      
+                      {/* Calendar events */}
                       {filteredEvents.map(event => (
                         <CalendarEventCard key={event.id} event={event} showDetails isAdmin={isAdmin} />
                       ))}
@@ -239,7 +343,7 @@ const CalendarPage = () => {
                 </TabsContent>
 
                 <TabsContent value="past">
-                  {filteredEvents.length === 0 ? (
+                  {filteredEvents.length === 0 && filteredSupervision.length === 0 ? (
                     <Card>
                       <CardContent className="py-12 text-center">
                         <p className="text-muted-foreground">No past events</p>
@@ -247,6 +351,35 @@ const CalendarPage = () => {
                     </Card>
                   ) : (
                     <div className="space-y-4">
+                      {filteredSupervision.map(meeting => {
+                        const meetingAttendees = attendees.filter(a => a.meeting_id === meeting.id);
+                        const attendedCount = meetingAttendees.filter(a => a.attendance_status === 'attended').length;
+                        
+                        return (
+                          <Card key={`supervision-${meeting.id}`} className="border-muted">
+                            <CardContent className="p-5">
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-4">
+                                  <div className="p-2.5 rounded-lg bg-muted text-muted-foreground">
+                                    <Users className="h-5 w-5" />
+                                  </div>
+                                  <div>
+                                    <h3 className="font-semibold text-foreground">
+                                      Collaborative Meeting — {meeting.meeting_month ? format(new Date(meeting.meeting_month), 'MMMM yyyy') : format(new Date(meeting.scheduled_date), 'MMMM yyyy')}
+                                    </h3>
+                                    <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                                      <span>{format(new Date(meeting.scheduled_date), 'MMM d, yyyy')}</span>
+                                      <span>·</span>
+                                      <span>{attendedCount}/{meetingAttendees.length} attended</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <Badge variant="secondary">Completed</Badge>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                       {filteredEvents.map(event => (
                         <CalendarEventCard key={event.id} event={event} showDetails isAdmin={isAdmin} />
                       ))}
@@ -260,6 +393,16 @@ const CalendarPage = () => {
       </main>
 
       <AllHandsEventForm open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
+      <CompanyMeetingWizard 
+        open={meetingWizardOpen} 
+        onOpenChange={setMeetingWizardOpen}
+        onSuccess={() => refetchMeetings()}
+      />
+      <ProviderComplianceView
+        open={complianceViewOpen}
+        onOpenChange={setComplianceViewOpen}
+        providerId={selectedProviderId}
+      />
     </div>
   );
 };

@@ -8,6 +8,9 @@ export interface MeetingAttendee {
   provider_name: string;
   provider_email: string;
   attendance_status: string | null;
+  has_rsvped: boolean | null;
+  rsvp_slot: string | null;
+  assigned_slot: string | null;
   confirmed_at: string | null;
   notes: string | null;
   created_at: string;
