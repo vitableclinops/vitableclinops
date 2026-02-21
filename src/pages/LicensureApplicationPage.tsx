@@ -105,18 +105,32 @@ export default function LicensureApplicationPage() {
   };
 
   const statusConfig: Record<string, { icon: typeof Circle; color: string; label: string }> = {
-    not_started: { icon: Circle, color: 'text-muted-foreground', label: 'Not Started' },
+    not_started: { icon: Circle, color: 'text-muted-foreground', label: 'Never Started' },
     in_progress: { icon: Clock, color: 'text-warning', label: 'In Progress' },
-    submitted: { icon: CheckCircle2, color: 'text-primary', label: 'Submitted' },
-    approved: { icon: CheckCircle2, color: 'text-success', label: 'Approved' },
+    submitted: { icon: CheckCircle2, color: 'text-primary', label: 'Submitted to State' },
+    approved: { icon: CheckCircle2, color: 'text-success', label: 'Complete' },
     skipped: { icon: Circle, color: 'text-muted-foreground/50', label: 'Skipped' },
   };
+
+  const appStatusLabel: Record<string, string> = {
+    not_started: 'Never Started',
+    in_progress: 'In Progress',
+    submitted: 'Submitted to State',
+    approved: 'Approved',
+    blocked: 'Blocked',
+    withdrawn: 'Withdrawn',
+  };
+
+  const allRequiredDone = requiredSteps.length > 0 && requiredSteps.every(s => s.status === 'submitted' || s.status === 'approved');
+  const [submitConfirmed, setSubmitConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [reimbursementToast, setReimbursementToast] = useState<string | null>(null);
 
   if (loading || !application) {
     return (
       <div className="min-h-screen bg-background">
         <AppSidebar userRole={userRole as any} userName={profile?.full_name || ''} userEmail={profile?.email || ''} userAvatarUrl={profile?.avatar_url || undefined} />
-        <main className="ml-16 lg:ml-64 p-8">
+        <main className="ml-0 sm:ml-16 lg:ml-64 p-8">
           <div className="flex items-center justify-center min-h-[50vh]">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
@@ -140,8 +154,8 @@ export default function LicensureApplicationPage() {
     <div className="min-h-screen bg-background">
       <AppSidebar userRole={userRole as any} userName={profile?.full_name || ''} userEmail={profile?.email || ''} userAvatarUrl={profile?.avatar_url || undefined} />
 
-      <main className="ml-16 lg:ml-64 transition-all duration-300">
-        <div className="p-4 md:p-6 lg:p-8 max-w-4xl">
+      <main className="ml-0 sm:ml-16 lg:ml-64 transition-all duration-300">
+        <div className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-4xl">
           <Breadcrumbs items={breadcrumbs} className="mb-4" />
 
           <Link to={isAdmin ? `/states/${application.state_abbreviation}` : '/provider'} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4">
@@ -168,7 +182,7 @@ export default function LicensureApplicationPage() {
                 application.status === 'blocked' && 'bg-destructive/10 text-destructive',
               )}
             >
-              {application.status.replace(/_/g, ' ')}
+              {appStatusLabel[application.status] || application.status.replace(/_/g, ' ')}
             </Badge>
           </div>
 
@@ -273,29 +287,57 @@ export default function LicensureApplicationPage() {
                           />
                         </div>
 
-                        {/* File upload area */}
-                        <div className="space-y-1">
-                          <Label className="text-xs">Upload Document / Receipt</Label>
-                          {step.uploaded_file_name ? (
-                            <div className="flex items-center gap-2 text-sm">
-                              <FileText className="h-4 w-4 text-primary" />
-                              <span>{step.uploaded_file_name}</span>
-                              {canEdit && (
-                                <Button size="sm" variant="ghost" onClick={() => updateStepField(step.id, 'uploaded_file_name', null)}>
-                                  Remove
+                        {/* File upload area — fee steps get special receipt labeling */}
+                        {step.fee_amount != null && step.fee_amount > 0 ? (
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold flex items-center gap-1">
+                              <Upload className="h-3.5 w-3.5 text-primary" />
+                              Upload your receipt here to get reimbursed
+                            </Label>
+                            {step.uploaded_file_name ? (
+                              <div className="flex items-center gap-2 text-sm">
+                                <FileText className="h-4 w-4 text-primary" />
+                                <span>{step.uploaded_file_name}</span>
+                                {canEdit && (
+                                  <Button size="sm" variant="ghost" onClick={() => updateStepField(step.id, 'uploaded_file_name', null)}>
+                                    Remove
+                                  </Button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <Button size="sm" variant="outline" disabled={!canEdit}>
+                                  <Upload className="h-3 w-3 mr-1" />
+                                  Choose File
                                 </Button>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <Button size="sm" variant="outline" disabled={!canEdit}>
-                                <Upload className="h-3 w-3 mr-1" />
-                                Upload
-                              </Button>
-                              <span className="text-xs text-muted-foreground">Confirmation screenshots, receipts, etc.</span>
-                            </div>
-                          )}
-                        </div>
+                                <span className="text-xs text-muted-foreground">Upload your payment receipt so we can reimburse you</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <Label className="text-xs">Upload Document</Label>
+                            {step.uploaded_file_name ? (
+                              <div className="flex items-center gap-2 text-sm">
+                                <FileText className="h-4 w-4 text-primary" />
+                                <span>{step.uploaded_file_name}</span>
+                                {canEdit && (
+                                  <Button size="sm" variant="ghost" onClick={() => updateStepField(step.id, 'uploaded_file_name', null)}>
+                                    Remove
+                                  </Button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <Button size="sm" variant="outline" disabled={!canEdit}>
+                                  <Upload className="h-3 w-3 mr-1" />
+                                  Upload
+                                </Button>
+                                <span className="text-xs text-muted-foreground">Confirmation screenshots, etc.</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {/* Fee / Reimbursement */}
                         {step.fee_amount !== null && step.fee_amount !== undefined && step.fee_amount > 0 && (
@@ -325,6 +367,7 @@ export default function LicensureApplicationPage() {
                                       const discrepancy = { original_amount: step.fee_amount, actual_amount: step.fee_amount, confirmed_match: true, confirmed_at: new Date().toISOString(), admin_reviewed: false };
                                       await supabase.from('licensure_application_steps').update({ fee_discrepancy: discrepancy as any }).eq('id', step.id);
                                       setFeeConfirmState(prev => ({ ...prev, [step.id]: { mode: 'done', actualAmount: '' } }));
+                                      setReimbursementToast(step.id);
                                       setSavingFee(null);
                                       refetchSteps();
                                     }} disabled={savingFee === step.id}>
@@ -380,6 +423,13 @@ export default function LicensureApplicationPage() {
                                       Submit Fee Discrepancy
                                     </Button>
                                   </div>
+                                ) : feeConfirmState[step.id]?.mode === 'done' || reimbursementToast === step.id ? (
+                                  <Alert className="border-success/30 bg-success/5">
+                                    <CheckCircle2 className="h-4 w-4 text-success" />
+                                    <AlertDescription className="text-sm text-success">
+                                      Fee confirmed! Your reimbursement request has been submitted automatically — no further action needed from you.
+                                    </AlertDescription>
+                                  </Alert>
                                 ) : null}
                               </div>
                             )}
@@ -462,6 +512,43 @@ export default function LicensureApplicationPage() {
                   </Card>
                 );
               })}
+
+              {/* Submit for Review */}
+              {canEdit && !isAdmin && allRequiredDone && application.status !== 'submitted' && application.status !== 'approved' && (
+                <Card className="border-primary/30 bg-primary/5">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-primary" />
+                      <p className="text-sm font-semibold">All steps are complete!</p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      You've finished every required step. Submit your application for admin review.
+                    </p>
+                    {submitConfirmed ? (
+                      <Alert className="border-success/30 bg-success/5">
+                        <CheckCircle2 className="h-4 w-4 text-success" />
+                        <AlertDescription className="text-sm text-success">
+                          Your application has been submitted for review. You'll be notified when it's approved.
+                        </AlertDescription>
+                      </Alert>
+                    ) : (
+                      <Button className="w-full" disabled={submitting} onClick={async () => {
+                        setSubmitting(true);
+                        await supabase.from('licensure_applications').update({
+                          status: 'submitted',
+                          submitted_at: new Date().toISOString(),
+                        }).eq('id', applicationId);
+                        setApplication(prev => prev ? { ...prev, status: 'submitted', submitted_at: new Date().toISOString() } : prev);
+                        setSubmitConfirmed(true);
+                        setSubmitting(false);
+                      }}>
+                        {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                        Submit for Review
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Sidebar */}

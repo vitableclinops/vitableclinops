@@ -67,10 +67,12 @@ export function LicensureApplicationsWidget({ providerId }: LicensureApplication
               <p className="text-sm font-medium group-hover:text-primary transition-colors">
                 {app.state_name} — {app.designation_label}
               </p>
-              <p className="text-xs text-muted-foreground">{app.status.replace(/_/g, ' ')}</p>
+              <p className="text-xs text-muted-foreground">
+                {{ not_started: 'Never Started', in_progress: 'In Progress', submitted: 'Submitted to State', approved: 'Approved', blocked: 'Blocked', withdrawn: 'Withdrawn' }[app.status] || app.status.replace(/_/g, ' ')}
+              </p>
             </div>
             <Badge variant="secondary" className={cn('text-xs', statusColors[app.status])}>
-              {app.status.replace(/_/g, ' ')}
+              {{ not_started: 'Never Started', in_progress: 'In Progress', submitted: 'Submitted to State', approved: 'Approved', blocked: 'Blocked', withdrawn: 'Withdrawn' }[app.status] || app.status.replace(/_/g, ' ')}
             </Badge>
             <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
           </Link>
