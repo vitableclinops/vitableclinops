@@ -1,91 +1,100 @@
 
-# Automated Verification Dialog, Audit Report & EHR Termination Step
+# Supervision Meeting Workflow Evaluation & Fix Plan
 
-## Overview
+## Current State (What's Broken)
 
-Instead of a manual checklist where you tick boxes, the "Verify & Activate" button will open a dialog that **automatically inspects the actual data** -- tasks, documents, licenses, physician capacity -- and presents a pass/fail readiness report. If everything passes, you simply click "Approve & Activate" to sign off. If anything fails, the dialog shows exactly what needs to be fixed, with links to fix it.
+1. **Meeting cadence is not configured for any state.** The `meeting_months` field in `state_compliance_requirements` is empty (`[]`) for all 10 CA-required states. The `ca_meeting_cadence` field contains regulatory citation text (e.g., "A prescriptive authority agreement with a supervising physician"), not a usable cadence like "monthly" or "quarterly."
 
-The same approach applies to the downloadable audit report and the new EHR deactivation step in termination workflows.
+2. **Two disconnected meeting systems exist.** The Calendar page shows `calendar_events` (used for All-Hands), while supervision meetings live in the `supervision_meetings` table. The Calendar page filters for `event_type = 'supervision_meeting'` in `calendar_events`, but supervision meetings are never written there -- they go to a completely different table.
 
----
+3. **No company-wide collaborative meetings exist yet.** The `CompanyMeetingWizard` is built and ready, but no `is_company_wide = true` meetings have been created. All 10 existing `supervision_meetings` are per-agreement, legacy-style records.
 
-## Part 1: Automated Verification Dialog
-
-When an admin clicks "Verify & Activate" on a `pending_verification` agreement, a dialog opens that runs these automated checks against live data:
-
-| Check | Data Source | Pass Condition |
-|---|---|---|
-| All required tasks completed | `agreement_tasks` WHERE agreement_id + is_required | Every required task has status = 'completed' |
-| Signed agreement document uploaded | `collaborative_agreements.agreement_document_url` | Field is not null/empty |
-| Provider has active license in state | `provider_licenses` WHERE profile_id + state | At least one license with status = 'active' |
-| Physician capacity not exceeded | `collaborative_agreements` WHERE physician_id + state + active | Count does not exceed state ratio limit from `state_compliance_requirements` |
-| All signatures confirmed | `agreement_providers` WHERE agreement_id | All active providers have signature_status = 'signed' |
-| Supervision meeting scheduled (if required) | `supervision_meetings` WHERE agreement_id | At least one meeting exists if state requires meetings |
-
-Each check displays as a row with a green checkmark or red X. If all checks pass, the "Approve & Activate" button is enabled. If any fail, the button is disabled and each failing check shows what specifically is wrong.
-
-When the admin clicks "Approve & Activate":
-1. The agreement advances to `active`
-2. An audit log entry is written recording the automated check results and the admin who approved
-3. A toast confirms activation
-
-**New file:** `src/components/agreements/VerificationChecklistDialog.tsx`
-**Modified:** `src/pages/AgreementDetailPage.tsx` -- the "Verify & Activate" button opens this dialog instead of calling `handleAdvanceStatus` directly
+4. **Agreement detail pages show "No meeting scheduled"** because meetings are queried by `agreement_id`, but the company-wide model doesn't link meetings to individual agreements.
 
 ---
 
-## Part 2: Downloadable Audit Report
+## What Needs to Happen
 
-A "Download Audit Report" button appears in the agreement detail page header. Clicking it generates a clean, printable HTML document (opened in a new browser tab for print-to-PDF) containing:
+### Step 1: Populate Meeting Cadence for Each State
 
-**Section 1 -- Agreement Summary:**
-- State, provider name, physician name, current status
-- Start date, renewal date
-- Agreement document link (clickable)
+Set the `meeting_months` array for each CA-required state based on actual cadence. For example:
 
-**Section 2 -- Verification Checks (from Part 1):**
-- Each automated check result with pass/fail and data snapshot
-- Timestamp of when verification was performed
-- Name of admin who approved
+| State | Cadence | meeting_months |
+|-------|---------|---------------|
+| TX | Monthly | [1,2,3,4,5,6,7,8,9,10,11,12] |
+| NC | Monthly | [1,2,3,4,5,6,7,8,9,10,11,12] |
+| VA | Quarterly | [1,4,7,10] |
+| AR | Quarterly | [1,4,7,10] |
+| CA | Quarterly then Annual | [1,4,7,10] |
+| OH, OK, PA, WV, WI, NJ, NY | TBD | Need your input |
 
-**Section 3 -- Complete Task Log:**
-- Every task title, status, who completed it, and when (pulled from `agreement_tasks`)
-- Organized by category
+This is a data update, not a schema change. Admins can also edit these via the existing Meeting Months Editor in the States & Compliance hub.
 
-**Section 4 -- Full Audit Trail:**
-- Every entry from `agreement_audit_log` for this agreement, chronologically
-- Includes status transitions, who performed them, and timestamps
+### Step 2: Surface Supervision Meetings on the Calendar Page
 
-The document includes a header with the company name, "Collaborative Agreement Compliance Report", and a generation timestamp.
+Update the Calendar page to also query and display `supervision_meetings` alongside `calendar_events`. This means:
 
-**New file:** `src/components/agreements/AuditReportGenerator.tsx`
-**Modified:** `src/pages/AgreementDetailPage.tsx` -- adds the download button
+- Fetching upcoming company-wide supervision meetings and rendering them as calendar cards
+- Adding a "Schedule Collaborative Meeting" button (for admins) that opens the existing `CompanyMeetingWizard`
+- Showing the provider count, RSVP status, and state breakdown for each meeting
+
+### Step 3: Connect Agreement Detail Pages to Company-Wide Meetings
+
+Instead of only looking for meetings by `agreement_id`, also check for company-wide meetings where the provider is an attendee. The "Supervision Meetings" section on agreement pages should show:
+
+- The next company-wide meeting the provider is invited to
+- Whether the provider has RSVPed
+- The state cadence requirement (e.g., "Texas requires monthly meetings")
+
+### Step 4: Add Provider Meeting Compliance Tracking
+
+Create a small "Meeting Compliance" widget that shows, per provider:
+
+- Required meetings this year (based on their most frequent state cadence)
+- Attended meetings
+- Next required meeting
+- Compliance status (on track / behind)
+
+This would appear on the Provider Dashboard and Agreement Detail pages.
 
 ---
 
-## Part 3: EHR Deactivation Step in Termination Workflow
+## Technical Details
 
-Add a new required task to the termination task template in `useAgreementWorkflow.ts`:
-
-- **Title:** "Deactivate provider in EHR system"
-- **Description:** "Confirm the provider has been deactivated in the EHR for this state. Must be completed before termination is finalized."
-- **Category:** termination
-- **Priority:** urgent
-- **Sort order:** 5 (after regulatory compliance check)
-
-Every future termination will auto-generate this task. It must be marked complete before the system allows finalization.
-
-**Modified:** `src/hooks/useAgreementWorkflow.ts`
-
----
-
-## Technical Summary
+### Files to Change
 
 | File | Change |
-|---|---|
-| `src/components/agreements/VerificationChecklistDialog.tsx` | New -- automated checks dialog with real-time data inspection |
-| `src/components/agreements/AuditReportGenerator.tsx` | New -- generates printable HTML compliance report |
-| `src/pages/AgreementDetailPage.tsx` | Wire verification dialog to "Verify & Activate" button; add "Download Audit Report" button |
-| `src/hooks/useAgreementWorkflow.ts` | Add EHR deactivation task to termination template |
+|------|--------|
+| `state_compliance_requirements` (data) | Populate `meeting_months` for TX, NC, VA, AR, CA. Ask user for remaining states. |
+| `src/pages/CalendarPage.tsx` | Add supervision meeting display + "Schedule Collaborative Meeting" button using `CompanyMeetingWizard` |
+| `src/hooks/useScheduledMeetings.ts` | Add helper to find company-wide meetings a provider is invited to (not just by agreement_id) |
+| `src/pages/AgreementDetailPage.tsx` | Update supervision meetings section to check company-wide meetings by provider attendance |
+| `src/components/meetings/ProviderComplianceView.tsx` | New widget showing per-provider meeting compliance (required vs. attended) |
 
-No database schema changes needed -- uses existing tables (`agreement_tasks`, `provider_licenses`, `state_compliance_requirements`, `agreement_audit_log`, `agreement_providers`, `supervision_meetings`).
+### No Schema Changes Required
+
+The database already has everything needed:
+- `state_compliance_requirements.meeting_months` -- exists, just needs data
+- `supervision_meetings` with `is_company_wide`, `meeting_month`, `time_slot` -- all present
+- `meeting_attendees` with `has_rsvped`, `rsvp_slot`, `assigned_slot` -- all present
+
+---
+
+## Question for You
+
+Before implementing, I need to confirm the cadence for the remaining states. For the ones I could infer from existing meetings:
+
+- **Texas**: Monthly (correct?)
+- **North Carolina**: Monthly (correct?)
+- **Virginia**: Quarterly (correct?)
+- **Arkansas**: Quarterly (correct?)
+- **California**: Quarterly (correct?)
+
+For these states, what cadence should be used?
+- Ohio
+- Oklahoma
+- Pennsylvania
+- West Virginia
+- Wisconsin
+- New Jersey
+- New York
