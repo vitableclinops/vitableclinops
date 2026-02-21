@@ -781,11 +781,22 @@ export default function AgreementDetailPage() {
                       <Card>
                         <CardHeader>
                           <CardTitle>Supervision Meetings</CardTitle>
+                          {agreement.meeting_cadence && (
+                            <CardDescription>
+                              Cadence: {agreement.meeting_cadence} · {agreement.state_name}
+                            </CardDescription>
+                          )}
                         </CardHeader>
                         <CardContent>
+                          {/* Company-wide meetings this provider is invited to */}
+                          <CompanyWideMeetings 
+                            providerEmail={agreement.provider_email || activeProviders[0]?.provider_email}
+                            stateAbbreviation={agreement.state_abbreviation}
+                          />
+
                           {upcomingMeetings.length > 0 && (
                             <div className="mb-6">
-                              <p className="text-sm font-medium mb-2">Upcoming</p>
+                              <p className="text-sm font-medium mb-2">Agreement-Specific (Legacy)</p>
                               <div className="space-y-2">
                                 {upcomingMeetings.map(meeting => (
                                   <div key={meeting.id} className="flex items-center gap-3 p-3 rounded-lg border bg-primary/5">
@@ -814,10 +825,6 @@ export default function AgreementDetailPage() {
                                 ))}
                               </div>
                             </div>
-                          )}
-
-                          {meetings.length === 0 && (
-                            <p className="text-muted-foreground text-center py-8">No meetings scheduled</p>
                           )}
                         </CardContent>
                       </Card>
@@ -947,6 +954,146 @@ export default function AgreementDetailPage() {
           refetchTasks();
         }}
       />
+    </div>
+  );
+}
+
+// Company-wide meetings sub-component
+function CompanyWideMeetings({ providerEmail, stateAbbreviation }: { providerEmail?: string | null; stateAbbreviation: string }) {
+  const [meetings, setMeetings] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCompanyMeetings = async () => {
+      if (!providerEmail) {
+        setLoading(false);
+        return;
+      }
+
+      // Find meetings where this provider is an attendee
+      const { data: attendeeRecords } = await supabase
+        .from('meeting_attendees')
+        .select('meeting_id, attendance_status, has_rsvped, rsvp_slot, assigned_slot')
+        .eq('provider_email', providerEmail);
+
+      if (!attendeeRecords?.length) {
+        setLoading(false);
+        return;
+      }
+
+      const meetingIds = attendeeRecords.map(a => a.meeting_id);
+      const { data: meetingData } = await supabase
+        .from('supervision_meetings')
+        .select('*')
+        .in('id', meetingIds)
+        .eq('is_company_wide', true)
+        .order('scheduled_date', { ascending: true });
+
+      // Merge attendance info
+      const merged = (meetingData || []).map(m => ({
+        ...m,
+        attendee: attendeeRecords.find(a => a.meeting_id === m.id),
+      }));
+
+      setMeetings(merged);
+      setLoading(false);
+    };
+    fetchCompanyMeetings();
+  }, [providerEmail]);
+
+  // Also fetch state cadence requirement
+  const [cadenceInfo, setCadenceInfo] = useState<string | null>(null);
+  useEffect(() => {
+    const fetchCadence = async () => {
+      const { data } = await supabase
+        .from('state_compliance_requirements')
+        .select('meeting_months, ca_meeting_cadence')
+        .eq('state_abbreviation', stateAbbreviation)
+        .maybeSingle();
+      if (data) {
+        const months = data.meeting_months as number[] | null;
+        if (months && months.length === 12) setCadenceInfo('Monthly');
+        else if (months && months.length === 4) setCadenceInfo('Quarterly');
+        else if (months && months.length > 0) setCadenceInfo(`${months.length}x/year`);
+        else setCadenceInfo('Periodic / as-needed');
+      }
+    };
+    fetchCadence();
+  }, [stateAbbreviation]);
+
+  if (loading) {
+    return <div className="animate-pulse h-16 bg-muted rounded mb-4" />;
+  }
+
+  const now = new Date();
+  const upcoming = meetings.filter(m => new Date(m.scheduled_date) >= now && m.status !== 'cancelled');
+  const past = meetings.filter(m => new Date(m.scheduled_date) < now || m.status === 'completed');
+
+  return (
+    <div className="mb-4">
+      {cadenceInfo && (
+        <div className="flex items-center gap-2 mb-3 text-sm">
+          <Badge variant="outline">{stateAbbreviation}</Badge>
+          <span className="text-muted-foreground">requires</span>
+          <Badge variant="secondary">{cadenceInfo}</Badge>
+          <span className="text-muted-foreground">meetings</span>
+        </div>
+      )}
+
+      {upcoming.length > 0 ? (
+        <div className="mb-4">
+          <p className="text-sm font-medium mb-2">Next Company-Wide Meeting</p>
+          {upcoming.slice(0, 2).map(meeting => (
+            <div key={meeting.id} className="flex items-center justify-between p-3 rounded-lg border bg-primary/5 mb-2">
+              <div className="flex items-center gap-3">
+                <Calendar className="h-4 w-4 text-primary" />
+                <div>
+                  <span className="font-medium">
+                    {format(new Date(meeting.scheduled_date), 'EEEE, MMMM d, yyyy')}
+                  </span>
+                  {meeting.time_slot && (
+                    <span className="text-sm text-muted-foreground ml-2">
+                      ({meeting.time_slot === 'am' ? '10:00 AM' : '2:00 PM'} CT)
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {meeting.attendee?.has_rsvped ? (
+                  <Badge className="bg-success/10 text-success">RSVP'd</Badge>
+                ) : (
+                  <Badge variant="outline">Not RSVP'd</Badge>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-4 text-muted-foreground text-sm border rounded-lg mb-4">
+          No upcoming company-wide meetings scheduled
+        </div>
+      )}
+
+      {past.length > 0 && (
+        <div>
+          <p className="text-sm font-medium mb-2 text-muted-foreground">Past Company-Wide ({past.length})</p>
+          <div className="space-y-1">
+            {past.slice(0, 3).map(meeting => (
+              <div key={meeting.id} className="flex items-center justify-between p-2 rounded border text-sm">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                  <span className="text-muted-foreground">
+                    {format(new Date(meeting.scheduled_date), 'MMM d, yyyy')}
+                  </span>
+                </div>
+                <Badge variant="secondary" className="text-xs">
+                  {meeting.attendee?.attendance_status || 'invited'}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
