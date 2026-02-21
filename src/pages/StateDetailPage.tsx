@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { InitiateLicensureDialog } from '@/components/licensure/InitiateLicensureDialog';
-import { useAllLicensureApplications } from '@/hooks/useLicensureApplications';
+import { useAllLicensureApplications, useStateTemplates } from '@/hooks/useLicensureApplications';
 import { useParams, Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
@@ -30,6 +30,7 @@ import {
   ArrowLeft,
   BookOpen,
   Gauge,
+  DollarSign,
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -72,6 +73,7 @@ export default function StateDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showLicensureDialog, setShowLicensureDialog] = useState(false);
   const { applications: licensureApps, refetch: refetchLicensure } = useAllLicensureApplications(stateAbbr || undefined);
+  const { templates: licensureTemplates, loading: templatesLoading } = useStateTemplates(stateAbbr || undefined);
 
   
 
@@ -414,7 +416,62 @@ export default function StateDetailPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                      {stateCompliance?.knowledge_base_url ? (
+                      {/* Render templates from state_licensure_templates */}
+                      {licensureTemplates.length > 0 ? (
+                        licensureTemplates.map(template => (
+                          <div key={template.id} className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h3 className="font-semibold text-foreground">{template.designation_label}</h3>
+                                <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                                  {template.estimated_fee && <span>Est. total fee: ${template.estimated_fee}</span>}
+                                  {template.estimated_timeline && <span>• Timeline: {template.estimated_timeline}</span>}
+                                </div>
+                              </div>
+                              <Badge variant="outline">{template.designation_type.replace(/_/g, ' ')}</Badge>
+                            </div>
+
+                            {template.notes && (
+                              <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">{template.notes}</p>
+                            )}
+
+                            {/* Steps */}
+                            <div className="space-y-3">
+                              {(template.steps || []).map((step: any, idx: number) => (
+                                <div key={idx} className="flex gap-3 p-4 rounded-lg border">
+                                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-bold">
+                                    {idx + 1}
+                                  </div>
+                                  <div className="flex-1 space-y-1">
+                                    <p className="font-medium text-sm">{step.title}</p>
+                                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{step.description}</p>
+                                    <div className="flex items-center gap-3 pt-1">
+                                      {step.fee_amount != null && step.fee_amount > 0 && (
+                                        <Badge variant="secondary" className="text-xs">
+                                          <DollarSign className="h-3 w-3 mr-0.5" />
+                                          Fee: ${step.fee_amount}
+                                        </Badge>
+                                      )}
+                                      {step.is_required && (
+                                        <Badge variant="outline" className="text-xs">Required</Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {template.application_url && (
+                              <Button variant="outline" size="sm" asChild>
+                                <a href={template.application_url} target="_blank" rel="noopener noreferrer">
+                                  <ExternalLink className="h-4 w-4 mr-2" />
+                                  Application Portal
+                                </a>
+                              </Button>
+                            )}
+                          </div>
+                        ))
+                      ) : stateCompliance?.knowledge_base_url ? (
                         <div className="space-y-4">
                           <div className="bg-muted/50 p-4 rounded-lg border border-muted">
                             <p className="text-sm text-muted-foreground mb-3">
@@ -427,16 +484,10 @@ export default function StateDetailPage() {
                               </a>
                             </Button>
                           </div>
-                          
-                          <div className="bg-secondary/10 border border-secondary/30 p-4 rounded-lg">
-                            <p className="text-sm text-secondary">
-                              <strong>Note:</strong> Providers can access detailed instructions when they begin their licensure application. Admins can also link to this resource when initiating a licensure task.
-                            </p>
-                          </div>
                         </div>
                       ) : (
                         <p className="text-muted-foreground text-center py-8">
-                          No licensure instructions available. Please configure knowledge base resources for this state.
+                          No licensure instructions available. Please configure a licensure template for this state.
                         </p>
                       )}
                     </CardContent>

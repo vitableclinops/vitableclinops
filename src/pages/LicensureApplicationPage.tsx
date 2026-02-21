@@ -18,8 +18,9 @@ import { getCollabRequirementType } from '@/constants/stateRestrictions';
 import {
   ArrowLeft, CheckCircle2, Circle, Clock, Upload, ExternalLink,
   AlertTriangle, Shield, FileText, ChevronDown, ChevronUp, Loader2,
-  DollarSign, Info, Users,
+  DollarSign, Info, Users, CircleAlert,
 } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
@@ -31,6 +32,8 @@ export default function LicensureApplicationPage() {
   const { steps, loading: stepsLoading, refetch: refetchSteps } = useLicensureSteps(applicationId);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const [updatingStep, setUpdatingStep] = useState<string | null>(null);
+  const [feeConfirmState, setFeeConfirmState] = useState<Record<string, { mode: 'ask' | 'mismatch' | 'done'; actualAmount: string }>>({});
+  const [savingFee, setSavingFee] = useState<string | null>(null);
 
   const userRole = roles.includes('admin') ? 'admin' : roles.includes('physician') ? 'physician' : 'provider';
   const isAdmin = roles.includes('admin');
@@ -296,14 +299,139 @@ export default function LicensureApplicationPage() {
 
                         {/* Fee / Reimbursement */}
                         {step.fee_amount !== null && step.fee_amount !== undefined && step.fee_amount > 0 && (
-                          <div className="rounded-lg border p-3 bg-muted/30 space-y-2">
+                          <div className="rounded-lg border p-3 bg-muted/30 space-y-3">
                             <div className="flex items-center gap-2">
                               <DollarSign className="h-4 w-4 text-muted-foreground" />
-                              <p className="text-sm font-medium">Fee: ${step.fee_amount}</p>
+                              <p className="text-sm font-medium">Expected Fee: ${step.fee_amount}</p>
                               <Badge variant="secondary" className="text-xs">
                                 {step.reimbursement_status === 'none' ? 'Not submitted' : step.reimbursement_status}
                               </Badge>
+                              {(step as any).fee_discrepancy?.confirmed_match === false && (
+                                <Badge variant="destructive" className="text-xs">
+                                  <CircleAlert className="h-3 w-3 mr-1" />
+                                  Fee Discrepancy
+                                </Badge>
+                              )}
                             </div>
+
+                            {/* Fee confirmation prompt — show when step is submitted/approved and no prior confirmation */}
+                            {canEdit && (step.status === 'submitted' || step.status === 'approved') && !(step as any).fee_discrepancy && (
+                              <div className="rounded-md border border-warning/30 bg-warning/5 p-3 space-y-2">
+                                <p className="text-sm font-medium">The expected fee is ${step.fee_amount}. Is this what you paid?</p>
+                                {!feeConfirmState[step.id] || feeConfirmState[step.id].mode === 'ask' ? (
+                                  <div className="flex gap-2">
+                                    <Button size="sm" variant="outline" onClick={async () => {
+                                      setSavingFee(step.id);
+                                      const discrepancy = { original_amount: step.fee_amount, actual_amount: step.fee_amount, confirmed_match: true, confirmed_at: new Date().toISOString(), admin_reviewed: false };
+                                      await supabase.from('licensure_application_steps').update({ fee_discrepancy: discrepancy as any }).eq('id', step.id);
+                                      setFeeConfirmState(prev => ({ ...prev, [step.id]: { mode: 'done', actualAmount: '' } }));
+                                      setSavingFee(null);
+                                      refetchSteps();
+                                    }} disabled={savingFee === step.id}>
+                                      {savingFee === step.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
+                                      Yes, correct
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => setFeeConfirmState(prev => ({ ...prev, [step.id]: { mode: 'mismatch', actualAmount: '' } }))}>
+                                      No, I paid a different amount
+                                    </Button>
+                                  </div>
+                                ) : feeConfirmState[step.id]?.mode === 'mismatch' ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <Label className="text-xs">Amount you paid ($)</Label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        className="max-w-[140px] h-8"
+                                        value={feeConfirmState[step.id]?.actualAmount || ''}
+                                        onChange={(e) => setFeeConfirmState(prev => ({ ...prev, [step.id]: { ...prev[step.id], actualAmount: e.target.value } }))}
+                                        placeholder="0.00"
+                                      />
+                                    </div>
+                                    <Button size="sm" disabled={!feeConfirmState[step.id]?.actualAmount || savingFee === step.id} onClick={async () => {
+                                      setSavingFee(step.id);
+                                      const actualAmt = parseFloat(feeConfirmState[step.id].actualAmount);
+                                      const discrepancy = { original_amount: step.fee_amount, actual_amount: actualAmt, confirmed_match: false, confirmed_at: new Date().toISOString(), admin_reviewed: false };
+                                      await supabase.from('licensure_application_steps').update({ fee_discrepancy: discrepancy as any }).eq('id', step.id);
+
+                                      // Create high-priority admin task for discrepancy review
+                                      await supabase.from('agreement_tasks').insert({
+                                        title: `Fee Discrepancy: ${application?.provider_name} — ${step.title}`,
+                                        description: `Provider reported paying $${actualAmt} instead of the expected $${step.fee_amount} for "${step.title}" (${application?.state_name} ${application?.designation_label}). Review and reconcile the reimbursement amount.`,
+                                        category: 'compliance' as any,
+                                        status: 'pending' as any,
+                                        priority: 'high',
+                                        provider_id: application?.provider_id,
+                                        state_abbreviation: application?.state_abbreviation,
+                                        state_name: application?.state_name,
+                                        is_auto_generated: true,
+                                        auto_trigger: 'fee_discrepancy',
+                                        compliance_risk: 'medium',
+                                        notes: `Step: ${step.title}\nExpected: $${step.fee_amount}\nActual: $${actualAmt}\nApplication ID: ${applicationId}\nStep ID: ${step.id}`,
+                                        external_url: `/licensure/${applicationId}`,
+                                      });
+
+                                      setFeeConfirmState(prev => ({ ...prev, [step.id]: { mode: 'done', actualAmount: '' } }));
+                                      setSavingFee(null);
+                                      refetchSteps();
+                                    }}>
+                                      {savingFee === step.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <AlertTriangle className="h-3 w-3 mr-1" />}
+                                      Submit Fee Discrepancy
+                                    </Button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            )}
+
+                            {/* Show confirmed fee info */}
+                            {(step as any).fee_discrepancy && (
+                              <div className="text-xs text-muted-foreground space-y-1">
+                                {(step as any).fee_discrepancy.confirmed_match ? (
+                                  <p className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-success" /> Fee confirmed as ${(step as any).fee_discrepancy.actual_amount}</p>
+                                ) : (
+                                  <>
+                                    <p className="flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-destructive" /> Provider paid ${(step as any).fee_discrepancy.actual_amount} (expected ${(step as any).fee_discrepancy.original_amount})</p>
+                                    {isAdmin && !(step as any).fee_discrepancy.admin_reviewed && (
+                                      <div className="flex gap-2 pt-1">
+                                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={async () => {
+                                          // Mark as reviewed
+                                          const updated = { ...(step as any).fee_discrepancy, admin_reviewed: true };
+                                          await supabase.from('licensure_application_steps').update({ fee_discrepancy: updated as any }).eq('id', step.id);
+                                          refetchSteps();
+                                        }}>
+                                          Mark Reviewed
+                                        </Button>
+                                        <Button size="sm" variant="default" className="h-7 text-xs" onClick={async () => {
+                                          // Update the template fee for future providers
+                                          if (!application?.template_id) return;
+                                          const actualAmt = (step as any).fee_discrepancy.actual_amount;
+                                          // Fetch current template steps, update matching step fee
+                                          const { data: tpl } = await supabase.from('state_licensure_templates').select('steps').eq('id', application.template_id).single();
+                                          if (tpl?.steps) {
+                                            const updatedSteps = (tpl.steps as any[]).map((s: any) =>
+                                              s.title === step.title ? { ...s, fee_amount: actualAmt } : s
+                                            );
+                                            const newTotal = updatedSteps.reduce((sum: number, s: any) => sum + (s.fee_amount || 0), 0);
+                                            await supabase.from('state_licensure_templates').update({ steps: updatedSteps as any, estimated_fee: newTotal }).eq('id', application.template_id);
+                                          }
+                                          // Mark as reviewed
+                                          const updated = { ...(step as any).fee_discrepancy, admin_reviewed: true, template_updated: true };
+                                          await supabase.from('licensure_application_steps').update({ fee_discrepancy: updated as any }).eq('id', step.id);
+                                          refetchSteps();
+                                        }}>
+                                          Update Template Fee to ${(step as any).fee_discrepancy.actual_amount}
+                                        </Button>
+                                      </div>
+                                    )}
+                                    {(step as any).fee_discrepancy.admin_reviewed && (
+                                      <p className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-muted-foreground" /> Admin reviewed</p>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )}
+
                             {canEdit && step.reimbursement_status === 'none' && step.fee_receipt_url && (
                               <Button size="sm" variant="outline" onClick={() => updateStepField(step.id, 'reimbursement_status', 'ready')}>
                                 Flag for Reimbursement
