@@ -154,18 +154,29 @@ export default function StateDetailPage() {
 
   // Physician capacity: count active providers per physician in this state
   const ratioLimit = stateCompliance?.np_md_ratio_limit;
-  const physicianCapacity = activeAgreements.map(a => {
-    const activeCount = a.providers.filter(p => p.is_active).length;
-    return {
-      name: a.physician_name,
-      email: a.physician_email,
-      agreementId: a.id,
-      activeProviders: activeCount,
+  const physicianCapacity = (() => {
+    const grouped = new Map<string, { name: string; email: string; agreementIds: string[]; activeProviders: number }>();
+    activeAgreements.forEach(a => {
+      const key = a.physician_email || a.physician_name;
+      const existing = grouped.get(key);
+      const activeCount = a.providers.filter(p => p.is_active).length;
+      if (existing) {
+        existing.activeProviders += activeCount;
+        existing.agreementIds.push(a.id);
+      } else {
+        grouped.set(key, { name: a.physician_name, email: a.physician_email, agreementIds: [a.id], activeProviders: activeCount });
+      }
+    });
+    return Array.from(grouped.values()).map(p => ({
+      name: p.name,
+      email: p.email,
+      agreementId: p.agreementIds[0],
+      activeProviders: p.activeProviders,
       limit: ratioLimit,
-      atCapacity: ratioLimit != null && activeCount >= ratioLimit,
-      utilization: ratioLimit != null ? Math.round((activeCount / ratioLimit) * 100) : null,
-    };
-  });
+      atCapacity: ratioLimit != null && p.activeProviders >= ratioLimit,
+      utilization: ratioLimit != null ? Math.round((p.activeProviders / ratioLimit) * 100) : null,
+    }));
+  })();
 
   const breadcrumbs = [
     { label: 'States', href: '/admin/states' },
