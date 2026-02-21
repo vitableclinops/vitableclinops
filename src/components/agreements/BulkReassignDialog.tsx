@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -9,10 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useEmailNotifications } from '@/hooks/useEmailNotifications';
-import { AlertTriangle, Users, ArrowRight, Calendar, FileText, Info } from 'lucide-react';
+import { AlertTriangle, Users, ArrowRight, Calendar, FileText, Info, Shield, ShieldCheck, XCircle } from 'lucide-react';
 
 interface SelectedAgreement {
   id: string;
@@ -47,7 +48,7 @@ const getTerminationTasks = (
 ) => [
   {
     title: `Send termination agreement via BoxSign`,
-    description: `Route termination agreement to ${sourcePhysicianName} for signature`,
+    description: `Route termination agreement to ${sourcePhysicianName} for signature. When completed, record the Box Sign request ID, date signed, and confirming admin name.`,
     category: 'signature' as const,
     priority: 'high',
     is_required: true,
@@ -63,7 +64,7 @@ const getTerminationTasks = (
   },
   {
     title: 'Upload executed termination agreement',
-    description: 'Obtain and upload the fully signed termination document',
+    description: 'Confirm executed termination document received. Record the Box Sign document reference and date completed.',
     category: 'document' as const,
     priority: 'high',
     is_required: true,
@@ -101,7 +102,7 @@ const getInitiationTasks = (
 ) => [
   {
     title: 'Initiate new collaborative agreement record',
-    description: `Create new agreement record for ${affectedProviderCount} provider(s) with ${targetPhysicianName}`,
+    description: `Create new agreement record for ${affectedProviderCount} provider(s) with ${targetPhysicianName}. The system will auto-populate from existing provider data.`,
     category: 'agreement_creation' as const,
     priority: 'high',
     is_required: true,
@@ -117,7 +118,7 @@ const getInitiationTasks = (
   },
   {
     title: 'Send new agreement via BoxSign',
-    description: 'Route new collaborative agreement to physician and all affected providers for signature',
+    description: 'Route new collaborative agreement to physician and all affected providers for signature. When completed, record the Box Sign request ID, date sent, and confirming admin name.',
     category: 'signature' as const,
     priority: 'high',
     is_required: true,
@@ -133,7 +134,7 @@ const getInitiationTasks = (
   },
   {
     title: 'Upload executed new agreement',
-    description: 'Upload the fully signed new collaborative agreement document',
+    description: 'Confirm executed agreement document received. Record the Box Sign document reference and date completed.',
     category: 'document' as const,
     priority: 'high',
     is_required: true,
@@ -157,6 +158,15 @@ const getInitiationTasks = (
   },
 ];
 
+interface CapacityCheck {
+  stateAbbreviation: string;
+  stateName: string;
+  currentCount: number;
+  ratioLimit: number | null;
+  isAtCapacity: boolean;
+  newCount: number;
+}
+
 export function BulkReassignDialog({
   open,
   onOpenChange,
@@ -171,6 +181,11 @@ export function BulkReassignDialog({
   const [notes, setNotes] = useState('');
   const [createTransferWorkflow, setCreateTransferWorkflow] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  // Capacity and protected states
+  const [capacityChecks, setCapacityChecks] = useState<CapacityCheck[]>([]);
+  const [capacityLoading, setCapacityLoading] = useState(false);
+  const [protectedStates, setProtectedStates] = useState<Array<{ abbreviation: string; name: string; providerCount: number }>>([]);
 
   // Group by state for display
   const groupedByState = selectedAgreements.reduce((acc, agreement) => {
@@ -194,11 +209,111 @@ export function BulkReassignDialog({
 
   const selectedPhysician = physicians.find(p => p.id === targetPhysician);
 
+  // Fetch protected states: other agreements the source physician has that are NOT selected
+  useEffect(() => {
+    const fetchProtectedStates = async () => {
+      if (!selectedAgreements.length) return;
+      const sourcePhysicianEmail = selectedAgreements[0]?.physicianEmail;
+      if (!sourcePhysicianEmail) return;
+
+      const selectedAgreementIds = new Set(selectedAgreements.map(a => a.agreementId));
+
+      const { data } = await supabase
+        .from('collaborative_agreements')
+        .select('id, state_abbreviation, state_name')
+        .eq('physician_email', sourcePhysicianEmail)
+        .in('workflow_status', ['active', 'in_progress', 'pending_signatures', 'pending_verification', 'draft']);
+
+      if (data) {
+        const unselected = data.filter(a => !selectedAgreementIds.has(a.id));
+        const stateMap = new Map<string, { abbreviation: string; name: string; providerCount: number }>();
+        for (const a of unselected) {
+          const existing = stateMap.get(a.state_abbreviation);
+          if (existing) {
+            existing.providerCount++;
+          } else {
+            stateMap.set(a.state_abbreviation, {
+              abbreviation: a.state_abbreviation,
+              name: a.state_name,
+              providerCount: 1,
+            });
+          }
+        }
+        setProtectedStates(Array.from(stateMap.values()));
+      }
+    };
+
+    if (open) fetchProtectedStates();
+  }, [open, selectedAgreements]);
+
+  // Capacity validation when target physician changes
+  useEffect(() => {
+    const validateCapacity = async () => {
+      if (!targetPhysician) {
+        setCapacityChecks([]);
+        return;
+      }
+
+      setCapacityLoading(true);
+      const checks: CapacityCheck[] = [];
+
+      for (const [stateAbbr, data] of Object.entries(groupedByState)) {
+        // Get state ratio limit
+        const { data: stateConfig } = await supabase
+          .from('state_compliance_requirements')
+          .select('np_md_ratio_limit')
+          .eq('state_abbreviation', stateAbbr)
+          .maybeSingle();
+
+        const ratioLimit = stateConfig?.np_md_ratio_limit ?? null;
+        
+        if (ratioLimit) {
+          // Count target physician's existing active agreements in this state
+          const { count } = await supabase
+            .from('collaborative_agreements')
+            .select('id', { count: 'exact', head: true })
+            .eq('physician_id', targetPhysician)
+            .eq('state_abbreviation', stateAbbr)
+            .neq('workflow_status', 'cancelled')
+            .neq('workflow_status', 'terminated');
+
+          const currentCount = count || 0;
+          const newCount = currentCount + data.providers.length;
+
+          checks.push({
+            stateAbbreviation: stateAbbr,
+            stateName: data.stateName,
+            currentCount,
+            ratioLimit,
+            isAtCapacity: newCount > ratioLimit,
+            newCount,
+          });
+        }
+      }
+
+      setCapacityChecks(checks);
+      setCapacityLoading(false);
+    };
+
+    validateCapacity();
+  }, [targetPhysician]);
+
+  const hasCapacityViolation = capacityChecks.some(c => c.isAtCapacity);
+
   const handleReassign = async () => {
     if (!targetPhysician || !selectedPhysician) {
       toast({
         title: 'Error',
         description: 'Please select a target physician.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (hasCapacityViolation) {
+      toast({
+        title: 'Capacity exceeded',
+        description: 'The target physician would exceed the NP:MD ratio limit in one or more states. Reduce the number of agreements or choose a different physician.',
         variant: 'destructive',
       });
       return;
@@ -339,6 +454,7 @@ export function BulkReassignDialog({
               effective_date: effectiveDate || null,
               termination_tasks_count: terminationTasks.length,
               initiation_tasks_count: initiationTasks.length,
+              protected_states: protectedStates.map(s => s.abbreviation),
             },
           });
 
@@ -407,6 +523,7 @@ export function BulkReassignDialog({
             new_physician: selectedPhysician.name,
             effective_date: effectiveDate || null,
             affected_providers: affectedProviders.map(p => p.providerName),
+            protected_states: protectedStates.map(s => s.abbreviation),
             notes,
           },
         });
@@ -439,6 +556,8 @@ export function BulkReassignDialog({
     setEffectiveDate('');
     setNotes('');
     setCreateTransferWorkflow(true);
+    setCapacityChecks([]);
+    setProtectedStates([]);
   };
 
   // Calculate task counts for display
@@ -447,6 +566,8 @@ export function BulkReassignDialog({
   const totalTaskCount = terminationTaskCount + initiationTaskCount;
   const requiredTaskCount = getTerminationTasks('', 0).filter(t => t.is_required).length +
     getInitiationTasks('', 0).filter(t => t.is_required).length;
+
+  const selectedStates = Object.keys(groupedByState);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={true}>
@@ -462,13 +583,13 @@ export function BulkReassignDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Summary of affected agreements */}
+          {/* Affected agreements grouped by state */}
           <div className="space-y-2">
-            <Label>Affected Agreements</Label>
-            <ScrollArea className="h-[120px] border rounded-md p-3">
+            <Label>Affected Agreements ({selectedStates.length} state{selectedStates.length !== 1 ? 's' : ''})</Label>
+            <ScrollArea className="h-[100px] border rounded-md p-3">
               {Object.entries(groupedByState).map(([stateAbbr, data]) => (
                 <div key={stateAbbr} className="flex items-center gap-2 py-1">
-                  <Badge variant="outline">{stateAbbr}</Badge>
+                  <Badge className="bg-primary/10 text-primary border-primary/20">{stateAbbr}</Badge>
                   <span className="text-sm text-muted-foreground">
                     {data.providers.length} provider(s): {data.providers.map(p => p.name).join(', ')}
                   </span>
@@ -476,6 +597,28 @@ export function BulkReassignDialog({
               ))}
             </ScrollArea>
           </div>
+
+          {/* Protected states - NOT being transferred */}
+          {protectedStates.length > 0 && (
+            <div className="p-3 rounded-lg border border-success/30 bg-success/5">
+              <div className="flex items-center gap-2 mb-2">
+                <ShieldCheck className="h-4 w-4 text-success" />
+                <span className="text-sm font-medium text-success">Protected — Not Affected</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {protectedStates.map(s => (
+                  <Badge key={s.abbreviation} variant="outline" className="bg-background border-success/30 text-success gap-1">
+                    <Shield className="h-3 w-3" />
+                    {s.abbreviation}
+                    <span className="text-muted-foreground text-[10px]">({s.providerCount})</span>
+                  </Badge>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1.5">
+                These state agreements for Dr. {selectedAgreements[0]?.physicianName} remain untouched by this transfer.
+              </p>
+            </div>
+          )}
 
           {/* Current physician info */}
           <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
@@ -507,7 +650,56 @@ export function BulkReassignDialog({
             </Select>
           </div>
 
-          {/* Effective date - REQUIRED for Smart Intake */}
+          {/* Capacity validation results */}
+          {targetPhysician && capacityChecks.length > 0 && (
+            <div className="space-y-2">
+              {capacityChecks.map(check => (
+                <div
+                  key={check.stateAbbreviation}
+                  className={`flex items-center justify-between p-2 rounded-md border text-sm ${
+                    check.isAtCapacity
+                      ? 'border-destructive/30 bg-destructive/5'
+                      : 'border-success/30 bg-success/5'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {check.isAtCapacity ? (
+                      <XCircle className="h-4 w-4 text-destructive" />
+                    ) : (
+                      <ShieldCheck className="h-4 w-4 text-success" />
+                    )}
+                    <span className="font-medium">{check.stateAbbreviation}</span>
+                    <span className="text-muted-foreground">
+                      {check.isAtCapacity ? 'Exceeds capacity' : 'Within capacity'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={check.isAtCapacity ? 'text-destructive font-medium' : 'text-muted-foreground'}>
+                      {check.newCount}/{check.ratioLimit} NPs
+                    </span>
+                    <Progress
+                      value={Math.min((check.newCount / (check.ratioLimit || 1)) * 100, 100)}
+                      className="w-16 h-1.5"
+                    />
+                  </div>
+                </div>
+              ))}
+              {hasCapacityViolation && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Dr. {selectedPhysician?.name} would exceed the NP:MD ratio limit. Remove some agreements from this transfer or choose a different physician.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
+          )}
+
+          {capacityLoading && targetPhysician && (
+            <p className="text-xs text-muted-foreground animate-pulse">Checking physician capacity...</p>
+          )}
+
+          {/* Effective date */}
           <div className="space-y-2">
             <Label htmlFor="effectiveDate" className="flex items-center gap-2">
               <Calendar className="h-4 w-4" />
@@ -584,7 +776,10 @@ export function BulkReassignDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             Cancel
           </Button>
-          <Button onClick={handleReassign} disabled={loading || !targetPhysician}>
+          <Button 
+            onClick={handleReassign} 
+            disabled={loading || !targetPhysician || hasCapacityViolation || capacityLoading}
+          >
             {loading ? 'Processing...' : createTransferWorkflow ? 'Create Transfer Workflows' : 'Reassign Now'}
           </Button>
         </DialogFooter>

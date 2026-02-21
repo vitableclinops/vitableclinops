@@ -1,3 +1,5 @@
+// ============= Full file contents =============
+
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +33,9 @@ import {
   AlertTriangle,
   Lock,
   Flag,
-  Calendar
+  Calendar,
+  FilePlus,
+  Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Tables } from '@/integrations/supabase/types';
@@ -51,6 +55,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState('checklist');
+  const [creatingAgreement, setCreatingAgreement] = useState(false);
 
   const isAdmin = hasRole('admin');
 
@@ -96,72 +101,142 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
   const initiationRequired = initiationTasks.filter(t => t.is_required !== false);
   const initiationComplete = initiationRequired.every(t => t.status === 'completed');
 
-  // Check for and handle transfer completion
-  useEffect(() => {
-    const checkCompletion = async () => {
-      if (allRequiredComplete && transfer.status !== 'completed') {
-        const { data: { user } } = await supabase.auth.getUser();
-        
+  // Auto-complete workflow logic
+  const handleCompleteTransfer = async () => {
+    if (!allRequiredComplete) return;
+    setCreatingAgreement(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // 1. Mark transfer as completed
+      const { error: transferError } = await supabase
+        .from('agreement_transfers')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          completed_by: user?.id,
+        })
+        .eq('id', transfer.id);
+
+      if (transferError) throw transferError;
+
+      // 2. Auto-create the new agreement if not already linked
+      if (!transfer.target_agreement_id && transfer.effective_date && transfer.target_physician_id) {
+        // Fetch source agreement to copy non-specific config and state_id
+        const { data: sourceAgreement } = await supabase
+          .from('collaborative_agreements')
+          .select('chart_review_frequency, meeting_cadence, renewal_cadence, state_id')
+          .eq('id', transfer.source_agreement_id)
+          .single();
+
+        if (!sourceAgreement?.state_id) {
+          throw new Error('Could not retrieve state_id from source agreement');
+        }
+
+        // Create new active agreement
+        const { data: newAgreement, error: createError } = await supabase
+          .from('collaborative_agreements')
+          .insert({
+            state_abbreviation: transfer.state_abbreviation,
+            state_id: sourceAgreement.state_id,
+            state_name: transfer.state_name,
+            physician_id: transfer.target_physician_id,
+            physician_name: transfer.target_physician_name,
+            physician_email: transfer.target_physician_email,
+            provider_name: `${transfer.affected_provider_count} Providers`, // Placeholder name for bulk agreement
+            start_date: transfer.effective_date, // Use transfer effective date
+            workflow_status: 'active',
+            meeting_cadence: transfer.meeting_cadence || sourceAgreement?.meeting_cadence || 'monthly',
+            chart_review_frequency: transfer.chart_review_frequency || sourceAgreement?.chart_review_frequency,
+            renewal_cadence: sourceAgreement?.renewal_cadence || 'annual',
+            source: 'transfer',
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+
+        // Link new agreement to transfer
         await supabase
           .from('agreement_transfers')
-          .update({
-            status: 'completed',
-            completed_at: new Date().toISOString(),
-            completed_by: user?.id,
-          })
+          .update({ target_agreement_id: newAgreement.id })
           .eq('id', transfer.id);
 
-        // Log completion
+        // Move providers: Deactivate in old, create in new
+        if (transfer.affected_provider_ids && transfer.affected_provider_ids.length > 0) {
+          // Deactivate old links
+          await supabase
+            .from('agreement_providers')
+            .update({ 
+              is_active: false, 
+              removed_at: transfer.effective_date,
+              removed_reason: 'Transferred to new physician'
+            })
+            .in('provider_id', transfer.affected_provider_ids)
+            .eq('agreement_id', transfer.source_agreement_id);
+
+          // Fetch provider details for insertion
+          const { data: providers } = await supabase
+            .from('profiles')
+            .select('id, full_name, email, npi_number')
+            .in('id', transfer.affected_provider_ids);
+
+          if (providers) {
+            const newLinks = providers.map(p => ({
+              agreement_id: newAgreement.id,
+              provider_id: p.id,
+              provider_name: p.full_name || 'Unknown',
+              provider_email: p.email,
+              provider_npi: p.npi_number,
+              is_active: true,
+              start_date: transfer.effective_date,
+            }));
+
+            await supabase.from('agreement_providers').insert(newLinks);
+          }
+        }
+
+        // Log completion + creation
         await supabase.from('transfer_activity_log').insert({
           transfer_id: transfer.id,
           activity_type: 'status_changed',
           actor_id: user?.id,
           actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
           actor_role: 'admin',
-          description: 'Transfer workflow completed - all required tasks finished',
+          description: `Transfer completed. Created new agreement (${newAgreement.id}) and moved ${transfer.affected_provider_count} providers.`,
         });
 
         toast({
-          title: 'Transfer complete',
-          description: 'All required workflow tasks have been completed.',
+          title: 'Transfer Complete',
+          description: 'New agreement created and providers transferred successfully.',
         });
-        onUpdate?.();
-      } else if (!allRequiredComplete && transfer.status === 'completed') {
-        // Reopen if a required task was reopened
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        await supabase
-          .from('agreement_transfers')
-          .update({
-            status: 'in_progress',
-            completed_at: null,
-            completed_by: null,
-          })
-          .eq('id', transfer.id);
-
-        // Log reopening
+      } else {
+        // Just completion log if no auto-create needed (e.g. manual override)
         await supabase.from('transfer_activity_log').insert({
           transfer_id: transfer.id,
           activity_type: 'status_changed',
           actor_id: user?.id,
           actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
           actor_role: 'admin',
-          description: 'Transfer workflow reopened - required task was unchecked',
+          description: 'Transfer workflow completed manually.',
         });
-
-        toast({
-          title: 'Transfer reopened',
-          description: 'A required task was marked incomplete.',
-          variant: 'destructive',
-        });
-        onUpdate?.();
+        
+        toast({ title: 'Transfer Complete', description: 'Workflow marked as completed.' });
       }
-    };
 
-    if (!loading && tasks.length > 0) {
-      checkCompletion();
+      onUpdate?.();
+    } catch (error) {
+      console.error('Error completing transfer:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to complete transfer and create agreement.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCreatingAgreement(false);
     }
-  }, [tasks, transfer.status, loading]);
+  };
 
   const handleTaskDeleted = (taskId: string) => {
     setTasks(prev => prev.filter(t => t.id !== taskId));
@@ -322,17 +397,50 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
             />
           )}
 
-          {/* Completion blocking alert */}
-          {!allRequiredComplete && transfer.status !== 'completed' && readiness.canExecute && (
-            <Alert className="mb-4">
-              <Lock className="h-4 w-4" />
-              <AlertDescription>
-                <span className="font-medium">
-                  {requiredTasks.length - completedRequiredTasks.length} required task(s) remaining
-                </span>
-                {' '}before this transfer can be marked complete.
-              </AlertDescription>
-            </Alert>
+          {/* Completion blocking alert or Action Button */}
+          {transfer.status !== 'completed' && (
+            <div className="mb-6">
+              {!allRequiredComplete ? (
+                <Alert>
+                  <Lock className="h-4 w-4" />
+                  <AlertDescription>
+                    <span className="font-medium">
+                      {requiredTasks.length - completedRequiredTasks.length} required task(s) remaining
+                    </span>
+                    {' '}before this transfer can be finalized.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="p-4 rounded-lg bg-success/5 border border-success/20 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="h-6 w-6 text-success" />
+                    <div>
+                      <h4 className="font-medium text-success">All Tasks Complete</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Ready to finalize transfer and create new agreements.
+                      </p>
+                    </div>
+                  </div>
+                  <Button 
+                    onClick={handleCompleteTransfer} 
+                    disabled={creatingAgreement}
+                    className="bg-success hover:bg-success/90 text-white"
+                  >
+                    {creatingAgreement ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Finalizing...
+                      </>
+                    ) : (
+                      <>
+                        <FilePlus className="h-4 w-4 mr-2" />
+                        Finalize & Create Agreement
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
 
           {loading ? (

@@ -31,7 +31,8 @@ import {
   ExternalLink,
   Lock,
   Unlock,
-  UserPlus
+  UserPlus,
+  PenTool
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -47,6 +48,10 @@ interface EditableTaskItemProps {
   onDelete?: (taskId: string) => void;
 }
 
+// Signature-category tasks require external verification fields
+const isSignatureOrDocTask = (category: string) => 
+  category === 'signature' || category === 'document';
+
 export function EditableTaskItem({ 
   task, 
   transferId, 
@@ -57,6 +62,7 @@ export function EditableTaskItem({
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [showBlocker, setShowBlocker] = useState(false);
+  const [showSignatureCompletion, setShowSignatureCompletion] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description || '');
   const [dueDate, setDueDate] = useState(task.due_date || '');
@@ -66,6 +72,11 @@ export function EditableTaskItem({
   const [blockedReason, setBlockedReason] = useState(task.blocked_reason || '');
   const [blockedUntil, setBlockedUntil] = useState(task.blocked_until || '');
   const [saving, setSaving] = useState(false);
+
+  // Signature verification fields
+  const [sigCompletionDate, setSigCompletionDate] = useState('');
+  const [sigAdminName, setSigAdminName] = useState('');
+  const [sigBoxSignRef, setSigBoxSignRef] = useState('');
 
   const taskStatus = task.status as TaskStatus;
 
@@ -81,12 +92,20 @@ export function EditableTaskItem({
         return <ClipboardCheck className="h-4 w-4" />;
       case 'termination':
         return <AlertCircle className="h-4 w-4" />;
+      case 'signature':
+        return <PenTool className="h-4 w-4" />;
       default:
         return <Clock className="h-4 w-4" />;
     }
   };
 
   const handleToggleComplete = async () => {
+    // For signature/document tasks that aren't completed yet, show the verification form
+    if (taskStatus !== 'completed' && isSignatureOrDocTask(task.category)) {
+      setShowSignatureCompletion(true);
+      return;
+    }
+
     const newStatus = taskStatus === 'completed' ? 'pending' : 'completed';
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -123,6 +142,67 @@ export function EditableTaskItem({
         : `Reopened: ${task.title}`,
     });
 
+    onUpdate();
+  };
+
+  const handleSignatureComplete = async () => {
+    if (!sigCompletionDate || !sigAdminName.trim()) {
+      toast({
+        title: 'Required fields missing',
+        description: 'Please provide the completion date and confirming admin name.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const completionNotes = [
+      task.notes || '',
+      `--- Verification Record ---`,
+      `Date Completed: ${sigCompletionDate}`,
+      `Confirmed By: ${sigAdminName}`,
+      sigBoxSignRef ? `Box Sign Reference: ${sigBoxSignRef}` : '',
+    ].filter(Boolean).join('\n');
+
+    const { error } = await supabase
+      .from('agreement_tasks')
+      .update({
+        status: 'completed' as const,
+        completed_at: new Date(sigCompletionDate).toISOString(),
+        completed_by: user?.id,
+        blocked_reason: null,
+        blocked_until: null,
+        notes: completionNotes,
+        external_url: sigBoxSignRef || task.external_url || null,
+      })
+      .eq('id', task.id);
+
+    if (error) {
+      toast({ title: 'Error', description: 'Failed to complete task.', variant: 'destructive' });
+      return;
+    }
+
+    await supabase.from('transfer_activity_log').insert({
+      transfer_id: transferId,
+      task_id: task.id,
+      activity_type: 'task_completed',
+      actor_id: user?.id,
+      actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
+      actor_role: 'admin',
+      description: `Completed (external verification): ${task.title}`,
+      metadata: {
+        completion_date: sigCompletionDate,
+        confirmed_by: sigAdminName,
+        box_sign_reference: sigBoxSignRef || null,
+      },
+    });
+
+    toast({ title: 'Task verified and completed' });
+    setShowSignatureCompletion(false);
+    setSigCompletionDate('');
+    setSigAdminName('');
+    setSigBoxSignRef('');
     onUpdate();
   };
 
@@ -293,6 +373,62 @@ export function EditableTaskItem({
     }
   };
 
+  // Signature verification form
+  if (showSignatureCompletion) {
+    return (
+      <div className="p-3 border rounded-lg bg-primary/5 border-primary/30 space-y-3">
+        <div className="flex items-center gap-2 text-primary">
+          <PenTool className="h-4 w-4" />
+          <span className="text-sm font-medium">External Verification — {task.title}</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          This step was completed outside the platform. Confirm the details below.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Date Completed *</Label>
+            <Input
+              type="date"
+              value={sigCompletionDate}
+              onChange={(e) => setSigCompletionDate(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Confirming Admin Name *</Label>
+            <Input
+              value={sigAdminName}
+              onChange={(e) => setSigAdminName(e.target.value)}
+              placeholder="Your name"
+            />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Box Sign Document Reference</Label>
+          <Input
+            value={sigBoxSignRef}
+            onChange={(e) => setSigBoxSignRef(e.target.value)}
+            placeholder="Box Sign request ID or document URL"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            Paste the Box Sign request ID or link to the signed document
+          </p>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowSignatureCompletion(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSignatureComplete}
+            disabled={!sigCompletionDate || !sigAdminName.trim()}
+          >
+            Confirm Completion
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // Editing mode
   if (editing) {
     return (
@@ -461,6 +597,12 @@ export function EditableTaskItem({
           {task.is_required && (
             <Star className="h-3 w-3 text-warning fill-warning" />
           )}
+          {isSignatureOrDocTask(task.category) && taskStatus !== 'completed' && (
+            <Badge variant="outline" className="text-[10px] px-1 gap-0.5 border-primary/30 text-primary">
+              <PenTool className="h-2.5 w-2.5" />
+              External
+            </Badge>
+          )}
           {isBlocked && (
             <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-1">
               <Lock className="h-3 w-3" />
@@ -501,27 +643,34 @@ export function EditableTaskItem({
                   : "text-muted-foreground"
               )}>
                 <Calendar className="h-3 w-3" />
-                Due {format(new Date(task.due_date), 'MMM d')}
+                {format(new Date(task.due_date), 'MMM d')}
               </span>
             )}
             {task.external_url && (
-              <a 
-                href={task.external_url} 
-                target="_blank" 
+              <a
+                href={task.external_url}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-primary flex items-center gap-1 hover:underline"
+                onClick={e => e.stopPropagation()}
               >
                 <ExternalLink className="h-3 w-3" />
-                Evidence
+                {isSignatureOrDocTask(task.category) ? 'Box Sign Ref' : 'Link'}
               </a>
             )}
           </div>
         )}
+        {/* Completed info for signature tasks */}
+        {taskStatus === 'completed' && task.completed_at && (
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Completed {formatDistanceToNow(new Date(task.completed_at), { addSuffix: true })}
+          </p>
+        )}
       </div>
 
-      {/* Assignment / Self-assign */}
-      {isAdmin && (
-        task.assigned_to ? (
+      {/* Assignment */}
+      {isAdmin && taskStatus !== 'completed' && (
+        <div className="hidden sm:block" onClick={e => e.stopPropagation()}>
           <TaskAssignmentSelect
             taskId={task.id}
             transferId={transferId}
@@ -529,133 +678,74 @@ export function EditableTaskItem({
             currentAssigneeName={task.assigned_to_name}
             onAssigned={onUpdate}
           />
-        ) : (
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
-              onClick={async (e) => {
-                e.stopPropagation();
-                try {
-                  const { data: { user } } = await supabase.auth.getUser();
-                  if (!user) return;
-                  const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('full_name, email')
-                    .eq('user_id', user.id)
-                    .maybeSingle();
-                  const displayName = profile?.full_name || profile?.email || user.email || 'Unknown';
-                  
-                  const { error } = await supabase
-                    .from('agreement_tasks')
-                    .update({
-                      assigned_to: user.id,
-                      assigned_to_name: displayName,
-                      assigned_at: new Date().toISOString(),
-                    })
-                    .eq('id', task.id);
-                  if (error) throw error;
-                  
-                  await supabase.from('transfer_activity_log').insert({
-                    transfer_id: transferId,
-                    task_id: task.id,
-                    activity_type: 'task_assigned',
-                    actor_id: user.id,
-                    actor_name: displayName,
-                    actor_role: 'admin',
-                    description: `Self-assigned: ${task.title}`,
-                  });
-                  
-                  toast({ title: 'Task claimed', description: `Assigned to ${displayName}` });
-                  onUpdate();
-                } catch (err: any) {
-                  toast({ title: 'Error', description: err.message, variant: 'destructive' });
-                }
-              }}
-            >
-              <UserPlus className="h-3 w-3" />
-              Claim
-            </Button>
-            <TaskAssignmentSelect
-              taskId={task.id}
-              transferId={transferId}
-              currentAssigneeId={null}
-              currentAssigneeName={null}
-              onAssigned={onUpdate}
-            />
-          </div>
-        )
+        </div>
       )}
 
-      {/* Completion info */}
-      {taskStatus === 'completed' && task.completed_at && (
-        <span className="text-xs text-muted-foreground">
-          {format(new Date(task.completed_at), 'MMM d')}
-        </span>
-      )}
-
-      {/* Actions menu */}
+      {/* Admin actions */}
       {isAdmin && (
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
+            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
               <MoreVertical className="h-4 w-4" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-48 p-1" align="end">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start"
-              onClick={() => setEditing(true)}
-            >
-              <Pencil className="h-4 w-4 mr-2" />
-              Edit
-            </Button>
-            {!isBlocked && taskStatus !== 'completed' && (
+          <PopoverContent className="w-48" align="end">
+            <div className="space-y-1">
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-start text-warning hover:text-warning"
-                onClick={() => setShowBlocker(true)}
+                className="w-full justify-start"
+                onClick={() => setEditing(true)}
               >
-                <Lock className="h-4 w-4 mr-2" />
-                Mark Blocked
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
               </Button>
-            )}
-            {isBlocked && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start text-success hover:text-success"
-                onClick={() => handleSetBlocked('pending')}
-              >
-                <Unlock className="h-4 w-4 mr-2" />
-                Unblock
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "w-full justify-start",
-                task.escalated ? "text-muted-foreground" : "text-destructive hover:text-destructive"
+              {!isBlocked && taskStatus !== 'completed' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-warning"
+                  onClick={() => setShowBlocker(true)}
+                >
+                  <Lock className="h-4 w-4 mr-2" />
+                  Mark Blocked
+                </Button>
               )}
-              onClick={handleToggleEscalate}
-            >
-              <Flag className="h-4 w-4 mr-2" />
-              {task.escalated ? 'Remove Escalation' : 'Escalate'}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-destructive hover:text-destructive"
-              onClick={handleDelete}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete
-            </Button>
+              {isBlocked && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={() => handleSetBlocked('pending')}
+                >
+                  <Unlock className="h-4 w-4 mr-2" />
+                  Unblock
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "w-full justify-start",
+                  task.escalated ? '' : 'text-destructive'
+                )}
+                onClick={handleToggleEscalate}
+              >
+                <Flag className="h-4 w-4 mr-2" />
+                {task.escalated ? 'Remove Escalation' : 'Escalate'}
+              </Button>
+              {onDelete && !task.is_auto_generated && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-destructive"
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              )}
+            </div>
           </PopoverContent>
         </Popover>
       )}
