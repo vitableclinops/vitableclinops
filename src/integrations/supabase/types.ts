@@ -1622,6 +1622,7 @@ export type Database = {
           created_at: string
           description: string | null
           fee_amount: number | null
+          fee_discrepancy: Json | null
           fee_receipt_uploaded_at: string | null
           fee_receipt_url: string | null
           id: string
@@ -1646,6 +1647,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           fee_amount?: number | null
+          fee_discrepancy?: Json | null
           fee_receipt_uploaded_at?: string | null
           fee_receipt_url?: string | null
           id?: string
@@ -1670,6 +1672,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           fee_amount?: number | null
+          fee_discrepancy?: Json | null
           fee_receipt_uploaded_at?: string | null
           fee_receipt_url?: string | null
           id?: string
