@@ -416,11 +416,22 @@ export const useAgreementWorkflow = () => {
     providers: Array<{ id?: string; name: string; email: string; npi?: string }>,
     options?: { chartReviewRequired?: boolean; meetingCadence?: string; providerMessage?: string }
   ) => {
+    // Compute next_renewal_date from start_date + renewal_cadence
+    let computedRenewalDate: string | null = null;
+    if (agreementData.start_date && agreementData.renewal_cadence) {
+      const startDate = new Date(agreementData.start_date);
+      const yearsToAdd = agreementData.renewal_cadence === 'biennial' ? 2 : 1;
+      const renewalDate = new Date(startDate);
+      renewalDate.setFullYear(renewalDate.getFullYear() + yearsToAdd);
+      computedRenewalDate = renewalDate.toISOString().split('T')[0];
+    }
+
     // Step 1: Create agreement in Draft
     const { data: agreement, error: agreementError } = await supabase
       .from('collaborative_agreements')
       .insert({
         ...agreementData,
+        next_renewal_date: agreementData.next_renewal_date || computedRenewalDate,
         workflow_status: 'draft' as const,
         provider_message: options?.providerMessage || null,
       } as any)
