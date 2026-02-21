@@ -43,6 +43,7 @@ import {
   Download,
   Lock,
   Pencil,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -370,6 +371,45 @@ export default function AgreementDetailPage() {
                         {nextStatus.label}
                       </Button>
                     )
+                  )}
+                  {hasRole('admin') && agreement.workflow_status === 'active' && (
+                    <Button 
+                      variant="outline"
+                      onClick={async () => {
+                        const renewalDate = agreement.next_renewal_date 
+                          ? new Date(agreement.next_renewal_date) 
+                          : new Date();
+                        // Compute next renewal based on cadence
+                        const yearsToAdd = agreement.renewal_cadence === 'biennial' ? 2 : 1;
+                        const nextDate = new Date(renewalDate);
+                        nextDate.setFullYear(nextDate.getFullYear() + yearsToAdd);
+                        
+                        const { error } = await supabase
+                          .from('collaborative_agreements')
+                          .update({ 
+                            workflow_status: 'pending_renewal' as any,
+                            next_renewal_date: nextDate.toISOString().split('T')[0],
+                          })
+                          .eq('id', agreement.id);
+                        
+                        if (!error) {
+                          await supabase.from('agreement_audit_log').insert({
+                            entity_type: 'agreement',
+                            entity_id: agreement.id,
+                            action: 'renewal_initiated',
+                            performed_by: profile?.id || null,
+                            changes: { next_renewal_date: nextDate.toISOString().split('T')[0] },
+                          });
+                          toast({ title: 'Renewal initiated', description: 'Agreement marked for renewal.' });
+                          fetchData();
+                        } else {
+                          toast({ title: 'Error', description: 'Failed to initiate renewal.', variant: 'destructive' });
+                        }
+                      }}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Initiate Renewal
+                    </Button>
                   )}
                   {hasRole('admin') && agreement.workflow_status === 'active' && (
                     <Button 
