@@ -2770,7 +2770,7 @@ export type Database = {
             foreignKeyName: "reimbursement_requests_license_application_id_fkey"
             columns: ["license_application_id"]
             isOneToOne: false
-            referencedRelation: "provider_license_applications"
+            referencedRelation: "licensure_applications"
             referencedColumns: ["id"]
           },
           {
