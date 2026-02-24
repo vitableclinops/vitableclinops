@@ -120,7 +120,7 @@ export function ActiveTransfersWidget() {
             <div
               key={transfer.id}
               className="p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors cursor-pointer group"
-              onClick={() => navigate('/admin/agreements')}
+              onClick={() => navigate('/admin/agreements?tab=transfers')}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -169,7 +169,7 @@ export function ActiveTransfersWidget() {
           variant="ghost" 
           size="sm" 
           className="w-full text-xs"
-          onClick={() => navigate('/admin/agreements')}
+          onClick={() => navigate('/admin/agreements?tab=transfers')}
         >
           View all transfers
           <ChevronRight className="h-3 w-3 ml-1" />
