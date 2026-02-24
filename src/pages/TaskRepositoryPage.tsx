@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
+import { TaskDetailDialog } from '@/components/tasks/TaskDetailDialog';
 
 type TaskStatus = 'active' | 'all' | 'pending' | 'in_progress' | 'completed' | 'blocked' | 'waiting_on_signature' | 'archived';
 type TaskCategory = 'all' | 'document' | 'signature' | 'supervision_meeting' | 'chart_review' | 'compliance' | 'transfer' | 'onboarding' | 'milestone' | 'outreach' | 'communication' | 'custom';
@@ -115,6 +116,7 @@ export default function TaskRepositoryPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [detailTask, setDetailTask] = useState<RepoTask | null>(null);
 
   // Fetch team members for assignment
   useEffect(() => {
@@ -455,6 +457,7 @@ export default function TaskRepositoryPage() {
                           task.status === 'completed' && "opacity-70",
                           task.status === 'archived' && "opacity-50",
                         )}
+                        onClick={() => setDetailTask(task)}
                       >
                         {isAdmin && task.source === 'agreement' && (
                           <div className="shrink-0" onClick={e => e.stopPropagation()}>
@@ -607,6 +610,13 @@ export default function TaskRepositoryPage() {
               )}
             </CardContent>
           </Card>
+
+          <TaskDetailDialog
+            task={detailTask}
+            open={!!detailTask}
+            onOpenChange={(open) => { if (!open) setDetailTask(null); }}
+            isAdmin={isAdmin}
+          />
 
           {/* Floating bulk action bar */}
           {isAdmin && selectedIds.size > 0 && (
