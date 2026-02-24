@@ -5,6 +5,7 @@ import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { RelatedLinksCard } from '@/components/navigation/RelatedLinksCard';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
 import { TerminationDialog } from '@/components/agreements/TerminationDialog';
+import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { VerificationChecklistDialog } from '@/components/agreements/VerificationChecklistDialog';
 import { generateAuditReport } from '@/components/agreements/AuditReportGenerator';
 import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
@@ -44,6 +45,7 @@ import {
   Lock,
   Pencil,
   RefreshCw,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -67,6 +69,8 @@ export default function AgreementDetailPage() {
   const [loading, setLoading] = useState(true);
   const [terminationOpen, setTerminationOpen] = useState(false);
   const [verificationOpen, setVerificationOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [physicians, setPhysicians] = useState<{ id: string; name: string; email: string }[]>([]);
   const [advancing, setAdvancing] = useState(false);
   const [editingTask, setEditingTask] = useState<DashboardTaskItem | null>(null);
 
@@ -95,7 +99,7 @@ export default function AgreementDetailPage() {
     if (!agreementId) return;
     setLoading(true);
 
-    const [agreementRes, providersRes, meetingsRes] = await Promise.all([
+    const [agreementRes, providersRes, meetingsRes, physiciansRes] = await Promise.all([
       supabase
         .from('collaborative_agreements')
         .select('*')
@@ -110,11 +114,18 @@ export default function AgreementDetailPage() {
         .select('*')
         .eq('agreement_id', agreementId)
         .order('scheduled_date', { ascending: true }),
+      supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', (await supabase.from('user_roles').select('user_id').eq('role', 'physician')).data?.map(r => r.user_id) || []),
     ]);
 
     if (agreementRes.data) setAgreement(agreementRes.data);
     if (providersRes.data) setProviders(providersRes.data);
     if (meetingsRes.data) setMeetings(meetingsRes.data);
+    if (physiciansRes.data) {
+      setPhysicians(physiciansRes.data.map(p => ({ id: p.id, name: p.full_name || '', email: p.email || '' })));
+    }
 
     setLoading(false);
   }, [agreementId]);
@@ -409,6 +420,15 @@ export default function AgreementDetailPage() {
                     >
                       <RefreshCw className="h-4 w-4 mr-2" />
                       Initiate Renewal
+                    </Button>
+                  )}
+                  {hasRole('admin') && agreement.workflow_status === 'active' && (
+                    <Button 
+                      variant="outline"
+                      onClick={() => setTransferOpen(true)}
+                    >
+                      <ArrowLeftRight className="h-4 w-4 mr-2" />
+                      Transfer
                     </Button>
                   )}
                   {hasRole('admin') && agreement.workflow_status === 'active' && (
@@ -918,6 +938,30 @@ export default function AgreementDetailPage() {
           providers={providers.filter(p => p.is_active)}
           onSuccess={() => {
             setTerminationOpen(false);
+            fetchData();
+            refetchTasks();
+          }}
+        />
+      )}
+
+      {agreement && (
+        <BulkReassignDialog
+          open={transferOpen}
+          onOpenChange={setTransferOpen}
+          selectedAgreements={activeProviders.map(p => ({
+            id: `${agreement.id}-${p.id}`,
+            providerId: p.provider_id || '',
+            providerName: p.provider_name,
+            providerEmail: p.provider_email,
+            physicianName: agreement.physician_name || '',
+            physicianEmail: agreement.physician_email || '',
+            stateAbbreviation: agreement.state_abbreviation,
+            stateName: agreement.state_name,
+            agreementId: agreement.id,
+          }))}
+          physicians={physicians}
+          onSuccess={() => {
+            setTransferOpen(false);
             fetchData();
             refetchTasks();
           }}
