@@ -81,17 +81,21 @@ Deno.serve(async (req) => {
       for (const ap of providers) {
         if (!ap.is_active || !ap.provider_id) continue;
 
-        // Check if provider has a valid license for this state
-        const { data: license } = await supabase
+        // Check if provider has at least one valid license for this state
+        const { data: licenses } = await supabase
           .from("provider_licenses")
-          .select("status, expiration_date")
+          .select("status, expiration_date, license_type")
           .eq("profile_id", ap.provider_id)
-          .eq("state_abbreviation", agreement.state_abbreviation)
-          .maybeSingle();
+          .eq("state_abbreviation", agreement.state_abbreviation);
 
-        const licenseExpired = !license ||
-          (license.status !== "active" && license.status !== "verified") ||
-          (license.expiration_date && license.expiration_date < today);
+        // Provider needs at least one active/verified license that isn't expired
+        const hasValidLicense = (licenses || []).some(
+          (lic) =>
+            (lic.status === "active" || lic.status === "verified") &&
+            (!lic.expiration_date || lic.expiration_date >= today)
+        );
+
+        const licenseExpired = !hasValidLicense;
 
         if (licenseExpired) {
           // Invalidate the agreement
