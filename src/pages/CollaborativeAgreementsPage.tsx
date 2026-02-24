@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { SupervisionCalendar } from '@/components/SupervisionCalendar';
 import { StatCard } from '@/components/StatCard';
@@ -144,13 +144,14 @@ const CollaborativeAgreementsPage = () => {
   const { profile, roles, hasRole } = useAuth();
   const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
   const { getNextMeetingForAgreement, hasMeetingScheduled, loading: meetingsLoading } = useScheduledMeetings();
+  const [searchParams] = useSearchParams();
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [stateFilter, setStateFilter] = useState<string>('all');
   const [physicianFilter, setPhysicianFilter] = useState<string>('all');
   const [meetingFilter, setMeetingFilter] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState('all-agreements');
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'all-agreements');
   const [wizardOpen, setWizardOpen] = useState(false);
   const [meetingWizardOpen, setMeetingWizardOpen] = useState(false);
   
@@ -1063,8 +1064,8 @@ const CollaborativeAgreementsPage = () => {
                 <div className="xl:col-span-2 space-y-4 order-1 xl:order-2">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
-                      <h3 className="text-lg font-semibold">Active Tasks</h3>
-                      <p className="text-sm text-muted-foreground">Track in-progress tasks, transfers, and checklist workflows</p>
+                      <h3 className="text-lg font-semibold">Active Transfers</h3>
+                      <p className="text-sm text-muted-foreground">Collaborative agreement changes in progress</p>
                     </div>
                   </div>
                   
