@@ -46,6 +46,8 @@ export interface DashboardTaskItem {
   slack_template?: string | null;
   completed_at?: string | null;
   archived_reason?: string | null;
+  requires_upload?: boolean;
+  document_count?: number;
 }
 
 export function useAdminDashboard() {
@@ -96,7 +98,7 @@ export function useAdminDashboard() {
         // Actionable tasks (not completed)
         supabase
           .from('agreement_tasks')
-          .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, provider_id, transfer_id, agreement_id, escalated, blocked_reason, description')
+          .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, provider_id, transfer_id, agreement_id, escalated, blocked_reason, description, requires_upload')
           .in('status', ['pending', 'in_progress', 'blocked', 'waiting_on_signature'])
           .order('created_at', { ascending: false })
           .limit(50),
@@ -223,6 +225,17 @@ export function useAdminDashboard() {
           return [a.id, `${provider} ↔ ${physician} (${a.state_abbreviation})`];
         }));
         tasks.forEach(t => { if (t.agreement_id) t.agreement_label = labelMap.get(t.agreement_id); });
+      }
+
+      // Enrich tasks with document counts
+      if (taskIds.length > 0) {
+        const { data: docs } = await supabase
+          .from('task_documents')
+          .select('task_id')
+          .in('task_id', taskIds);
+        const docCounts = new Map<string, number>();
+        (docs || []).forEach(d => docCounts.set(d.task_id, (docCounts.get(d.task_id) || 0) + 1));
+        tasks.forEach(t => { t.document_count = docCounts.get(t.id) || 0; });
       }
 
       const milestoneProfiles = milestoneProfilesRes.data || [];

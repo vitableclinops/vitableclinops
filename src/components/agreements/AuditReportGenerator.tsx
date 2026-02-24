@@ -9,23 +9,40 @@ interface AuditReportData {
   tasks: Tables<'agreement_tasks'>[];
   providers: Tables<'agreement_providers'>[];
   auditLogs: Tables<'agreement_audit_log'>[];
+  documents: Array<{
+    id: string;
+    task_id: string;
+    file_name: string;
+    file_size: number | null;
+    uploaded_by_name: string | null;
+    created_at: string;
+    task_title?: string;
+  }>;
 }
 
 async function fetchReportData(agreementId: string): Promise<AuditReportData | null> {
-  const [agreementRes, tasksRes, providersRes, logsRes] = await Promise.all([
+  const [agreementRes, tasksRes, providersRes, logsRes, docsRes] = await Promise.all([
     supabase.from('collaborative_agreements').select('*').eq('id', agreementId).single(),
     supabase.from('agreement_tasks').select('*').eq('agreement_id', agreementId).order('sort_order'),
     supabase.from('agreement_providers').select('*').eq('agreement_id', agreementId),
     supabase.from('agreement_audit_log').select('*').eq('entity_id', agreementId).order('created_at', { ascending: true }),
+    supabase.from('task_documents').select('id, task_id, file_name, file_size, uploaded_by_name, created_at').eq('agreement_id', agreementId).order('created_at', { ascending: true }),
   ]);
 
   if (!agreementRes.data) return null;
 
+  // Enrich docs with task titles
+  const docs = (docsRes.data || []) as AuditReportData['documents'];
+  const tasks = tasksRes.data || [];
+  const titleMap = new Map(tasks.map(t => [t.id, t.title]));
+  docs.forEach(d => { d.task_title = titleMap.get(d.task_id); });
+
   return {
     agreement: agreementRes.data,
-    tasks: tasksRes.data || [],
+    tasks,
     providers: providersRes.data || [],
     auditLogs: logsRes.data || [],
+    documents: docs,
   };
 }
 
@@ -52,7 +69,7 @@ function escapeHtml(str: string): string {
 }
 
 function buildReportHtml(data: AuditReportData): string {
-  const { agreement, tasks, providers, auditLogs } = data;
+  const { agreement, tasks, providers, auditLogs, documents } = data;
   const now = new Date();
   const activeProviders = providers.filter(p => p.is_active);
 
@@ -169,7 +186,23 @@ ${catTasks.map(t => `<tr>
 </table>
 `).join('\n') : '<p style="font-size: 13px; color: #888;">No tasks recorded.</p>'}
 
-<h2>${verificationChecks ? '4' : '3'}. Full Audit Trail</h2>
+${documents.length > 0 ? `
+<h2>${verificationChecks ? '4' : '3'}. Task Documents</h2>
+<table>
+<thead><tr><th>File Name</th><th>Task</th><th>Uploaded By</th><th>Date</th><th>Size</th></tr></thead>
+<tbody>
+${documents.map(d => `<tr>
+  <td>${escapeHtml(d.file_name)}</td>
+  <td>${d.task_title ? escapeHtml(d.task_title) : '—'}</td>
+  <td>${d.uploaded_by_name ? escapeHtml(d.uploaded_by_name) : '—'}</td>
+  <td>${formatDate(d.created_at)}</td>
+  <td>${d.file_size ? (d.file_size < 1024 * 1024 ? Math.round(d.file_size / 1024) + ' KB' : (d.file_size / (1024 * 1024)).toFixed(1) + ' MB') : '—'}</td>
+</tr>`).join('\n')}
+</tbody>
+</table>
+` : ''}
+
+<h2>${verificationChecks ? (documents.length > 0 ? '5' : '4') : (documents.length > 0 ? '4' : '3')}. Full Audit Trail</h2>
 ${auditLogs.length > 0 ? `
 <table>
 <thead><tr><th>Timestamp</th><th>Action</th><th>Performed By</th><th>Details</th></tr></thead>
