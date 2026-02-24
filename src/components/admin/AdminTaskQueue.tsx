@@ -335,7 +335,18 @@ export function AdminTaskQueue({
                                </Badge>
                              )}
                            </div>
-                          <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
+                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                            {task.assigned_to_name ? (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-0.5 font-normal">
+                                <User className="h-2.5 w-2.5" />
+                                {task.assigned_to_name}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5 font-normal text-muted-foreground/60">
+                                <User className="h-2.5 w-2.5" />
+                                Unassigned
+                              </Badge>
+                            )}
                             {task.state_name && (
                               <span className="flex items-center gap-0.5">
                                 <MapPin className="h-3 w-3" />
@@ -351,27 +362,54 @@ export function AdminTaskQueue({
                                 </Badge>
                               ))
                             ) : task.provider_name ? (
-                              <span>• {task.provider_name}</span>
+                              <span className="flex items-center gap-0.5">
+                                <User className="h-3 w-3" />
+                                {task.provider_name}
+                              </span>
                             ) : null}
-                            {task.transfer_id && <Badge variant="outline" className="text-[10px] px-1">Transfer</Badge>}
                             {task.due_date && (
                               <span className={cn(
                                 "flex items-center gap-0.5",
                                 new Date(task.due_date) < new Date() && "text-destructive"
                               )}>
                                 <Clock className="h-3 w-3" />
-                                Due {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                Due {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                               </span>
                             )}
+                            {task.agreement_label && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1 cursor-pointer hover:bg-muted/50 max-w-[240px] truncate"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (task.agreement_id) window.location.href = `/admin/agreements/${task.agreement_id}`;
+                                }}
+                              >
+                                <FileText className="h-2.5 w-2.5 mr-0.5 shrink-0" />
+                                <span className="truncate">{task.agreement_label}</span>
+                              </Badge>
+                            )}
+                            {task.transfer_id && <Badge variant="outline" className="text-[10px] px-1"><ArrowRightLeft className="h-2.5 w-2.5 mr-0.5" />Transfer</Badge>}
                           </div>
                           {task.blocked_reason && (
                             <p className="text-xs text-warning mt-0.5 truncate">{task.blocked_reason}</p>
                           )}
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                          {task.assigned_to_name ? (
-                            <Badge variant="outline" className="text-xs">{task.assigned_to_name}</Badge>
-                          ) : (
+                          {task.priority && task.priority !== 'medium' && (
+                            <Badge
+                              className={cn(
+                                "text-[10px]",
+                                task.priority === 'critical' && "bg-destructive/10 text-destructive border-destructive/20",
+                                task.priority === 'high' && "bg-warning/10 text-warning border-warning/20",
+                                task.priority === 'low' && "bg-muted text-muted-foreground",
+                              )}
+                            >
+                              <Flag className="h-2.5 w-2.5 mr-0.5" />
+                              {task.priority}
+                            </Badge>
+                          )}
+                          {!task.assigned_to_name && (
                             <Button
                               variant="ghost" size="sm"
                               className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
