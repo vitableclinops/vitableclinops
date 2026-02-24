@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -188,24 +188,26 @@ export function BulkReassignDialog({
   const [protectedStates, setProtectedStates] = useState<Array<{ abbreviation: string; name: string; providerCount: number }>>([]);
 
   // Group by state for display
-  const groupedByState = selectedAgreements.reduce((acc, agreement) => {
-    const key = agreement.stateAbbreviation;
-    if (!acc[key]) {
-      acc[key] = {
-        stateName: agreement.stateName,
-        stateAbbreviation: key,
-        providers: [],
-        agreementIds: new Set<string>(),
-      };
-    }
-    acc[key].providers.push({
-      id: agreement.providerId,
-      name: agreement.providerName,
-      email: agreement.providerEmail,
-    });
-    acc[key].agreementIds.add(agreement.agreementId);
-    return acc;
-  }, {} as Record<string, { stateName: string; stateAbbreviation: string; providers: Array<{ id: string; name: string; email: string }>; agreementIds: Set<string> }>);
+  const groupedByState = useMemo(() => {
+    return selectedAgreements.reduce((acc, agreement) => {
+      const key = agreement.stateAbbreviation;
+      if (!acc[key]) {
+        acc[key] = {
+          stateName: agreement.stateName,
+          stateAbbreviation: key,
+          providers: [],
+          agreementIds: new Set<string>(),
+        };
+      }
+      acc[key].providers.push({
+        id: agreement.providerId,
+        name: agreement.providerName,
+        email: agreement.providerEmail,
+      });
+      acc[key].agreementIds.add(agreement.agreementId);
+      return acc;
+    }, {} as Record<string, { stateName: string; stateAbbreviation: string; providers: Array<{ id: string; name: string; email: string }>; agreementIds: Set<string> }>);
+  }, [selectedAgreements]);
 
   const selectedPhysician = physicians.find(p => p.id === targetPhysician);
 
@@ -249,8 +251,9 @@ export function BulkReassignDialog({
   // Capacity validation when target physician changes
   useEffect(() => {
     const validateCapacity = async () => {
-      if (!targetPhysician) {
+      if (!open || !targetPhysician) {
         setCapacityChecks([]);
+        setCapacityLoading(false);
         return;
       }
 
@@ -266,7 +269,7 @@ export function BulkReassignDialog({
           .maybeSingle();
 
         const ratioLimit = stateConfig?.np_md_ratio_limit ?? null;
-        
+
         if (ratioLimit) {
           // Count target physician's existing active agreements in this state
           const { count } = await supabase
@@ -296,7 +299,7 @@ export function BulkReassignDialog({
     };
 
     validateCapacity();
-  }, [targetPhysician]);
+  }, [open, targetPhysician, groupedByState]);
 
   const hasCapacityViolation = capacityChecks.some(c => c.isAtCapacity);
 
@@ -560,6 +563,13 @@ export function BulkReassignDialog({
     setProtectedStates([]);
   };
 
+  const handleDialogOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      resetForm();
+    }
+    onOpenChange(isOpen);
+  };
+
   // Calculate task counts for display
   const terminationTaskCount = getTerminationTasks('', 0).length;
   const initiationTaskCount = getInitiationTasks('', 0).length;
@@ -570,7 +580,7 @@ export function BulkReassignDialog({
   const selectedStates = Object.keys(groupedByState);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} modal={true}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange} modal={true}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -775,7 +785,7 @@ export function BulkReassignDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
+          <Button variant="outline" onClick={() => handleDialogOpenChange(false)} disabled={loading}>
             Cancel
           </Button>
           <Button 
