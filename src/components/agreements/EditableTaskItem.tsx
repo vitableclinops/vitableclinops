@@ -812,6 +812,7 @@ export function EditableTaskItem({
       open={showDetail}
       onOpenChange={setShowDetail}
       isAdmin={isAdmin}
+      onTaskUpdated={onUpdate}
     />
     </>
   );
