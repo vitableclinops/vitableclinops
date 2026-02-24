@@ -12,15 +12,17 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Pencil, MapPin, Archive, Copy, Search, Cake, Trophy } from 'lucide-react';
+import { Loader2, Pencil, MapPin, Archive, Copy, Search, Cake, Trophy, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
 import type { Database } from '@/integrations/supabase/types';
 import { LinkedProviderEditor, type LinkedProviderItem } from './LinkedProviderEditor';
+import { TaskDocumentUpload, useTaskDocumentCount } from '@/components/tasks/TaskDocumentUpload';
 
 type TaskCategory = Database['public']['Enums']['agreement_task_category'];
 
@@ -52,10 +54,14 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
   const [category, setCategory] = useState<string>('custom');
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
+  const [requiresUpload, setRequiresUpload] = useState(false);
   const [saving, setSaving] = useState(false);
   const [linkedProviders, setLinkedProviders] = useState<LinkedProviderItem[]>([]);
   const [initialLinkedIds, setInitialLinkedIds] = useState<Set<string>>(new Set());
+  const [uploadGateError, setUploadGateError] = useState(false);
   const { toast } = useToast();
+
+  const docCount = useTaskDocumentCount(task?.id || '');
 
   useEffect(() => {
     if (task) {
@@ -66,6 +72,8 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
       setCategory(task.category || 'custom');
       setDueDate(task.due_date ? task.due_date.split('T')[0] : '');
       setNotes('');
+      setRequiresUpload((task as any).requires_upload === true);
+      setUploadGateError(false);
 
       // Fetch linked providers from junction table
       supabase
@@ -121,7 +129,15 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
   const handleSave = async () => {
     if (!task) return;
     setSaving(true);
+    setUploadGateError(false);
     try {
+      // Gating: block completion if requires_upload and no docs
+      if (status === 'completed' && requiresUpload && (docCount === null || docCount === 0)) {
+        setUploadGateError(true);
+        setSaving(false);
+        return;
+      }
+
       if (task.category === 'milestone') {
         await supabase
           .from('milestone_tasks')
@@ -140,6 +156,7 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
           status: status as any,
           category: category as any,
           due_date: dueDate || null,
+          requires_upload: requiresUpload,
         };
 
         if (notes.trim()) {
@@ -385,6 +402,40 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
                   </Tooltip>
                 </div>
               </div>
+            </>
+          )}
+
+          {!isMilestone && !isArchived && (
+            <>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="requires-upload"
+                  checked={requiresUpload}
+                  onCheckedChange={setRequiresUpload}
+                />
+                <Label htmlFor="requires-upload" className="text-sm">
+                  Requires document upload to complete
+                </Label>
+              </div>
+
+              {/* Document upload section */}
+              {task && (
+                <div className="space-y-2">
+                  <Label>Documents</Label>
+                  <TaskDocumentUpload
+                    taskId={task.id}
+                    agreementId={task.agreement_id}
+                    requiresUpload={requiresUpload}
+                  />
+                </div>
+              )}
+
+              {uploadGateError && (
+                <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-md p-2">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span>This task requires a document upload before it can be marked as completed.</span>
+                </div>
+              )}
             </>
           )}
 

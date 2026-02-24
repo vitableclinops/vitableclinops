@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { TaskAssignmentSelect } from './TaskAssignmentSelect';
+import { TaskDocumentUpload, useTaskDocumentCount } from '@/components/tasks/TaskDocumentUpload';
 import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
 import { 
@@ -32,7 +33,8 @@ import {
   Lock,
   Unlock,
   UserPlus,
-  PenTool
+  PenTool,
+  Paperclip
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -99,7 +101,22 @@ export function EditableTaskItem({
     }
   };
 
+  // Document count for gating
+  const docCount = useTaskDocumentCount(task.id);
+  const requiresUpload = (task as any).requires_upload === true;
+  const uploadBlocked = requiresUpload && (docCount === null || docCount === 0);
+
   const handleToggleComplete = async () => {
+    // Block completion if requires_upload and no documents
+    if (taskStatus !== 'completed' && uploadBlocked) {
+      toast({
+        title: 'Document required',
+        description: 'Please upload a document before completing this task.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // For signature/document tasks that aren't completed yet, show the verification form
     if (taskStatus !== 'completed' && isSignatureOrDocTask(task.category)) {
       setShowSignatureCompletion(true);
@@ -603,6 +620,15 @@ export function EditableTaskItem({
               External
             </Badge>
           )}
+          {requiresUpload && (
+            <TaskDocumentUpload taskId={task.id} agreementId={task.agreement_id} requiresUpload compact />
+          )}
+          {!requiresUpload && docCount !== null && docCount > 0 && (
+            <Badge variant="outline" className="text-[10px] gap-0.5 px-1">
+              <Paperclip className="h-2.5 w-2.5" />
+              {docCount}
+            </Badge>
+          )}
           {isBlocked && (
             <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-1">
               <Lock className="h-3 w-3" />
@@ -665,6 +691,17 @@ export function EditableTaskItem({
           <p className="text-[10px] text-muted-foreground mt-0.5">
             Completed {formatDistanceToNow(new Date(task.completed_at), { addSuffix: true })}
           </p>
+        )}
+        {/* Document upload section */}
+        {(requiresUpload || (docCount !== null && docCount > 0)) && taskStatus !== 'completed' && (
+          <div className="mt-2" onClick={e => e.stopPropagation()}>
+            <TaskDocumentUpload
+              taskId={task.id}
+              agreementId={task.agreement_id}
+              requiresUpload={requiresUpload}
+              disabled={!isAdmin}
+            />
+          </div>
         )}
       </div>
 
