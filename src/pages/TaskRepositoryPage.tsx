@@ -13,7 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   Search, ListChecks, Clock, Flag, Lock, Archive, CheckCircle2,
   MapPin, User, ArrowRightLeft, ShieldCheck, FileText, Cake, Users,
-  RefreshCw, ExternalLink, UserPlus, X,
+  RefreshCw, ExternalLink, UserPlus, X, Paperclip,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -47,6 +47,8 @@ interface RepoTask {
   created_at: string;
   updated_at: string;
   source: 'agreement' | 'milestone';
+  requires_upload?: boolean;
+  document_count?: number;
   // milestone extras
   milestone_type?: string | null;
   slack_template?: string | null;
@@ -181,7 +183,7 @@ export default function TaskRepositoryPage() {
       // Build agreement_tasks query
       let q = supabase
         .from('agreement_tasks')
-        .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, completed_at, archived_at, provider_id, transfer_id, agreement_id, escalated, blocked_reason, description, archived_reason, created_at, updated_at', { count: 'exact' });
+        .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, completed_at, archived_at, provider_id, transfer_id, agreement_id, escalated, blocked_reason, description, archived_reason, created_at, updated_at, requires_upload', { count: 'exact' });
 
       if (statusFilter === 'active') {
         q = q.not('status', 'in', '("completed","archived")');
@@ -221,6 +223,18 @@ export default function TaskRepositoryPage() {
           return [a.id, `${provider} ↔ ${physician} (${a.state_abbreviation})`];
         }));
         enriched.forEach(t => { if (t.agreement_id) t.agreement_label = labelMap.get(t.agreement_id); });
+      }
+
+      // Enrich with document counts
+      const taskIds = enriched.map(t => t.id);
+      if (taskIds.length > 0) {
+        const { data: docs } = await supabase
+          .from('task_documents')
+          .select('task_id')
+          .in('task_id', taskIds);
+        const docCounts = new Map<string, number>();
+        (docs || []).forEach(d => docCounts.set(d.task_id, (docCounts.get(d.task_id) || 0) + 1));
+        enriched.forEach(t => { t.document_count = docCounts.get(t.id) || 0; });
       }
 
       // Also fetch milestone tasks if no category filter (or milestone selected)
@@ -540,7 +554,18 @@ export default function TaskRepositoryPage() {
                         </div>
 
                         <div className="shrink-0 flex items-center gap-1.5">
-                          
+                          {(task.document_count ?? 0) > 0 && (
+                            <Badge variant="outline" className="text-[10px] px-1 gap-0.5">
+                              <Paperclip className="h-2.5 w-2.5" />
+                              {task.document_count}
+                            </Badge>
+                          )}
+                          {task.requires_upload && (task.document_count ?? 0) === 0 && task.status !== 'completed' && task.status !== 'archived' && (
+                            <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] px-1 gap-0.5">
+                              <Paperclip className="h-2.5 w-2.5" />
+                              Needs doc
+                            </Badge>
+                          )}
                           {task.priority && task.priority !== 'medium' && (
                             <Badge
                               className={cn(

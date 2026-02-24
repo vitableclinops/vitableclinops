@@ -46,6 +46,7 @@ import {
   Pencil,
   RefreshCw,
   ArrowLeftRight,
+  Paperclip,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -581,6 +582,7 @@ export default function AgreementDetailPage() {
                           </Badge>
                         )}
                       </TabsTrigger>
+                      <TabsTrigger value="documents">Documents</TabsTrigger>
                       <TabsTrigger value="providers">Providers ({activeProviders.length})</TabsTrigger>
                       <TabsTrigger value="meetings">Meetings ({meetings.length})</TabsTrigger>
                       <TabsTrigger value="history">History</TabsTrigger>
@@ -748,6 +750,10 @@ export default function AgreementDetailPage() {
                           )}
                         </CardContent>
                       </Card>
+                    </TabsContent>
+
+                    <TabsContent value="documents" className="mt-4">
+                      <AgreementDocuments agreementId={agreementId!} />
                     </TabsContent>
 
                     <TabsContent value="providers" className="mt-4">
@@ -1204,6 +1210,140 @@ function AuditHistory({ agreementId }: { agreementId: string }) {
           <p className="text-muted-foreground text-center py-8">
             No audit history yet
           </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---- Agreement Documents Component ----
+function AgreementDocuments({ agreementId }: { agreementId: string }) {
+  const [documents, setDocuments] = useState<Array<{
+    id: string;
+    task_id: string;
+    file_name: string;
+    file_path: string;
+    file_size: number | null;
+    mime_type: string | null;
+    uploaded_by_name: string | null;
+    created_at: string;
+    task_title?: string;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDocs = async () => {
+      setLoading(true);
+      const { data: docs } = await supabase
+        .from('task_documents')
+        .select('id, task_id, file_name, file_path, file_size, mime_type, uploaded_by_name, created_at')
+        .eq('agreement_id', agreementId)
+        .order('created_at', { ascending: false });
+
+      if (docs && docs.length > 0) {
+        // Enrich with task titles
+        const taskIds = [...new Set(docs.map(d => d.task_id))];
+        const { data: tasks } = await supabase
+          .from('agreement_tasks')
+          .select('id, title')
+          .in('id', taskIds);
+        const titleMap = new Map((tasks || []).map(t => [t.id, t.title]));
+        setDocuments(docs.map(d => ({ ...d, task_title: titleMap.get(d.task_id) })));
+      } else {
+        setDocuments([]);
+      }
+      setLoading(false);
+    };
+    fetchDocs();
+  }, [agreementId]);
+
+  const handleView = async (filePath: string) => {
+    const { data } = await supabase.storage
+      .from('task-documents')
+      .createSignedUrl(filePath, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+  };
+
+  const formatSize = (bytes: number | null) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Group by task
+  const grouped = documents.reduce<Record<string, typeof documents>>((acc, doc) => {
+    const key = doc.task_title || doc.task_id;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(doc);
+    return acc;
+  }, {});
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="py-8">
+          <div className="animate-pulse space-y-3">
+            <div className="h-4 bg-muted rounded w-1/3" />
+            <div className="h-12 bg-muted rounded" />
+            <div className="h-12 bg-muted rounded" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Paperclip className="h-5 w-5" />
+          Documents ({documents.length})
+        </CardTitle>
+        <CardDescription>
+          All documents uploaded across tasks for this agreement.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {documents.length > 0 ? (
+          <div className="space-y-6">
+            {Object.entries(grouped).map(([taskTitle, docs]) => (
+              <div key={taskTitle}>
+                <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <ClipboardList className="h-3.5 w-3.5" />
+                  {taskTitle}
+                </h4>
+                <div className="space-y-2">
+                  {docs.map(doc => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/30 transition-colors cursor-pointer"
+                      onClick={() => handleView(doc.file_path)}
+                    >
+                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{doc.file_name}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {doc.uploaded_by_name && <span>{doc.uploaded_by_name}</span>}
+                          <span>{format(new Date(doc.created_at), 'MMM d, yyyy')}</span>
+                          {doc.file_size && <span>{formatSize(doc.file_size)}</span>}
+                        </div>
+                      </div>
+                      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <Paperclip className="h-12 w-12 mx-auto text-muted-foreground/30 mb-3" />
+            <p className="text-muted-foreground">No documents uploaded yet</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">
+              Documents will appear here when uploaded to tasks.
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>

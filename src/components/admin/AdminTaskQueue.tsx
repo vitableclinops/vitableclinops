@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import {
   Clock, FileText, Calendar, ShieldCheck, Cake, ArrowRightLeft,
   Flag, Lock, ListChecks, UserPlus, MapPin, MoreVertical,
-  Archive, UserCog, User, Plus, ChevronDown, RefreshCw, Users, X,
+  Archive, UserCog, User, Plus, ChevronDown, RefreshCw, Users, X, Paperclip,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -396,6 +396,18 @@ export function AdminTaskQueue({
                           )}
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {(task.document_count ?? 0) > 0 && (
+                            <Badge variant="outline" className="text-[10px] px-1 gap-0.5">
+                              <Paperclip className="h-2.5 w-2.5" />
+                              {task.document_count}
+                            </Badge>
+                          )}
+                          {task.requires_upload && (task.document_count ?? 0) === 0 && task.status !== 'completed' && task.status !== 'archived' && (
+                            <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] px-1 gap-0.5">
+                              <Paperclip className="h-2.5 w-2.5" />
+                              Needs doc
+                            </Badge>
+                          )}
                           {task.priority && task.priority !== 'medium' && (
                             <Badge
                               className={cn(
