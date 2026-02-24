@@ -263,6 +263,11 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
 
   /* ─── View mode: toggle complete ─── */
   const handleToggleComplete = async () => {
+    // Block completion if requires_upload and no documents attached
+    if (!isCompleted && task.requires_upload && (docCount === null || docCount === 0)) {
+      toast({ title: 'Upload required', description: 'This task requires a document upload before it can be completed.', variant: 'destructive' });
+      return;
+    }
     setCompleting(true);
     try {
       const newStatus = isCompleted ? 'pending' : 'completed';
