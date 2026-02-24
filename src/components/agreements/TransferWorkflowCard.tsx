@@ -492,14 +492,13 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                   onUpdate={() => { fetchTasks(); onUpdate?.(); }}
                 />
 
-                <div className="space-y-6">
+                <div className="grid gap-6 lg:grid-cols-2">
                   <TaskPhaseSection 
                     taskList={terminationTasks} 
                     title="1. Termination Phase" 
                     phase="termination"
                     isComplete={terminationComplete}
                   />
-                  <Separator />
                   <TaskPhaseSection 
                     taskList={initiationTasks} 
                     title="2. Initiation Phase" 
