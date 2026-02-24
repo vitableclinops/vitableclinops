@@ -504,24 +504,24 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
   /* ━━━ VIEW MODE ━━━ */
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-hidden flex flex-col p-4 sm:p-5 gap-3">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[75vh] overflow-hidden flex flex-col p-4 gap-2">
+        <DialogHeader className="pb-0">
           <div className="flex items-start justify-between gap-2">
-            <DialogTitle className="flex items-center gap-2 text-base flex-1">
+            <DialogTitle className="flex items-center gap-2 text-sm font-semibold flex-1 leading-tight">
               <span className="text-muted-foreground">{getCategoryIcon(task.category)}</span>
               {task.title}
             </DialogTitle>
             {isAdmin && (
-              <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={() => setEditing(true)}>
-                <Pencil className="h-3.5 w-3.5" />
+              <Button variant="outline" size="sm" className="gap-1.5 shrink-0 h-7 text-xs" onClick={() => setEditing(true)}>
+                <Pencil className="h-3 w-3" />
                 Edit
               </Button>
             )}
           </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 -mx-4 sm:-mx-5 px-4 sm:px-5">
-          <div className="space-y-3 pb-3">
+        <ScrollArea className="flex-1 min-h-0 -mx-4 px-4">
+          <div className="space-y-2.5 pb-2">
             {/* Status & meta badges */}
             <div className="flex items-center gap-2 flex-wrap">
               {getStatusBadge(task.status)}
@@ -552,14 +552,14 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
             {/* Related People */}
             {relatedPeople.length > 0 && (
               <>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> Related People</Label>
-                  <div className="space-y-1">
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> Related People</Label>
+                  <div className="space-y-0.5">
                     {relatedPeople.map((person) => (
-                      <div key={person.id} className="flex items-center gap-2 rounded-md border border-input bg-muted/50 px-2.5 py-1.5 text-sm">
-                        <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <div key={person.id} className="flex items-center gap-2 rounded border border-input bg-muted/50 px-2 py-1 text-xs">
+                        <User className="h-3 w-3 text-muted-foreground shrink-0" />
                         <span className="font-medium flex-1 truncate">{person.full_name || 'Unknown'}</span>
-                        <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">{person.role_label}</Badge>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">{person.role_label}</Badge>
                       </div>
                     ))}
                   </div>
@@ -569,16 +569,16 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
             )}
 
             {/* Detail grid */}
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-2 gap-2 text-xs">
               {task.assigned_to_name && (
                 <div className="space-y-0.5">
-                  <Label className="text-xs text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" /> Assigned To</Label>
+                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" /> Assigned To</Label>
                   <p>{task.assigned_to_name}</p>
                 </div>
               )}
               {task.due_date && (
                 <div className="space-y-0.5">
-                  <Label className={cn("text-xs flex items-center gap-1", parseLocalDate(task.due_date) < new Date() && task.status !== 'completed' ? "text-destructive" : "text-muted-foreground")}>
+                  <Label className={cn("text-[11px] flex items-center gap-1", parseLocalDate(task.due_date) < new Date() && task.status !== 'completed' ? "text-destructive" : "text-muted-foreground")}>
                     <Calendar className="h-3 w-3" /> Due Date
                   </Label>
                   <p className={cn(parseLocalDate(task.due_date) < new Date() && task.status !== 'completed' && "text-destructive font-medium")}>
@@ -588,13 +588,13 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
               )}
               {task.state_name && (
                 <div className="space-y-0.5">
-                  <Label className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> State</Label>
+                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> State</Label>
                   <p>{task.state_name}{task.state_abbreviation ? ` (${task.state_abbreviation})` : ''}</p>
                 </div>
               )}
               {task.completed_at && (
                 <div className="space-y-0.5">
-                  <Label className="text-xs text-muted-foreground">Completed</Label>
+                  <Label className="text-[11px] text-muted-foreground">Completed</Label>
                   <p>{formatDistanceToNow(new Date(task.completed_at), { addSuffix: true })}</p>
                 </div>
               )}
@@ -636,8 +636,8 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
             <Separator />
 
             {/* Documents */}
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground flex items-center gap-1"><Paperclip className="h-3 w-3" /> Documents</Label>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><Paperclip className="h-3 w-3" /> Documents</Label>
               <TaskDocumentUpload taskId={task.id} agreementId={task.agreement_id} requiresUpload={task.requires_upload === true} disabled={!isAdmin} />
             </div>
           </div>
@@ -645,8 +645,8 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
 
         {/* Footer */}
         {canComplete && (
-          <DialogFooter className="pt-2 border-t">
-            <Button variant={isCompleted ? 'outline' : 'default'} size="sm" onClick={handleToggleComplete} disabled={completing} className="gap-1.5">
+          <DialogFooter className="pt-1.5 border-t">
+            <Button variant={isCompleted ? 'outline' : 'default'} size="sm" onClick={handleToggleComplete} disabled={completing} className="gap-1.5 h-8 text-xs">
               {completing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : isCompleted ? <RotateCcw className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
               {isCompleted ? 'Reopen Task' : 'Mark Complete'}
             </Button>
