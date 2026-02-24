@@ -8,7 +8,7 @@ import { TerminationDialog } from '@/components/agreements/TerminationDialog';
 import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { VerificationChecklistDialog } from '@/components/agreements/VerificationChecklistDialog';
 import { generateAuditReport } from '@/components/agreements/AuditReportGenerator';
-import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
+import { TaskDialog, type TaskDialogTask } from '@/components/tasks/TaskDialog';
 import { TaskAssignmentSelect } from '@/components/agreements/TaskAssignmentSelect';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -21,7 +21,7 @@ import { useAgreementTasks, AgreementTask } from '@/hooks/useAgreementTasks';
 import { useAgreementWorkflow } from '@/hooks/useAgreementWorkflow';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
+
 import {
   MapPin,
   Users,
@@ -73,9 +73,9 @@ export default function AgreementDetailPage() {
   const [transferOpen, setTransferOpen] = useState(false);
   const [physicians, setPhysicians] = useState<{ id: string; name: string; email: string }[]>([]);
   const [advancing, setAdvancing] = useState(false);
-  const [editingTask, setEditingTask] = useState<DashboardTaskItem | null>(null);
+  const [editingTask, setEditingTask] = useState<TaskDialogTask | null>(null);
 
-  const taskToDashboardItem = (task: AgreementTask): DashboardTaskItem => ({
+  const taskToDashboardItem = (task: AgreementTask): TaskDialogTask => ({
     id: task.id,
     title: task.title,
     status: task.status,
@@ -1005,13 +1005,12 @@ export default function AgreementDetailPage() {
         />
       )}
 
-      <EditTaskDialog
+      <TaskDialog
         task={editingTask}
-        onClose={() => setEditingTask(null)}
-        onSuccess={() => {
-          setEditingTask(null);
-          refetchTasks();
-        }}
+        open={!!editingTask}
+        onOpenChange={(open) => { if (!open) setEditingTask(null); }}
+        isAdmin={true}
+        onTaskUpdated={() => { setEditingTask(null); refetchTasks(); }}
       />
     </div>
   );
