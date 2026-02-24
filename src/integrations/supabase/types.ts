@@ -410,6 +410,7 @@ export type Database = {
           priority: string | null
           provider_id: string | null
           related_event_id: string | null
+          requires_upload: boolean
           sort_order: number | null
           started_at: string | null
           state_abbreviation: string | null
@@ -460,6 +461,7 @@ export type Database = {
           priority?: string | null
           provider_id?: string | null
           related_event_id?: string | null
+          requires_upload?: boolean
           sort_order?: number | null
           started_at?: string | null
           state_abbreviation?: string | null
@@ -510,6 +512,7 @@ export type Database = {
           priority?: string | null
           provider_id?: string | null
           related_event_id?: string | null
+          requires_upload?: boolean
           sort_order?: number | null
           started_at?: string | null
           state_abbreviation?: string | null
@@ -3154,6 +3157,67 @@ export type Database = {
           value?: Json
         }
         Relationships: []
+      }
+      task_documents: {
+        Row: {
+          agreement_id: string | null
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: string
+          mime_type: string | null
+          task_id: string
+          uploaded_by: string | null
+          uploaded_by_name: string | null
+        }
+        Insert: {
+          agreement_id?: string | null
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          task_id: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Update: {
+          agreement_id?: string | null
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          task_id?: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_documents_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_documents_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_documents_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       task_linked_providers: {
         Row: {
