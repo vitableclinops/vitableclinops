@@ -575,10 +575,12 @@ export function BulkReassignDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Reassign Supervising Physician
+            {selectedAgreements.length === 1 ? 'Transfer Agreement' : 'Reassign Supervising Physician'}
           </DialogTitle>
           <DialogDescription>
-            Transfer {selectedAgreements.length} provider agreement(s) to a new supervising physician.
+            {selectedAgreements.length === 1
+              ? `Transfer this agreement to a new supervising physician.`
+              : `Transfer ${selectedAgreements.length} provider agreement(s) to a new supervising physician.`}
           </DialogDescription>
         </DialogHeader>
 
