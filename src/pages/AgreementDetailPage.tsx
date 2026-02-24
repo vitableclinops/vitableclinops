@@ -87,6 +87,7 @@ export default function AgreementDetailPage() {
     due_date: task.due_date,
     provider_id: task.provider_id,
     transfer_id: task.transfer_id,
+    agreement_id: task.agreement_id,
     escalated: task.escalated,
     blocked_reason: task.blocked_reason,
     description: task.description,

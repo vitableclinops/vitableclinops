@@ -35,6 +35,8 @@ export interface DashboardTaskItem {
   due_date: string | null;
   provider_id: string | null;
   transfer_id: string | null;
+  agreement_id: string | null;
+  agreement_label?: string | null;
   escalated: boolean | null;
   blocked_reason: string | null;
   description: string | null;
@@ -42,6 +44,8 @@ export interface DashboardTaskItem {
   linked_providers?: TaskLinkedProvider[];
   milestone_type?: string;
   slack_template?: string | null;
+  completed_at?: string | null;
+  archived_reason?: string | null;
 }
 
 export function useAdminDashboard() {
@@ -92,7 +96,7 @@ export function useAdminDashboard() {
         // Actionable tasks (not completed)
         supabase
           .from('agreement_tasks')
-          .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, provider_id, transfer_id, escalated, blocked_reason, description')
+          .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, provider_id, transfer_id, agreement_id, escalated, blocked_reason, description')
           .in('status', ['pending', 'in_progress', 'blocked', 'waiting_on_signature'])
           .order('created_at', { ascending: false })
           .limit(50),
@@ -117,7 +121,7 @@ export function useAdminDashboard() {
         // Completed + archived tasks from last 7 days
         supabase
           .from('agreement_tasks')
-          .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, provider_id, transfer_id, escalated, blocked_reason, description, archived_reason, archived_at, completed_at')
+          .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, provider_id, transfer_id, agreement_id, escalated, blocked_reason, description, archived_reason, archived_at, completed_at')
           .in('status', ['completed', 'archived'] as any[])
           .gte('updated_at', new Date(Date.now() - 7 * 86400000).toISOString())
           .order('updated_at', { ascending: false })
@@ -206,7 +210,21 @@ export function useAdminDashboard() {
         }
       }
 
-      // Generate milestone tasks from provider profiles
+      // Enrich tasks with agreement origin labels
+      const agreementIds = [...new Set(tasks.map(t => t.agreement_id).filter(Boolean))] as string[];
+      if (agreementIds.length > 0) {
+        const { data: agreements } = await supabase
+          .from('collaborative_agreements')
+          .select('id, provider_name, physician_name, state_abbreviation')
+          .in('id', agreementIds);
+        const labelMap = new Map((agreements || []).map(a => {
+          const provider = a.provider_name || 'Provider';
+          const physician = a.physician_name ? `Dr. ${a.physician_name}` : 'Physician';
+          return [a.id, `${provider} ↔ ${physician} (${a.state_abbreviation})`];
+        }));
+        tasks.forEach(t => { if (t.agreement_id) t.agreement_label = labelMap.get(t.agreement_id); });
+      }
+
       const milestoneProfiles = milestoneProfilesRes.data || [];
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -330,6 +348,8 @@ export function useAdminDashboard() {
         due_date: m.due_date,
         provider_id: m.provider_id,
         transfer_id: null,
+        agreement_id: null,
+        agreement_label: null,
         escalated: false,
         blocked_reason: null,
         description: m.description,
