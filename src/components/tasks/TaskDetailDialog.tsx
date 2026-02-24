@@ -1,20 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { TaskDocumentUpload, useTaskDocumentCount } from './TaskDocumentUpload';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 import {
   FileText, Calendar, Bell, ClipboardCheck, Clock, Star, Flag,
   AlertCircle, Lock, PenTool, Paperclip, ExternalLink, User, MapPin,
+  CheckCircle2, RotateCcw, Loader2,
 } from 'lucide-react';
 
 interface TaskForDetail {
@@ -39,6 +44,7 @@ interface TaskForDetail {
   state_name?: string | null;
   state_abbreviation?: string | null;
   provider_name?: string | null;
+  source?: string; // 'agreement' | 'milestone'
 }
 
 interface TaskDetailDialogProps {
@@ -46,6 +52,7 @@ interface TaskDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   isAdmin?: boolean;
+  onTaskUpdated?: () => void;
 }
 
 function getCategoryLabel(category: string) {
@@ -95,11 +102,52 @@ function getStatusBadge(status: string) {
   }
 }
 
-export function TaskDetailDialog({ task, open, onOpenChange, isAdmin = false }: TaskDetailDialogProps) {
+export function TaskDetailDialog({ task, open, onOpenChange, isAdmin = false, onTaskUpdated }: TaskDetailDialogProps) {
+  const { toast } = useToast();
+  const [completing, setCompleting] = useState(false);
+
   if (!task) return null;
 
   const requiresUpload = task.requires_upload === true;
   const isBlocked = task.status === 'blocked' || task.status === 'waiting_on_signature';
+  const isCompleted = task.status === 'completed';
+  const isArchived = task.status === 'archived';
+  const isMilestone = task.source === 'milestone';
+  const canComplete = isAdmin && !isArchived && !isMilestone;
+
+  const handleToggleComplete = async () => {
+    setCompleting(true);
+    try {
+      const newStatus = isCompleted ? 'pending' : 'completed';
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const { error } = await supabase
+        .from('agreement_tasks')
+        .update({
+          status: newStatus as any,
+          completed_at: newStatus === 'completed' ? new Date().toISOString() : null,
+          completed_by: newStatus === 'completed' ? user?.id : null,
+          blocked_reason: null,
+          blocked_until: null,
+        })
+        .eq('id', task.id);
+
+      if (error) throw error;
+
+      toast({
+        title: newStatus === 'completed' ? 'Task completed' : 'Task reopened',
+        description: task.title,
+      });
+
+      onTaskUpdated?.();
+      onOpenChange(false);
+    } catch (err) {
+      console.error(err);
+      toast({ title: 'Error', description: 'Failed to update task.', variant: 'destructive' });
+    } finally {
+      setCompleting(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -245,6 +293,28 @@ export function TaskDetailDialog({ task, open, onOpenChange, isAdmin = false }: 
             </div>
           </div>
         </ScrollArea>
+
+        {/* Footer with complete action */}
+        {canComplete && (
+          <DialogFooter className="pt-2 border-t">
+            <Button
+              variant={isCompleted ? 'outline' : 'default'}
+              size="sm"
+              onClick={handleToggleComplete}
+              disabled={completing}
+              className="gap-1.5"
+            >
+              {completing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : isCompleted ? (
+                <RotateCcw className="h-3.5 w-3.5" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+              {isCompleted ? 'Reopen Task' : 'Mark Complete'}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

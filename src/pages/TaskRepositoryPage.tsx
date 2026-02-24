@@ -616,6 +616,7 @@ export default function TaskRepositoryPage() {
             open={!!detailTask}
             onOpenChange={(open) => { if (!open) setDetailTask(null); }}
             isAdmin={isAdmin}
+            onTaskUpdated={() => { setDetailTask(null); fetchTasks(); }}
           />
 
           {/* Floating bulk action bar */}
