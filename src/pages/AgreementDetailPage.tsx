@@ -115,9 +115,9 @@ export default function AgreementDetailPage() {
         .eq('agreement_id', agreementId)
         .order('scheduled_date', { ascending: true }),
       supabase
-        .from('profiles')
+        .from('physician_profiles')
         .select('id, full_name, email')
-        .in('id', (await supabase.from('user_roles').select('user_id').eq('role', 'physician')).data?.map(r => r.user_id) || []),
+        .order('full_name'),
     ]);
 
     if (agreementRes.data) setAgreement(agreementRes.data);
