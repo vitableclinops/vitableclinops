@@ -37,6 +37,7 @@ interface RepoTask {
   completed_at: string | null;
   archived_at: string | null;
   provider_id: string | null;
+  physician_id: string | null;
   provider_name?: string | null;
   transfer_id: string | null;
   agreement_id: string | null;
@@ -185,7 +186,7 @@ export default function TaskRepositoryPage() {
       // Build agreement_tasks query
       let q = supabase
         .from('agreement_tasks')
-        .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, completed_at, archived_at, provider_id, transfer_id, agreement_id, escalated, blocked_reason, description, archived_reason, created_at, updated_at, requires_upload', { count: 'exact' });
+        .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, completed_at, archived_at, provider_id, physician_id, transfer_id, agreement_id, escalated, blocked_reason, description, archived_reason, created_at, updated_at, requires_upload', { count: 'exact' });
 
       if (statusFilter === 'active') {
         q = q.not('status', 'in', '("completed","archived")');
@@ -281,6 +282,7 @@ export default function TaskRepositoryPage() {
           completed_at: m.completed_at,
           archived_at: null,
           provider_id: m.provider_id,
+          physician_id: null,
           provider_name: m.provider_name,
           transfer_id: null,
           agreement_id: null,
