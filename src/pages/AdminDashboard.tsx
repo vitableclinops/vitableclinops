@@ -9,7 +9,7 @@ import { ArchiveTaskDialog } from '@/components/admin/ArchiveTaskDialog';
 import { ReassignTaskDialog } from '@/components/admin/ReassignTaskDialog';
 import { BulkReassignDialog } from '@/components/admin/BulkReassignDialog';
 import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
-import { EditTaskDialog } from '@/components/admin/EditTaskDialog';
+import { TaskDialog, type TaskDialogTask } from '@/components/tasks/TaskDialog';
 import { AddTaskDialog } from '@/components/admin/AddTaskDialog';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -24,7 +24,7 @@ const AdminDashboard = () => {
   const { stats, actionableTasks, archivedTasks, taskStatusCounts, loading, refetch } = useAdminDashboard();
   const [archiveTarget, setArchiveTarget] = useState<{ id: string; title: string } | null>(null);
   const [reassignTarget, setReassignTarget] = useState<{ id: string; title: string; assignee: string | null } | null>(null);
-  const [editTarget, setEditTarget] = useState<DashboardTaskItem | null>(null);
+  const [editTarget, setEditTarget] = useState<TaskDialogTask | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [bulkReassignIds, setBulkReassignIds] = useState<string[]>([]);
   const [bulkArchiveIds, setBulkArchiveIds] = useState<string[]>([]);
@@ -154,10 +154,12 @@ const AdminDashboard = () => {
         onClose={() => setBulkArchiveIds([])}
         onSuccess={() => { setBulkArchiveIds([]); refetch(); }}
       />
-      <EditTaskDialog
+      <TaskDialog
         task={editTarget}
-        onClose={() => setEditTarget(null)}
-        onSuccess={() => { setEditTarget(null); refetch(); }}
+        open={!!editTarget}
+        onOpenChange={(open) => { if (!open) setEditTarget(null); }}
+        isAdmin={true}
+        onTaskUpdated={() => { setEditTarget(null); refetch(); }}
       />
       <AddTaskDialog
         open={showAddTask}

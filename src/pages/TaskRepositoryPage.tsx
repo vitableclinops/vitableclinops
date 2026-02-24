@@ -18,7 +18,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
-import { TaskDetailDialog } from '@/components/tasks/TaskDetailDialog';
+import { TaskDialog } from '@/components/tasks/TaskDialog';
 
 type TaskStatus = 'active' | 'all' | 'pending' | 'in_progress' | 'completed' | 'blocked' | 'waiting_on_signature' | 'archived';
 type TaskCategory = 'all' | 'document' | 'signature' | 'supervision_meeting' | 'chart_review' | 'compliance' | 'transfer' | 'onboarding' | 'milestone' | 'outreach' | 'communication' | 'custom';
@@ -613,7 +613,7 @@ export default function TaskRepositoryPage() {
             </CardContent>
           </Card>
 
-          <TaskDetailDialog
+          <TaskDialog
             task={detailTask}
             open={!!detailTask}
             onOpenChange={(open) => { if (!open) setDetailTask(null); }}
