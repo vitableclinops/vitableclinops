@@ -6,15 +6,18 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Search, ListChecks, Clock, Flag, Lock, Archive, CheckCircle2,
   MapPin, User, ArrowRightLeft, ShieldCheck, FileText, Cake, Users,
-  RefreshCw, ExternalLink,
+  RefreshCw, ExternalLink, UserPlus, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '@/hooks/use-toast';
 
 type TaskStatus = 'active' | 'all' | 'pending' | 'in_progress' | 'completed' | 'blocked' | 'waiting_on_signature' | 'archived';
 type TaskCategory = 'all' | 'document' | 'signature' | 'supervision_meeting' | 'chart_review' | 'compliance' | 'transfer' | 'onboarding' | 'milestone' | 'outreach' | 'communication' | 'custom';
@@ -94,6 +97,8 @@ export default function TaskRepositoryPage() {
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
 
+  const { toast } = useToast();
+
   const [tasks, setTasks] = useState<RepoTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -103,6 +108,69 @@ export default function TaskRepositoryPage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus>('active' as TaskStatus);
   const [categoryFilter, setCategoryFilter] = useState<TaskCategory>('all');
   const [sortBy, setSortBy] = useState<'updated_at' | 'due_date' | 'created_at'>('updated_at');
+
+  // Selection & bulk assign
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
+
+  // Fetch team members for assignment
+  useEffect(() => {
+    (async () => {
+      const { data: roles } = await supabase.from('user_roles').select('user_id').in('role', ['admin']);
+      if (roles && roles.length > 0) {
+        const uids = [...new Set(roles.map(r => r.user_id).filter(Boolean))] as string[];
+        const { data: profs } = await supabase.from('profiles').select('id, full_name, email').in('user_id', uids).order('full_name');
+        setTeamMembers((profs || []).map(p => ({ id: p.id, name: p.full_name || p.email || 'Unknown' })));
+      }
+    })();
+  }, []);
+
+  // Clear selection when filters/page change
+  useEffect(() => { setSelectedIds(new Set()); }, [statusFilter, categoryFilter, search, page]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const agreementTasks = tasks.filter(t => t.source === 'agreement');
+    if (selectedIds.size === agreementTasks.length && agreementTasks.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(agreementTasks.map(t => t.id)));
+    }
+  };
+
+  const handleBulkAssign = async (assigneeId: string) => {
+    if (selectedIds.size === 0) return;
+    setBulkAssigning(true);
+    try {
+      const assignee = teamMembers.find(m => m.id === assigneeId);
+      const ids = Array.from(selectedIds);
+      const { error } = await supabase
+        .from('agreement_tasks')
+        .update({
+          assigned_to: assigneeId,
+          assigned_to_name: assignee?.name || 'Unknown',
+          assigned_at: new Date().toISOString(),
+        })
+        .in('id', ids);
+      if (error) throw error;
+      toast({ title: `${ids.length} task${ids.length > 1 ? 's' : ''} assigned`, description: `Assigned to ${assignee?.name}` });
+      setSelectedIds(new Set());
+      fetchTasks();
+    } catch (err) {
+      console.error(err);
+      toast({ title: 'Error', description: 'Failed to assign tasks.', variant: 'destructive' });
+    } finally {
+      setBulkAssigning(false);
+    }
+  };
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -335,9 +403,18 @@ export default function TaskRepositoryPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between">
-                <span>
-                  {loading ? 'Loading...' : `${total.toLocaleString()} task${total !== 1 ? 's' : ''}`}
-                </span>
+                <div className="flex items-center gap-3">
+                  {isAdmin && tasks.length > 0 && (
+                    <Checkbox
+                      checked={selectedIds.size > 0 && selectedIds.size === tasks.filter(t => t.source === 'agreement').length}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Select all"
+                    />
+                  )}
+                  <span>
+                    {loading ? 'Loading...' : `${total.toLocaleString()} task${total !== 1 ? 's' : ''}`}
+                  </span>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -365,6 +442,15 @@ export default function TaskRepositoryPage() {
                           task.status === 'archived' && "opacity-50",
                         )}
                       >
+                        {isAdmin && task.source === 'agreement' && (
+                          <div className="shrink-0" onClick={e => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedIds.has(task.id)}
+                              onCheckedChange={() => toggleSelect(task.id)}
+                              aria-label={`Select ${task.title}`}
+                            />
+                          </div>
+                        )}
                         <div className="text-muted-foreground shrink-0">
                           {getCategoryIcon(task.category)}
                         </div>
@@ -496,6 +582,39 @@ export default function TaskRepositoryPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Floating bulk action bar */}
+          {isAdmin && selectedIds.size > 0 && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-card border shadow-lg rounded-lg px-4 py-3">
+              <span className="text-sm font-medium">{selectedIds.size} selected</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button size="sm" disabled={bulkAssigning}>
+                    <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+                    Assign
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-48 p-1" align="center" side="top">
+                  <div className="text-xs font-medium text-muted-foreground px-2 py-1.5">Assign to</div>
+                  {teamMembers.map(m => (
+                    <button
+                      key={m.id}
+                      className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors"
+                      onClick={() => handleBulkAssign(m.id)}
+                    >
+                      {m.name}
+                    </button>
+                  ))}
+                  {teamMembers.length === 0 && (
+                    <p className="text-xs text-muted-foreground px-2 py-1.5">No team members found</p>
+                  )}
+                </PopoverContent>
+              </Popover>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
         </div>
       </main>
     </div>
