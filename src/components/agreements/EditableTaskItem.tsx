@@ -696,7 +696,7 @@ export function EditableTaskItem({
         )}
         {/* Document upload section */}
         {(requiresUpload || (docCount !== null && docCount > 0)) && taskStatus !== 'completed' && (
-          <div className="mt-2" onClick={e => e.stopPropagation()}>
+          <div className="mt-2 max-w-md" onClick={e => e.stopPropagation()}>
             <TaskDocumentUpload
               taskId={task.id}
               agreementId={task.agreement_id}
