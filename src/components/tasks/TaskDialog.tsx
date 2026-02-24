@@ -504,7 +504,7 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
   /* ━━━ VIEW MODE ━━━ */
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-hidden flex flex-col p-4 sm:p-5 gap-3">
         <DialogHeader>
           <div className="flex items-start justify-between gap-2">
             <DialogTitle className="flex items-center gap-2 text-base flex-1">
@@ -520,8 +520,8 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
           </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 -mx-6 px-6">
-          <div className="space-y-4 pb-4">
+        <ScrollArea className="flex-1 -mx-4 sm:-mx-5 px-4 sm:px-5">
+          <div className="space-y-3 pb-3">
             {/* Status & meta badges */}
             <div className="flex items-center gap-2 flex-wrap">
               {getStatusBadge(task.status)}
@@ -552,11 +552,11 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
             {/* Related People */}
             {relatedPeople.length > 0 && (
               <>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> Related People</Label>
                   <div className="space-y-1">
                     {relatedPeople.map((person) => (
-                      <div key={person.id} className="flex items-center gap-2 rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">
+                      <div key={person.id} className="flex items-center gap-2 rounded-md border border-input bg-muted/50 px-2.5 py-1.5 text-sm">
                         <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <span className="font-medium flex-1 truncate">{person.full_name || 'Unknown'}</span>
                         <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">{person.role_label}</Badge>
