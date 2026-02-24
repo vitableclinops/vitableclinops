@@ -470,7 +470,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                   initiationEffectiveDate={transfer.initiation_effective_date}
                   terminationComplete={terminationComplete}
                   initiationComplete={initiationComplete}
-                  className="space-y-2"
+                  className="space-y-2 max-w-md"
                 />
 
                 {/* Effective Dates Editor */}
