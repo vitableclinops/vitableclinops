@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { TaskAssignmentSelect } from './TaskAssignmentSelect';
 import { TaskDocumentUpload, useTaskDocumentCount } from '@/components/tasks/TaskDocumentUpload';
+import { TaskDetailDialog } from '@/components/tasks/TaskDetailDialog';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
 import { 
@@ -34,7 +35,8 @@ import {
   Unlock,
   UserPlus,
   PenTool,
-  Paperclip
+  Paperclip,
+  Info
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -63,6 +65,7 @@ export function EditableTaskItem({
 }: EditableTaskItemProps) {
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
   const [showBlocker, setShowBlocker] = useState(false);
   const [showSignatureCompletion, setShowSignatureCompletion] = useState(false);
   const [title, setTitle] = useState(task.title);
@@ -578,15 +581,17 @@ export function EditableTaskItem({
   const isBlocked = taskStatus === 'blocked' || taskStatus === 'waiting_on_signature';
 
   return (
+    <>
     <div
       className={cn(
-        "flex flex-wrap items-start gap-2 p-3 rounded-lg hover:bg-muted/50 transition-colors group border border-transparent overflow-hidden",
+        "flex flex-wrap items-start gap-2 p-3 rounded-lg hover:bg-muted/50 transition-colors group border border-transparent overflow-hidden cursor-pointer",
         taskStatus === 'completed' && 'opacity-60',
         isBlocked && 'bg-warning/5 border-warning/30',
         task.escalated && 'bg-destructive/5 border-destructive/30'
       )}
+      onClick={() => setShowDetail(true)}
     >
-      <div className="flex items-center gap-2 pt-0.5 shrink-0">
+      <div className="flex items-center gap-2 pt-0.5 shrink-0" onClick={e => e.stopPropagation()}>
         {isAdmin && (
           <GripVertical className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-grab" />
         )}
@@ -708,9 +713,9 @@ export function EditableTaskItem({
       </div>
 
       {/* Right side: assignment + actions */}
-      <div className="flex items-center gap-1 shrink-0 ml-auto">
+      <div className="flex items-center gap-1 shrink-0 ml-auto" onClick={e => e.stopPropagation()}>
         {isAdmin && taskStatus !== 'completed' && (
-          <div className="hidden sm:block" onClick={e => e.stopPropagation()}>
+          <div className="hidden sm:block">
             <TaskAssignmentSelect
               taskId={task.id}
               transferId={transferId}
@@ -720,6 +725,17 @@ export function EditableTaskItem({
             />
           </div>
         )}
+
+        {/* Info button to open detail */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 opacity-0 group-hover:opacity-100"
+          onClick={(e) => { e.stopPropagation(); setShowDetail(true); }}
+          title="View task details"
+        >
+          <Info className="h-4 w-4" />
+        </Button>
 
       {/* Admin actions */}
       {isAdmin && (
@@ -791,5 +807,12 @@ export function EditableTaskItem({
       )}
       </div>
     </div>
+    <TaskDetailDialog
+      task={{ ...task, requires_upload: requiresUpload }}
+      open={showDetail}
+      onOpenChange={setShowDetail}
+      isAdmin={isAdmin}
+    />
+    </>
   );
 }
