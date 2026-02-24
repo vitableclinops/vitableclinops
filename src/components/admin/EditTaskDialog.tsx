@@ -81,47 +81,79 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
         .select('id, provider_id, role_label')
         .eq('task_id', task.id)
         .then(async ({ data: links }) => {
-          if (!links || links.length === 0) {
-            // Fallback: show legacy provider_id
-            if (task.provider_id) {
-              const { data: fallback } = await supabase
-                .from('profiles')
-                .select('id, full_name, email')
-                .eq('id', task.provider_id)
-                .single();
-              if (fallback) {
-                const item: LinkedProviderItem = {
-                  id: 'legacy',
-                  provider_id: fallback.id,
-                  role_label: 'NP',
-                  full_name: fallback.full_name,
-                  email: fallback.email,
-                };
-                setLinkedProviders([item]);
-                setInitialLinkedIds(new Set([fallback.id]));
-                return;
-              }
+          if (links && links.length > 0) {
+            const providerIds = links.map(l => l.provider_id);
+            const { data: profiles } = await supabase
+              .from('profiles')
+              .select('id, full_name, email')
+              .in('id', providerIds);
+
+            const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+            const items: LinkedProviderItem[] = links.map(l => ({
+              id: l.id,
+              provider_id: l.provider_id,
+              role_label: l.role_label,
+              full_name: profileMap.get(l.provider_id)?.full_name || null,
+              email: profileMap.get(l.provider_id)?.email || null,
+            }));
+            setLinkedProviders(items);
+            setInitialLinkedIds(new Set(providerIds));
+            return;
+          }
+
+          // Auto-resolve from task context when junction table is empty
+          const contextIds = new Map<string, string>(); // id -> role_label
+
+          // Direct provider_id on the task
+          if (task.provider_id) {
+            contextIds.set(task.provider_id, 'NP');
+          }
+
+          // Direct physician_id on the task
+          if ((task as any).physician_id) {
+            contextIds.set((task as any).physician_id, 'Physician');
+          }
+
+          // From agreement context — get both provider and physician
+          if (task.agreement_id) {
+            const { data: agr } = await supabase
+              .from('collaborative_agreements')
+              .select('provider_id, physician_id')
+              .eq('id', task.agreement_id)
+              .single();
+            if (agr?.provider_id && !contextIds.has(agr.provider_id)) {
+              contextIds.set(agr.provider_id, 'NP');
             }
+            if (agr?.physician_id && !contextIds.has(agr.physician_id)) {
+              contextIds.set(agr.physician_id, 'Physician');
+            }
+          }
+
+          if (contextIds.size === 0) {
             setLinkedProviders([]);
             setInitialLinkedIds(new Set());
             return;
           }
-          const providerIds = links.map(l => l.provider_id);
+
+          const ids = [...contextIds.keys()];
           const { data: profiles } = await supabase
             .from('profiles')
             .select('id, full_name, email')
-            .in('id', providerIds);
+            .in('id', ids);
 
-          const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-          const items: LinkedProviderItem[] = links.map(l => ({
-            id: l.id,
-            provider_id: l.provider_id,
-            role_label: l.role_label,
-            full_name: profileMap.get(l.provider_id)?.full_name || null,
-            email: profileMap.get(l.provider_id)?.email || null,
-          }));
+          const items: LinkedProviderItem[] = ids.map((id, i) => {
+            const prof = (profiles || []).find(p => p.id === id);
+            return {
+              id: `context-${i}`,
+              provider_id: id,
+              role_label: contextIds.get(id) || 'NP',
+              full_name: prof?.full_name || null,
+              email: prof?.email || null,
+            };
+          });
+
           setLinkedProviders(items);
-          setInitialLinkedIds(new Set(providerIds));
+          setInitialLinkedIds(new Set()); // These are context-derived, not persisted yet
         });
     }
   }, [task]);
