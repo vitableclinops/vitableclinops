@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,7 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   FileText, Calendar, Bell, ClipboardCheck, Clock, Star, Flag,
   AlertCircle, Lock, PenTool, Paperclip, ExternalLink, User, MapPin,
-  CheckCircle2, RotateCcw, Loader2,
+  CheckCircle2, RotateCcw, Loader2, Users,
 } from 'lucide-react';
 
 interface TaskForDetail {
@@ -44,6 +44,8 @@ interface TaskForDetail {
   state_name?: string | null;
   state_abbreviation?: string | null;
   provider_name?: string | null;
+  provider_id?: string | null;
+  physician_id?: string | null;
   source?: string; // 'agreement' | 'milestone'
 }
 
@@ -53,6 +55,12 @@ interface TaskDetailDialogProps {
   onOpenChange: (open: boolean) => void;
   isAdmin?: boolean;
   onTaskUpdated?: () => void;
+}
+
+interface RelatedPerson {
+  id: string;
+  full_name: string | null;
+  role_label: string;
 }
 
 function getCategoryLabel(category: string) {
@@ -102,9 +110,82 @@ function getStatusBadge(status: string) {
   }
 }
 
+function useRelatedPeople(task: TaskForDetail | null, open: boolean) {
+  const [people, setPeople] = useState<RelatedPerson[]>([]);
+
+  useEffect(() => {
+    if (!task || !open) { setPeople([]); return; }
+
+    const resolve = async () => {
+      const peopleMap = new Map<string, RelatedPerson>();
+
+      // 1. Direct provider_id on the task
+      if (task.provider_id) {
+        peopleMap.set(task.provider_id, { id: task.provider_id, full_name: null, role_label: 'Provider' });
+      }
+
+      // 2. Direct physician_id on the task
+      if (task.physician_id) {
+        peopleMap.set(task.physician_id, { id: task.physician_id, full_name: null, role_label: 'Physician' });
+      }
+
+      // 3. From agreement context — get both provider and physician
+      if (task.agreement_id) {
+        const { data: agr } = await supabase
+          .from('collaborative_agreements')
+          .select('provider_id, physician_id')
+          .eq('id', task.agreement_id)
+          .single();
+        if (agr?.provider_id && !peopleMap.has(agr.provider_id)) {
+          peopleMap.set(agr.provider_id, { id: agr.provider_id, full_name: null, role_label: 'Provider' });
+        }
+        if (agr?.physician_id && !peopleMap.has(agr.physician_id)) {
+          peopleMap.set(agr.physician_id, { id: agr.physician_id, full_name: null, role_label: 'Physician' });
+        }
+      }
+
+      // 4. From task_linked_providers junction
+      const { data: linked } = await supabase
+        .from('task_linked_providers')
+        .select('provider_id, role_label')
+        .eq('task_id', task.id);
+      if (linked) {
+        for (const lp of linked) {
+          if (!peopleMap.has(lp.provider_id)) {
+            peopleMap.set(lp.provider_id, { id: lp.provider_id, full_name: null, role_label: lp.role_label });
+          }
+        }
+      }
+
+      if (peopleMap.size === 0) { setPeople([]); return; }
+
+      // Fetch names
+      const ids = [...peopleMap.keys()];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', ids);
+
+      if (profiles) {
+        for (const p of profiles) {
+          const existing = peopleMap.get(p.id);
+          if (existing) existing.full_name = p.full_name;
+        }
+      }
+
+      setPeople([...peopleMap.values()]);
+    };
+
+    resolve();
+  }, [task?.id, open]);
+
+  return people;
+}
+
 export function TaskDetailDialog({ task, open, onOpenChange, isAdmin = false, onTaskUpdated }: TaskDetailDialogProps) {
   const { toast } = useToast();
   const [completing, setCompleting] = useState(false);
+  const relatedPeople = useRelatedPeople(task, open);
 
   if (!task) return null;
 
@@ -195,6 +276,32 @@ export function TaskDetailDialog({ task, open, onOpenChange, isAdmin = false, on
             )}
 
             <Separator />
+
+            {/* Related People */}
+            {relatedPeople.length > 0 && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Users className="h-3 w-3" /> Related People
+                  </Label>
+                  <div className="space-y-1">
+                    {relatedPeople.map((person) => (
+                      <div
+                        key={person.id}
+                        className="flex items-center gap-2 rounded-md border border-input bg-muted/50 px-3 py-2 text-sm"
+                      >
+                        <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="font-medium flex-1 truncate">{person.full_name || 'Unknown'}</span>
+                        <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">
+                          {person.role_label}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <Separator />
+              </>
+            )}
 
             {/* Detail grid */}
             <div className="grid grid-cols-2 gap-3 text-sm">
