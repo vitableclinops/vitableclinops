@@ -390,7 +390,18 @@ export default function TaskRepositoryPage() {
                               </Badge>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
+                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                            {task.assigned_to_name ? (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-0.5 font-normal">
+                                <User className="h-2.5 w-2.5" />
+                                {task.assigned_to_name}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5 font-normal text-muted-foreground/60">
+                                <User className="h-2.5 w-2.5" />
+                                Unassigned
+                              </Badge>
+                            )}
                             {task.state_abbreviation && (
                               <span className="flex items-center gap-0.5">
                                 <MapPin className="h-3 w-3" />
@@ -402,9 +413,6 @@ export default function TaskRepositoryPage() {
                                 <User className="h-3 w-3" />
                                 {task.provider_name}
                               </span>
-                            )}
-                            {task.assigned_to_name && (
-                              <span>Assigned to {task.assigned_to_name}</span>
                             )}
                             {task.due_date && (
                               <span className={cn("flex items-center gap-0.5", isOverdue && "text-destructive")}>
@@ -446,9 +454,7 @@ export default function TaskRepositoryPage() {
                         </div>
 
                         <div className="shrink-0 flex items-center gap-1.5">
-                          <Badge variant="outline" className="text-[10px] capitalize hidden sm:flex">
-                            {task.category.replace(/_/g, ' ')}
-                          </Badge>
+                          
                           {task.priority && task.priority !== 'medium' && (
                             <Badge
                               className={cn(
