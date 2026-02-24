@@ -35,6 +35,8 @@ interface RepoTask {
   provider_id: string | null;
   provider_name?: string | null;
   transfer_id: string | null;
+  agreement_id: string | null;
+  agreement_label?: string | null;
   escalated: boolean | null;
   blocked_reason: string | null;
   description: string | null;
@@ -111,7 +113,7 @@ export default function TaskRepositoryPage() {
       // Build agreement_tasks query
       let q = supabase
         .from('agreement_tasks')
-        .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, completed_at, archived_at, provider_id, transfer_id, escalated, blocked_reason, description, archived_reason, created_at, updated_at', { count: 'exact' });
+        .select('id, title, status, category, state_name, state_abbreviation, assigned_to_name, assigned_to, priority, due_date, completed_at, archived_at, provider_id, transfer_id, agreement_id, escalated, blocked_reason, description, archived_reason, created_at, updated_at', { count: 'exact' });
 
       if (statusFilter === 'active') {
         q = q.not('status', 'in', '("completed","archived")');
@@ -130,11 +132,27 @@ export default function TaskRepositoryPage() {
       const enriched = (data || []) as RepoTask[];
       enriched.forEach(t => { t.source = 'agreement'; });
 
+      // Enrich with provider names
       const providerIds = [...new Set(enriched.map(t => t.provider_id).filter(Boolean))] as string[];
       if (providerIds.length > 0) {
         const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', providerIds);
         const nameMap = new Map((profs || []).map(p => [p.id, p.full_name]));
         enriched.forEach(t => { if (t.provider_id) t.provider_name = nameMap.get(t.provider_id); });
+      }
+
+      // Enrich with agreement origin labels (provider ↔ physician)
+      const agreementIds = [...new Set(enriched.map(t => t.agreement_id).filter(Boolean))] as string[];
+      if (agreementIds.length > 0) {
+        const { data: agreements } = await supabase
+          .from('collaborative_agreements')
+          .select('id, provider_name, physician_name, state_abbreviation')
+          .in('id', agreementIds);
+        const labelMap = new Map((agreements || []).map(a => {
+          const provider = a.provider_name || 'Provider';
+          const physician = a.physician_name ? `Dr. ${a.physician_name}` : 'Physician';
+          return [a.id, `${provider} ↔ ${physician} (${a.state_abbreviation})`];
+        }));
+        enriched.forEach(t => { if (t.agreement_id) t.agreement_label = labelMap.get(t.agreement_id); });
       }
 
       // Also fetch milestone tasks if no category filter (or milestone selected)
@@ -181,6 +199,8 @@ export default function TaskRepositoryPage() {
           provider_id: m.provider_id,
           provider_name: m.provider_name,
           transfer_id: null,
+          agreement_id: null,
+          agreement_label: null,
           escalated: false,
           blocked_reason: null,
           description: m.description,
@@ -397,6 +417,19 @@ export default function TaskRepositoryPage() {
                                 <CheckCircle2 className="h-3 w-3" />
                                 Completed {new Date(task.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                               </span>
+                            )}
+                            {task.agreement_label && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1 cursor-pointer hover:bg-muted/50 max-w-[240px] truncate"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (task.agreement_id) navigate(`/admin/agreements/${task.agreement_id}`);
+                                }}
+                              >
+                                <FileText className="h-2.5 w-2.5 mr-0.5 shrink-0" />
+                                <span className="truncate">{task.agreement_label}</span>
+                              </Badge>
                             )}
                             {task.transfer_id && (
                               <Badge variant="outline" className="text-[10px] px-1">
