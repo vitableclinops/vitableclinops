@@ -571,7 +571,7 @@ export function BulkReassignDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={true}>
-      <DialogContent className="max-w-2xl overflow-visible">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
