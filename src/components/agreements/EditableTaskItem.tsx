@@ -580,7 +580,7 @@ export function EditableTaskItem({
   return (
     <div
       className={cn(
-        "flex items-start gap-2 p-3 rounded-lg hover:bg-muted/50 transition-colors group border border-transparent",
+        "flex flex-wrap items-start gap-2 p-3 rounded-lg hover:bg-muted/50 transition-colors group border border-transparent overflow-hidden",
         taskStatus === 'completed' && 'opacity-60',
         isBlocked && 'bg-warning/5 border-warning/30',
         task.escalated && 'bg-destructive/5 border-destructive/30'
