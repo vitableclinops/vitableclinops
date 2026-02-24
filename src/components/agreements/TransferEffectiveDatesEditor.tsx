@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Calendar, Pencil, Save, X } from 'lucide-react';
 import { format } from 'date-fns';
+import { parseLocalDate } from '@/lib/utils';
 
 interface TransferEffectiveDatesEditorProps {
   transferId: string;
@@ -128,7 +129,7 @@ export function TransferEffectiveDatesEditor({
             <span className="text-muted-foreground">Termination: </span>
             <span className="font-medium">
               {terminationEffectiveDate || effectiveDate 
-                ? format(new Date(terminationEffectiveDate || effectiveDate!), 'MMM d, yyyy')
+                ? format(parseLocalDate(terminationEffectiveDate || effectiveDate!), 'MMM d, yyyy')
                 : 'Not set'}
             </span>
           </div>
@@ -136,7 +137,7 @@ export function TransferEffectiveDatesEditor({
             <span className="text-muted-foreground">Initiation: </span>
             <span className="font-medium">
               {initiationEffectiveDate 
-                ? format(new Date(initiationEffectiveDate), 'MMM d, yyyy')
+                ? format(parseLocalDate(initiationEffectiveDate), 'MMM d, yyyy')
                 : 'Not set'}
             </span>
           </div>
