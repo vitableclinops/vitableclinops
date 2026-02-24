@@ -1054,14 +1054,9 @@ const CollaborativeAgreementsPage = () => {
 
             {/* Tasks Tab */}
             <TabsContent value="transfers">
-              <div className="grid gap-6 xl:grid-cols-3">
-                {/* Task Queue Sidebar */}
-                <div className="xl:col-span-1 order-2 xl:order-1">
-                  <AdminTaskQueue />
-                </div>
-
-                {/* Transfer Workflows */}
-                <div className="xl:col-span-2 space-y-4 order-1 xl:order-2">
+              <div className="space-y-6">
+                {/* Transfer Workflows - full width */}
+                <div className="space-y-4">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                       <h3 className="text-lg font-semibold">Active Transfers</h3>
@@ -1096,6 +1091,9 @@ const CollaborativeAgreementsPage = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Task Queue - below transfers */}
+                <AdminTaskQueue />
               </div>
             </TabsContent>
 
