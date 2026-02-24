@@ -320,19 +320,20 @@ export default function AgreementDetailPage() {
           ) : agreement ? (
             <>
               {/* Header — clearly shows Provider ↔ Physician ↔ State */}
-              <div className="flex items-start justify-between mb-6">
+              <div className="mb-6 space-y-4">
+                {/* Title row */}
                 <div className="flex items-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 text-2xl font-bold text-primary">
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-2xl font-bold text-primary">
                     {agreement.state_abbreviation}
                   </div>
                   <div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <h1 className="text-2xl font-bold text-foreground">
                         {agreement.state_name} Collaborative Agreement
                       </h1>
                       {getStatusBadge(agreement.workflow_status)}
                     </div>
-                    <div className="flex items-center gap-2 mt-1.5 text-muted-foreground">
+                    <div className="flex items-center gap-2 mt-1.5 text-muted-foreground flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <User className="h-4 w-4" />
                         <span className="font-medium text-foreground">{agreement.provider_name || providers.find(p => p.is_active)?.provider_name || 'Unassigned'}</span>
@@ -350,34 +351,38 @@ export default function AgreementDetailPage() {
                     </div>
                   </div>
                 </div>
-                
-                <div className="flex items-center gap-2">
+
+                {/* Action buttons — wrap naturally */}
+                <div className="flex items-center gap-2 flex-wrap">
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => generateAuditReport(agreementId!)}
                   >
-                    <Download className="h-4 w-4 mr-2" />
+                    <Download className="h-4 w-4 mr-1.5" />
                     Audit Report
                   </Button>
                   {hasRole('admin') && nextStatus && (
                     nextStatus.status === 'active' ? (
                       <Button 
+                        size="sm"
                         onClick={() => setVerificationOpen(true)}
                         disabled={advancing}
                       >
-                        <ShieldCheck className="h-4 w-4 mr-2" />
+                        <ShieldCheck className="h-4 w-4 mr-1.5" />
                         {nextStatus.label}
                       </Button>
                     ) : (
                       <Button 
+                        size="sm"
                         onClick={handleAdvanceStatus}
                         disabled={advancing}
                         className={agreement.workflow_status === 'termination_initiated' ? 'bg-destructive hover:bg-destructive/90' : ''}
                       >
                         {advancing ? (
-                          <Clock className="h-4 w-4 mr-2 animate-spin" />
+                          <Clock className="h-4 w-4 mr-1.5 animate-spin" />
                         ) : (
-                          <ArrowRight className="h-4 w-4 mr-2" />
+                          <ArrowRight className="h-4 w-4 mr-1.5" />
                         )}
                         {nextStatus.label}
                       </Button>
@@ -386,11 +391,11 @@ export default function AgreementDetailPage() {
                   {hasRole('admin') && agreement.workflow_status === 'active' && (
                     <Button 
                       variant="outline"
+                      size="sm"
                       onClick={async () => {
                         const renewalDate = agreement.next_renewal_date 
                           ? new Date(agreement.next_renewal_date) 
                           : new Date();
-                        // Compute next renewal based on cadence
                         const yearsToAdd = agreement.renewal_cadence === 'biennial' ? 2 : 1;
                         const nextDate = new Date(renewalDate);
                         nextDate.setFullYear(nextDate.getFullYear() + yearsToAdd);
@@ -418,31 +423,34 @@ export default function AgreementDetailPage() {
                         }
                       }}
                     >
-                      <RefreshCw className="h-4 w-4 mr-2" />
+                      <RefreshCw className="h-4 w-4 mr-1.5" />
                       Initiate Renewal
                     </Button>
                   )}
                   {hasRole('admin') && agreement.workflow_status === 'active' && (
                     <Button 
                       variant="outline"
+                      size="sm"
                       onClick={() => setTransferOpen(true)}
                     >
-                      <ArrowLeftRight className="h-4 w-4 mr-2" />
+                      <ArrowLeftRight className="h-4 w-4 mr-1.5" />
                       Transfer
                     </Button>
                   )}
                   {hasRole('admin') && agreement.workflow_status === 'active' && (
                     <Button 
                       variant="outline" 
+                      size="sm"
                       className="text-destructive hover:text-destructive"
                       onClick={() => setTerminationOpen(true)}
                     >
-                      Terminate Agreement
+                      Terminate
                     </Button>
                   )}
                   {hasRole('admin') && ['draft', 'in_progress', 'pending_setup'].includes(agreement.workflow_status) && (
                     <Button 
                       variant="outline" 
+                      size="sm"
                       className="text-destructive hover:text-destructive"
                       onClick={async () => {
                         const success = await advanceStatus(agreement.id, 'cancelled' as any, profile?.id);
@@ -452,7 +460,7 @@ export default function AgreementDetailPage() {
                         }
                       }}
                     >
-                      Cancel Agreement
+                      Cancel
                     </Button>
                   )}
                 </div>
