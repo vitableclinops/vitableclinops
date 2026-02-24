@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, Calendar, Info } from 'lucide-react';
 import { format, isBefore, isAfter } from 'date-fns';
+import { parseLocalDate } from '@/lib/utils';
 
 interface EffectiveDateWarningsProps {
   terminationEffectiveDate?: string | null;
@@ -20,8 +21,8 @@ export function EffectiveDateWarnings({
   const warnings: Array<{ type: 'warning' | 'info' | 'error'; message: string; detail?: string }> = [];
 
   const now = new Date();
-  const termDate = terminationEffectiveDate ? new Date(terminationEffectiveDate) : null;
-  const initDate = initiationEffectiveDate ? new Date(initiationEffectiveDate) : null;
+  const termDate = terminationEffectiveDate ? parseLocalDate(terminationEffectiveDate) : null;
+  const initDate = initiationEffectiveDate ? parseLocalDate(initiationEffectiveDate) : null;
 
   // Warning: Initiation tasks completed but termination date not set
   if (initiationComplete && !terminationEffectiveDate) {

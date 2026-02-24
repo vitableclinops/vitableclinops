@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { TaskAssignmentSelect } from './TaskAssignmentSelect';
 import { TaskDocumentUpload, useTaskDocumentCount } from '@/components/tasks/TaskDocumentUpload';
-import { cn } from '@/lib/utils';
+import { cn, parseLocalDate } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
 import { 
   FileText, 
@@ -580,24 +580,26 @@ export function EditableTaskItem({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors group",
+        "flex items-start gap-2 p-3 rounded-lg hover:bg-muted/50 transition-colors group border border-transparent",
         taskStatus === 'completed' && 'opacity-60',
-        isBlocked && 'bg-warning/5 border border-warning/30',
-        task.escalated && 'bg-destructive/5 border border-destructive/30'
+        isBlocked && 'bg-warning/5 border-warning/30',
+        task.escalated && 'bg-destructive/5 border-destructive/30'
       )}
     >
-      {isAdmin && (
-        <GripVertical className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-grab" />
-      )}
-      
-      <Checkbox
-        checked={taskStatus === 'completed'}
-        onCheckedChange={handleToggleComplete}
-        disabled={!isAdmin || isBlocked}
-      />
-      
-      <div className="text-muted-foreground">
-        {getCategoryIcon(task.category)}
+      <div className="flex items-center gap-2 pt-0.5 shrink-0">
+        {isAdmin && (
+          <GripVertical className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-grab" />
+        )}
+        
+        <Checkbox
+          checked={taskStatus === 'completed'}
+          onCheckedChange={handleToggleComplete}
+          disabled={!isAdmin || isBlocked}
+        />
+        
+        <div className="text-muted-foreground">
+          {getCategoryIcon(task.category)}
+        </div>
       </div>
       
       <div className="flex-1 min-w-0">
@@ -654,7 +656,7 @@ export function EditableTaskItem({
             {task.blocked_reason}
             {task.blocked_until && (
               <span className="text-muted-foreground ml-1">
-                (follow-up: {format(new Date(task.blocked_until), 'MMM d')})
+                (follow-up: {format(parseLocalDate(task.blocked_until), 'MMM d')})
               </span>
             )}
           </p>
@@ -664,12 +666,12 @@ export function EditableTaskItem({
             {task.due_date && (
               <span className={cn(
                 "text-xs flex items-center gap-1",
-                new Date(task.due_date) < new Date() && taskStatus !== 'completed'
+                parseLocalDate(task.due_date) < new Date() && taskStatus !== 'completed'
                   ? "text-destructive"
                   : "text-muted-foreground"
               )}>
                 <Calendar className="h-3 w-3" />
-                {format(new Date(task.due_date), 'MMM d')}
+                {format(parseLocalDate(task.due_date), 'MMM d')}
               </span>
             )}
             {task.external_url && (
@@ -705,18 +707,19 @@ export function EditableTaskItem({
         )}
       </div>
 
-      {/* Assignment */}
-      {isAdmin && taskStatus !== 'completed' && (
-        <div className="hidden sm:block" onClick={e => e.stopPropagation()}>
-          <TaskAssignmentSelect
-            taskId={task.id}
-            transferId={transferId}
-            currentAssigneeId={task.assigned_to}
-            currentAssigneeName={task.assigned_to_name}
-            onAssigned={onUpdate}
-          />
-        </div>
-      )}
+      {/* Right side: assignment + actions */}
+      <div className="flex items-center gap-1 shrink-0 ml-auto">
+        {isAdmin && taskStatus !== 'completed' && (
+          <div className="hidden sm:block" onClick={e => e.stopPropagation()}>
+            <TaskAssignmentSelect
+              taskId={task.id}
+              transferId={transferId}
+              currentAssigneeId={task.assigned_to}
+              currentAssigneeName={task.assigned_to_name}
+              onAssigned={onUpdate}
+            />
+          </div>
+        )}
 
       {/* Admin actions */}
       {isAdmin && (
@@ -786,6 +789,7 @@ export function EditableTaskItem({
           </PopoverContent>
         </Popover>
       )}
+      </div>
     </div>
   );
 }

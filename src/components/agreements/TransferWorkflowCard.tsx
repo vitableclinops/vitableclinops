@@ -38,6 +38,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { parseLocalDate } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Transfer = Tables<'agreement_transfers'>;
@@ -376,7 +377,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
             {transfer.effective_date && (
               <div className="text-right text-xs text-muted-foreground hidden sm:block">
                 <Calendar className="h-3 w-3 inline mr-1" />
-                {format(new Date(transfer.effective_date), 'MMM d')}
+                {format(parseLocalDate(transfer.effective_date), 'MMM d')}
               </div>
             )}
             {expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
@@ -491,13 +492,14 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                   onUpdate={() => { fetchTasks(); onUpdate?.(); }}
                 />
 
-                <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-6">
                   <TaskPhaseSection 
                     taskList={terminationTasks} 
                     title="1. Termination Phase" 
                     phase="termination"
                     isComplete={terminationComplete}
                   />
+                  <Separator />
                   <TaskPhaseSection 
                     taskList={initiationTasks} 
                     title="2. Initiation Phase" 
