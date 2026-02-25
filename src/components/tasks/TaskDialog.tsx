@@ -141,15 +141,22 @@ function useRelatedPeople(task: TaskDialogTask | null, open: boolean) {
     if (!task || !open) { setPeople([]); return; }
     const resolve = async () => {
       const peopleMap = new Map<string, RelatedPerson>();
-      if (task.provider_id) peopleMap.set(task.provider_id, { id: task.provider_id, full_name: null, role_label: 'Provider' });
-      if (task.physician_id) peopleMap.set(task.physician_id, { id: task.physician_id, full_name: null, role_label: 'Physician' });
-      if (task.agreement_id) {
-        const { data: agr } = await supabase.from('collaborative_agreements').select('provider_id, physician_id').eq('id', task.agreement_id).single();
-        if (agr?.provider_id && !peopleMap.has(agr.provider_id)) peopleMap.set(agr.provider_id, { id: agr.provider_id, full_name: null, role_label: 'Provider' });
-        if (agr?.physician_id && !peopleMap.has(agr.physician_id)) peopleMap.set(agr.physician_id, { id: agr.physician_id, full_name: null, role_label: 'Physician' });
-      }
+
+      // Check for explicitly linked providers first — if any exist, use ONLY those
       const { data: linked } = await supabase.from('task_linked_providers').select('provider_id, role_label').eq('task_id', task.id);
-      if (linked) for (const lp of linked) if (!peopleMap.has(lp.provider_id)) peopleMap.set(lp.provider_id, { id: lp.provider_id, full_name: null, role_label: lp.role_label });
+      if (linked && linked.length > 0) {
+        for (const lp of linked) peopleMap.set(lp.provider_id, { id: lp.provider_id, full_name: null, role_label: lp.role_label });
+      } else {
+        // Fall back to auto-discovery from task context
+        if (task.provider_id) peopleMap.set(task.provider_id, { id: task.provider_id, full_name: null, role_label: 'Provider' });
+        if (task.physician_id) peopleMap.set(task.physician_id, { id: task.physician_id, full_name: null, role_label: 'Physician' });
+        if (task.agreement_id) {
+          const { data: agr } = await supabase.from('collaborative_agreements').select('provider_id, physician_id').eq('id', task.agreement_id).single();
+          if (agr?.provider_id && !peopleMap.has(agr.provider_id)) peopleMap.set(agr.provider_id, { id: agr.provider_id, full_name: null, role_label: 'Provider' });
+          if (agr?.physician_id && !peopleMap.has(agr.physician_id)) peopleMap.set(agr.physician_id, { id: agr.physician_id, full_name: null, role_label: 'Physician' });
+        }
+      }
+
       if (peopleMap.size === 0) { setPeople([]); return; }
       const ids = [...peopleMap.keys()];
       const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', ids);
