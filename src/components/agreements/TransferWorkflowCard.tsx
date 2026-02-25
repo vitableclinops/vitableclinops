@@ -21,6 +21,7 @@ import { TransferEffectiveDatesEditor } from './TransferEffectiveDatesEditor';
 import { EffectiveDateWarnings } from './EffectiveDateWarnings';
 import { WorkflowReadinessBanner } from '@/components/workflows/WorkflowReadinessBanner';
 import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
+import { ConfirmActionDialog } from '@/components/ConfirmActionDialog';
 import { computeTransferReadiness } from '@/hooks/useWorkflowReadiness';
 import { 
   ArrowRightLeft, 
@@ -38,7 +39,8 @@ import {
   FilePlus,
   Loader2,
   Archive,
-  X
+  X,
+  Ban
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { parseLocalDate } from '@/lib/utils';
@@ -62,6 +64,8 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
   const [creatingAgreement, setCreatingAgreement] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [providerNames, setProviderNames] = useState<string[]>([]);
 
   const isAdmin = hasRole('admin');
@@ -352,6 +356,87 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
       setCreatingAgreement(false);
     }
   };
+  const handleCancelTransfer = async () => {
+    setCancelling(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Archive all non-completed tasks
+      await supabase
+        .from('agreement_tasks')
+        .update({
+          status: 'archived' as any,
+          archived_at: new Date().toISOString(),
+          archived_by: user?.user_metadata?.full_name || user?.email || 'System',
+          archived_reason: 'Transfer cancelled',
+        })
+        .eq('transfer_id', transfer.id)
+        .not('status', 'in', '("completed","archived")');
+
+      // If a target agreement was auto-created in draft, delete it
+      if (transfer.target_agreement_id) {
+        const { data: targetAgreement } = await supabase
+          .from('collaborative_agreements')
+          .select('workflow_status')
+          .eq('id', transfer.target_agreement_id)
+          .single();
+
+        if (targetAgreement && targetAgreement.workflow_status === 'draft') {
+          // Remove agreement_providers first
+          await supabase
+            .from('agreement_providers')
+            .delete()
+            .eq('agreement_id', transfer.target_agreement_id);
+
+          // Remove workflow steps
+          await supabase
+            .from('agreement_workflow_steps')
+            .delete()
+            .eq('agreement_id', transfer.target_agreement_id);
+
+          // Delete the draft agreement
+          // Note: if DELETE isn't allowed, update to cancelled
+          await supabase
+            .from('collaborative_agreements')
+            .update({ workflow_status: 'cancelled' as any, termination_reason: 'Transfer cancelled' })
+            .eq('id', transfer.target_agreement_id);
+        }
+      }
+
+      // Update transfer status to cancelled
+      await supabase
+        .from('agreement_transfers')
+        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+        .eq('id', transfer.id);
+
+      // Log the cancellation
+      await supabase.from('transfer_activity_log').insert({
+        transfer_id: transfer.id,
+        activity_type: 'status_changed',
+        actor_id: user?.id,
+        actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
+        actor_role: 'admin',
+        description: 'Transfer cancelled by admin.',
+      });
+
+      toast({
+        title: 'Transfer Cancelled',
+        description: `The ${transfer.state_name} transfer has been cancelled. All pending tasks were archived.`,
+      });
+
+      onUpdate?.();
+    } catch (error) {
+      console.error('Error cancelling transfer:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to cancel transfer.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCancelling(false);
+      setCancelDialogOpen(false);
+    }
+  };
 
   const handleTaskDeleted = (taskId: string) => {
     setTasks(prev => prev.filter(t => t.id !== taskId));
@@ -532,18 +617,32 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
           )}
 
           {/* Completion blocking alert or Action Button */}
-          {transfer.status !== 'completed' && (
+          {transfer.status !== 'completed' && transfer.status !== 'cancelled' && (
             <div className="mb-6">
               {!allRequiredComplete ? (
-                <Alert>
-                  <Lock className="h-4 w-4" />
-                  <AlertDescription>
-                    <span className="font-medium">
-                      {requiredTasks.length - completedRequiredTasks.length} required task(s) remaining
-                    </span>
-                    {' '}before this transfer can be finalized.
-                  </AlertDescription>
-                </Alert>
+                <div className="flex items-center justify-between gap-4">
+                  <Alert className="flex-1">
+                    <Lock className="h-4 w-4" />
+                    <AlertDescription>
+                      <span className="font-medium">
+                        {requiredTasks.length - completedRequiredTasks.length} required task(s) remaining
+                      </span>
+                      {' '}before this transfer can be finalized.
+                    </AlertDescription>
+                  </Alert>
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive border-destructive/30 hover:bg-destructive/10 shrink-0"
+                      onClick={(e) => { e.stopPropagation(); setCancelDialogOpen(true); }}
+                      disabled={cancelling}
+                    >
+                      <Ban className="h-3.5 w-3.5 mr-1" />
+                      Cancel Transfer
+                    </Button>
+                  )}
+                </div>
               ) : (
                 <div className="p-4 rounded-lg bg-success/5 border border-success/20 flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -555,23 +654,37 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                       </p>
                     </div>
                   </div>
-                  <Button 
-                    onClick={handleCompleteTransfer} 
-                    disabled={creatingAgreement}
-                    className="bg-success hover:bg-success/90 text-white"
-                  >
-                    {creatingAgreement ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Finalizing...
-                      </>
-                    ) : (
-                      <>
-                        <FilePlus className="h-4 w-4 mr-2" />
-                        Finalize & Create Agreement
-                      </>
+                  <div className="flex items-center gap-2">
+                    {isAdmin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                        onClick={(e) => { e.stopPropagation(); setCancelDialogOpen(true); }}
+                        disabled={cancelling}
+                      >
+                        <Ban className="h-3.5 w-3.5 mr-1" />
+                        Cancel
+                      </Button>
                     )}
-                  </Button>
+                    <Button 
+                      onClick={handleCompleteTransfer} 
+                      disabled={creatingAgreement}
+                      className="bg-success hover:bg-success/90 text-white"
+                    >
+                      {creatingAgreement ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Finalizing...
+                        </>
+                      ) : (
+                        <>
+                          <FilePlus className="h-4 w-4 mr-2" />
+                          Finalize & Create Agreement
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
@@ -704,6 +817,16 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
           )}
         </CardContent>
       )}
+
+      <ConfirmActionDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        title="Cancel Transfer"
+        description={`Are you sure you want to cancel the ${transfer.state_name} transfer (${transfer.source_physician_name || 'Unassigned'} → ${transfer.target_physician_name})? All pending tasks will be archived and any draft agreement created for this transfer will be cancelled. This cannot be undone.`}
+        confirmLabel={cancelling ? 'Cancelling...' : 'Cancel Transfer'}
+        onConfirm={handleCancelTransfer}
+        destructive
+      />
     </Card>
   );
 }
