@@ -510,8 +510,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
 
     return (
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
             <h4 className="text-sm font-medium">{title}</h4>
             <Badge variant="outline" className="text-xs">
               {completedRequired}/{requiredCount} required
@@ -519,20 +518,19 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
             {isComplete && (
               <CheckCircle2 className="h-4 w-4 text-success" />
             )}
-          </div>
-          {phase === 'initiation' && targetAgreementId && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs gap-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/admin/agreements/${targetAgreementId}`);
-              }}
-            >
-              View Agreement <ExternalLink className="h-3 w-3" />
-            </Button>
-          )}
+            {phase === 'initiation' && targetAgreementId && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs gap-1 px-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/admin/agreements/${targetAgreementId}`);
+                }}
+              >
+                View Agreement <ExternalLink className="h-3 w-3" />
+              </Button>
+            )}
         </div>
         
         <div className="space-y-1">
