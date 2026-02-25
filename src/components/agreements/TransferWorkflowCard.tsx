@@ -287,12 +287,14 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
     taskList, 
     title, 
     phase,
-    isComplete 
+    isComplete,
+    physicianId,
   }: { 
     taskList: Task[]; 
     title: string; 
     phase: 'termination' | 'initiation';
     isComplete: boolean;
+    physicianId?: string | null;
   }) => {
     const requiredCount = taskList.filter(t => t.is_required !== false).length;
     const completedRequired = taskList.filter(t => t.is_required !== false && t.status === 'completed').length;
@@ -337,6 +339,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               stateAbbreviation={transfer.state_abbreviation}
               stateName={transfer.state_name}
               nextSortOrder={nextSortOrder}
+              physicianId={physicianId}
               onAdded={fetchTasks}
             />
           )}
@@ -545,6 +548,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                     title={`1. Termination Phase — ${transfer.source_physician_name || 'Outgoing Physician'}`}
                     phase="termination"
                     isComplete={terminationComplete}
+                    physicianId={transfer.source_physician_id}
                   />
                   <Separator />
                   <TaskPhaseSection 
@@ -552,6 +556,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                     title={`2. Initiation Phase — ${transfer.target_physician_name || 'Incoming Physician'}`}
                     phase="initiation"
                     isComplete={initiationComplete}
+                    physicianId={transfer.target_physician_id}
                   />
                 </div>
 

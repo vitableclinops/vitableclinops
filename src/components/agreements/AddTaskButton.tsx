@@ -17,6 +17,7 @@ interface AddTaskButtonProps {
   stateAbbreviation: string;
   stateName: string;
   nextSortOrder: number;
+  physicianId?: string | null;
   onAdded: () => void;
 }
 
@@ -27,6 +28,7 @@ export function AddTaskButton({
   stateAbbreviation,
   stateName,
   nextSortOrder,
+  physicianId,
   onAdded,
 }: AddTaskButtonProps) {
   const { toast } = useToast();
@@ -63,6 +65,7 @@ export function AddTaskButton({
         is_required: isRequired,
         sort_order: nextSortOrder,
         due_date: dueDate || null,
+        physician_id: physicianId || null,
       };
 
       const { error } = await supabase.from('agreement_tasks').insert(taskData);

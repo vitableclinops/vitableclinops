@@ -337,11 +337,19 @@ export function BulkReassignDialog({
         const firstProvider = affectedProviders[0];
 
         if (createTransferWorkflow) {
+          // Resolve source physician ID from the agreement
+          const { data: sourceAgreement } = await supabase
+            .from('collaborative_agreements')
+            .select('physician_id')
+            .eq('id', agreementId)
+            .single();
+
           // Create a transfer record that groups termination + initiation
           const { data: transfer, error: transferError } = await supabase
             .from('agreement_transfers')
             .insert({
               source_agreement_id: agreementId,
+              source_physician_id: sourceAgreement?.physician_id || null,
               source_physician_name: firstProvider.physicianName,
               source_physician_email: firstProvider.physicianEmail,
               target_physician_id: targetPhysician,
@@ -386,6 +394,7 @@ export function BulkReassignDialog({
             auto_trigger: 'transfer_termination',
             state_abbreviation: firstProvider.stateAbbreviation,
             state_name: firstProvider.stateName,
+            physician_id: transfer.source_physician_id,
           }));
 
           // Generate initiation tasks from template
@@ -405,10 +414,11 @@ export function BulkReassignDialog({
             assigned_role: 'admin',
             is_auto_generated: true,
             is_required: task.is_required,
-            sort_order: task.sort_order + 10, // Offset to keep initiation after termination
+            sort_order: task.sort_order + 10,
             auto_trigger: 'transfer_initiation',
             state_abbreviation: firstProvider.stateAbbreviation,
             state_name: firstProvider.stateName,
+            physician_id: targetPhysician,
           }));
 
           // Insert all tasks
