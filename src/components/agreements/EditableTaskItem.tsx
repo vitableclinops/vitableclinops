@@ -157,9 +157,10 @@ export function EditableTaskItem({
       .eq('id', task.id);
 
     if (error) {
+      console.error('Failed to update task:', error, { taskId: task.id, newStatus, profileId });
       toast({
         title: 'Error',
-        description: 'Failed to update task.',
+        description: `Failed to update task: ${error.message}`,
         variant: 'destructive',
       });
       return;
