@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
+import { getInitiationTaskTemplates, getTerminationTaskTemplates, hydrateTaskTemplates } from '@/data/taskTemplates';
 
 type AgreementTask = Tables<'agreement_tasks'>;
 type AgreementTaskInsert = TablesInsert<'agreement_tasks'>;
@@ -9,6 +10,7 @@ type WorkflowStatus = Tables<'collaborative_agreements'>['workflow_status'];
 
 /**
  * Generates the full set of required setup tasks for a new collaborative agreement.
+ * Uses the canonical initiation task templates.
  */
 export const getSetupTasks = (
   agreementId: string,
@@ -16,227 +18,26 @@ export const getSetupTasks = (
   stateName: string,
   providerId: string | null,
   physicianId: string | null,
-  options?: { chartReviewRequired?: boolean; meetingCadence?: string }
+  _options?: { chartReviewRequired?: boolean; meetingCadence?: string }
 ): AgreementTaskInsert[] => {
-  const tasks: AgreementTaskInsert[] = [
-    {
-      agreement_id: agreementId,
-      provider_id: providerId,
-      physician_id: physicianId,
-      title: 'Confirm collaborative agreement required for state',
-      description: `Verify that ${stateName} requires a collaborative agreement for this provider type`,
-      category: 'agreement_creation',
-      status: 'pending',
-      priority: 'high',
-      assigned_role: 'admin',
-      is_auto_generated: true,
-      is_required: true,
-      auto_trigger: 'agreement_creation',
-      state_abbreviation: stateAbbreviation,
-      state_name: stateName,
-      task_purpose: 'Ensures we are not creating unnecessary agreements',
-      compliance_risk: 'Creating agreements for states that do not require them wastes resources',
-      expected_outcome: 'Confirmed that state requires collaborative agreement',
-      sort_order: 1,
-    },
-    {
-      agreement_id: agreementId,
-      provider_id: providerId,
-      physician_id: physicianId,
-      title: 'Send agreement to provider for signature',
-      description: 'Send the collaborative agreement document to the provider for review and signature',
-      category: 'signature',
-      status: 'pending',
-      priority: 'high',
-      assigned_role: 'admin',
-      is_auto_generated: true,
-      is_required: true,
-      auto_trigger: 'agreement_creation',
-      state_abbreviation: stateAbbreviation,
-      state_name: stateName,
-      task_purpose: 'Provider must review and sign the agreement',
-      compliance_risk: 'Provider cannot practice without a signed agreement',
-      expected_outcome: 'Provider has received and reviewed the agreement',
-      sort_order: 2,
-    },
-    {
-      agreement_id: agreementId,
-      provider_id: providerId,
-      physician_id: physicianId,
-      title: 'Send agreement to physician for signature',
-      description: 'Send the collaborative agreement document to the supervising physician for review and signature',
-      category: 'signature',
-      status: 'pending',
-      priority: 'high',
-      assigned_role: 'admin',
-      is_auto_generated: true,
-      is_required: true,
-      auto_trigger: 'agreement_creation',
-      state_abbreviation: stateAbbreviation,
-      state_name: stateName,
-      task_purpose: 'Physician must review and sign the agreement',
-      compliance_risk: 'Agreement is not valid without physician signature',
-      expected_outcome: 'Physician has received and reviewed the agreement',
-      sort_order: 3,
-    },
-    {
-      agreement_id: agreementId,
-      provider_id: providerId,
-      physician_id: physicianId,
-      title: 'Receive signed agreement from all parties',
-      description: 'Collect the fully executed agreement with all required signatures',
-      category: 'signature',
-      status: 'pending',
-      priority: 'high',
-      assigned_role: 'admin',
-      is_auto_generated: true,
-      is_required: true,
-      auto_trigger: 'agreement_creation',
-      state_abbreviation: stateAbbreviation,
-      state_name: stateName,
-      task_purpose: 'Agreement must be fully signed before it is valid',
-      compliance_risk: 'Unsigned agreements have no legal standing',
-      expected_outcome: 'Fully executed agreement document obtained',
-      sort_order: 4,
-    },
-    {
-      agreement_id: agreementId,
-      provider_id: providerId,
-      physician_id: physicianId,
-      title: 'Upload signed agreement to record',
-      description: 'Upload the signed agreement document and link it to this agreement record',
-      category: 'agreement_creation',
-      status: 'pending',
-      priority: 'high',
-      assigned_role: 'admin',
-      is_auto_generated: true,
-      is_required: true,
-      auto_trigger: 'agreement_creation',
-      state_abbreviation: stateAbbreviation,
-      state_name: stateName,
-      task_purpose: 'Signed agreement must be on file for audit purposes',
-      compliance_risk: 'Missing documentation during audit can result in compliance violations',
-      expected_outcome: 'Signed agreement document is linked to this record',
-      sort_order: 5,
-    },
-  ];
+  const templates = getInitiationTaskTemplates(
+    'assigned physician',
+    1
+  );
 
-  // Conditional tasks based on state requirements
-  if (options?.meetingCadence && options.meetingCadence !== 'none') {
-    tasks.push({
-      agreement_id: agreementId,
-      provider_id: providerId,
-      physician_id: physicianId,
-      title: 'Schedule required supervision meeting',
-      description: `Schedule the first supervision meeting per the ${options.meetingCadence} cadence requirement`,
-      category: 'supervision_meeting',
-      status: 'pending',
-      priority: 'medium',
-      assigned_role: 'admin',
-      is_auto_generated: true,
-      is_required: true,
-      auto_trigger: 'agreement_creation',
-      state_abbreviation: stateAbbreviation,
-      state_name: stateName,
-      task_purpose: 'Supervision meetings are required by the state',
-      compliance_risk: 'Missing meetings can result in non-compliance',
-      expected_outcome: 'First supervision meeting is scheduled',
-      sort_order: 6,
-    });
-  }
-
-  if (options?.chartReviewRequired) {
-    tasks.push({
-      agreement_id: agreementId,
-      provider_id: providerId,
-      physician_id: physicianId,
-      title: 'Link chart review / supervision documentation',
-      description: 'Set up and link the chart review folder for ongoing supervision documentation',
-      category: 'chart_review',
-      status: 'pending',
-      priority: 'medium',
-      assigned_role: 'admin',
-      is_auto_generated: true,
-      is_required: true,
-      auto_trigger: 'agreement_creation',
-      state_abbreviation: stateAbbreviation,
-      state_name: stateName,
-      task_purpose: 'Chart review documentation must be maintained',
-      compliance_risk: 'Missing chart reviews can result in audit findings',
-      expected_outcome: 'Chart review folder is linked and accessible',
-      sort_order: 7,
-    });
-  }
-
-  // Always-included post-execution tasks
-  const nextSort = tasks.length + 1;
-
-  tasks.push({
-    agreement_id: agreementId,
-    provider_id: providerId,
-    physician_id: physicianId,
-    title: 'Upload executed agreement to Medallion',
-    description: 'Upload the executed collaborative agreement to Medallion as a provider-supervision relationship record',
-    category: 'document',
-    status: 'pending',
-    priority: 'high',
-    assigned_role: 'admin',
-    is_auto_generated: true,
-    is_required: true,
-    auto_trigger: 'agreement_creation',
-    state_abbreviation: stateAbbreviation,
-    state_name: stateName,
-    task_purpose: 'Agreement must be recorded in Medallion for credentialing compliance',
-    compliance_risk: 'Missing Medallion records can delay credentialing',
-    expected_outcome: 'Agreement uploaded to Medallion as supervision relationship',
-    sort_order: nextSort,
+  return hydrateTaskTemplates(templates, {
+    agreementId,
+    providerId,
+    physicianId,
+    stateAbbreviation,
+    stateName,
+    autoTrigger: 'agreement_creation',
   });
-
-  tasks.push({
-    agreement_id: agreementId,
-    provider_id: providerId,
-    physician_id: physicianId,
-    title: 'Add to Kate Baron collab sheet',
-    description: 'Add the executed collaborative agreement details to Kate Baron\'s tracking spreadsheet',
-    category: 'custom',
-    status: 'pending',
-    priority: 'medium',
-    assigned_role: 'admin',
-    is_auto_generated: true,
-    is_required: true,
-    auto_trigger: 'agreement_creation',
-    state_abbreviation: stateAbbreviation,
-    state_name: stateName,
-    task_purpose: 'Internal tracking of all collaborative agreements',
-    expected_outcome: 'Agreement added to collab tracking sheet',
-    sort_order: nextSort + 1,
-  });
-
-  tasks.push({
-    agreement_id: agreementId,
-    provider_id: providerId,
-    physician_id: physicianId,
-    title: 'Set renewal date',
-    description: 'Set the agreement renewal date. Upon completion, the system will auto-calculate the renewal date as 1 year from the agreement start date.',
-    category: 'custom',
-    status: 'pending',
-    priority: 'medium',
-    assigned_role: 'admin',
-    is_auto_generated: true,
-    is_required: true,
-    auto_trigger: 'agreement_creation',
-    state_abbreviation: stateAbbreviation,
-    state_name: stateName,
-    task_purpose: 'Ensures renewal tracking is set up',
-    expected_outcome: 'Renewal date auto-calculated and saved on the agreement',
-    sort_order: nextSort + 2,
-  });
-
-  return tasks;
 };
 
 /**
  * Generates termination tasks for an agreement.
+ * Uses the canonical termination task templates.
  */
 export const getTerminationTasks = (
   agreementId: string,
@@ -244,108 +45,21 @@ export const getTerminationTasks = (
   stateName: string,
   providerId: string | null,
   physicianId: string | null
-): AgreementTaskInsert[] => [
-  {
-    agreement_id: agreementId,
-    provider_id: providerId,
-    physician_id: physicianId,
-    title: 'Notify provider of termination',
-    description: 'Send formal termination notice to the provider',
-    category: 'termination',
-    status: 'pending',
-    priority: 'urgent',
-    assigned_role: 'admin',
-    is_auto_generated: true,
-    is_required: true,
-    auto_trigger: 'agreement_termination',
-    state_abbreviation: stateAbbreviation,
-    state_name: stateName,
-    task_purpose: 'Provider must be formally notified of termination',
-    compliance_risk: 'Provider may continue practicing without valid agreement',
-    expected_outcome: 'Provider has been notified and acknowledged termination',
-    sort_order: 1,
-  },
-  {
-    agreement_id: agreementId,
-    provider_id: providerId,
-    physician_id: physicianId,
-    title: 'Notify physician of termination',
-    description: 'Send formal termination notice to the supervising physician',
-    category: 'termination',
-    status: 'pending',
-    priority: 'urgent',
-    assigned_role: 'admin',
-    is_auto_generated: true,
-    is_required: true,
-    auto_trigger: 'agreement_termination',
-    state_abbreviation: stateAbbreviation,
-    state_name: stateName,
-    task_purpose: 'Physician must be formally notified of termination',
-    compliance_risk: 'Physician may be unaware supervision has ended',
-    expected_outcome: 'Physician has been notified and acknowledged termination',
-    sort_order: 2,
-  },
-  {
-    agreement_id: agreementId,
-    provider_id: providerId,
-    physician_id: physicianId,
-    title: 'Upload signed termination documentation',
-    description: 'Upload the signed termination agreement or documentation',
-    category: 'termination',
-    status: 'pending',
-    priority: 'high',
-    assigned_role: 'admin',
-    is_auto_generated: true,
-    is_required: true,
-    auto_trigger: 'agreement_termination',
-    state_abbreviation: stateAbbreviation,
-    state_name: stateName,
-    task_purpose: 'Termination must be documented for audit trail',
-    compliance_risk: 'Missing termination documentation during audit',
-    expected_outcome: 'Signed termination document is on file',
-    sort_order: 3,
-  },
-  {
-    agreement_id: agreementId,
-    provider_id: providerId,
-    physician_id: physicianId,
-    title: 'Confirm regulatory compliance for termination',
-    description: 'Verify all regulatory requirements for termination are met, including replacement coverage if required',
-    category: 'termination',
-    status: 'pending',
-    priority: 'urgent',
-    assigned_role: 'admin',
-    is_auto_generated: true,
-    is_required: true,
-    auto_trigger: 'agreement_termination',
-    state_abbreviation: stateAbbreviation,
-    state_name: stateName,
-    task_purpose: 'Ensure termination does not leave provider non-compliant',
-    compliance_risk: 'Provider may be practicing without required supervision',
-    expected_outcome: 'All regulatory requirements for termination confirmed',
-    sort_order: 4,
-  },
-  {
-    agreement_id: agreementId,
-    provider_id: providerId,
-    physician_id: physicianId,
-    title: 'Deactivate provider in EHR system',
-    description: 'Confirm the provider has been deactivated in the EHR for this state. Must be completed before termination is finalized.',
-    category: 'termination',
-    status: 'pending',
-    priority: 'urgent',
-    assigned_role: 'admin',
-    is_auto_generated: true,
-    is_required: true,
-    auto_trigger: 'agreement_termination',
-    state_abbreviation: stateAbbreviation,
-    state_name: stateName,
-    task_purpose: 'Provider must be removed from EHR to prevent unauthorized practice',
-    compliance_risk: 'Provider may continue seeing patients under a terminated agreement',
-    expected_outcome: 'Provider deactivated in EHR and confirmation documented',
-    sort_order: 5,
-  },
-];
+): AgreementTaskInsert[] => {
+  const templates = getTerminationTaskTemplates(
+    'supervising physician',
+    1
+  );
+
+  return hydrateTaskTemplates(templates, {
+    agreementId,
+    providerId,
+    physicianId,
+    stateAbbreviation,
+    stateName,
+    autoTrigger: 'agreement_termination',
+  });
+};
 
 /**
  * Hook for managing agreement workflow state transitions with task enforcement.
