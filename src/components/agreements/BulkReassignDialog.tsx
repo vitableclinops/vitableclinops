@@ -13,6 +13,7 @@ import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useEmailNotifications } from '@/hooks/useEmailNotifications';
+import { getTerminationTaskTemplates, getInitiationTaskTemplates, hydrateTaskTemplates } from '@/data/taskTemplates';
 import { AlertTriangle, Users, ArrowRight, Calendar, FileText, Info, Shield, ShieldCheck, XCircle } from 'lucide-react';
 
 interface SelectedAgreement {
@@ -41,146 +42,9 @@ interface BulkReassignDialogProps {
   onSuccess: () => void;
 }
 
-// Default task templates for transfer workflow
-const getTerminationTasks = (
-  sourcePhysicianName: string,
-  affectedProviderCount: number
-) => [
-  {
-    title: `Send termination agreement via BoxSign`,
-    description: `Route termination agreement to ${sourcePhysicianName} for signature. When completed, record the Box Sign request ID, date signed, and confirming admin name.`,
-    category: 'signature' as const,
-    priority: 'high',
-    is_required: true,
-    sort_order: 1,
-  },
-  {
-    title: 'Email NP + physician confirming termination initiated',
-    description: `Send notification email to ${affectedProviderCount} provider(s) and Dr. ${sourcePhysicianName} about the pending termination`,
-    category: 'custom' as const,
-    priority: 'high',
-    is_required: true,
-    sort_order: 2,
-  },
-  {
-    title: 'Upload executed termination agreement',
-    description: 'Confirm executed termination document received. Record the Box Sign document reference and date completed.',
-    category: 'document' as const,
-    priority: 'high',
-    is_required: true,
-    sort_order: 3,
-  },
-  {
-    title: 'Confirm termination effective date recorded',
-    description: 'Verify the effective date of termination is captured in the system',
-    category: 'compliance' as const,
-    priority: 'medium',
-    is_required: true,
-    sort_order: 4,
-  },
-  {
-    title: 'Update meeting/cadence records as needed',
-    description: 'Cancel or reschedule any pending meetings with the outgoing physician',
-    category: 'supervision_meeting' as const,
-    priority: 'medium',
-    is_required: false,
-    sort_order: 5,
-  },
-  {
-    title: 'Update chart review linkage/tracking references',
-    description: 'Ensure chart review records are updated to reflect the termination',
-    category: 'chart_review' as const,
-    priority: 'medium',
-    is_required: false,
-    sort_order: 6,
-  },
-];
-
-const getInitiationTasks = (
-  targetPhysicianName: string,
-  affectedProviderCount: number
-) => [
-  {
-    title: 'Initiate new collaborative agreement record',
-    description: `Create new agreement record for ${affectedProviderCount} provider(s) with ${targetPhysicianName}. The system will auto-populate from existing provider data.`,
-    category: 'agreement_creation' as const,
-    priority: 'high',
-    is_required: true,
-    sort_order: 1,
-  },
-  {
-    title: `Assign collaborating physician (${targetPhysicianName})`,
-    description: 'Confirm physician assignment and update all provider records',
-    category: 'custom' as const,
-    priority: 'high',
-    is_required: true,
-    sort_order: 2,
-  },
-  {
-    title: 'Send new agreement via BoxSign',
-    description: 'Route new collaborative agreement to physician and all affected providers for signature. When completed, record the Box Sign request ID, date sent, and confirming admin name.',
-    category: 'signature' as const,
-    priority: 'high',
-    is_required: true,
-    sort_order: 3,
-  },
-  {
-    title: 'Confirm NP + physician notification email sent',
-    description: 'Verify all parties received email confirmation of the new agreement',
-    category: 'custom' as const,
-    priority: 'medium',
-    is_required: true,
-    sort_order: 4,
-  },
-  {
-    title: 'Upload executed new agreement',
-    description: 'Confirm executed agreement document received. Record the Box Sign document reference and date completed.',
-    category: 'document' as const,
-    priority: 'high',
-    is_required: true,
-    sort_order: 5,
-  },
-  {
-    title: 'Schedule first collaboration meeting + record cadence',
-    description: 'Set up initial collaborative meeting and establish meeting schedule',
-    category: 'supervision_meeting' as const,
-    priority: 'medium',
-    is_required: true,
-    sort_order: 6,
-  },
-  {
-    title: 'Link chart review calendar/tracker',
-    description: 'Set up chart review schedule and store reference URL/tracker link',
-    category: 'chart_review' as const,
-    priority: 'medium',
-    is_required: true,
-    sort_order: 7,
-  },
-  {
-    title: 'Upload executed agreement to Medallion',
-    description: 'Upload the executed collaborative agreement to Medallion as a provider-supervision relationship record',
-    category: 'document' as const,
-    priority: 'high',
-    is_required: true,
-    sort_order: 8,
-  },
-  {
-    title: 'Add to Kate Baron collab sheet',
-    description: 'Add the executed collaborative agreement details to Kate Baron\'s tracking spreadsheet',
-    category: 'custom' as const,
-    priority: 'medium',
-    is_required: true,
-    sort_order: 9,
-  },
-  {
-    title: 'Set renewal date',
-    description: 'Set the agreement renewal date. Upon completion, the system will auto-calculate the renewal date as 1 year from the agreement start date.',
-    category: 'custom' as const,
-    priority: 'medium',
-    is_required: true,
-    sort_order: 10,
-  },
-];
+// Re-export template functions for backward compatibility and task count display
+const getTerminationTasks = getTerminationTaskTemplates;
+const getInitiationTasks = getInitiationTaskTemplates;
 
 interface CapacityCheck {
   stateAbbreviation: string;
@@ -403,23 +267,15 @@ export function BulkReassignDialog({
             affectedProviders.length
           );
 
-          const terminationTasks = terminationTaskData.map(task => ({
-            transfer_id: transfer.id,
-            agreement_id: agreementId,
-            title: task.title,
-            description: task.description,
-            category: task.category,
-            status: 'pending' as const,
-            priority: task.priority,
-            assigned_role: 'admin',
-            is_auto_generated: true,
-            is_required: task.is_required,
-            sort_order: task.sort_order,
-            auto_trigger: 'transfer_termination',
-            state_abbreviation: firstProvider.stateAbbreviation,
-            state_name: firstProvider.stateName,
-            physician_id: transfer.source_physician_id,
-          }));
+          const terminationTasks = hydrateTaskTemplates(terminationTaskData, {
+            agreementId,
+            transferId: transfer.id,
+            providerId: null,
+            physicianId: transfer.source_physician_id,
+            stateAbbreviation: firstProvider.stateAbbreviation,
+            stateName: firstProvider.stateName,
+            autoTrigger: 'transfer_termination',
+          });
 
           // Generate initiation tasks from template
           const initiationTaskData = getInitiationTasks(
@@ -427,23 +283,17 @@ export function BulkReassignDialog({
             affectedProviders.length
           );
 
-          const initiationTasks = initiationTaskData.map(task => ({
-            transfer_id: transfer.id,
-            agreement_id: agreementId,
-            title: task.title,
-            description: task.description,
-            category: task.category,
-            status: 'pending' as const,
-            priority: task.priority,
-            assigned_role: 'admin',
-            is_auto_generated: true,
-            is_required: task.is_required,
-            sort_order: task.sort_order + 10,
-            auto_trigger: 'transfer_initiation',
-            state_abbreviation: firstProvider.stateAbbreviation,
-            state_name: firstProvider.stateName,
-            physician_id: targetPhysician,
-          }));
+          const initiationTasks = hydrateTaskTemplates(initiationTaskData, {
+            agreementId,
+            transferId: transfer.id,
+            providerId: null,
+            physicianId: targetPhysician,
+            stateAbbreviation: firstProvider.stateAbbreviation,
+            stateName: firstProvider.stateName,
+            autoTrigger: 'transfer_initiation',
+          });
+          // Offset initiation sort_order to come after termination
+          initiationTasks.forEach(t => { t.sort_order = (t.sort_order || 0) + 10; });
 
           // Insert all tasks
           const { error: tasksError } = await supabase

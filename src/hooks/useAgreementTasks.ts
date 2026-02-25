@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
+import { getInitiationTaskTemplates, getTerminationTaskTemplates, hydrateTaskTemplates } from '@/data/taskTemplates';
 
 export type AgreementTask = Tables<'agreement_tasks'>;
 type AgreementTaskInsert = TablesInsert<'agreement_tasks'>;
@@ -124,69 +125,15 @@ export const useAgreementTasks = (options: UseAgreementTasksOptions = {}) => {
     providerId: string | null,
     physicianId: string | null
   ) => {
-    const baseTasks: AgreementTaskInsert[] = [
-      {
-        agreement_id: agreementId,
-        provider_id: providerId,
-        physician_id: physicianId,
-        title: 'Prepare agreement documents',
-        description: 'Prepare and finalize the collaborative agreement document for signatures',
-        category: 'agreement_creation',
-        status: 'pending',
-        priority: 'high',
-        assigned_role: 'admin',
-        is_auto_generated: true,
-        auto_trigger: 'agreement_creation',
-        state_abbreviation: stateAbbreviation,
-        state_name: stateName,
-      },
-      {
-        agreement_id: agreementId,
-        provider_id: providerId,
-        physician_id: physicianId,
-        title: 'Send for signature',
-        description: 'Send the agreement to all parties for electronic signature',
-        category: 'signature',
-        status: 'pending',
-        priority: 'high',
-        assigned_role: 'admin',
-        is_auto_generated: true,
-        auto_trigger: 'agreement_creation',
-        state_abbreviation: stateAbbreviation,
-        state_name: stateName,
-        requires_upload: true,
-      },
-      {
-        agreement_id: agreementId,
-        provider_id: providerId,
-        physician_id: physicianId,
-        title: 'Schedule first supervision meeting',
-        description: 'Set up the initial collaborative meeting based on state cadence requirements',
-        category: 'supervision_meeting',
-        status: 'pending',
-        priority: 'medium',
-        assigned_role: 'admin',
-        is_auto_generated: true,
-        auto_trigger: 'agreement_creation',
-        state_abbreviation: stateAbbreviation,
-        state_name: stateName,
-      },
-      {
-        agreement_id: agreementId,
-        provider_id: providerId,
-        physician_id: physicianId,
-        title: 'Schedule first supervision meeting',
-        description: 'Set up the initial collaborative meeting based on state cadence requirements',
-        category: 'supervision_meeting',
-        status: 'pending',
-        priority: 'medium',
-        assigned_role: 'admin',
-        is_auto_generated: true,
-        auto_trigger: 'agreement_creation',
-        state_abbreviation: stateAbbreviation,
-        state_name: stateName,
-      },
-    ];
+    const templates = getInitiationTaskTemplates('assigned physician', 1);
+    const baseTasks = hydrateTaskTemplates(templates, {
+      agreementId,
+      providerId,
+      physicianId,
+      stateAbbreviation,
+      stateName,
+      autoTrigger: 'agreement_creation',
+    });
 
     try {
       const { data, error } = await supabase
@@ -228,39 +175,15 @@ export const useAgreementTasks = (options: UseAgreementTasksOptions = {}) => {
     providerId: string | null,
     physicianId: string | null
   ) => {
-    const terminationTasks: AgreementTaskInsert[] = [
-      {
-        agreement_id: agreementId,
-        provider_id: providerId,
-        physician_id: physicianId,
-        title: 'Upload executed termination agreement',
-        description: 'Upload the signed termination agreement document',
-        category: 'document',
-        status: 'pending',
-        priority: 'high',
-        assigned_role: 'admin',
-        is_auto_generated: true,
-        auto_trigger: 'agreement_termination',
-        state_abbreviation: stateAbbreviation,
-        state_name: stateName,
-        requires_upload: true,
-      },
-      {
-        agreement_id: agreementId,
-        provider_id: providerId,
-        physician_id: physicianId,
-        title: 'Document termination completion',
-        description: 'Complete all termination documentation and update provider credentialing status',
-        category: 'termination',
-        status: 'pending',
-        priority: 'high',
-        assigned_role: 'admin',
-        is_auto_generated: true,
-        auto_trigger: 'agreement_termination',
-        state_abbreviation: stateAbbreviation,
-        state_name: stateName,
-      },
-    ];
+    const templates = getTerminationTaskTemplates('supervising physician', 1);
+    const terminationTasks = hydrateTaskTemplates(templates, {
+      agreementId,
+      providerId,
+      physicianId,
+      stateAbbreviation,
+      stateName,
+      autoTrigger: 'agreement_termination',
+    });
 
     try {
       const { data, error } = await supabase
