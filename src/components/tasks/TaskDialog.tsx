@@ -227,7 +227,9 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
   const [saving, setSaving] = useState(false);
   const [uploadGateError, setUploadGateError] = useState(false);
 
-  const docCount = useTaskDocumentCount(task?.id || '');
+  const [docCount, setDocCount] = useState<number | null>(null);
+  const initialDocCount = useTaskDocumentCount(task?.id || '');
+  useEffect(() => { if (initialDocCount !== null) setDocCount(initialDocCount); }, [initialDocCount]);
   const { linkedProviders, setLinkedProviders, initialLinkedIds } = useLinkedProviders(task, editing);
 
   // Reset editing on close or task change
@@ -470,7 +472,7 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
                 {task && (
                   <div className="space-y-2">
                     <Label>Documents</Label>
-                    <TaskDocumentUpload taskId={task.id} agreementId={task.agreement_id} requiresUpload={requiresUpload} />
+                    <TaskDocumentUpload taskId={task.id} agreementId={task.agreement_id} requiresUpload={requiresUpload} onDocumentCountChange={setDocCount} />
                   </div>
                 )}
                 {uploadGateError && (
@@ -643,7 +645,7 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
             {/* Documents */}
             <div className="space-y-1.5">
               <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><Paperclip className="h-3 w-3" /> Documents</Label>
-              <TaskDocumentUpload taskId={task.id} agreementId={task.agreement_id} requiresUpload={task.requires_upload === true} disabled={!isAdmin} />
+              <TaskDocumentUpload taskId={task.id} agreementId={task.agreement_id} requiresUpload={task.requires_upload === true} disabled={!isAdmin} onDocumentCountChange={setDocCount} />
             </div>
           </div>
         </ScrollArea>
