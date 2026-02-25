@@ -33,10 +33,11 @@ export function ArchiveTaskDialog({ taskId, taskTitle, onClose, onSuccess }: Arc
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase
         .from('agreement_tasks')
-        .update({
-          status: 'archived' as any,
-          archived_at: new Date().toISOString(),
-          archived_by: user?.id || null,
+         .update({
+           status: 'archived' as any,
+           is_required: false,
+           archived_at: new Date().toISOString(),
+           archived_by: user?.id || null,
           archived_reason: reason.trim(),
         })
         .eq('id', taskId);
