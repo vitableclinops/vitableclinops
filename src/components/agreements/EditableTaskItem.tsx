@@ -38,7 +38,9 @@ import {
   PenTool,
   Paperclip,
   Info,
-  Archive
+  Archive,
+  CheckCircle2,
+  RotateCcw
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -52,6 +54,8 @@ interface EditableTaskItemProps {
   isAdmin: boolean;
   onUpdate: () => void;
   onDelete?: (taskId: string) => void;
+  selected?: boolean;
+  onSelectedChange?: (taskId: string, selected: boolean) => void;
 }
 
 // Signature-category tasks require external verification fields
@@ -63,7 +67,9 @@ export function EditableTaskItem({
   transferId, 
   isAdmin, 
   onUpdate,
-  onDelete 
+  onDelete,
+  selected = false,
+  onSelectedChange,
 }: EditableTaskItemProps) {
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
@@ -590,6 +596,7 @@ export function EditableTaskItem({
   // View mode
   const isBlocked = taskStatus === 'blocked' || taskStatus === 'waiting_on_signature';
   const isArchived = task.status === 'archived';
+  const canSelectForArchive = isAdmin && !isArchived && taskStatus !== 'completed';
 
   return (
     <>
@@ -609,9 +616,10 @@ export function EditableTaskItem({
         )}
         
         <Checkbox
-          checked={taskStatus === 'completed'}
-          onCheckedChange={handleToggleComplete}
-          disabled={!isAdmin || isBlocked || isArchived}
+          checked={selected}
+          onCheckedChange={(checked) => onSelectedChange?.(task.id, checked === true)}
+          disabled={!canSelectForArchive}
+          aria-label={`Select ${task.title} for bulk actions`}
         />
         
         <div className="text-muted-foreground">
@@ -772,6 +780,22 @@ export function EditableTaskItem({
                 <Pencil className="h-4 w-4 mr-2" />
                 Edit
               </Button>
+              {!isArchived && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={handleToggleComplete}
+                  disabled={isBlocked}
+                >
+                  {taskStatus === 'completed' ? (
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                  )}
+                  {taskStatus === 'completed' ? 'Reopen' : 'Mark Complete'}
+                </Button>
+              )}
               {!isBlocked && taskStatus !== 'completed' && (
                 <Button
                   variant="ghost"
