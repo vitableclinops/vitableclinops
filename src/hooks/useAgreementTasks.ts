@@ -24,6 +24,7 @@ export const useAgreementTasks = (options: UseAgreementTasksOptions = {}) => {
       let query = supabase
         .from('agreement_tasks')
         .select('*')
+        .neq('status', 'archived')
         .order('due_date', { ascending: true, nullsFirst: false });
 
       if (options.agreementId) {
