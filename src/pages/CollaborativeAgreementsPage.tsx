@@ -223,11 +223,16 @@ const CollaborativeAgreementsPage = () => {
     const nextMeetingDate = nextScheduledMeeting ? new Date(nextScheduledMeeting.scheduled_date) : null;
     const renewalDate = calculateRenewalDate(agreement.start_date);
     const stateCompliance = stateComplianceData.find(c => c.state_abbreviation === agreement.state_abbreviation);
-    
+    // Resolve actual provider names from agreement_providers
+    const activeProviders = dbProviders.filter(p => p.agreement_id === agreement.id && p.is_active);
+    const resolvedProviderName = activeProviders.length > 0
+      ? activeProviders.map(p => p.provider_name).join(', ')
+      : agreement.provider_name || 'Unassigned';
+
     return {
       id: agreement.id,
       providerId: agreement.id,
-      providerName: agreement.provider_name || 'Unassigned',
+      providerName: resolvedProviderName,
       providerEmail: agreement.provider_email || '',
       providerNpi: agreement.provider_npi || null,
       providerCredentials: null,
