@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { TaskAssignmentSelect } from './TaskAssignmentSelect';
 import { TaskDocumentUpload, useTaskDocumentCount } from '@/components/tasks/TaskDocumentUpload';
-import { TaskDetailDialog } from '@/components/tasks/TaskDetailDialog';
+import { TaskDialog } from '@/components/tasks/TaskDialog';
 import { ArchiveTaskDialog } from '@/components/admin/ArchiveTaskDialog';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -882,7 +882,7 @@ export function EditableTaskItem({
       )}
       </div>
     </div>
-    <TaskDetailDialog
+    <TaskDialog
       task={{ ...task, requires_upload: requiresUpload }}
       open={showDetail}
       onOpenChange={setShowDetail}
