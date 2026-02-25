@@ -20,7 +20,8 @@ import {
   CheckCircle2,
   ChevronRight,
   Loader2,
-  ArrowRightLeft
+  ArrowRightLeft,
+  X
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -45,6 +46,16 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
   const [agreementMap, setAgreementMap] = useState<Map<string, AgreementContext>>(new Map());
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'assigned' | 'overdue' | 'blocked' | 'thisWeek'>('assigned');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     fetchTasks();
@@ -173,13 +184,13 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
           }
         }}
       >
-        <Checkbox
-          checked={task.status === 'completed'}
-          onCheckedChange={(e) => {
-            e && handleToggleComplete(task);
-          }}
-          onClick={(e) => e.stopPropagation()}
-        />
+        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={selectedIds.has(task.id)}
+            onCheckedChange={() => toggleSelect(task.id)}
+            aria-label={`Select ${task.title}`}
+          />
+        </div>
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -357,6 +368,25 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
             )}
           </ScrollArea>
         </Tabs>
+
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 mt-3 p-2 rounded-lg border bg-muted/50">
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            <Button size="sm" variant="outline" onClick={async () => {
+              const selected = [...selectedIds].map(id => tasks.find(t => t.id === id)).filter(Boolean) as Task[];
+              for (const task of selected) {
+                await handleToggleComplete(task);
+              }
+              setSelectedIds(new Set());
+            }}>
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+              Complete
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
