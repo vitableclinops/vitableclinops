@@ -274,10 +274,15 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
     try {
       const newStatus = isCompleted ? 'pending' : 'completed';
       const { data: { user } } = await supabase.auth.getUser();
+      let profileId: string | null = null;
+      if (newStatus === 'completed' && user) {
+        const { data: prof } = await supabase.from('profiles').select('id').eq('user_id', user.id).maybeSingle();
+        profileId = prof?.id ?? null;
+      }
       const { error } = await supabase.from('agreement_tasks').update({
         status: newStatus as any,
         completed_at: newStatus === 'completed' ? new Date().toISOString() : null,
-        completed_by: newStatus === 'completed' ? user?.id : null,
+        completed_by: profileId,
         blocked_reason: null, blocked_until: null,
       }).eq('id', task.id);
       if (error) throw error;
@@ -317,8 +322,11 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
         if (editNotes.trim()) updatePayload.notes = editNotes.trim();
         if (editStatus === 'completed') {
           const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: prof } = await supabase.from('profiles').select('id').eq('user_id', user.id).maybeSingle();
+            updatePayload.completed_by = prof?.id ?? null;
+          }
           updatePayload.completed_at = new Date().toISOString();
-          updatePayload.completed_by = user?.id || null;
         }
         const { error } = await supabase.from('agreement_tasks').update(updatePayload).eq('id', task.id);
         if (error) throw error;
