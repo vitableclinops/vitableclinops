@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { TaskAssignmentSelect } from './TaskAssignmentSelect';
 import { TaskDocumentUpload, useTaskDocumentCount } from '@/components/tasks/TaskDocumentUpload';
 import { TaskDetailDialog } from '@/components/tasks/TaskDetailDialog';
+import { ArchiveTaskDialog } from '@/components/admin/ArchiveTaskDialog';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
 import { 
@@ -68,6 +69,7 @@ export function EditableTaskItem({
   const [editing, setEditing] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [showBlocker, setShowBlocker] = useState(false);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [showSignatureCompletion, setShowSignatureCompletion] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description || '');
@@ -130,12 +132,19 @@ export function EditableTaskItem({
     const newStatus = taskStatus === 'completed' ? 'pending' : 'completed';
     const { data: { user } } = await supabase.auth.getUser();
 
+    // Resolve profile ID for completed_by FK
+    let profileId: string | null = null;
+    if (newStatus === 'completed' && user) {
+      const { data: prof } = await supabase.from('profiles').select('id').eq('user_id', user.id).maybeSingle();
+      profileId = prof?.id ?? null;
+    }
+
     const { error } = await supabase
       .from('agreement_tasks')
       .update({
         status: newStatus,
         completed_at: newStatus === 'completed' ? new Date().toISOString() : null,
-        completed_by: newStatus === 'completed' ? user?.id : null,
+        completed_by: profileId,
         blocked_reason: null,
         blocked_until: null,
       })
@@ -797,6 +806,17 @@ export function EditableTaskItem({
                 <Flag className="h-4 w-4 mr-2" />
                 {task.escalated ? 'Remove Escalation' : 'Escalate'}
               </Button>
+              {!isArchived && taskStatus !== 'completed' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-destructive"
+                  onClick={() => setShowArchiveDialog(true)}
+                >
+                  <Archive className="h-4 w-4 mr-2" />
+                  Archive
+                </Button>
+              )}
               {onDelete && !task.is_auto_generated && (
                 <Button
                   variant="ghost"
@@ -820,6 +840,12 @@ export function EditableTaskItem({
       onOpenChange={setShowDetail}
       isAdmin={isAdmin}
       onTaskUpdated={onUpdate}
+    />
+    <ArchiveTaskDialog
+      taskId={showArchiveDialog ? task.id : null}
+      taskTitle={task.title}
+      onClose={() => setShowArchiveDialog(false)}
+      onSuccess={() => { setShowArchiveDialog(false); onUpdate(); }}
     />
     </>
   );
