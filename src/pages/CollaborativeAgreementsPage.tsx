@@ -216,7 +216,10 @@ const CollaborativeAgreementsPage = () => {
   const incompleteAgreements = dbAgreements.filter(a => !a.provider_name && !a.provider_email);
 
   // Each agreement row now represents one provider–physician–state combo directly
-  const flattenedAgreements: FlattenedAgreement[] = dbAgreements.map(agreement => {
+  // Exclude cancelled agreements from the list entirely
+  const flattenedAgreements: FlattenedAgreement[] = dbAgreements
+    .filter(a => a.workflow_status !== 'cancelled')
+    .map(agreement => {
     const stateCadence = getStateMeetingCadence(agreement.state_abbreviation, stateComplianceData);
     const effectiveCadence = stateCadence || agreement.meeting_cadence;
     const nextScheduledMeeting = getNextMeetingForAgreement(agreement.id);
