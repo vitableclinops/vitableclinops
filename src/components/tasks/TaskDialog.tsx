@@ -528,16 +528,11 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-lg max-h-[75vh] overflow-hidden flex flex-col p-4 gap-2">
         <DialogHeader className="pb-0">
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start gap-2 pr-6">
             <DialogTitle className="flex items-center gap-2 text-sm font-semibold flex-1 leading-tight">
               {getCategoryIcon(task.category)}
               {task.title}
             </DialogTitle>
-            {isAdmin && !isMilestone && (
-              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setEditing(true)}>
-                <Pencil className="h-3 w-3" />
-              </Button>
-            )}
           </div>
           <DialogDescription asChild>
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -552,6 +547,12 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
               {task.is_required && <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5"><Star className="h-2.5 w-2.5 fill-current" />Required</Badge>}
               {task.requires_upload && (docCount === null || docCount === 0) && (
                 <Badge variant="destructive" className="text-[10px] px-1.5 py-0 gap-0.5"><AlertCircle className="h-2.5 w-2.5" />Needs doc</Badge>
+              )}
+              {isAdmin && !isMilestone && (
+                <Button variant="outline" size="sm" className="h-5 px-1.5 text-[10px] gap-1 ml-auto" onClick={() => setEditing(true)}>
+                  <Pencil className="h-2.5 w-2.5" />
+                  Edit
+                </Button>
               )}
             </div>
           </DialogDescription>
