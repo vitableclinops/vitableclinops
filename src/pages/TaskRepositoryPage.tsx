@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { TaskDialog } from '@/components/tasks/TaskDialog';
+import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
 
 type TaskStatus = 'active' | 'all' | 'pending' | 'in_progress' | 'completed' | 'blocked' | 'waiting_on_signature' | 'archived';
 type TaskCategory = 'all' | 'document' | 'signature' | 'supervision_meeting' | 'chart_review' | 'compliance' | 'transfer' | 'onboarding' | 'milestone' | 'outreach' | 'communication' | 'custom';
@@ -118,6 +119,7 @@ export default function TaskRepositoryPage() {
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
   const [bulkAssigning, setBulkAssigning] = useState(false);
   const [detailTask, setDetailTask] = useState<RepoTask | null>(null);
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
 
   // Fetch team members for assignment
   useEffect(() => {
@@ -648,21 +650,7 @@ export default function TaskRepositoryPage() {
                   )}
                 </PopoverContent>
               </Popover>
-              <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={async () => {
-                const ids = Array.from(selectedIds);
-                try {
-                  const { error } = await supabase.from('agreement_tasks').update({
-                    status: 'archived' as any,
-                    archived_at: new Date().toISOString(),
-                  }).in('id', ids);
-                  if (error) throw error;
-                  toast({ title: `${ids.length} task${ids.length > 1 ? 's' : ''} archived` });
-                  setSelectedIds(new Set());
-                  fetchTasks();
-                } catch (err: any) {
-                  toast({ title: 'Error', description: err.message, variant: 'destructive' });
-                }
-              }}>
+              <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setBulkArchiveOpen(true)}>
                 <Archive className="h-3.5 w-3.5 mr-1.5" />
                 Archive
               </Button>
@@ -673,6 +661,12 @@ export default function TaskRepositoryPage() {
           )}
         </div>
       </main>
+      <BulkArchiveDialog
+        taskIds={Array.from(selectedIds)}
+        open={bulkArchiveOpen}
+        onClose={() => setBulkArchiveOpen(false)}
+        onSuccess={() => { setBulkArchiveOpen(false); setSelectedIds(new Set()); fetchTasks(); }}
+      />
     </div>
   );
 }
