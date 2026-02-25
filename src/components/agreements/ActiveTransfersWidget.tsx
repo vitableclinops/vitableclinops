@@ -52,6 +52,18 @@ export function ActiveTransfersWidget() {
         : { data: [] };
       const nameMap = new Map((profiles || []).map(p => [p.id, p.full_name || 'Unknown']));
 
+      // Fallback: fetch from agreement_providers for transfers where profiles didn't match
+      const sourceAgreementIds = [...new Set(transferData.map(t => t.source_agreement_id))];
+      const { data: apData } = sourceAgreementIds.length > 0
+        ? await supabase.from('agreement_providers').select('agreement_id, provider_name').in('agreement_id', sourceAgreementIds).eq('is_active', true)
+        : { data: [] };
+      const apByAgreement = new Map<string, string[]>();
+      (apData || []).forEach(ap => {
+        const list = apByAgreement.get(ap.agreement_id) || [];
+        list.push(ap.provider_name);
+        apByAgreement.set(ap.agreement_id, list);
+      });
+
       const enriched: TransferWithTaskCounts[] = transferData.map(t => {
         const tTasks = (tasks || []).filter(tk => tk.transfer_id === t.id);
         return {
@@ -60,7 +72,10 @@ export function ActiveTransfersWidget() {
           completedTasks: tTasks.filter(tk => tk.status === 'completed').length,
           blockedTasks: tTasks.filter(tk => tk.status === 'blocked' || tk.status === 'waiting_on_signature').length,
           unassignedTasks: tTasks.filter(tk => !tk.assigned_to && tk.status !== 'completed').length,
-          providerNames: (t.affected_provider_ids || []).map(id => nameMap.get(id) || 'Unknown'),
+          providerNames: (() => {
+            const fromProfiles = (t.affected_provider_ids || []).map(id => nameMap.get(id)).filter(Boolean) as string[];
+            return fromProfiles.length > 0 ? fromProfiles : (apByAgreement.get(t.source_agreement_id) || []);
+          })(),
         };
       });
 
