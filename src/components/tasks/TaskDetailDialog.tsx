@@ -196,18 +196,45 @@ export function TaskDetailDialog({ task, open, onOpenChange, isAdmin = false, on
   const isMilestone = task.source === 'milestone';
   const canComplete = isAdmin && !isArchived && !isMilestone;
 
+  const resolveProfileId = async (user: { id: string; email?: string | null } | null) => {
+    if (!user) return null;
+
+    const { data: byUserId } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (byUserId?.id) return byUserId.id;
+
+    if (user.email) {
+      const { data: byEmail } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', user.email)
+        .maybeSingle();
+
+      if (byEmail?.id) return byEmail.id;
+    }
+
+    return null;
+  };
+
   const handleToggleComplete = async () => {
     setCompleting(true);
     try {
       const newStatus = isCompleted ? 'pending' : 'completed';
       const { data: { user } } = await supabase.auth.getUser();
+      const profileId = newStatus === 'completed'
+        ? await resolveProfileId(user ? { id: user.id, email: user.email } : null)
+        : null;
 
       const { error } = await supabase
         .from('agreement_tasks')
         .update({
           status: newStatus as any,
           completed_at: newStatus === 'completed' ? new Date().toISOString() : null,
-          completed_by: newStatus === 'completed' ? user?.id : null,
+          completed_by: profileId,
           blocked_reason: null,
           blocked_until: null,
         })
@@ -222,9 +249,13 @@ export function TaskDetailDialog({ task, open, onOpenChange, isAdmin = false, on
 
       onTaskUpdated?.();
       onOpenChange(false);
-    } catch (err) {
-      console.error(err);
-      toast({ title: 'Error', description: 'Failed to update task.', variant: 'destructive' });
+    } catch (err: any) {
+      console.error('Failed to update task from TaskDetailDialog:', err);
+      toast({
+        title: 'Error',
+        description: `Failed to update task: ${err?.message ?? 'Unknown error'}`,
+        variant: 'destructive',
+      });
     } finally {
       setCompleting(false);
     }
