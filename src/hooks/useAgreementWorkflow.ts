@@ -168,6 +168,70 @@ export const getSetupTasks = (
     });
   }
 
+  // Always-included post-execution tasks
+  const nextSort = tasks.length + 1;
+
+  tasks.push({
+    agreement_id: agreementId,
+    provider_id: providerId,
+    physician_id: physicianId,
+    title: 'Upload executed agreement to Medallion',
+    description: 'Upload the executed collaborative agreement to Medallion as a provider-supervision relationship record',
+    category: 'document',
+    status: 'pending',
+    priority: 'high',
+    assigned_role: 'admin',
+    is_auto_generated: true,
+    is_required: true,
+    auto_trigger: 'agreement_creation',
+    state_abbreviation: stateAbbreviation,
+    state_name: stateName,
+    task_purpose: 'Agreement must be recorded in Medallion for credentialing compliance',
+    compliance_risk: 'Missing Medallion records can delay credentialing',
+    expected_outcome: 'Agreement uploaded to Medallion as supervision relationship',
+    sort_order: nextSort,
+  });
+
+  tasks.push({
+    agreement_id: agreementId,
+    provider_id: providerId,
+    physician_id: physicianId,
+    title: 'Add to Kate Baron collab sheet',
+    description: 'Add the executed collaborative agreement details to Kate Baron\'s tracking spreadsheet',
+    category: 'custom',
+    status: 'pending',
+    priority: 'medium',
+    assigned_role: 'admin',
+    is_auto_generated: true,
+    is_required: true,
+    auto_trigger: 'agreement_creation',
+    state_abbreviation: stateAbbreviation,
+    state_name: stateName,
+    task_purpose: 'Internal tracking of all collaborative agreements',
+    expected_outcome: 'Agreement added to collab tracking sheet',
+    sort_order: nextSort + 1,
+  });
+
+  tasks.push({
+    agreement_id: agreementId,
+    provider_id: providerId,
+    physician_id: physicianId,
+    title: 'Set renewal date',
+    description: 'Set the agreement renewal date. Upon completion, the system will auto-calculate the renewal date as 1 year from the agreement start date.',
+    category: 'custom',
+    status: 'pending',
+    priority: 'medium',
+    assigned_role: 'admin',
+    is_auto_generated: true,
+    is_required: true,
+    auto_trigger: 'agreement_creation',
+    state_abbreviation: stateAbbreviation,
+    state_name: stateName,
+    task_purpose: 'Ensures renewal tracking is set up',
+    expected_outcome: 'Renewal date auto-calculated and saved on the agreement',
+    sort_order: nextSort + 2,
+  });
+
   return tasks;
 };
 
