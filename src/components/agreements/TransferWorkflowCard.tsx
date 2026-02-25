@@ -542,14 +542,14 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                 <div className="space-y-6">
                   <TaskPhaseSection 
                     taskList={terminationTasks} 
-                    title="1. Termination Phase" 
+                    title={`1. Termination Phase — ${transfer.source_physician_name || 'Outgoing Physician'}`}
                     phase="termination"
                     isComplete={terminationComplete}
                   />
                   <Separator />
                   <TaskPhaseSection 
                     taskList={initiationTasks} 
-                    title="2. Initiation Phase" 
+                    title={`2. Initiation Phase — ${transfer.target_physician_name || 'Incoming Physician'}`}
                     phase="initiation"
                     isComplete={initiationComplete}
                   />
