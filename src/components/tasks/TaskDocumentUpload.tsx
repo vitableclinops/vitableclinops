@@ -96,7 +96,8 @@ export function TaskDocumentUpload({
       const { data: { user } } = await supabase.auth.getUser();
       const { data: profile } = await supabase.from('profiles').select('full_name').eq('user_id', user?.id || '').maybeSingle();
 
-      const uniqueName = `${crypto.randomUUID()}_${file.name}`;
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const uniqueName = `${crypto.randomUUID()}_${safeName}`;
       const storagePath = `${agreementId || 'unlinked'}/${taskId}/${uniqueName}`;
 
       const { error: uploadError } = await supabase.storage
