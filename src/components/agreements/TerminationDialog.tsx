@@ -149,7 +149,7 @@ export function TerminationDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -167,7 +167,7 @@ export function TerminationDialog({
         <Separator />
 
         {!completed ? (
-          <div className="space-y-4 py-4">
+          <div className="space-y-3 py-2 overflow-y-auto flex-1 min-h-0">
             {hasActiveTransfer && (
               <Alert className="border-primary/30 bg-primary/5">
                 <ArrowRightLeft className="h-4 w-4" />
@@ -183,7 +183,7 @@ export function TerminationDialog({
                 placeholder="Please provide a detailed reason for terminating this agreement..."
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                rows={3}
+                rows={2}
               />
             </div>
 
@@ -204,7 +204,7 @@ export function TerminationDialog({
                 placeholder="Message to send to affected providers about this termination..."
                 value={providerMessage}
                 onChange={(e) => setProviderMessage(e.target.value)}
-                rows={4}
+                rows={3}
               />
               <p className="text-xs text-muted-foreground">
                 This message will be stored on the agreement record and can be used as a copy/paste email template.
