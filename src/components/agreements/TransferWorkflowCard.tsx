@@ -40,8 +40,10 @@ import {
   Loader2,
   Archive,
   X,
-  Ban
+  Ban,
+  ExternalLink,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { parseLocalDate } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
@@ -57,6 +59,7 @@ interface TransferWorkflowCardProps {
 export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCardProps) {
   const { toast } = useToast();
   const { hasRole } = useAuth();
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
@@ -67,6 +70,12 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [providerNames, setProviderNames] = useState<string[]>([]);
+  const [targetAgreementId, setTargetAgreementId] = useState<string | null>(transfer.target_agreement_id);
+
+  // Keep local state in sync with prop
+  useEffect(() => {
+    setTargetAgreementId(transfer.target_agreement_id);
+  }, [transfer.target_agreement_id]);
 
   const isAdmin = hasRole('admin');
 
@@ -119,6 +128,17 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
         );
         return new Set(Array.from(prev).filter((id) => validTaskIds.has(id)));
       });
+    }
+    // Also refresh target_agreement_id in case trigger created it
+    if (!targetAgreementId) {
+      const { data: latestTransfer } = await supabase
+        .from('agreement_transfers')
+        .select('target_agreement_id')
+        .eq('id', transfer.id)
+        .single();
+      if (latestTransfer?.target_agreement_id) {
+        setTargetAgreementId(latestTransfer.target_agreement_id);
+      }
     }
     setLoading(false);
   };
@@ -772,6 +792,25 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                     isComplete={initiationComplete}
                     physicianId={transfer.target_physician_id}
                   />
+                  {targetAgreementId && (
+                    <div className="flex items-center gap-2 p-3 rounded-lg border bg-primary/5 border-primary/20">
+                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                      <span className="text-sm">
+                        New agreement record created
+                      </span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-sm gap-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/admin/agreements/${targetAgreementId}`);
+                        }}
+                      >
+                        View Agreement <ExternalLink className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Lifecycle Info for completed transfers - editable by admin */}
