@@ -8,7 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Clock, FileText, Calendar, ShieldCheck, Cake, ArrowRightLeft,
-  Flag, Lock, ListChecks, UserPlus, MapPin, MoreVertical,
+  Flag, Lock, ListChecks, UserPlus, MapPin, MoreVertical, CheckCircle2,
   Archive, UserCog, User, Plus, ChevronDown, RefreshCw, Users, X, Paperclip,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -207,7 +207,7 @@ export function AdminTaskQueue({
             { key: 'mine' as const, label: 'My Tasks', count: myTaskCount },
             { key: 'blocked' as const, label: 'Blocked', count: blockedCount },
             { key: 'escalated' as const, label: 'Escalated', count: escalatedCount },
-            { key: 'archived' as const, label: 'Completed (7d)', count: archivedTasks.length },
+            { key: 'archived' as const, label: 'Completed / Archived', count: archivedTasks.length },
           ]).map(f => (
             <Button
               key={f.key}
@@ -284,17 +284,21 @@ export function AdminTaskQueue({
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <div className="space-y-1.5">
-                    {tasks.map(task => (
+                    {tasks.map(task => {
+                       const isTaskCompleted = task.status === 'completed';
+                       const isTaskArchived = task.status === 'archived';
+                       return (
                        <div
-                         key={task.id}
-                         className={cn(
-                           "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group cursor-pointer",
-                           task.due_date && new Date(task.due_date) < now && "border-destructive/50 bg-destructive/10 ring-1 ring-destructive/30",
-                           task.escalated && !task.due_date && "border-destructive/30 bg-destructive/5",
-                           (task.status === 'blocked' || task.status === 'waiting_on_signature') && !task.due_date && "border-warning/30 bg-warning/5",
-                           task.status === 'archived' && "opacity-60",
-                           selectedIds.has(task.id) && "ring-2 ring-primary/40 bg-primary/5"
-                         )}
+                          key={task.id}
+                          className={cn(
+                            "flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group cursor-pointer",
+                            task.due_date && new Date(task.due_date) < now && !isTaskCompleted && !isTaskArchived && "border-destructive/50 bg-destructive/10 ring-1 ring-destructive/30",
+                            task.escalated && !task.due_date && !isTaskCompleted && "border-destructive/30 bg-destructive/5",
+                            (task.status === 'blocked' || task.status === 'waiting_on_signature') && !task.due_date && "border-warning/30 bg-warning/5",
+                            isTaskCompleted && "border-primary/30 bg-primary/5",
+                            isTaskArchived && "opacity-60",
+                            selectedIds.has(task.id) && "ring-2 ring-primary/40 bg-primary/5"
+                          )}
                         onClick={() => {
                           if (isSelectionMode) {
                             toggleSelect(task.id);
@@ -313,28 +317,33 @@ export function AdminTaskQueue({
                             />
                           </div>
                         )}
-                        <div className={cn("text-muted-foreground", getPriorityColor(task.priority))}>
-                          {task.priority === 'critical' ? <Flag className="h-3.5 w-3.5" /> : getCategoryIcon(task.category)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                           <div className="flex items-center gap-2 flex-wrap">
-                             <p className="text-sm font-medium truncate">{task.title}</p>
-                             {task.due_date && new Date(task.due_date) < now && (
-                               <Badge variant="destructive" className="text-[10px] gap-0.5 px-1 animate-pulse">
-                                 <Clock className="h-2.5 w-2.5" /> Overdue
-                               </Badge>
-                             )}
-                             {task.escalated && (
-                               <Badge variant="destructive" className="text-[10px] gap-0.5 px-1">
-                                 <Flag className="h-2.5 w-2.5" /> Escalated
-                               </Badge>
-                             )}
-                             {(task.status === 'blocked' || task.status === 'waiting_on_signature') && (
-                               <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-0.5 px-1">
-                                 <Lock className="h-2.5 w-2.5" /> {task.status === 'waiting_on_signature' ? 'Waiting Signature' : 'Blocked'}
-                               </Badge>
-                             )}
-                           </div>
+                         <div className={cn("text-muted-foreground", isTaskCompleted ? "text-primary" : getPriorityColor(task.priority))}>
+                           {isTaskCompleted ? <CheckCircle2 className="h-3.5 w-3.5" /> : task.priority === 'critical' ? <Flag className="h-3.5 w-3.5" /> : getCategoryIcon(task.category)}
+                         </div>
+                         <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className={cn("text-sm font-medium truncate", isTaskCompleted && "line-through text-muted-foreground")}>{task.title}</p>
+                              {isTaskCompleted && (
+                                <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px] gap-0.5 px-1">
+                                  <CheckCircle2 className="h-2.5 w-2.5" /> Completed
+                                </Badge>
+                              )}
+                              {task.due_date && new Date(task.due_date) < now && !isTaskCompleted && (
+                                <Badge variant="destructive" className="text-[10px] gap-0.5 px-1 animate-pulse">
+                                  <Clock className="h-2.5 w-2.5" /> Overdue
+                                </Badge>
+                              )}
+                              {task.escalated && !isTaskCompleted && (
+                                <Badge variant="destructive" className="text-[10px] gap-0.5 px-1">
+                                  <Flag className="h-2.5 w-2.5" /> Escalated
+                                </Badge>
+                              )}
+                              {(task.status === 'blocked' || task.status === 'waiting_on_signature') && (
+                                <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-0.5 px-1">
+                                  <Lock className="h-2.5 w-2.5" /> {task.status === 'waiting_on_signature' ? 'Waiting Signature' : 'Blocked'}
+                                </Badge>
+                              )}
+                            </div>
                           <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
                             {task.assigned_to_name ? (
                               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-0.5 font-normal">
@@ -370,7 +379,7 @@ export function AdminTaskQueue({
                             {task.due_date && (
                               <span className={cn(
                                 "flex items-center gap-0.5",
-                                new Date(task.due_date) < new Date() && "text-destructive"
+                                 new Date(task.due_date) < new Date() && !isTaskCompleted && "text-destructive"
                               )}>
                                 <Clock className="h-3 w-3" />
                                 Due {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -389,7 +398,13 @@ export function AdminTaskQueue({
                                 <span className="truncate">{task.agreement_label}</span>
                               </Badge>
                             )}
-                            {task.transfer_id && <Badge variant="outline" className="text-[10px] px-1"><ArrowRightLeft className="h-2.5 w-2.5 mr-0.5" />Transfer</Badge>}
+                             {task.transfer_id && <Badge variant="outline" className="text-[10px] px-1"><ArrowRightLeft className="h-2.5 w-2.5 mr-0.5" />Transfer</Badge>}
+                             {isTaskCompleted && task.completed_at && (
+                               <span className="text-primary/70 flex items-center gap-0.5">
+                                 <CheckCircle2 className="h-3 w-3" />
+                                 Completed {new Date(task.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                               </span>
+                             )}
                           </div>
                           {task.blocked_reason && (
                             <p className="text-xs text-warning mt-0.5 truncate">{task.blocked_reason}</p>
@@ -421,35 +436,36 @@ export function AdminTaskQueue({
                               {task.priority}
                             </Badge>
                           )}
-                          {!task.assigned_to_name && (
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
-                              onClick={() => handleSelfAssign(task.id)}
-                            >
-                              <UserPlus className="h-3 w-3" /> Claim
-                            </Button>
-                          )}
-                          {task.status !== 'archived' && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
-                                  <MoreVertical className="h-3.5 w-3.5" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => onReassignTask({ id: task.id, title: task.title, assignee: task.assigned_to })}>
-                                  <UserCog className="h-3.5 w-3.5 mr-2" /> Reassign
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onArchiveTask({ id: task.id, title: task.title })} className="text-destructive focus:text-destructive">
-                                  <Archive className="h-3.5 w-3.5 mr-2" /> Archive
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
+                           {!task.assigned_to_name && !isTaskCompleted && (
+                             <Button
+                               variant="ghost" size="sm"
+                               className="h-7 text-xs text-muted-foreground hover:text-primary gap-1"
+                               onClick={() => handleSelfAssign(task.id)}
+                             >
+                               <UserPlus className="h-3 w-3" /> Claim
+                             </Button>
+                           )}
+                           {!isTaskArchived && !isTaskCompleted && (
+                             <DropdownMenu>
+                               <DropdownMenuTrigger asChild>
+                                 <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
+                                   <MoreVertical className="h-3.5 w-3.5" />
+                                 </Button>
+                               </DropdownMenuTrigger>
+                               <DropdownMenuContent align="end">
+                                 <DropdownMenuItem onClick={() => onReassignTask({ id: task.id, title: task.title, assignee: task.assigned_to })}>
+                                   <UserCog className="h-3.5 w-3.5 mr-2" /> Reassign
+                                 </DropdownMenuItem>
+                                 <DropdownMenuItem onClick={() => onArchiveTask({ id: task.id, title: task.title })} className="text-destructive focus:text-destructive">
+                                   <Archive className="h-3.5 w-3.5 mr-2" /> Archive
+                                 </DropdownMenuItem>
+                               </DropdownMenuContent>
+                             </DropdownMenu>
+                           )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CollapsibleContent>
               </Collapsible>
