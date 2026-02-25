@@ -218,7 +218,7 @@ const CollaborativeAgreementsPage = () => {
   // Each agreement row now represents one provider–physician–state combo directly
   // Exclude cancelled agreements from the list entirely
   const flattenedAgreements: FlattenedAgreement[] = dbAgreements
-    .filter(a => a.workflow_status !== 'cancelled' && a.workflow_status !== 'terminated')
+    .filter(a => a.workflow_status !== 'cancelled' && a.workflow_status !== 'terminated' && a.workflow_status !== 'termination_initiated' && !a.terminated_at)
     .map(agreement => {
     const stateCadence = getStateMeetingCadence(agreement.state_abbreviation, stateComplianceData);
     const effectiveCadence = stateCadence || agreement.meeting_cadence;
