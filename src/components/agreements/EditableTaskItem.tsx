@@ -118,6 +118,30 @@ export function EditableTaskItem({
   const requiresUpload = (task as any).requires_upload === true;
   const uploadBlocked = requiresUpload && (docCount === null || docCount === 0);
 
+  const resolveProfileId = async (user: { id: string; email?: string } | null) => {
+    if (!user) return null;
+
+    const { data: byUserId } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (byUserId?.id) return byUserId.id;
+
+    if (user.email) {
+      const { data: byEmail } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', user.email)
+        .maybeSingle();
+
+      if (byEmail?.id) return byEmail.id;
+    }
+
+    return null;
+  };
+
   const handleToggleComplete = async () => {
     // Block completion if requires_upload and no documents
     if (taskStatus !== 'completed' && uploadBlocked) {
@@ -139,11 +163,9 @@ export function EditableTaskItem({
     const { data: { user } } = await supabase.auth.getUser();
 
     // Resolve profile ID for completed_by FK
-    let profileId: string | null = null;
-    if (newStatus === 'completed' && user) {
-      const { data: prof } = await supabase.from('profiles').select('id').eq('user_id', user.id).maybeSingle();
-      profileId = prof?.id ?? null;
-    }
+    const profileId = newStatus === 'completed'
+      ? await resolveProfileId(user ? { id: user.id, email: user.email } : null)
+      : null;
 
     const { error } = await supabase
       .from('agreement_tasks')
@@ -171,7 +193,7 @@ export function EditableTaskItem({
       transfer_id: transferId,
       task_id: task.id,
       activity_type: newStatus === 'completed' ? 'task_completed' : 'status_changed',
-      actor_id: user?.id,
+      actor_id: profileId,
       actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
       actor_role: 'admin',
       description: newStatus === 'completed' 
@@ -193,6 +215,7 @@ export function EditableTaskItem({
     }
 
     const { data: { user } } = await supabase.auth.getUser();
+    const profileId = await resolveProfileId(user ? { id: user.id, email: user.email } : null);
 
     const completionNotes = [
       task.notes || '',
@@ -207,7 +230,7 @@ export function EditableTaskItem({
       .update({
         status: 'completed' as const,
         completed_at: new Date(sigCompletionDate).toISOString(),
-        completed_by: user?.id,
+        completed_by: profileId,
         blocked_reason: null,
         blocked_until: null,
         notes: completionNotes,
@@ -224,7 +247,7 @@ export function EditableTaskItem({
       transfer_id: transferId,
       task_id: task.id,
       activity_type: 'task_completed',
-      actor_id: user?.id,
+      actor_id: profileId,
       actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
       actor_role: 'admin',
       description: `Completed (external verification): ${task.title}`,
