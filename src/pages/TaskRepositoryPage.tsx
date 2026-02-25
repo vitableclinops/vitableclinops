@@ -648,6 +648,24 @@ export default function TaskRepositoryPage() {
                   )}
                 </PopoverContent>
               </Popover>
+              <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={async () => {
+                const ids = Array.from(selectedIds);
+                try {
+                  const { error } = await supabase.from('agreement_tasks').update({
+                    status: 'archived' as any,
+                    archived_at: new Date().toISOString(),
+                  }).in('id', ids);
+                  if (error) throw error;
+                  toast({ title: `${ids.length} task${ids.length > 1 ? 's' : ''} archived` });
+                  setSelectedIds(new Set());
+                  fetchTasks();
+                } catch (err: any) {
+                  toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                }
+              }}>
+                <Archive className="h-3.5 w-3.5 mr-1.5" />
+                Archive
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
                 <X className="h-3.5 w-3.5" />
               </Button>

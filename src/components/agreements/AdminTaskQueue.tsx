@@ -21,7 +21,8 @@ import {
   ChevronRight,
   Loader2,
   ArrowRightLeft,
-  X
+  X,
+  Archive
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -381,6 +382,18 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
             }}>
               <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
               Complete
+            </Button>
+            <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={async () => {
+              const ids = [...selectedIds];
+              await supabase.from('agreement_tasks').update({
+                status: 'archived' as any,
+                archived_at: new Date().toISOString(),
+              }).in('id', ids);
+              setSelectedIds(new Set());
+              fetchTasks();
+            }}>
+              <Archive className="h-3.5 w-3.5 mr-1" />
+              Archive
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
               <X className="h-3.5 w-3.5" />

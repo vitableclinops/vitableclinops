@@ -661,12 +661,32 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
         </ScrollArea>
 
         {/* Footer */}
-        {canComplete && (
-          <DialogFooter className="pt-1.5 border-t">
-            <Button variant={isCompleted ? 'outline' : 'default'} size="sm" onClick={handleToggleComplete} disabled={completing} className="gap-1.5 h-8 text-xs">
-              {completing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : isCompleted ? <RotateCcw className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-              {isCompleted ? 'Reopen Task' : 'Mark Complete'}
-            </Button>
+        {isAdmin && !isMilestone && (
+          <DialogFooter className="pt-1.5 border-t flex gap-2">
+            {!isArchived && !isCompleted && (
+              <Button variant="outline" size="sm" onClick={async () => {
+                try {
+                  const { error } = await supabase.from('agreement_tasks').update({
+                    status: 'archived' as any,
+                    archived_at: new Date().toISOString(),
+                  }).eq('id', task.id);
+                  if (error) throw error;
+                  toast({ title: 'Task archived' });
+                  onTaskUpdated?.();
+                } catch (err: any) {
+                  toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                }
+              }} className="gap-1.5 h-8 text-xs text-destructive hover:text-destructive">
+                <Archive className="h-3.5 w-3.5" />
+                Archive
+              </Button>
+            )}
+            {canComplete && (
+              <Button variant={isCompleted ? 'outline' : 'default'} size="sm" onClick={handleToggleComplete} disabled={completing} className="gap-1.5 h-8 text-xs">
+                {completing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : isCompleted ? <RotateCcw className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                {isCompleted ? 'Reopen Task' : 'Mark Complete'}
+              </Button>
+            )}
           </DialogFooter>
         )}
       </DialogContent>
