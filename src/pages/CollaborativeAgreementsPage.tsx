@@ -171,7 +171,8 @@ const CollaborativeAgreementsPage = () => {
   const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
 
   // Transfers
-  const { transfers, loading: transfersLoading, refetch: refetchTransfers } = useAgreementTransfers();
+  const { transfers: allTransfers, loading: transfersLoading, refetch: refetchTransfers } = useAgreementTransfers();
+  const transfers = allTransfers.filter(t => t.status !== 'cancelled' && t.status !== 'completed');
 
   // Database agreements and providers
   const [dbAgreements, setDbAgreements] = useState<DbAgreement[]>([]);
