@@ -274,18 +274,19 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
     try {
       const newStatus = isCompleted ? 'pending' : 'completed';
       const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from('agreement_tasks').update({
+      const { error } = await supabase.from('agreement_tasks').update({
         status: newStatus as any,
         completed_at: newStatus === 'completed' ? new Date().toISOString() : null,
         completed_by: newStatus === 'completed' ? user?.id : null,
         blocked_reason: null, blocked_until: null,
       }).eq('id', task.id);
-      toast({ title: newStatus === 'completed' ? 'Task completed' : 'Task reopened', description: task.title });
+      if (error) throw error;
+      toast({ title: newStatus === 'completed' ? '✅ Task completed' : 'Task reopened', description: task.title });
       onTaskUpdated?.();
       handleClose();
-    } catch (err) {
-      console.error(err);
-      toast({ title: 'Error', description: 'Failed to update task.', variant: 'destructive' });
+    } catch (err: any) {
+      console.error('Task completion error:', err);
+      toast({ title: 'Error', description: err.message || 'Failed to update task.', variant: 'destructive' });
     } finally { setCompleting(false); }
   };
 
@@ -319,7 +320,8 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
           updatePayload.completed_at = new Date().toISOString();
           updatePayload.completed_by = user?.id || null;
         }
-        await supabase.from('agreement_tasks').update(updatePayload).eq('id', task.id);
+        const { error } = await supabase.from('agreement_tasks').update(updatePayload).eq('id', task.id);
+        if (error) throw error;
 
         // Sync linked providers
         const currentIds = new Set(linkedProviders.map(lp => lp.provider_id));
