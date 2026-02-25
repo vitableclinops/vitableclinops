@@ -156,6 +156,30 @@ const getInitiationTasks = (
     is_required: true,
     sort_order: 7,
   },
+  {
+    title: 'Upload executed agreement to Medallion',
+    description: 'Upload the executed collaborative agreement to Medallion as a provider-supervision relationship record',
+    category: 'document' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 8,
+  },
+  {
+    title: 'Add to Kate Baron collab sheet',
+    description: 'Add the executed collaborative agreement details to Kate Baron\'s tracking spreadsheet',
+    category: 'custom' as const,
+    priority: 'medium',
+    is_required: true,
+    sort_order: 9,
+  },
+  {
+    title: 'Set renewal date',
+    description: 'Set the agreement renewal date. Upon completion, the system will auto-calculate the renewal date as 1 year from the agreement start date.',
+    category: 'custom' as const,
+    priority: 'medium',
+    is_required: true,
+    sort_order: 10,
+  },
 ];
 
 interface CapacityCheck {
