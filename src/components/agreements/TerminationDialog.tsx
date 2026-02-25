@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { 
@@ -8,6 +8,7 @@ import {
   Loader2,
   ClipboardList,
   Calendar,
+  ArrowRightLeft,
 } from 'lucide-react';
 import {
   Dialog,
@@ -23,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { useAgreementWorkflow } from '@/hooks/useAgreementWorkflow';
 import type { Tables } from '@/integrations/supabase/types';
@@ -53,6 +55,28 @@ export function TerminationDialog({
   const [loading, setLoading] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [tasksGenerated, setTasksGenerated] = useState(0);
+  const [hasActiveTransfer, setHasActiveTransfer] = useState(false);
+  const [transferPhysicianName, setTransferPhysicianName] = useState('');
+
+  // Check if there's an active transfer for this agreement
+  useEffect(() => {
+    if (!open) return;
+    const checkTransfer = async () => {
+      const { data } = await supabase
+        .from('agreement_transfers')
+        .select('id, target_physician_name, status')
+        .eq('source_agreement_id', agreement.id)
+        .in('status', ['pending', 'in_progress'])
+        .limit(1);
+      if (data && data.length > 0) {
+        setHasActiveTransfer(true);
+        setTransferPhysicianName(data[0].target_physician_name);
+      } else {
+        setHasActiveTransfer(false);
+      }
+    };
+    checkTransfer();
+  }, [open, agreement.id]);
 
   const handleInitiateTermination = async () => {
     if (!reason.trim()) {
@@ -144,6 +168,14 @@ export function TerminationDialog({
 
         {!completed ? (
           <div className="space-y-4 py-4">
+            {hasActiveTransfer && (
+              <Alert className="border-primary/30 bg-primary/5">
+                <ArrowRightLeft className="h-4 w-4" />
+                <AlertDescription>
+                  <span className="font-medium">Active transfer detected.</span> This agreement has a pending transfer to Dr. {transferPhysicianName}. Termination tasks from the transfer workflow will be reused — no duplicate tasks will be created.
+                </AlertDescription>
+              </Alert>
+            )}
             <div className="space-y-2">
               <Label htmlFor="reason">Reason for Termination *</Label>
               <Textarea

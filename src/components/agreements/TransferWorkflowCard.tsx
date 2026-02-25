@@ -177,6 +177,13 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
           .update({ target_agreement_id: newAgreement.id })
           .eq('id', transfer.id);
 
+        // Re-parent initiation tasks to the new agreement
+        await supabase
+          .from('agreement_tasks')
+          .update({ agreement_id: newAgreement.id })
+          .eq('transfer_id', transfer.id)
+          .eq('auto_trigger', 'transfer_initiation');
+
         // Move providers: Deactivate in old, create in new
         if (transfer.affected_provider_ids && transfer.affected_provider_ids.length > 0) {
           // Deactivate old links
@@ -210,6 +217,17 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
             await supabase.from('agreement_providers').insert(newLinks);
           }
         }
+
+        // Auto-terminate the source agreement
+        await supabase
+          .from('collaborative_agreements')
+          .update({
+            workflow_status: 'terminated',
+            terminated_at: new Date().toISOString(),
+            terminated_by: user?.id,
+            termination_reason: `Transferred to Dr. ${transfer.target_physician_name}`,
+          })
+          .eq('id', transfer.source_agreement_id);
 
         // Log completion + creation
         await supabase.from('transfer_activity_log').insert({
