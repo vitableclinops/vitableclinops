@@ -135,10 +135,10 @@ function getStatusBadge(status: string) {
 /* ─── Related People Hook ─── */
 interface RelatedPerson { id: string; full_name: string | null; role_label: string; }
 
-function useRelatedPeople(task: TaskDialogTask | null, open: boolean) {
+function useRelatedPeople(task: TaskDialogTask | null, active: boolean, version: number) {
   const [people, setPeople] = useState<RelatedPerson[]>([]);
   useEffect(() => {
-    if (!task || !open) { setPeople([]); return; }
+    if (!task || !active) { setPeople([]); return; }
     const resolve = async () => {
       const peopleMap = new Map<string, RelatedPerson>();
 
@@ -164,7 +164,7 @@ function useRelatedPeople(task: TaskDialogTask | null, open: boolean) {
       setPeople([...peopleMap.values()]);
     };
     resolve();
-  }, [task?.id, open]);
+  }, [task?.id, active, version]);
   return people;
 }
 
@@ -224,7 +224,8 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
   const [editing, setEditing] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
-  const relatedPeople = useRelatedPeople(task, open && !editing);
+  const [relatedPeopleVersion, setRelatedPeopleVersion] = useState(0);
+  const relatedPeople = useRelatedPeople(task, open && !editing, relatedPeopleVersion);
 
   // Edit mode state
   const [title, setTitle] = useState('');
@@ -353,6 +354,7 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
       }
 
       toast({ title: 'Task updated', description: 'Changes saved successfully.' });
+      setRelatedPeopleVersion(v => v + 1);
       onTaskUpdated?.();
       handleClose();
     } catch (err: any) {
