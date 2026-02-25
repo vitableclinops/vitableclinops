@@ -136,8 +136,9 @@ export default function AgreementDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  // Task stats
-  const requiredTasks = tasks.filter(t => t.is_required);
+  // Task stats — exclude archived tasks from all operational counts
+  const activeTasks = tasks.filter(t => t.status !== 'archived');
+  const requiredTasks = activeTasks.filter(t => t.is_required);
   const completedRequiredTasks = requiredTasks.filter(t => t.status === 'completed');
   const pendingRequiredTasks = requiredTasks.filter(t => t.status !== 'completed');
   const allRequiredComplete = requiredTasks.length > 0 && pendingRequiredTasks.length === 0;
@@ -575,7 +576,7 @@ export default function AgreementDetailPage() {
                   <Tabs defaultValue="tasks">
                     <TabsList>
                       <TabsTrigger value="tasks">
-                        Tasks ({tasks.length})
+                        Tasks ({activeTasks.length})
                         {pendingRequiredTasks.length > 0 && (
                           <Badge variant="destructive" className="ml-2 text-xs h-5 px-1.5">
                             {pendingRequiredTasks.length}
@@ -602,13 +603,16 @@ export default function AgreementDetailPage() {
                         <CardContent>
                           {tasks.length > 0 ? (
                             <div className="space-y-3">
-                              {tasks.map((task: AgreementTask) => (
+                              {tasks.map((task: AgreementTask) => {
+                                const isArchived = task.status === 'archived';
+                                return (
                                 <Collapsible key={task.id}>
                                   <div
                                     className={cn(
                                       "rounded-lg border transition-colors",
                                       task.status === 'completed' && "bg-success/5 border-success/20",
-                                      task.status === 'blocked' && "bg-destructive/5 border-destructive/20"
+                                      task.status === 'blocked' && "bg-destructive/5 border-destructive/20",
+                                      isArchived && "opacity-40 bg-muted/20 border-dashed border-muted-foreground/20"
                                     )}
                                   >
                                     <CollapsibleTrigger asChild>
@@ -616,8 +620,11 @@ export default function AgreementDetailPage() {
                                         {getTaskStatusIcon(task.status)}
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-center gap-2">
-                                            <p className="font-medium text-foreground">{task.title}</p>
-                                            {task.is_required && (
+                                            <p className={cn("font-medium text-foreground", isArchived && "line-through text-muted-foreground")}>{task.title}</p>
+                                            {isArchived && (
+                                              <Badge variant="secondary" className="text-xs">Archived</Badge>
+                                            )}
+                                            {!isArchived && task.is_required && (
                                               <Badge variant="outline" className="text-xs">Required</Badge>
                                             )}
                                           </div>
@@ -627,7 +634,7 @@ export default function AgreementDetailPage() {
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
                                           <Badge variant="outline" className="capitalize text-xs">{task.category.replace(/_/g, ' ')}</Badge>
-                                          {hasRole('admin') && (
+                                          {hasRole('admin') && !isArchived && (
                                             <Button
                                               size="sm"
                                               variant="ghost"
@@ -636,7 +643,7 @@ export default function AgreementDetailPage() {
                                               <Pencil className="h-3 w-3" />
                                             </Button>
                                           )}
-                                          {hasRole('admin') && task.status !== 'completed' && (
+                                          {hasRole('admin') && !isArchived && task.status !== 'completed' && (
                                             <Button
                                               size="sm"
                                               variant="outline"
@@ -740,7 +747,8 @@ export default function AgreementDetailPage() {
                                     </CollapsibleContent>
                                   </div>
                                 </Collapsible>
-                              ))}
+                                );
+                              })}
                             </div>
                           ) : (
                             <div className="text-center py-8">
