@@ -147,21 +147,24 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
     fetchTasks();
   }, [transfer.id]);
 
+  // Exclude archived tasks from operational views
+  const activeTasks = tasks.filter(t => t.status !== 'archived');
+
   // Separate by phase
-  const terminationTasks = tasks.filter(t => t.auto_trigger === 'transfer_termination');
-  const initiationTasks = tasks.filter(t => t.auto_trigger === 'transfer_initiation');
+  const terminationTasks = activeTasks.filter(t => t.auto_trigger === 'transfer_termination');
+  const initiationTasks = activeTasks.filter(t => t.auto_trigger === 'transfer_initiation');
 
   // Progress calculations - REQUIRED tasks only for completion status
-  const requiredTasks = tasks.filter(t => t.is_required !== false);
+  const requiredTasks = activeTasks.filter(t => t.is_required !== false);
   const completedRequiredTasks = requiredTasks.filter(t => t.status === 'completed');
-  const blockedTasks = tasks.filter(t => t.status === 'blocked' || t.status === 'waiting_on_signature');
-  const escalatedTasks = tasks.filter(t => t.escalated);
+  const blockedTasks = activeTasks.filter(t => t.status === 'blocked' || t.status === 'waiting_on_signature');
+  const escalatedTasks = activeTasks.filter(t => t.escalated);
   const allRequiredComplete = requiredTasks.length > 0 && 
     requiredTasks.every(t => t.status === 'completed');
 
   // Overall progress including optional
-  const completedTasks = tasks.filter(t => t.status === 'completed').length;
-  const totalTasks = tasks.length;
+  const completedTasks = activeTasks.filter(t => t.status === 'completed').length;
+  const totalTasks = activeTasks.length;
   const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
   // Phase-specific progress (required only)
@@ -386,6 +389,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
         .from('agreement_tasks')
         .update({
           status: 'archived' as any,
+          is_required: false,
           archived_at: new Date().toISOString(),
           archived_by: user?.user_metadata?.full_name || user?.email || 'System',
           archived_reason: 'Transfer cancelled',
