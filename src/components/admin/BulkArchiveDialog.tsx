@@ -30,6 +30,7 @@ export function BulkArchiveDialog({ taskIds, open, onClose, onSuccess }: BulkArc
         .from('agreement_tasks')
         .update({
           status: 'archived' as any,
+          is_required: false,
           archived_at: new Date().toISOString(),
           archived_by: user?.id || null,
           archived_reason: reason.trim(),
