@@ -36,7 +36,8 @@ import {
   UserPlus,
   PenTool,
   Paperclip,
-  Info
+  Info,
+  Archive
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -579,6 +580,7 @@ export function EditableTaskItem({
 
   // View mode
   const isBlocked = taskStatus === 'blocked' || taskStatus === 'waiting_on_signature';
+  const isArchived = task.status === 'archived';
 
   return (
     <>
@@ -587,19 +589,20 @@ export function EditableTaskItem({
         "flex flex-wrap items-start gap-2 p-3 rounded-lg hover:bg-muted/50 transition-colors group border border-transparent overflow-hidden cursor-pointer",
         taskStatus === 'completed' && 'opacity-60',
         isBlocked && 'bg-warning/5 border-warning/30',
-        task.escalated && 'bg-destructive/5 border-destructive/30'
+        task.escalated && 'bg-destructive/5 border-destructive/30',
+        isArchived && 'opacity-50 bg-muted/30 border-dashed border-muted-foreground/20'
       )}
       onClick={() => setShowDetail(true)}
     >
       <div className="flex items-center gap-2 pt-0.5 shrink-0" onClick={e => e.stopPropagation()}>
-        {isAdmin && (
+        {isAdmin && !isArchived && (
           <GripVertical className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-grab" />
         )}
         
         <Checkbox
           checked={taskStatus === 'completed'}
           onCheckedChange={handleToggleComplete}
-          disabled={!isAdmin || isBlocked}
+          disabled={!isAdmin || isBlocked || isArchived}
         />
         
         <div className="text-muted-foreground">
@@ -611,10 +614,14 @@ export function EditableTaskItem({
         <div className="flex items-center gap-2 flex-wrap">
           <p className={cn(
             "text-sm",
-            taskStatus === 'completed' && 'line-through'
+            taskStatus === 'completed' && 'line-through',
+            isArchived && 'line-through text-muted-foreground'
           )}>
             {task.title}
           </p>
+          {isArchived && (
+            <Badge variant="secondary" className="text-[10px] px-1 gap-0.5"><Archive className="h-2.5 w-2.5" />Archived</Badge>
+          )}
           {!task.is_required && (
             <Badge variant="outline" className="text-[10px] px-1">Optional</Badge>
           )}
