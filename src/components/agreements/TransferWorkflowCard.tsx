@@ -520,6 +520,19 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               <CheckCircle2 className="h-4 w-4 text-success" />
             )}
           </div>
+          {phase === 'initiation' && targetAgreementId && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/admin/agreements/${targetAgreementId}`);
+              }}
+            >
+              View Agreement <ExternalLink className="h-3 w-3" />
+            </Button>
+          )}
         </div>
         
         <div className="space-y-1">
@@ -792,25 +805,6 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                     isComplete={initiationComplete}
                     physicianId={transfer.target_physician_id}
                   />
-                  {targetAgreementId && (
-                    <div className="flex items-center gap-2 p-3 rounded-lg border bg-primary/5 border-primary/20">
-                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                      <span className="text-sm">
-                        New agreement record created
-                      </span>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="h-auto p-0 text-sm gap-1"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/admin/agreements/${targetAgreementId}`);
-                        }}
-                      >
-                        View Agreement <ExternalLink className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  )}
                 </div>
 
                 {/* Lifecycle Info for completed transfers - editable by admin */}
