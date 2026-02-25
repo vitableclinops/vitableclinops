@@ -20,6 +20,7 @@ import { TransferProviderSubtable } from './TransferProviderSubtable';
 import { TransferEffectiveDatesEditor } from './TransferEffectiveDatesEditor';
 import { EffectiveDateWarnings } from './EffectiveDateWarnings';
 import { WorkflowReadinessBanner } from '@/components/workflows/WorkflowReadinessBanner';
+import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
 import { computeTransferReadiness } from '@/hooks/useWorkflowReadiness';
 import { 
   ArrowRightLeft, 
@@ -35,7 +36,9 @@ import {
   Flag,
   Calendar,
   FilePlus,
-  Loader2
+  Loader2,
+  Archive,
+  X
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { parseLocalDate } from '@/lib/utils';
@@ -57,6 +60,8 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState('checklist');
   const [creatingAgreement, setCreatingAgreement] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
 
   const isAdmin = hasRole('admin');
 
@@ -71,6 +76,14 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
 
     if (!error && data) {
       setTasks(data);
+      setSelectedTaskIds(prev => {
+        const validTaskIds = new Set(
+          data
+            .filter((task) => task.status !== 'archived' && task.status !== 'completed')
+            .map((task) => task.id)
+        );
+        return new Set(Array.from(prev).filter((id) => validTaskIds.has(id)));
+      });
     }
     setLoading(false);
   };
@@ -241,6 +254,20 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
 
   const handleTaskDeleted = (taskId: string) => {
     setTasks(prev => prev.filter(t => t.id !== taskId));
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      next.delete(taskId);
+      return next;
+    });
+  };
+
+  const handleTaskSelectionChange = (taskId: string, selected: boolean) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (selected) next.add(taskId);
+      else next.delete(taskId);
+      return next;
+    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -296,6 +323,8 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               isAdmin={isAdmin}
               onUpdate={fetchTasks}
               onDelete={handleTaskDeleted}
+              selected={selectedTaskIds.has(task.id)}
+              onSelectedChange={handleTaskSelectionChange}
             />
           ))}
           
@@ -492,6 +521,24 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                   onUpdate={() => { fetchTasks(); onUpdate?.(); }}
                 />
 
+                {isAdmin && selectedTaskIds.size > 0 && (
+                  <div className="flex items-center gap-2 p-2 rounded-lg border bg-muted/50">
+                    <span className="text-sm font-medium">{selectedTaskIds.size} selected</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setBulkArchiveOpen(true)}
+                    >
+                      <Archive className="h-3.5 w-3.5 mr-1" />
+                      Archive
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedTaskIds(new Set())}>
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+
                 <div className="space-y-6">
                   <TaskPhaseSection 
                     taskList={terminationTasks} 
@@ -532,6 +579,17 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               </TabsContent>
             </Tabs>
           )}
+
+          <BulkArchiveDialog
+            taskIds={Array.from(selectedTaskIds)}
+            open={bulkArchiveOpen}
+            onClose={() => setBulkArchiveOpen(false)}
+            onSuccess={() => {
+              setBulkArchiveOpen(false);
+              setSelectedTaskIds(new Set());
+              fetchTasks();
+            }}
+          />
 
           {transfer.notes && (
             <div className="mt-4 p-3 bg-muted/50 rounded-md">
