@@ -135,9 +135,71 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
 
       if (transferError) throw transferError;
 
-      // 2. Auto-create the new agreement if not already linked
-      if (!transfer.target_agreement_id && transfer.effective_date && transfer.target_physician_id) {
-        // Fetch source agreement to copy non-specific config and state_id
+      // 2. Check if target agreement was already auto-created by the trigger
+      // Re-fetch transfer to get latest target_agreement_id
+      const { data: latestTransfer } = await supabase
+        .from('agreement_transfers')
+        .select('target_agreement_id')
+        .eq('id', transfer.id)
+        .single();
+
+      const targetAgreementId = latestTransfer?.target_agreement_id || transfer.target_agreement_id;
+
+      if (targetAgreementId) {
+        // Agreement already exists (created by trigger) — advance to active if effective date has passed
+        const effectiveDate = transfer.effective_date;
+        const today = new Date().toISOString().split('T')[0];
+        const shouldActivate = !effectiveDate || effectiveDate <= today;
+
+        if (shouldActivate) {
+          await supabase
+            .from('collaborative_agreements')
+            .update({ workflow_status: 'active' })
+            .eq('id', targetAgreementId)
+            .in('workflow_status', ['draft', 'in_progress']);
+        }
+
+        // Deactivate providers in old agreement
+        if (transfer.affected_provider_ids && transfer.affected_provider_ids.length > 0) {
+          await supabase
+            .from('agreement_providers')
+            .update({
+              is_active: false,
+              removed_at: transfer.effective_date || new Date().toISOString().split('T')[0],
+              removed_reason: 'Transferred to new physician',
+            })
+            .in('provider_id', transfer.affected_provider_ids)
+            .eq('agreement_id', transfer.source_agreement_id);
+        }
+
+        // Terminate source agreement
+        await supabase
+          .from('collaborative_agreements')
+          .update({
+            workflow_status: 'terminated',
+            terminated_at: new Date().toISOString(),
+            terminated_by: user?.id,
+            termination_reason: `Transferred to Dr. ${transfer.target_physician_name}`,
+          })
+          .eq('id', transfer.source_agreement_id);
+
+        await supabase.from('transfer_activity_log').insert({
+          transfer_id: transfer.id,
+          activity_type: 'status_changed',
+          actor_id: user?.id,
+          actor_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
+          actor_role: 'admin',
+          description: `Transfer finalized. Agreement ${targetAgreementId} ${shouldActivate ? 'activated' : 'remains in draft (effective date ' + effectiveDate + ' is in the future)'}. Source agreement terminated. ${transfer.affected_provider_count} providers transferred.`,
+        });
+
+        toast({
+          title: 'Transfer Complete',
+          description: shouldActivate 
+            ? 'Agreement activated and providers transferred successfully.'
+            : `Agreement will auto-activate on ${effectiveDate}. Source agreement terminated.`,
+        });
+      } else if (transfer.effective_date && transfer.target_physician_id) {
+        // Fallback: no trigger-created agreement — create one now (active)
         const { data: sourceAgreement } = await supabase
           .from('collaborative_agreements')
           .select('chart_review_frequency, meeting_cadence, renewal_cadence, state_id')
@@ -148,7 +210,6 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
           throw new Error('Could not retrieve state_id from source agreement');
         }
 
-        // Create new active agreement
         const { data: newAgreement, error: createError } = await supabase
           .from('collaborative_agreements')
           .insert({
@@ -158,8 +219,8 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
             physician_id: transfer.target_physician_id,
             physician_name: transfer.target_physician_name,
             physician_email: transfer.target_physician_email,
-            provider_name: `${transfer.affected_provider_count} Providers`, // Placeholder name for bulk agreement
-            start_date: transfer.effective_date, // Use transfer effective date
+            provider_name: `${transfer.affected_provider_count} Providers`,
+            start_date: transfer.effective_date,
             workflow_status: 'active',
             meeting_cadence: transfer.meeting_cadence || sourceAgreement?.meeting_cadence || 'monthly',
             chart_review_frequency: transfer.chart_review_frequency || sourceAgreement?.chart_review_frequency,
@@ -171,33 +232,28 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
 
         if (createError) throw createError;
 
-        // Link new agreement to transfer
         await supabase
           .from('agreement_transfers')
           .update({ target_agreement_id: newAgreement.id })
           .eq('id', transfer.id);
 
-        // Re-parent initiation tasks to the new agreement
         await supabase
           .from('agreement_tasks')
           .update({ agreement_id: newAgreement.id })
           .eq('transfer_id', transfer.id)
           .eq('auto_trigger', 'transfer_initiation');
 
-        // Move providers: Deactivate in old, create in new
         if (transfer.affected_provider_ids && transfer.affected_provider_ids.length > 0) {
-          // Deactivate old links
           await supabase
             .from('agreement_providers')
-            .update({ 
-              is_active: false, 
+            .update({
+              is_active: false,
               removed_at: transfer.effective_date,
-              removed_reason: 'Transferred to new physician'
+              removed_reason: 'Transferred to new physician',
             })
             .in('provider_id', transfer.affected_provider_ids)
             .eq('agreement_id', transfer.source_agreement_id);
 
-          // Fetch provider details for insertion
           const { data: providers } = await supabase
             .from('profiles')
             .select('id, full_name, email, npi_number')
@@ -213,12 +269,10 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               is_active: true,
               start_date: transfer.effective_date,
             }));
-
             await supabase.from('agreement_providers').insert(newLinks);
           }
         }
 
-        // Auto-terminate the source agreement
         await supabase
           .from('collaborative_agreements')
           .update({
@@ -229,7 +283,6 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
           })
           .eq('id', transfer.source_agreement_id);
 
-        // Log completion + creation
         await supabase.from('transfer_activity_log').insert({
           transfer_id: transfer.id,
           activity_type: 'status_changed',
@@ -244,7 +297,6 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
           description: 'New agreement created and providers transferred successfully.',
         });
       } else {
-        // Just completion log if no auto-create needed (e.g. manual override)
         await supabase.from('transfer_activity_log').insert({
           transfer_id: transfer.id,
           activity_type: 'status_changed',
@@ -253,7 +305,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
           actor_role: 'admin',
           description: 'Transfer workflow completed manually.',
         });
-        
+
         toast({ title: 'Transfer Complete', description: 'Workflow marked as completed.' });
       }
 
