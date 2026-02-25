@@ -25,6 +25,7 @@ import {
   Archive
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
+import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
 
 type Task = Tables<'agreement_tasks'>;
 
@@ -48,6 +49,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'assigned' | 'overdue' | 'blocked' | 'thisWeek'>('assigned');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -383,15 +385,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
               <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
               Complete
             </Button>
-            <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={async () => {
-              const ids = [...selectedIds];
-              await supabase.from('agreement_tasks').update({
-                status: 'archived' as any,
-                archived_at: new Date().toISOString(),
-              }).in('id', ids);
-              setSelectedIds(new Set());
-              fetchTasks();
-            }}>
+            <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setBulkArchiveOpen(true)}>
               <Archive className="h-3.5 w-3.5 mr-1" />
               Archive
             </Button>
@@ -401,6 +395,12 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
           </div>
         )}
       </CardContent>
+      <BulkArchiveDialog
+        taskIds={Array.from(selectedIds)}
+        open={bulkArchiveOpen}
+        onClose={() => setBulkArchiveOpen(false)}
+        onSuccess={() => { setBulkArchiveOpen(false); setSelectedIds(new Set()); fetchTasks(); }}
+      />
     </Card>
   );
 }

@@ -18,6 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TaskDocumentUpload, useTaskDocumentCount } from './TaskDocumentUpload';
+import { ArchiveTaskDialog } from '@/components/admin/ArchiveTaskDialog';
 import { LinkedProviderEditor, type LinkedProviderItem } from '@/components/admin/LinkedProviderEditor';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -28,6 +29,7 @@ import {
   FileText, Calendar, Bell, ClipboardCheck, Clock, Star, Flag,
   AlertCircle, Lock, PenTool, Paperclip, ExternalLink, User, MapPin,
   CheckCircle2, RotateCcw, Loader2, Users, Pencil, X, Archive,
+
   Copy, Search, Cake, Trophy,
 } from 'lucide-react';
 
@@ -75,6 +77,7 @@ export interface TaskDialogTask {
   physician_id?: string | null;
   transfer_id?: string | null;
   archived_reason?: string | null;
+  archived_at?: string | null;
   source?: string;
   milestone_type?: string | null;
   slack_template?: string | null;
@@ -213,6 +216,7 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const relatedPeople = useRelatedPeople(task, open && !editing);
 
   // Edit mode state
@@ -520,134 +524,140 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
 
   /* ━━━ VIEW MODE ━━━ */
   return (
+    <>
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-lg max-h-[75vh] overflow-hidden flex flex-col p-4 gap-2">
         <DialogHeader className="pb-0">
           <div className="flex items-start justify-between gap-2">
             <DialogTitle className="flex items-center gap-2 text-sm font-semibold flex-1 leading-tight">
-              <span className="text-muted-foreground">{getCategoryIcon(task.category)}</span>
+              {getCategoryIcon(task.category)}
               {task.title}
             </DialogTitle>
-            {isAdmin && (
-              <Button variant="outline" size="sm" className="gap-1.5 shrink-0 h-7 text-xs" onClick={() => setEditing(true)}>
+            {isAdmin && !isMilestone && (
+              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setEditing(true)}>
                 <Pencil className="h-3 w-3" />
-                Edit
               </Button>
             )}
           </div>
-        </DialogHeader>
-
-        <ScrollArea className="flex-1 min-h-0 -mx-4 px-4">
-          <div className="space-y-2.5 pb-2">
-            {/* Status & meta badges */}
-            <div className="flex items-center gap-2 flex-wrap">
+          <DialogDescription asChild>
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
               {getStatusBadge(task.status)}
-              {task.is_required && (
-                <Badge variant="outline" className="gap-1 text-xs"><Star className="h-3 w-3 text-warning fill-warning" /> Required</Badge>
-              )}
-              {task.escalated && (
-                <Badge variant="destructive" className="gap-1 text-xs"><Flag className="h-3 w-3" /> Escalated</Badge>
-              )}
-              <Badge variant="outline" className="text-xs">{getCategoryLabel(task.category)}</Badge>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">{getCategoryLabel(task.category)}</Badge>
               {task.priority && task.priority !== 'medium' && (
-                <Badge variant="outline" className={cn("text-xs", task.priority === 'critical' && "border-destructive/30 text-destructive", task.priority === 'high' && "border-warning/30 text-warning")}>
-                  {task.priority}
+                <Badge variant={task.priority === 'critical' || task.priority === 'high' ? 'destructive' : 'secondary'} className="text-[10px] px-1.5 py-0 gap-0.5">
+                  <Flag className="h-2.5 w-2.5" />{task.priority}
                 </Badge>
               )}
+              {task.state_abbreviation && <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5"><MapPin className="h-2.5 w-2.5" />{task.state_abbreviation}</Badge>}
+              {task.is_required && <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5"><Star className="h-2.5 w-2.5 fill-current" />Required</Badge>}
+              {task.requires_upload && (docCount === null || docCount === 0) && (
+                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 gap-0.5"><AlertCircle className="h-2.5 w-2.5" />Needs doc</Badge>
+              )}
             </div>
+          </DialogDescription>
+        </DialogHeader>
 
+        <ScrollArea className="flex-1 -mx-4 px-4">
+          <div className="space-y-3 py-2">
             {/* Description */}
             {task.description && (
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Description</Label>
-                <p className="text-sm">{task.description}</p>
+                <Label className="text-[11px] text-muted-foreground">Description</Label>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{task.description}</p>
               </div>
             )}
 
-            <Separator />
-
-            {/* Related People */}
-            {relatedPeople.length > 0 && (
-              <>
-                <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> Related People</Label>
-                  <div className="space-y-0.5">
-                    {relatedPeople.map((person) => (
-                      <div key={person.id} className="flex items-center gap-2 rounded border border-input bg-muted/50 px-2 py-1 text-xs">
-                        <User className="h-3 w-3 text-muted-foreground shrink-0" />
-                        <span className="font-medium flex-1 truncate">{person.full_name || 'Unknown'}</span>
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">{person.role_label}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <Separator />
-              </>
-            )}
-
-            {/* Detail grid */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            {/* Meta grid */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               {task.assigned_to_name && (
-                <div className="space-y-0.5">
-                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" /> Assigned To</Label>
-                  <p>{task.assigned_to_name}</p>
+                <div className="flex items-center gap-1.5">
+                  <User className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-muted-foreground">Assigned:</span>
+                  <span className="font-medium">{task.assigned_to_name}</span>
                 </div>
               )}
               {task.due_date && (
-                <div className="space-y-0.5">
-                  <Label className={cn("text-[11px] flex items-center gap-1", parseLocalDate(task.due_date) < new Date() && task.status !== 'completed' ? "text-destructive" : "text-muted-foreground")}>
-                    <Calendar className="h-3 w-3" /> Due Date
-                  </Label>
-                  <p className={cn(parseLocalDate(task.due_date) < new Date() && task.status !== 'completed' && "text-destructive font-medium")}>
-                    {format(parseLocalDate(task.due_date), 'MMM d, yyyy')}
-                  </p>
-                </div>
-              )}
-              {task.state_name && (
-                <div className="space-y-0.5">
-                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> State</Label>
-                  <p>{task.state_name}{task.state_abbreviation ? ` (${task.state_abbreviation})` : ''}</p>
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-muted-foreground">Due:</span>
+                  <span className="font-medium">{format(parseLocalDate(task.due_date), 'MMM d, yyyy')}</span>
                 </div>
               )}
               {task.completed_at && (
-                <div className="space-y-0.5">
-                  <Label className="text-[11px] text-muted-foreground">Completed</Label>
-                  <p>{formatDistanceToNow(new Date(task.completed_at), { addSuffix: true })}</p>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3 w-3 text-primary" />
+                  <span className="text-muted-foreground">Completed:</span>
+                  <span className="font-medium">{formatDistanceToNow(new Date(task.completed_at), { addSuffix: true })}</span>
+                </div>
+              )}
+              {task.created_at && (
+                <div className="flex items-center gap-1.5">
+                  <Clock className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-muted-foreground">Created:</span>
+                  <span className="font-medium">{formatDistanceToNow(new Date(task.created_at), { addSuffix: true })}</span>
                 </div>
               )}
             </div>
 
-            {/* Blocked info */}
-            {isBlocked && task.blocked_reason && (
-              <div className="flex items-start gap-2 text-sm text-warning bg-warning/10 border border-warning/30 rounded-md p-3">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium text-xs">Blocked Reason</p>
-                  <p>{task.blocked_reason}</p>
-                  {task.blocked_until && (
-                    <p className="text-xs text-muted-foreground mt-1">Follow-up: {format(parseLocalDate(task.blocked_until), 'MMM d, yyyy')}</p>
-                  )}
+            {/* Related people */}
+            {relatedPeople.length > 0 && (
+              <>
+                <Separator />
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> Related People</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {relatedPeople.map((p) => (
+                      <Badge key={p.id} variant="secondary" className="text-[10px] gap-1">
+                        <User className="h-2.5 w-2.5" />{p.full_name || 'Unknown'} · {p.role_label}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {/* External link */}
-            {task.external_url && (
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">External Link</Label>
-                <a href={task.external_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary flex items-center gap-1 hover:underline">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {task.external_url.length > 60 ? task.external_url.slice(0, 60) + '…' : task.external_url}
-                </a>
-              </div>
+              </>
             )}
 
             {/* Notes */}
             {task.notes && (
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Notes</Label>
-                <div className="text-sm bg-muted/40 rounded-md p-3 whitespace-pre-line">{task.notes}</div>
+              <>
+                <Separator />
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">Notes</Label>
+                  <p className="text-sm whitespace-pre-wrap text-muted-foreground">{task.notes}</p>
+                </div>
+              </>
+            )}
+
+            {/* External URL */}
+            {task.external_url && (
+              <div>
+                <a href={task.external_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+                  <ExternalLink className="h-3 w-3" /> Open Link
+                </a>
               </div>
+            )}
+
+            {/* Blocked info */}
+            {isBlocked && (task.blocked_reason || task.blocked_until) && (
+              <>
+                <Separator />
+                <div className="bg-warning/10 text-warning rounded-md p-2 text-xs space-y-1">
+                  <div className="flex items-center gap-1 font-medium"><Lock className="h-3 w-3" /> Blocked</div>
+                  {task.blocked_reason && <p>{task.blocked_reason}</p>}
+                  {task.blocked_until && <p>Until: {format(parseLocalDate(task.blocked_until), 'MMM d, yyyy')}</p>}
+                </div>
+              </>
+            )}
+
+            {/* Archived info */}
+            {isArchived && (
+              <>
+                <Separator />
+                <div className="bg-muted rounded-md p-2 text-xs space-y-1">
+                  <div className="flex items-center gap-1 font-medium"><Archive className="h-3 w-3" /> Archived</div>
+                  {task.archived_reason && <p className="text-muted-foreground">{task.archived_reason}</p>}
+                  {task.archived_at && <p className="text-muted-foreground">Archived {formatDistanceToNow(new Date(task.archived_at), { addSuffix: true })}</p>}
+                </div>
+              </>
             )}
 
             <Separator />
@@ -664,19 +674,7 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
         {isAdmin && !isMilestone && (
           <DialogFooter className="pt-1.5 border-t flex gap-2">
             {!isArchived && !isCompleted && (
-              <Button variant="outline" size="sm" onClick={async () => {
-                try {
-                  const { error } = await supabase.from('agreement_tasks').update({
-                    status: 'archived' as any,
-                    archived_at: new Date().toISOString(),
-                  }).eq('id', task.id);
-                  if (error) throw error;
-                  toast({ title: 'Task archived' });
-                  onTaskUpdated?.();
-                } catch (err: any) {
-                  toast({ title: 'Error', description: err.message, variant: 'destructive' });
-                }
-              }} className="gap-1.5 h-8 text-xs text-destructive hover:text-destructive">
+              <Button variant="outline" size="sm" onClick={() => setShowArchiveDialog(true)} className="gap-1.5 h-8 text-xs text-destructive hover:text-destructive">
                 <Archive className="h-3.5 w-3.5" />
                 Archive
               </Button>
@@ -691,5 +689,14 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
         )}
       </DialogContent>
     </Dialog>
+    {task && (
+      <ArchiveTaskDialog
+        taskId={showArchiveDialog ? task.id : null}
+        taskTitle={task.title}
+        onClose={() => setShowArchiveDialog(false)}
+        onSuccess={() => { setShowArchiveDialog(false); onTaskUpdated?.(); }}
+      />
+    )}
+    </>
   );
 }
