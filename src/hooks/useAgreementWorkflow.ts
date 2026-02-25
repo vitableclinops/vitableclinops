@@ -457,38 +457,72 @@ export const useAgreementWorkflow = () => {
       if (providersError) throw providersError;
     }
 
-    // Step 3: Generate required tasks
-    const setupTasks = getSetupTasks(
-      agreement.id,
-      agreementData.state_abbreviation,
-      agreementData.state_name,
-      providers[0]?.id || null,
-      agreementData.physician_id || null,
-      options
-    );
+    // Step 3: Check if there's an active transfer with initiation tasks for this physician+state
+    let hasTransferInitiationTasks = false;
+    if (agreementData.physician_id && agreementData.state_abbreviation) {
+      const { data: transferTasks } = await supabase
+        .from('agreement_tasks')
+        .select('id, transfer_id')
+        .eq('auto_trigger', 'transfer_initiation')
+        .eq('physician_id', agreementData.physician_id)
+        .eq('state_abbreviation', agreementData.state_abbreviation)
+        .limit(1);
 
-    const { data: createdTasks, error: tasksError } = await supabase
-      .from('agreement_tasks')
-      .insert(setupTasks)
-      .select();
+      if (transferTasks && transferTasks.length > 0) {
+        hasTransferInitiationTasks = true;
+        // Re-parent these transfer initiation tasks to the new agreement
+        const transferId = transferTasks[0].transfer_id;
+        if (transferId) {
+          await supabase
+            .from('agreement_tasks')
+            .update({ agreement_id: agreement.id })
+            .eq('transfer_id', transferId)
+            .eq('auto_trigger', 'transfer_initiation');
 
-    if (tasksError) throw tasksError;
-
-    // Auto-link providers to tasks
-    if (createdTasks && createdTasks.length > 0) {
-      const links: { task_id: string; provider_id: string; role_label: string }[] = [];
-      for (const task of createdTasks) {
-        for (const p of providers) {
-          if (p.id) links.push({ task_id: task.id, provider_id: p.id, role_label: 'NP' });
+          // Also link the transfer to this new agreement
+          await supabase
+            .from('agreement_transfers')
+            .update({ target_agreement_id: agreement.id })
+            .eq('id', transferId);
         }
-        if (agreementData.physician_id) {
-          links.push({ task_id: task.id, provider_id: agreementData.physician_id, role_label: 'Physician' });
-        }
-      }
-      if (links.length > 0) {
-        await supabase.from('task_linked_providers').insert(links);
       }
     }
+
+    // Only generate setup tasks if no transfer already created initiation tasks
+    if (!hasTransferInitiationTasks) {
+      const setupTasks = getSetupTasks(
+        agreement.id,
+        agreementData.state_abbreviation,
+        agreementData.state_name,
+        providers[0]?.id || null,
+        agreementData.physician_id || null,
+        options
+      );
+
+      const { data: createdTasks, error: tasksError } = await supabase
+        .from('agreement_tasks')
+        .insert(setupTasks)
+        .select();
+
+      if (tasksError) throw tasksError;
+
+      // Auto-link providers to tasks
+      if (createdTasks && createdTasks.length > 0) {
+        const links: { task_id: string; provider_id: string; role_label: string }[] = [];
+        for (const task of createdTasks) {
+          for (const p of providers) {
+            if (p.id) links.push({ task_id: task.id, provider_id: p.id, role_label: 'NP' });
+          }
+          if (agreementData.physician_id) {
+            links.push({ task_id: task.id, provider_id: agreementData.physician_id, role_label: 'Physician' });
+          }
+        }
+        if (links.length > 0) {
+          await supabase.from('task_linked_providers').insert(links);
+        }
+      }
+    }
+
 
     // Step 4: Create workflow steps
     const workflowSteps = [
@@ -514,7 +548,7 @@ export const useAgreementWorkflow = () => {
       action: 'agreement_created',
       changes: {
         state: agreementData.state_abbreviation,
-        tasks_generated: setupTasks.length,
+        reused_transfer_tasks: hasTransferInitiationTasks,
         initial_status: 'in_progress',
       },
     });
@@ -531,6 +565,16 @@ export const useAgreementWorkflow = () => {
     reason: string,
     adminId?: string
   ) => {
+    // Check if an active transfer already has termination tasks for this agreement
+    const { data: existingTransferTasks } = await supabase
+      .from('agreement_tasks')
+      .select('id')
+      .eq('agreement_id', agreementId)
+      .eq('auto_trigger', 'transfer_termination')
+      .limit(1);
+
+    const hasTransferTerminationTasks = existingTransferTasks && existingTransferTasks.length > 0;
+
     // Step 1: Set to pending termination
     const { error: statusError } = await supabase
       .from('collaborative_agreements')
@@ -542,20 +586,28 @@ export const useAgreementWorkflow = () => {
 
     if (statusError) throw statusError;
 
-    // Step 2: Generate termination tasks
-    const terminationTasks = getTerminationTasks(
-      agreementId,
-      agreement.state_abbreviation,
-      agreement.state_name,
-      null, // provider_id - will be for all providers
-      agreement.physician_id
-    );
+    let taskCount = 0;
 
-    const { error: tasksError } = await supabase
-      .from('agreement_tasks')
-      .insert(terminationTasks);
+    // Step 2: Only generate termination tasks if no transfer already created them
+    if (!hasTransferTerminationTasks) {
+      const terminationTasks = getTerminationTasks(
+        agreementId,
+        agreement.state_abbreviation,
+        agreement.state_name,
+        null,
+        agreement.physician_id
+      );
 
-    if (tasksError) throw tasksError;
+      const { error: tasksError } = await supabase
+        .from('agreement_tasks')
+        .insert(terminationTasks);
+
+      if (tasksError) throw tasksError;
+      taskCount = terminationTasks.length;
+    } else {
+      // Count existing transfer termination tasks as "generated"
+      taskCount = existingTransferTasks.length;
+    }
 
     // Step 3: Log
     await supabase.from('agreement_audit_log').insert({
@@ -565,11 +617,12 @@ export const useAgreementWorkflow = () => {
       performed_by: adminId || null,
       changes: {
         reason,
-        tasks_generated: terminationTasks.length,
+        tasks_generated: taskCount,
+        reused_transfer_tasks: hasTransferTerminationTasks,
       },
     });
 
-    return terminationTasks.length;
+    return taskCount;
   }, []);
 
   return {
