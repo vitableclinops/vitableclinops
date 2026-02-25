@@ -16,6 +16,7 @@ interface TransferWithTaskCounts extends Transfer {
   completedTasks: number;
   blockedTasks: number;
   unassignedTasks: number;
+  providerNames: string[];
 }
 
 export function ActiveTransfersWidget() {
@@ -44,6 +45,13 @@ export function ActiveTransfersWidget() {
         .select('id, transfer_id, status, assigned_to, is_required')
         .in('transfer_id', transferIds);
 
+      // Fetch provider names
+      const allProviderIds = [...new Set(transferData.flatMap(t => t.affected_provider_ids || []))];
+      const { data: profiles } = allProviderIds.length > 0
+        ? await supabase.from('profiles').select('id, full_name').in('id', allProviderIds)
+        : { data: [] };
+      const nameMap = new Map((profiles || []).map(p => [p.id, p.full_name || 'Unknown']));
+
       const enriched: TransferWithTaskCounts[] = transferData.map(t => {
         const tTasks = (tasks || []).filter(tk => tk.transfer_id === t.id);
         return {
@@ -52,6 +60,7 @@ export function ActiveTransfersWidget() {
           completedTasks: tTasks.filter(tk => tk.status === 'completed').length,
           blockedTasks: tTasks.filter(tk => tk.status === 'blocked' || tk.status === 'waiting_on_signature').length,
           unassignedTasks: tTasks.filter(tk => !tk.assigned_to && tk.status !== 'completed').length,
+          providerNames: (t.affected_provider_ids || []).map(id => nameMap.get(id) || 'Unknown'),
         };
       });
 
@@ -138,7 +147,7 @@ export function ActiveTransfersWidget() {
                 {transfer.target_physician_name}
                 <span className="mx-1">•</span>
                 <Users className="h-3 w-3 inline" />
-                {transfer.affected_provider_count}
+                {transfer.providerNames.length > 0 ? transfer.providerNames.join(', ') : `${transfer.affected_provider_count} provider(s)`}
               </p>
 
               <Progress value={progress} className="h-1.5 mb-2" />

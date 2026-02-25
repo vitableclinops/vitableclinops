@@ -62,8 +62,24 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
   const [creatingAgreement, setCreatingAgreement] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
+  const [providerNames, setProviderNames] = useState<string[]>([]);
 
   const isAdmin = hasRole('admin');
+
+  // Fetch provider names from affected_provider_ids
+  useEffect(() => {
+    const fetchProviderNames = async () => {
+      if (!transfer.affected_provider_ids || transfer.affected_provider_ids.length === 0) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', transfer.affected_provider_ids);
+      if (data) {
+        setProviderNames(data.map(p => p.full_name || 'Unknown').filter(Boolean));
+      }
+    };
+    fetchProviderNames();
+  }, [transfer.affected_provider_ids]);
 
   const fetchTasks = async () => {
     const { data, error } = await supabase
@@ -447,7 +463,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                 <span>{transfer.target_physician_name}</span>
                 <span className="text-muted-foreground">•</span>
                 <Users className="h-3 w-3" />
-                <span>{transfer.affected_provider_count} provider(s)</span>
+                <span>{providerNames.length > 0 ? providerNames.join(', ') : `${transfer.affected_provider_count} provider(s)`}</span>
                 {blockedTasks.length > 0 && (
                   <>
                     <span className="text-muted-foreground">•</span>
