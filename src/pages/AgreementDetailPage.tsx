@@ -338,7 +338,7 @@ export default function AgreementDetailPage() {
                     <div className="flex items-center gap-2 mt-1.5 text-muted-foreground flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <User className="h-4 w-4" />
-                        <span className="font-medium text-foreground">{agreement.provider_name || providers.find(p => p.is_active)?.provider_name || 'Unassigned'}</span>
+                        <span className="font-medium text-foreground">{activeProviders.length > 0 ? activeProviders.map(p => p.provider_name).join(', ') : agreement.provider_name || 'Unassigned'}</span>
                       </div>
                       <span className="text-muted-foreground/50">↔</span>
                       <div className="flex items-center gap-1.5">
