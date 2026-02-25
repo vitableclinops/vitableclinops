@@ -66,20 +66,35 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
 
   const isAdmin = hasRole('admin');
 
-  // Fetch provider names from affected_provider_ids
+  // Fetch provider names from affected_provider_ids, with fallback to agreement_providers
   useEffect(() => {
     const fetchProviderNames = async () => {
       if (!transfer.affected_provider_ids || transfer.affected_provider_ids.length === 0) return;
+      
+      // Try profiles first
       const { data } = await supabase
         .from('profiles')
         .select('id, full_name')
         .in('id', transfer.affected_provider_ids);
-      if (data) {
+      
+      if (data && data.length > 0) {
         setProviderNames(data.map(p => p.full_name || 'Unknown').filter(Boolean));
+        return;
+      }
+      
+      // Fallback: look up providers linked to the source agreement
+      const { data: apData } = await supabase
+        .from('agreement_providers')
+        .select('provider_name')
+        .eq('agreement_id', transfer.source_agreement_id)
+        .eq('is_active', true);
+      
+      if (apData && apData.length > 0) {
+        setProviderNames(apData.map(p => p.provider_name).filter(Boolean));
       }
     };
     fetchProviderNames();
-  }, [transfer.affected_provider_ids]);
+  }, [transfer.affected_provider_ids, transfer.source_agreement_id]);
 
   const fetchTasks = async () => {
     const { data, error } = await supabase
