@@ -536,13 +536,16 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
     phase,
     isComplete,
     physicianId,
+    collapsible = false,
   }: { 
     taskList: Task[]; 
     title: string; 
     phase: 'termination' | 'initiation';
     isComplete: boolean;
     physicianId?: string | null;
+    collapsible?: boolean;
   }) => {
+    const [collapsed, setCollapsed] = useState(collapsible && isComplete);
     const requiredCount = taskList.filter(t => t.is_required !== false).length;
     const completedRequired = taskList.filter(t => t.is_required !== false && t.status === 'completed').length;
     const nextSortOrder = taskList.length > 0 
@@ -551,7 +554,13 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
 
     return (
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
+        <div 
+          className={`flex items-center gap-2 ${collapsible ? 'cursor-pointer select-none' : ''}`}
+          onClick={collapsible ? () => setCollapsed(!collapsed) : undefined}
+        >
+            {collapsible && (
+              collapsed ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
             <h4 className="text-sm font-medium">{title}</h4>
             <Badge variant="outline" className="text-xs">
               {completedRequired}/{requiredCount} required
@@ -574,34 +583,36 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
             )}
         </div>
         
-        <div className="space-y-1">
-          {taskList.map(task => (
-            <EditableTaskItem
-              key={task.id}
-              task={task}
-              transferId={transfer.id}
-              isAdmin={isAdmin}
-              onUpdate={fetchTasks}
-              onDelete={handleTaskDeleted}
-              selected={selectedTaskIds.has(task.id)}
-              onSelectedChange={handleTaskSelectionChange}
-            />
-          ))}
-          
-          {/* Add task button (admin only) */}
-          {isAdmin && (
-            <AddTaskButton
-              transferId={transfer.id}
-              agreementId={transfer.source_agreement_id}
-              phase={phase}
-              stateAbbreviation={transfer.state_abbreviation}
-              stateName={transfer.state_name}
-              nextSortOrder={nextSortOrder}
-              physicianId={physicianId}
-              onAdded={fetchTasks}
-            />
-          )}
-        </div>
+        {!collapsed && (
+          <div className="space-y-1">
+            {taskList.map(task => (
+              <EditableTaskItem
+                key={task.id}
+                task={task}
+                transferId={transfer.id}
+                isAdmin={isAdmin}
+                onUpdate={fetchTasks}
+                onDelete={handleTaskDeleted}
+                selected={selectedTaskIds.has(task.id)}
+                onSelectedChange={handleTaskSelectionChange}
+              />
+            ))}
+            
+            {/* Add task button (admin only) */}
+            {isAdmin && (
+              <AddTaskButton
+                transferId={transfer.id}
+                agreementId={transfer.source_agreement_id}
+                phase={phase}
+                stateAbbreviation={transfer.state_abbreviation}
+                stateName={transfer.state_name}
+                nextSortOrder={nextSortOrder}
+                physicianId={physicianId}
+                onAdded={fetchTasks}
+              />
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -835,6 +846,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                     phase="termination"
                     isComplete={terminationComplete}
                     physicianId={transfer.source_physician_id}
+                    collapsible
                   />
                   <Separator />
                   <TaskPhaseSection 
