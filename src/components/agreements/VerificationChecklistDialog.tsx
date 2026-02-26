@@ -64,8 +64,7 @@ export function VerificationChecklistDialog({
 
     const initialChecks: VerificationCheck[] = [
       { id: 'tasks', label: 'Required tasks completed', description: 'All required tasks have status "completed"', passed: false, detail: '', loading: true },
-      { id: 'document', label: 'Signed agreement uploaded', description: 'Agreement document URL is on file', passed: false, detail: '', loading: true },
-      { id: 'signatures', label: 'All signatures confirmed', description: 'All active providers have signed', passed: false, detail: '', loading: true },
+      { id: 'document', label: 'Signed agreement uploaded', description: 'Document upload task completed with attachment', passed: false, detail: '', loading: true },
       { id: 'capacity', label: 'Physician capacity not exceeded', description: 'Physician has not exceeded state ratio limit', passed: false, detail: '', loading: true },
     ];
     setChecks([...initialChecks]);
@@ -74,7 +73,6 @@ export function VerificationChecklistDialog({
     const results = await Promise.allSettled([
       checkRequiredTasks(),
       checkDocument(),
-      checkSignatures(),
       checkCapacity(),
     ]);
 
@@ -113,32 +111,33 @@ export function VerificationChecklistDialog({
   };
 
   const checkDocument = async (): Promise<{ passed: boolean; detail: string }> => {
-    const hasDoc = !!agreement.agreement_document_url;
-    return {
-      passed: hasDoc,
-      detail: hasDoc ? 'Agreement document is on file' : 'No agreement document uploaded — upload the signed agreement first',
-    };
-  };
-
-  const checkSignatures = async (): Promise<{ passed: boolean; detail: string }> => {
-    const { data: providers } = await supabase
-      .from('agreement_providers')
-      .select('provider_name, signature_status, is_active')
+    // Check if a document-category task with requires_upload is completed
+    const { data: docTasks } = await supabase
+      .from('agreement_tasks')
+      .select('id, title, status')
       .eq('agreement_id', agreementId)
-      .eq('is_active', true);
+      .eq('category', 'document')
+      .eq('requires_upload', true)
+      .is('archived_at', null);
 
-    if (!providers || providers.length === 0) {
-      return { passed: true, detail: 'No active providers to verify' };
+    if (!docTasks || docTasks.length === 0) {
+      // Fallback: check agreement_document_url
+      const hasDoc = !!agreement.agreement_document_url;
+      return {
+        passed: hasDoc,
+        detail: hasDoc ? 'Agreement document is on file' : 'No document upload task found and no agreement document on file',
+      };
     }
 
-    const unsigned = providers.filter(p => p.signature_status !== 'signed');
-    if (unsigned.length === 0) {
-      return { passed: true, detail: `All ${providers.length} provider(s) have signed` };
+    const completed = docTasks.filter(t => t.status === 'completed');
+    if (completed.length === docTasks.length) {
+      return { passed: true, detail: 'Signed agreement document task completed' };
     }
 
+    const pending = docTasks.filter(t => t.status !== 'completed');
     return {
       passed: false,
-      detail: `${unsigned.length} provider(s) have not signed: ${unsigned.map(p => p.provider_name).join(', ')}`,
+      detail: `Document task incomplete: ${pending.map(t => t.title).join(', ')}`,
     };
   };
 
