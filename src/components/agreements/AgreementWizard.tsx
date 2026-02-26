@@ -130,6 +130,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
 
     setIsSubmitting(true);
     try {
+      const firstProvider = formData.providers[0] || null;
       await createAgreementWithTasks(
         {
           state_id: formData.selectedState.id,
@@ -139,6 +140,10 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
           physician_name: formData.physicianName,
           physician_email: formData.physicianEmail,
           physician_npi: formData.physicianNpi || null,
+          provider_id: firstProvider?.id || null,
+          provider_name: firstProvider?.name || null,
+          provider_email: firstProvider?.email || null,
+          provider_npi: firstProvider?.npi || null,
           start_date: formData.startDate?.toISOString().split('T')[0],
           renewal_cadence: formData.renewalCadence,
           meeting_cadence: formData.meetingCadence,
