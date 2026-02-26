@@ -48,7 +48,7 @@ import {
   ArrowLeftRight,
   Paperclip,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, parseLocalDate } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -399,7 +399,7 @@ export default function AgreementDetailPage() {
                       size="sm"
                       onClick={async () => {
                         const renewalDate = agreement.next_renewal_date 
-                          ? new Date(agreement.next_renewal_date) 
+                          ? parseLocalDate(agreement.next_renewal_date) 
                           : new Date();
                         const yearsToAdd = agreement.renewal_cadence === 'biennial' ? 2 : 1;
                         const nextDate = new Date(renewalDate);
@@ -543,7 +543,7 @@ export default function AgreementDetailPage() {
                         <div>
                           <p className="text-sm text-muted-foreground">Start Date</p>
                           <p className="font-medium">
-                            {agreement.start_date ? format(new Date(agreement.start_date), 'MMM d, yyyy') : 'Not set'}
+                            {agreement.start_date ? format(parseLocalDate(agreement.start_date), 'MMM d, yyyy') : 'Not set'}
                           </p>
                         </div>
                         <div>
@@ -552,7 +552,7 @@ export default function AgreementDetailPage() {
                             <PopoverTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-auto p-0 font-medium hover:text-primary">
                                 {agreement.next_renewal_date 
-                                  ? format(new Date(agreement.next_renewal_date), 'MMM d, yyyy') 
+                                  ? format(parseLocalDate(agreement.next_renewal_date), 'MMM d, yyyy') 
                                   : <span className="text-muted-foreground italic">Click to set</span>}
                                 <Pencil className="h-3 w-3 ml-1 opacity-50" />
                               </Button>
@@ -560,7 +560,7 @@ export default function AgreementDetailPage() {
                             <PopoverContent className="w-auto p-0" align="start">
                               <CalendarWidget
                                 mode="single"
-                                selected={agreement.next_renewal_date ? new Date(agreement.next_renewal_date) : undefined}
+                                selected={agreement.next_renewal_date ? parseLocalDate(agreement.next_renewal_date) : undefined}
                                 onSelect={async (date) => {
                                   if (!date) return;
                                   const dateStr = format(date, 'yyyy-MM-dd');
