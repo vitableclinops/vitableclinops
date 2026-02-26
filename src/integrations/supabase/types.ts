@@ -3773,6 +3773,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_agreement_participant: {
+        Args: { _agreement_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       agreement_task_category:
