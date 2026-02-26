@@ -537,6 +537,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
     isComplete,
     physicianId,
     collapsible = false,
+    defaultCollapsed = false,
   }: { 
     taskList: Task[]; 
     title: string; 
@@ -544,8 +545,9 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
     isComplete: boolean;
     physicianId?: string | null;
     collapsible?: boolean;
+    defaultCollapsed?: boolean;
   }) => {
-    const [collapsed, setCollapsed] = useState(collapsible && isComplete);
+    const [collapsed, setCollapsed] = useState(defaultCollapsed);
     const requiredCount = taskList.filter(t => t.is_required !== false).length;
     const completedRequired = taskList.filter(t => t.is_required !== false && t.status === 'completed').length;
     const nextSortOrder = taskList.length > 0 
@@ -847,6 +849,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                     isComplete={terminationComplete}
                     physicianId={transfer.source_physician_id}
                     collapsible
+                    defaultCollapsed={terminationComplete}
                   />
                   <Separator />
                   <TaskPhaseSection 
@@ -855,6 +858,8 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                     phase="initiation"
                     isComplete={initiationComplete}
                     physicianId={transfer.target_physician_id}
+                    collapsible
+                    defaultCollapsed={!terminationComplete}
                   />
                 </div>
 
