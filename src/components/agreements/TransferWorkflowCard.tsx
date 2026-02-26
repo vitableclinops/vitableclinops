@@ -367,6 +367,43 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
         toast({ title: 'Transfer Complete', description: 'Workflow marked as completed.' });
       }
 
+      // Generate comprehensive completion audit log
+      const termTasks = tasks.filter(t => t.auto_trigger === 'transfer_termination');
+      const initTasks = tasks.filter(t => t.auto_trigger === 'transfer_initiation');
+      const auditChanges = {
+        transfer_id: transfer.id,
+        state: transfer.state_abbreviation,
+        source_physician: transfer.source_physician_name,
+        target_physician: transfer.target_physician_name,
+        affected_providers: providerNames,
+        termination_effective_date: transfer.termination_effective_date,
+        initiation_effective_date: transfer.initiation_effective_date || transfer.effective_date,
+        phase_1_termination: termTasks.map(t => ({
+          title: t.title,
+          status: t.status,
+          completed_at: t.completed_at,
+          assigned_to_name: t.assigned_to_name,
+        })),
+        phase_2_initiation: initTasks.map(t => ({
+          title: t.title,
+          status: t.status,
+          completed_at: t.completed_at,
+          assigned_to_name: t.assigned_to_name,
+        })),
+        source_agreement_id: transfer.source_agreement_id,
+        target_agreement_id: targetAgreementId || transfer.target_agreement_id,
+      };
+
+      await supabase.from('agreement_audit_log').insert({
+        entity_type: 'transfer',
+        entity_id: transfer.id,
+        action: 'transfer_completed',
+        changes: auditChanges,
+        performed_by: user?.id,
+        performed_by_name: user?.user_metadata?.full_name || user?.email || 'Unknown',
+        performed_by_role: 'admin',
+      });
+
       onUpdate?.();
     } catch (error) {
       console.error('Error completing transfer:', error);

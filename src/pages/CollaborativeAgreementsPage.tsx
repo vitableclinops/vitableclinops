@@ -11,6 +11,7 @@ import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTra
 import { StateComplianceGrid } from '@/components/agreements/StateComplianceGrid';
 import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { TransferWorkflowCard } from '@/components/agreements/TransferWorkflowCard';
+import { CompletedTransfersTab } from '@/components/agreements/CompletedTransfersTab';
 import { AdminTaskQueue } from '@/components/agreements/AdminTaskQueue';
 import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard';
 import { useAgreementTransfers } from '@/hooks/useAgreementTransfers';
@@ -688,6 +689,10 @@ const CollaborativeAgreementsPage = () => {
                 <MapPin className="h-4 w-4" />
                 By State
               </TabsTrigger>
+              <TabsTrigger value="completed-transfers" className="gap-2 px-4">
+                <CheckCircle2 className="h-4 w-4" />
+                Completed Transfers
+              </TabsTrigger>
               <TabsTrigger value="calendar" className="gap-2 px-4">
                 <Calendar className="h-4 w-4" />
                 Calendar
@@ -1124,6 +1129,10 @@ const CollaborativeAgreementsPage = () => {
               </div>
             </TabsContent>
 
+            {/* Completed Transfers Tab */}
+            <TabsContent value="completed-transfers">
+              <CompletedTransfersTab />
+            </TabsContent>
             {/* By Physician Tab */}
             <TabsContent value="by-physician">
               <div className="space-y-6">
