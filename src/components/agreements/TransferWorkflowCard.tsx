@@ -5,16 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { EditableTaskItem } from './EditableTaskItem';
 import { AddTaskButton } from './AddTaskButton';
-import { TransferActivityLog } from './TransferActivityLog';
+
 import { TransferLifecycleEditor } from './TransferLifecycleEditor';
 import { TransferProviderSubtable } from './TransferProviderSubtable';
 import { TransferEffectiveDatesEditor } from './TransferEffectiveDatesEditor';
@@ -30,8 +28,6 @@ import {
   ChevronDown,
   ChevronUp,
   Users,
-  Activity,
-  ListChecks,
   AlertTriangle,
   Lock,
   Flag,
@@ -63,7 +59,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState('checklist');
+  
   const [creatingAgreement, setCreatingAgreement] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
@@ -782,110 +778,91 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
               <div className="h-8 bg-muted rounded" />
             </div>
           ) : (
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="mb-4">
-                <TabsTrigger value="checklist" className="gap-2">
-                  <ListChecks className="h-4 w-4" />
-                  Checklist
-                </TabsTrigger>
-                <TabsTrigger value="activity" className="gap-2">
-                  <Activity className="h-4 w-4" />
-                  Activity
-                </TabsTrigger>
-              </TabsList>
+            <div className="space-y-6">
+              {/* Effective Date Warnings */}
+              <EffectiveDateWarnings
+                terminationEffectiveDate={transfer.termination_effective_date}
+                initiationEffectiveDate={transfer.initiation_effective_date}
+                terminationComplete={terminationComplete}
+                initiationComplete={initiationComplete}
+                className="space-y-2 max-w-md"
+              />
 
-              <TabsContent value="checklist" className="space-y-6">
-                {/* Effective Date Warnings */}
-                <EffectiveDateWarnings
-                  terminationEffectiveDate={transfer.termination_effective_date}
-                  initiationEffectiveDate={transfer.initiation_effective_date}
-                  terminationComplete={terminationComplete}
-                  initiationComplete={initiationComplete}
-                  className="space-y-2 max-w-md"
-                />
+              {/* Effective Dates Editor */}
+              <TransferEffectiveDatesEditor
+                transferId={transfer.id}
+                terminationEffectiveDate={transfer.termination_effective_date}
+                initiationEffectiveDate={transfer.initiation_effective_date}
+                effectiveDate={transfer.effective_date}
+                isAdmin={isAdmin}
+                onUpdate={() => { fetchTasks(); onUpdate?.(); }}
+              />
 
-                {/* Effective Dates Editor */}
-                <TransferEffectiveDatesEditor
-                  transferId={transfer.id}
-                  terminationEffectiveDate={transfer.termination_effective_date}
-                  initiationEffectiveDate={transfer.initiation_effective_date}
-                  effectiveDate={transfer.effective_date}
-                  isAdmin={isAdmin}
-                  onUpdate={() => { fetchTasks(); onUpdate?.(); }}
-                />
+              {/* Provider-level tracking */}
+              <TransferProviderSubtable
+                transferId={transfer.id}
+                affectedProviderIds={transfer.affected_provider_ids || []}
+                tasks={tasks}
+                isAdmin={isAdmin}
+                onUpdate={() => { fetchTasks(); onUpdate?.(); }}
+              />
 
-                {/* Provider-level tracking */}
-                <TransferProviderSubtable
-                  transferId={transfer.id}
-                  affectedProviderIds={transfer.affected_provider_ids || []}
-                  tasks={tasks}
-                  isAdmin={isAdmin}
-                  onUpdate={() => { fetchTasks(); onUpdate?.(); }}
-                />
-
-                {isAdmin && selectedTaskIds.size > 0 && (
-                  <div className="flex items-center gap-2 p-2 rounded-lg border bg-muted/50">
-                    <span className="text-sm font-medium">{selectedTaskIds.size} selected</span>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setBulkArchiveOpen(true)}
-                    >
-                      <Archive className="h-3.5 w-3.5 mr-1" />
-                      Archive
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedTaskIds(new Set())}>
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
-
-                <div className="space-y-6">
-                  <TaskPhaseSection 
-                    taskList={terminationTasks} 
-                    title={`1. Termination Phase — ${transfer.source_physician_name || 'Outgoing Physician'}`}
-                    phase="termination"
-                    isComplete={terminationComplete}
-                    physicianId={transfer.source_physician_id}
-                    collapsible
-                    defaultCollapsed={terminationComplete}
-                  />
-                  <Separator />
-                  <TaskPhaseSection 
-                    taskList={initiationTasks} 
-                    title={`2. Initiation Phase — ${transfer.target_physician_name || 'Incoming Physician'}`}
-                    phase="initiation"
-                    isComplete={initiationComplete}
-                    physicianId={transfer.target_physician_id}
-                    collapsible
-                    defaultCollapsed={!terminationComplete}
-                  />
+              {isAdmin && selectedTaskIds.size > 0 && (
+                <div className="flex items-center gap-2 p-2 rounded-lg border bg-muted/50">
+                  <span className="text-sm font-medium">{selectedTaskIds.size} selected</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setBulkArchiveOpen(true)}
+                  >
+                    <Archive className="h-3.5 w-3.5 mr-1" />
+                    Archive
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedTaskIds(new Set())}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
+              )}
 
-                {/* Lifecycle Info for completed transfers - editable by admin */}
-                <TransferLifecycleEditor
-                  transferId={transfer.id}
-                  status={transfer.status}
-                  completedAt={transfer.completed_at}
-                  effectiveDate={transfer.effective_date}
-                  renewalDate={transfer.new_agreement_renewal_date}
-                  firstMeetingDate={transfer.first_meeting_scheduled_date}
-                  meetingCadence={transfer.meeting_cadence}
-                  chartReviewFrequency={transfer.chart_review_frequency}
-                  targetPhysicianName={transfer.target_physician_name}
-                  affectedProviderCount={transfer.affected_provider_count}
-                  isAdmin={isAdmin}
-                  onUpdate={() => onUpdate?.()}
+              <div className="space-y-6">
+                <TaskPhaseSection 
+                  taskList={terminationTasks} 
+                  title={`1. Termination Phase — ${transfer.source_physician_name || 'Outgoing Physician'}`}
+                  phase="termination"
+                  isComplete={terminationComplete}
+                  physicianId={transfer.source_physician_id}
+                  collapsible
+                  defaultCollapsed={terminationComplete}
                 />
-              </TabsContent>
+                <Separator />
+                <TaskPhaseSection 
+                  taskList={initiationTasks} 
+                  title={`2. Initiation Phase — ${transfer.target_physician_name || 'Incoming Physician'}`}
+                  phase="initiation"
+                  isComplete={initiationComplete}
+                  physicianId={transfer.target_physician_id}
+                  collapsible
+                  defaultCollapsed={!terminationComplete}
+                />
+              </div>
 
-              <TabsContent value="activity">
-                <ScrollArea className="h-[300px]">
-                  <TransferActivityLog transferId={transfer.id} />
-                </ScrollArea>
-              </TabsContent>
-            </Tabs>
+              {/* Lifecycle Info for completed transfers - editable by admin */}
+              <TransferLifecycleEditor
+                transferId={transfer.id}
+                status={transfer.status}
+                completedAt={transfer.completed_at}
+                effectiveDate={transfer.effective_date}
+                renewalDate={transfer.new_agreement_renewal_date}
+                firstMeetingDate={transfer.first_meeting_scheduled_date}
+                meetingCadence={transfer.meeting_cadence}
+                chartReviewFrequency={transfer.chart_review_frequency}
+                targetPhysicianName={transfer.target_physician_name}
+                affectedProviderCount={transfer.affected_provider_count}
+                isAdmin={isAdmin}
+                onUpdate={() => { fetchTasks(); onUpdate?.(); }}
+              />
+            </div>
           )}
 
           <BulkArchiveDialog
