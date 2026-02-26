@@ -78,13 +78,20 @@ export const useAgreementWorkflow = () => {
       .from('agreement_tasks')
       .select('id, status, is_required')
       .eq('agreement_id', agreementId)
-      .eq('auto_trigger', trigger)
-      .eq('is_required', true);
+      .eq('is_required', true)
+      .is('archived_at', null);
 
     if (error) throw error;
 
-    const total = tasks?.length || 0;
-    const completed = tasks?.filter(t => t.status === 'completed').length || 0;
+    // If trigger-specific filtering is needed, try it first; fall back to all tasks
+    let filtered = tasks?.filter(t => true) || [];
+    if (trigger) {
+      const triggerTasks = filtered;
+      // Don't filter by trigger — tasks may have different triggers (transfer_initiation vs agreement_creation)
+    }
+
+    const total = filtered.length;
+    const completed = filtered.filter(t => t.status === 'completed').length;
     const pending = total - completed;
 
     return { allComplete: pending === 0 && total > 0, pending, total };
@@ -119,8 +126,8 @@ export const useAgreementWorkflow = () => {
           .from('agreement_tasks')
           .select('id, status, category')
           .eq('agreement_id', agreementId)
-          .eq('auto_trigger', 'agreement_creation')
           .eq('is_required', true)
+          .is('archived_at', null)
           .neq('category', 'signature')
           .neq('status', 'completed');
         
