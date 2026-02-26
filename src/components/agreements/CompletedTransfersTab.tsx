@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { generateTransferAuditReport } from './TransferAuditReportGenerator';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ import {
   Ban,
   FileText,
   Clock,
+  Download,
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -308,6 +310,14 @@ export function CompletedTransfersTab() {
                         New Agreement
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => generateTransferAuditReport(transfer.id)}
+                    >
+                      <Download className="h-3.5 w-3.5 mr-1.5" />
+                      Download Audit
+                    </Button>
                   </div>
                 </CardContent>
               )}
