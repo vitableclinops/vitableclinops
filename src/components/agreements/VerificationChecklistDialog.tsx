@@ -95,7 +95,8 @@ export function VerificationChecklistDialog({
       .from('agreement_tasks')
       .select('id, title, status, is_required')
       .eq('agreement_id', agreementId)
-      .eq('is_required', true);
+      .eq('is_required', true)
+      .is('archived_at', null);
 
     const total = tasks?.length || 0;
     const completed = tasks?.filter(t => t.status === 'completed').length || 0;
