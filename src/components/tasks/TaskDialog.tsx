@@ -298,6 +298,40 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
         blocked_reason: null, blocked_until: null,
       }).eq('id', task.id);
       if (error) throw error;
+
+      // Auto-link document to agreement when completing document upload tasks
+      if (newStatus === 'completed' && task.agreement_id) {
+        const titleLower = task.title?.toLowerCase() || '';
+        const isExecutedAgreementTask = titleLower.includes('upload executed new agreement') || titleLower.includes('upload executed collaborative agreement');
+        const isTerminationDocTask = titleLower.includes('upload executed termination');
+
+        if (isExecutedAgreementTask || isTerminationDocTask) {
+          const { data: docs } = await supabase
+            .from('task_documents')
+            .select('file_path')
+            .eq('task_id', task.id)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (docs && docs.length > 0) {
+            const docPath = docs[0].file_path;
+            const { data: urlData } = await supabase.storage
+              .from('task-documents')
+              .createSignedUrl(docPath, 60 * 60 * 24 * 365 * 10); // 10-year URL
+
+            const docUrl = urlData?.signedUrl || docPath;
+            const updateField = isTerminationDocTask
+              ? { termination_document_url: docUrl }
+              : { agreement_document_url: docUrl };
+
+            await supabase
+              .from('collaborative_agreements')
+              .update(updateField)
+              .eq('id', task.agreement_id);
+          }
+        }
+      }
+
       toast({ title: newStatus === 'completed' ? '✅ Task completed' : 'Task reopened', description: task.title });
       onTaskUpdated?.();
       handleClose();

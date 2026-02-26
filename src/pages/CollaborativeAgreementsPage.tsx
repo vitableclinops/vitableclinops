@@ -106,6 +106,7 @@ interface FlattenedAgreement {
   chartReviewFrequency: string | null;
   documentUrl: string | null;
   medallionDocumentUrl: string | null;
+  hasTaskDocuments: boolean;
   agreementId: string;
   nextMeetingDate: Date | null;
   renewalDate: Date | null;
@@ -177,6 +178,7 @@ const CollaborativeAgreementsPage = () => {
   // Database agreements and providers
   const [dbAgreements, setDbAgreements] = useState<DbAgreement[]>([]);
   const [dbProviders, setDbProviders] = useState<DbProvider[]>([]);
+  const [agreementDocCounts, setAgreementDocCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   
   // Derived values from auth
@@ -185,14 +187,18 @@ const CollaborativeAgreementsPage = () => {
   const userEmail = profile?.email || '';
 
   const fetchDbAgreements = async () => {
-    const [agreementsRes, providersRes] = await Promise.all([
+    const [agreementsRes, providersRes, docCountsRes] = await Promise.all([
       supabase
         .from('collaborative_agreements')
         .select('*')
         .order('created_at', { ascending: false }),
       supabase
         .from('agreement_providers')
-        .select('*')
+        .select('*'),
+      supabase
+        .from('task_documents')
+        .select('agreement_id')
+        .not('agreement_id', 'is', null),
     ]);
 
     if (agreementsRes.error) {
@@ -203,6 +209,15 @@ const CollaborativeAgreementsPage = () => {
     
     if (!providersRes.error) {
       setDbProviders(providersRes.data || []);
+    }
+
+    // Build a set of agreement IDs that have at least one task document
+    if (!docCountsRes.error && docCountsRes.data) {
+      const counts: Record<string, number> = {};
+      for (const row of docCountsRes.data) {
+        if (row.agreement_id) counts[row.agreement_id] = (counts[row.agreement_id] || 0) + 1;
+      }
+      setAgreementDocCounts(counts);
     }
     
     setLoading(false);
@@ -251,6 +266,7 @@ const CollaborativeAgreementsPage = () => {
       chartReviewFrequency: agreement.chart_review_frequency,
       documentUrl: agreement.agreement_document_url,
       medallionDocumentUrl: agreement.medallion_document_url,
+      hasTaskDocuments: (agreementDocCounts[agreement.id] || 0) > 0,
       agreementId: agreement.id,
       nextMeetingDate,
       renewalDate,
@@ -856,7 +872,7 @@ const CollaborativeAgreementsPage = () => {
                       </div>
                     ) : (
                       filteredFlatAgreements.map((agreement) => {
-                        const hasDocument = !!agreement.documentUrl || !!agreement.medallionDocumentUrl;
+                        const hasDocument = !!agreement.documentUrl || !!agreement.medallionDocumentUrl || !!agreement.hasTaskDocuments;
                         const documentLink = agreement.documentUrl || agreement.medallionDocumentUrl;
                         
                         // Meeting urgency
