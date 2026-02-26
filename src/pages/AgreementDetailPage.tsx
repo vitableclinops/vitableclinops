@@ -51,6 +51,8 @@ import {
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarWidget } from '@/components/ui/calendar';
 import type { Tables } from '@/integrations/supabase/types';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
@@ -546,9 +548,33 @@ export default function AgreementDetailPage() {
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Renewal Date</p>
-                          <p className="font-medium">
-                            {agreement.next_renewal_date ? format(new Date(agreement.next_renewal_date), 'MMM d, yyyy') : 'Not set'}
-                          </p>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-auto p-0 font-medium hover:text-primary">
+                                {agreement.next_renewal_date 
+                                  ? format(new Date(agreement.next_renewal_date), 'MMM d, yyyy') 
+                                  : <span className="text-muted-foreground italic">Click to set</span>}
+                                <Pencil className="h-3 w-3 ml-1 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <CalendarWidget
+                                mode="single"
+                                selected={agreement.next_renewal_date ? new Date(agreement.next_renewal_date) : undefined}
+                                onSelect={async (date) => {
+                                  if (!date) return;
+                                  const dateStr = format(date, 'yyyy-MM-dd');
+                                  await supabase
+                                    .from('collaborative_agreements')
+                                    .update({ next_renewal_date: dateStr })
+                                    .eq('id', agreement.id);
+                                  toast({ title: 'Renewal date updated', description: format(date, 'MMM d, yyyy') });
+                                  fetchData();
+                                }}
+                                className={cn("p-3 pointer-events-auto")}
+                              />
+                            </PopoverContent>
+                          </Popover>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Chart Review</p>
