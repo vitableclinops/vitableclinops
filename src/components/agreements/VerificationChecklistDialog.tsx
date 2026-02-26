@@ -111,33 +111,23 @@ export function VerificationChecklistDialog({
   };
 
   const checkDocument = async (): Promise<{ passed: boolean; detail: string }> => {
-    // Check if a document-category task with requires_upload is completed
     const { data: docTasks } = await supabase
       .from('agreement_tasks')
       .select('id, title, status')
       .eq('agreement_id', agreementId)
-      .eq('category', 'document')
-      .eq('requires_upload', true)
+      .eq('title', 'Upload executed new agreement')
       .is('archived_at', null);
 
     if (!docTasks || docTasks.length === 0) {
-      // Fallback: check agreement_document_url
-      const hasDoc = !!agreement.agreement_document_url;
-      return {
-        passed: hasDoc,
-        detail: hasDoc ? 'Agreement document is on file' : 'No document upload task found and no agreement document on file',
-      };
+      return { passed: false, detail: 'No "Upload executed new agreement" task found' };
     }
 
-    const completed = docTasks.filter(t => t.status === 'completed');
-    if (completed.length === docTasks.length) {
-      return { passed: true, detail: 'Signed agreement document task completed' };
-    }
-
-    const pending = docTasks.filter(t => t.status !== 'completed');
+    const completed = docTasks.every(t => t.status === 'completed');
     return {
-      passed: false,
-      detail: `Document task incomplete: ${pending.map(t => t.title).join(', ')}`,
+      passed: completed,
+      detail: completed
+        ? 'Executed agreement uploaded'
+        : 'Upload executed new agreement task is not yet completed',
     };
   };
 
