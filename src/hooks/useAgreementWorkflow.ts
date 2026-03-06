@@ -242,39 +242,10 @@ export const useAgreementWorkflow = () => {
       if (providersError) throw providersError;
     }
 
-    // Step 3: Check if there's an active transfer with initiation tasks for this physician+state
-    let hasTransferInitiationTasks = false;
-    if (agreementData.physician_id && agreementData.state_abbreviation) {
-      const { data: transferTasks } = await supabase
-        .from('agreement_tasks')
-        .select('id, transfer_id')
-        .eq('auto_trigger', 'transfer_initiation')
-        .eq('physician_id', agreementData.physician_id)
-        .eq('state_abbreviation', agreementData.state_abbreviation)
-        .limit(1);
-
-      if (transferTasks && transferTasks.length > 0) {
-        hasTransferInitiationTasks = true;
-        // Re-parent these transfer initiation tasks to the new agreement
-        const transferId = transferTasks[0].transfer_id;
-        if (transferId) {
-          await supabase
-            .from('agreement_tasks')
-            .update({ agreement_id: agreement.id })
-            .eq('transfer_id', transferId)
-            .eq('auto_trigger', 'transfer_initiation');
-
-          // Also link the transfer to this new agreement
-          await supabase
-            .from('agreement_transfers')
-            .update({ target_agreement_id: agreement.id })
-            .eq('id', transferId);
-        }
-      }
-    }
-
-    // Only generate setup tasks if no transfer already created initiation tasks
-    if (!hasTransferInitiationTasks) {
+    // Step 3: Generate setup tasks for this new agreement
+    // Note: Transfer task re-parenting is handled by the DB trigger
+    // (auto_create_agreement_on_task_complete), so we always generate fresh tasks here.
+    {
       const setupTasks = getSetupTasks(
         agreement.id,
         agreementData.state_abbreviation,
@@ -333,7 +304,7 @@ export const useAgreementWorkflow = () => {
       action: 'agreement_created',
       changes: {
         state: agreementData.state_abbreviation,
-        reused_transfer_tasks: hasTransferInitiationTasks,
+        source: 'wizard',
         initial_status: 'in_progress',
       },
     });
