@@ -8,7 +8,7 @@ import { toast } from '@/hooks/use-toast';
 export default function ProviderOnboardingPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const { generateAgreementTasks } = useAgreementTasks();
   
   const mode = (searchParams.get('mode') as 'new' | 'edit' | 'admin') || 'new';
