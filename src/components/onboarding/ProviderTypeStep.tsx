@@ -99,7 +99,7 @@ export function ProviderTypeStep({ selectedType, onSelect, mode }: ProviderTypeS
         })}
       </div>
 
-      {selectedType && (
+      {selectedType && PROVIDER_TYPE_CONFIG[selectedType] && (
         <Card className="bg-muted/30 border-dashed mt-6">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">
@@ -107,7 +107,7 @@ export function ProviderTypeStep({ selectedType, onSelect, mode }: ProviderTypeS
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-2">
-            {PROVIDER_TYPE_CONFIG[selectedType].requiresLicensure ? (
+            {PROVIDER_TYPE_CONFIG[selectedType]?.requiresLicensure ? (
               <>
                 <p>✓ You'll select states where you want to practice</p>
                 <p>✓ You can report existing licenses for verification</p>
