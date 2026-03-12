@@ -38,6 +38,11 @@ export default function UserRolesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [updatingUser, setUpdatingUser] = useState<string | null>(null);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<{ userId: string; name: string; email: string } | null>(null);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const userRole = roles[0] || 'provider';
   const userName = profile?.full_name || profile?.email || 'User';
