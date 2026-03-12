@@ -191,6 +191,16 @@ const App = () => (
                 <TaskRepositoryPage />
               </ProtectedRoute>
             } />
+            <Route path="/provider/licenses" element={
+              <ProtectedRoute>
+                <MyLicensesPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/provider/pod" element={
+              <ProtectedRoute requiredRoles={['pod_lead']}>
+                <MyPodPage />
+              </ProtectedRoute>
+            } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
