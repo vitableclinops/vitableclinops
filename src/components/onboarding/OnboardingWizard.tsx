@@ -177,7 +177,8 @@ export function OnboardingWizard({ mode, existingProvider, userId, onComplete, o
     ];
 
     // If provider type requires licensure, add state and license steps
-    if (data.providerType && PROVIDER_TYPE_CONFIG[data.providerType].requiresLicensure) {
+    const typeConfig = data.providerType ? PROVIDER_TYPE_CONFIG[data.providerType] : undefined;
+    if (typeConfig?.requiresLicensure) {
       baseSteps.push(
         { id: 'states', label: 'Select States', icon: MapPin },
         { id: 'licenses', label: 'Report Licenses', icon: FileCheck }
