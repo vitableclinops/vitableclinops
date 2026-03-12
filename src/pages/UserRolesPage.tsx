@@ -128,6 +128,46 @@ export default function UserRolesPage() {
     toggleRoleMutation.mutate({ userId, role, hasRole });
   };
 
+  const handleResetPassword = async () => {
+    if (!resetTarget) return;
+    setIsResetting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-reset-password', {
+        body: { userId: resetTarget.userId, method: 'generate' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setTempPassword(data.password);
+      toast({
+        title: 'Password reset',
+        description: `Temporary password generated for ${resetTarget.email}.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Error',
+        description: err.message || 'Failed to reset password',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const handleCopyPassword = () => {
+    if (tempPassword) {
+      navigator.clipboard.writeText(tempPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const openResetDialog = (userId: string, name: string, email: string) => {
+    setResetTarget({ userId, name, email });
+    setTempPassword(null);
+    setCopied(false);
+    setResetDialogOpen(true);
+  };
+
   return (
     <div className="flex min-h-screen bg-background">
       <AppSidebar userRole={userRole} userName={userName} userEmail={userEmail} userAvatarUrl={profile?.avatar_url || undefined} />
