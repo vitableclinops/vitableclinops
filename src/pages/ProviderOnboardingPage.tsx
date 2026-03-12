@@ -226,6 +226,9 @@ export default function ProviderOnboardingPage() {
       await createConditionalReviewTasks(data, collabClassification.conditional);
     }
 
+    // Refresh the profile in auth context so ProtectedRoute sees onboarding_completed = true
+    await refreshProfile();
+
     toast({
       title: mode === 'new' ? 'Onboarding Complete!' : 'Changes Saved',
       description: mode === 'new' 
@@ -237,7 +240,6 @@ export default function ProviderOnboardingPage() {
     if (mode === 'admin') {
       navigate('/providers');
     } else {
-      // Navigate to provider dashboard which will now show readiness screen
       navigate('/provider');
     }
   };
