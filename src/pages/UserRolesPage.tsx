@@ -274,8 +274,9 @@ export default function UserRolesPage() {
                         <TableHead key={role} className="text-center capitalize">
                           {role}
                         </TableHead>
-                      ))}
-                    </TableRow>
+                       ))}
+                       <TableHead className="text-center">Actions</TableHead>
+                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {usersWithRoles.map(user => (
