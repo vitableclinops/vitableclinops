@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { EditLicenseDialog } from '@/components/provider/EditLicenseDialog';
-import { MapPin, Edit, AlertTriangle, CheckCircle2, Loader2, Plus } from 'lucide-react';
+import { MapPin, Edit, AlertTriangle, CheckCircle2, Loader2, Plus, Clock } from 'lucide-react';
 
 export default function MyLicensesPage() {
   const { profile, roles } = useAuth();
