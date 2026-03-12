@@ -47,6 +47,7 @@ Deno.serve(async (req) => {
       alwaysCollabStates = [],
       conditionalStates = [],
       reportedLicenses = [],
+      selectedStates = [],
       providerName,
       providerEmail,
       npiNumber,
@@ -59,10 +60,10 @@ Deno.serve(async (req) => {
       errors: [] as string[],
     };
 
-    // 1. Create admin review tasks for each reported license
+    // 1. Create admin review tasks for each reported license + provider tasks for incomplete ones
     for (const license of reportedLicenses) {
       try {
-        // Check for existing review task
+        // Admin task: verify license
         const { data: existing } = await adminClient
           .from("agreement_tasks")
           .select("id")
@@ -86,8 +87,80 @@ Deno.serve(async (req) => {
           });
           results.licenseReviewTasks++;
         }
+
+        // Provider task: complete missing license info
+        const missingNumber = !license.licenseNumber || license.licenseNumber.trim() === "";
+        const missingExpiration = !license.expirationDate || license.expirationDate.trim() === "";
+
+        if (missingNumber || missingExpiration) {
+          const missingItems = [];
+          if (missingNumber) missingItems.push("license number");
+          if (missingExpiration) missingItems.push("expiration date");
+
+          const { data: existingProvTask } = await adminClient
+            .from("agreement_tasks")
+            .select("id")
+            .eq("provider_id", profile.id)
+            .eq("assigned_to", profile.id)
+            .eq("state_abbreviation", license.state)
+            .ilike("title", "%Update your%license%")
+            .maybeSingle();
+
+          if (!existingProvTask) {
+            await adminClient.from("agreement_tasks").insert({
+              provider_id: profile.id,
+              assigned_to: profile.id,
+              title: `Update your ${license.state} license details`,
+              description: `Your ${license.state} license is missing: ${missingItems.join(", ")}. Please update your license information so we can verify it.`,
+              category: "compliance",
+              status: "pending",
+              priority: "medium",
+              assigned_role: "provider",
+              is_auto_generated: true,
+              auto_trigger: "onboarding_incomplete_license",
+              state_abbreviation: license.state,
+            });
+            results.tasksCreated++;
+          }
+        }
       } catch (e) {
-        results.errors.push(`License review task for ${license.state}: ${e.message}`);
+        results.errors.push(`License task for ${license.state}: ${e.message}`);
+      }
+    }
+
+    // 1b. Create provider tasks for selected states with NO reported license at all
+    for (const stateAbbr of selectedStates) {
+      const hasLicense = reportedLicenses.some((l: any) => l.state === stateAbbr);
+      if (hasLicense) continue;
+
+      try {
+        const { data: existingProvTask } = await adminClient
+          .from("agreement_tasks")
+          .select("id")
+          .eq("provider_id", profile.id)
+          .eq("assigned_to", profile.id)
+          .eq("state_abbreviation", stateAbbr)
+          .ilike("title", "%Update your%license%")
+          .maybeSingle();
+
+        if (!existingProvTask) {
+          await adminClient.from("agreement_tasks").insert({
+            provider_id: profile.id,
+            assigned_to: profile.id,
+            title: `Update your ${stateAbbr} license details`,
+            description: `You selected ${stateAbbr} during onboarding but didn't provide license details. Please add your license number and expiration date.`,
+            category: "compliance",
+            status: "pending",
+            priority: "medium",
+            assigned_role: "provider",
+            is_auto_generated: true,
+            auto_trigger: "onboarding_incomplete_license",
+            state_abbreviation: stateAbbr,
+          });
+          results.tasksCreated++;
+        }
+      } catch (e) {
+        results.errors.push(`Missing license task for ${stateAbbr}: ${e.message}`);
       }
     }
 

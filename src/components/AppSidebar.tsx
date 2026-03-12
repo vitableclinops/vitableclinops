@@ -113,8 +113,10 @@ const navGroups: NavGroup[] = [
   },
   {
     label: 'My Account',
-    roles: ['provider'],
+    roles: ['provider', 'pod_lead'],
     items: [
+      { label: 'My Licenses', icon: MapPin, href: '/provider/licenses', roles: ['provider'] },
+      { label: 'My Pod', icon: Users, href: '/provider/pod', roles: ['pod_lead'] },
       { label: 'Update My Info', icon: UserPlus, href: '/onboarding?mode=edit', roles: ['provider'] },
     ],
   },

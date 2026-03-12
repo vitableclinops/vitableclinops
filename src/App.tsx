@@ -35,6 +35,8 @@ import CalendarPage from "./pages/CalendarPage";
 import AdminAddProviderPage from "./pages/AdminAddProviderPage";
 import LicensureApplicationPage from "./pages/LicensureApplicationPage";
 import TaskRepositoryPage from "./pages/TaskRepositoryPage";
+import MyLicensesPage from "./pages/MyLicensesPage";
+import MyPodPage from "./pages/MyPodPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -187,6 +189,16 @@ const App = () => (
             <Route path="/admin/tasks" element={
               <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
                 <TaskRepositoryPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/provider/licenses" element={
+              <ProtectedRoute>
+                <MyLicensesPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/provider/pod" element={
+              <ProtectedRoute requiredRoles={['pod_lead']}>
+                <MyPodPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
