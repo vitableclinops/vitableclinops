@@ -8,7 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Shield, Users, ArrowLeft, UserPlus, Info, ChevronDown } from 'lucide-react';
+import { Loader2, Shield, Users, ArrowLeft, UserPlus, Info, ChevronDown, KeyRound, Copy, Check } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -37,6 +38,11 @@ export default function UserRolesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [updatingUser, setUpdatingUser] = useState<string | null>(null);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<{ userId: string; name: string; email: string } | null>(null);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const userRole = roles[0] || 'provider';
   const userName = profile?.full_name || profile?.email || 'User';
@@ -120,6 +126,46 @@ export default function UserRolesPage() {
   const handleToggleRole = (userId: string, role: AppRole, hasRole: boolean) => {
     setUpdatingUser(`${userId}-${role}`);
     toggleRoleMutation.mutate({ userId, role, hasRole });
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetTarget) return;
+    setIsResetting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-reset-password', {
+        body: { userId: resetTarget.userId, method: 'generate' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setTempPassword(data.password);
+      toast({
+        title: 'Password reset',
+        description: `Temporary password generated for ${resetTarget.email}.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Error',
+        description: err.message || 'Failed to reset password',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const handleCopyPassword = () => {
+    if (tempPassword) {
+      navigator.clipboard.writeText(tempPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const openResetDialog = (userId: string, name: string, email: string) => {
+    setResetTarget({ userId, name, email });
+    setTempPassword(null);
+    setCopied(false);
+    setResetDialogOpen(true);
   };
 
   return (
@@ -228,8 +274,9 @@ export default function UserRolesPage() {
                         <TableHead key={role} className="text-center capitalize">
                           {role}
                         </TableHead>
-                      ))}
-                    </TableRow>
+                       ))}
+                       <TableHead className="text-center">Actions</TableHead>
+                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {usersWithRoles.map(user => (
@@ -275,6 +322,16 @@ export default function UserRolesPage() {
                             </TableCell>
                           );
                         })}
+                        <TableCell className="text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openResetDialog(user.user_id, user.full_name || 'User', user.email || '')}
+                            title="Reset password"
+                          >
+                            <KeyRound className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -282,6 +339,39 @@ export default function UserRolesPage() {
               )}
           </CardContent>
         </Card>
+
+        <Dialog open={resetDialogOpen} onOpenChange={(open) => { setResetDialogOpen(open); if (!open) setTempPassword(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reset Password</DialogTitle>
+              <DialogDescription>
+                Generate a temporary password for <strong>{resetTarget?.name}</strong> ({resetTarget?.email}).
+                Share this password securely — the user should change it after logging in.
+              </DialogDescription>
+            </DialogHeader>
+            {tempPassword ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-md border bg-muted p-3 font-mono text-sm">
+                  <span className="flex-1 break-all">{tempPassword}</span>
+                  <Button variant="ghost" size="icon" onClick={handleCopyPassword}>
+                    {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  This password is shown only once. Copy it now and share it with the user securely.
+                </p>
+              </div>
+            ) : (
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setResetDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleResetPassword} disabled={isResetting}>
+                  {isResetting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Generate Temporary Password
+                </Button>
+              </DialogFooter>
+            )}
+          </DialogContent>
+        </Dialog>
 
       </main>
     </div>
