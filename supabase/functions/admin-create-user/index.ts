@@ -71,13 +71,24 @@ Deno.serve(async (req) => {
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // Create the auth user
+    // Check if user already exists
+    const { data: existingUsers } = await adminClient.auth.admin.listUsers();
+    const existingUser = existingUsers?.users?.find(u => u.email === email);
+
+    if (existingUser) {
+      return new Response(
+        JSON.stringify({ error: `An account with email "${email}" already exists. You can manage their roles from the User Roles page.` }),
+        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // Auto-confirm email since admin is creating
+      email_confirm: true,
       user_metadata: {
         full_name: fullName,
-        must_change_password: true, // Flag for frontend to enforce password change
+        must_change_password: true,
       },
     });
 
