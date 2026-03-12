@@ -20,6 +20,7 @@ export default function ProviderOnboardingPage() {
           alwaysCollabStates: collabClassification.always,
           conditionalStates: collabClassification.conditional,
           reportedLicenses: data.reportedLicenses || [],
+          selectedStates: data.selectedStates || [],
           providerName: data.providerName,
           providerEmail: data.providerEmail,
           npiNumber: data.npiNumber,
