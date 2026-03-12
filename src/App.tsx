@@ -35,6 +35,8 @@ import CalendarPage from "./pages/CalendarPage";
 import AdminAddProviderPage from "./pages/AdminAddProviderPage";
 import LicensureApplicationPage from "./pages/LicensureApplicationPage";
 import TaskRepositoryPage from "./pages/TaskRepositoryPage";
+import MyLicensesPage from "./pages/MyLicensesPage";
+import MyPodPage from "./pages/MyPodPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
