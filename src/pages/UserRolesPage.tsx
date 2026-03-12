@@ -340,6 +340,39 @@ export default function UserRolesPage() {
           </CardContent>
         </Card>
 
+        <Dialog open={resetDialogOpen} onOpenChange={(open) => { setResetDialogOpen(open); if (!open) setTempPassword(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reset Password</DialogTitle>
+              <DialogDescription>
+                Generate a temporary password for <strong>{resetTarget?.name}</strong> ({resetTarget?.email}).
+                Share this password securely — the user should change it after logging in.
+              </DialogDescription>
+            </DialogHeader>
+            {tempPassword ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-md border bg-muted p-3 font-mono text-sm">
+                  <span className="flex-1 break-all">{tempPassword}</span>
+                  <Button variant="ghost" size="icon" onClick={handleCopyPassword}>
+                    {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  This password is shown only once. Copy it now and share it with the user securely.
+                </p>
+              </div>
+            ) : (
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setResetDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleResetPassword} disabled={isResetting}>
+                  {isResetting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Generate Temporary Password
+                </Button>
+              </DialogFooter>
+            )}
+          </DialogContent>
+        </Dialog>
+
       </main>
     </div>
   );
