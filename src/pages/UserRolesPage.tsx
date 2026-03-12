@@ -322,6 +322,16 @@ export default function UserRolesPage() {
                             </TableCell>
                           );
                         })}
+                        <TableCell className="text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openResetDialog(user.user_id, user.full_name || 'User', user.email || '')}
+                            title="Reset password"
+                          >
+                            <KeyRound className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
