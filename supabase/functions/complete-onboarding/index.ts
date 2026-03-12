@@ -47,6 +47,7 @@ Deno.serve(async (req) => {
       alwaysCollabStates = [],
       conditionalStates = [],
       reportedLicenses = [],
+      selectedStates = [],
       providerName,
       providerEmail,
       npiNumber,
