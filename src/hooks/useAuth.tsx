@@ -15,6 +15,7 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
   hasRole: (role: AppRole) => boolean;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -123,9 +124,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasRole = (role: AppRole) => roles.includes(role);
 
+  const refreshProfile = async () => {
+    if (!user) return;
+    const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
+    if (data) setProfile(data);
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, session, profile, roles, rolesHydrated, loading, signOut, hasRole }}
+      value={{ user, session, profile, roles, rolesHydrated, loading, signOut, hasRole, refreshProfile }}
     >
       {children}
     </AuthContext.Provider>
