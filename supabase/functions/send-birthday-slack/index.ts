@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
     const { data: providers, error } = await supabase
       .from('profiles')
       .select('id, full_name, birthday, email, is_active')
-      .not('date_of_birth', 'is', null)
+      .not('birthday', 'is', null)
       .eq('is_active', true);
 
     if (error) throw new Error(`Failed to fetch providers: ${error.message}`);
