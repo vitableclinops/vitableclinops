@@ -70,8 +70,8 @@ Deno.serve(async (req) => {
 
     // Filter for birthdays matching today's month/day
     const birthdayProviders = (providers || []).filter((p) => {
-      if (!p.date_of_birth) return false;
-      const dob = p.date_of_birth as string; // YYYY-MM-DD
+      if (!p.birthday) return false;
+      const dob = p.birthday as string; // YYYY-MM-DD
       const dobMonthDay = dob.substring(5); // MM-DD
       return dobMonthDay === monthDay;
     });
