@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
     // Find providers whose birthday is today (matching month and day)
     const { data: providers, error } = await supabase
       .from('profiles')
-      .select('id, full_name, date_of_birth, email, is_active')
+      .select('id, full_name, birthday, email, is_active')
       .not('date_of_birth', 'is', null)
       .eq('is_active', true);
 
