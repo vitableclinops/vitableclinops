@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.activate-transfer-agreements]
 verify_jwt = false
+
+[functions.send-birthday-slack]
+verify_jwt = false
