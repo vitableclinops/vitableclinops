@@ -54,6 +54,59 @@ Deno.serve(async (req) => {
     const SLACK_API_KEY = Deno.env.get('SLACK_API_KEY');
     if (!SLACK_API_KEY) throw new Error('SLACK_API_KEY is not configured');
 
+    // Check for demo/test mode
+    let body: Record<string, unknown> = {};
+    try { body = await req.json(); } catch { /* no body */ }
+    const isDemo = body?.demo === true;
+
+    if (isDemo) {
+      const demoName = (body?.name as string) || 'Team Member';
+      const gif = BIRTHDAY_GIFS[Math.floor(Math.random() * BIRTHDAY_GIFS.length)];
+      const wish = BIRTHDAY_MESSAGES[Math.floor(Math.random() * BIRTHDAY_MESSAGES.length)];
+
+      const messageBlocks = [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `🎂 *Happy Birthday, ${demoName}!* 🎂\n\n${wish}\n\nPlease join us in wishing *${demoName}* a wonderful birthday! 🎁🎈\n\n_🧪 This is a test message_`,
+          },
+        },
+        {
+          type: 'image',
+          image_url: gif,
+          alt_text: 'Birthday celebration GIF',
+        },
+      ];
+
+      const response = await fetch(`${GATEWAY_URL}/chat.postMessage`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'X-Connection-Api-Key': SLACK_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          channel: BIRTHDAY_CHANNEL_ID,
+          text: `🎂 Happy Birthday, ${demoName}! 🎂 (Test)`,
+          blocks: messageBlocks,
+          unfurl_media: true,
+          username: 'Birthday Bot 🎂',
+          icon_emoji: ':birthday:',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(`Slack API error: ${JSON.stringify(data)}`);
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, message: `Demo birthday message sent for ${demoName}`, demo: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Get today's date in Chicago timezone
     const todayStr = getChicagoDate(); // YYYY-MM-DD
     const [, monthStr, dayStr] = todayStr.split('-');
