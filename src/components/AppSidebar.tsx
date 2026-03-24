@@ -39,6 +39,7 @@ import {
   Building2,
   FolderOpen,
   ListChecks,
+  UserSearch,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
