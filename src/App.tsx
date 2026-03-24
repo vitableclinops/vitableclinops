@@ -37,6 +37,7 @@ import LicensureApplicationPage from "./pages/LicensureApplicationPage";
 import TaskRepositoryPage from "./pages/TaskRepositoryPage";
 import MyLicensesPage from "./pages/MyLicensesPage";
 import MyPodPage from "./pages/MyPodPage";
+import HiringPipelinePage from "./pages/HiringPipelinePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
