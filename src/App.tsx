@@ -202,6 +202,11 @@ const App = () => (
                 <MyPodPage />
               </ProtectedRoute>
             } />
+            <Route path="/admin/hiring" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <HiringPipelinePage />
+              </ProtectedRoute>
+            } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
