@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 const GATEWAY_URL = 'https://connector-gateway.lovable.dev/slack/api';
-const BIRTHDAY_CHANNEL_ID = 'C08S37P766R'; // #clinops-escalations
+const BIRTHDAY_CHANNEL_ID = 'C09BL4HGV1A'; // #provider-clinical-support
 
 const BIRTHDAY_GIFS = [
   'https://media.giphy.com/media/g5R9dok94mrIvplmZd/giphy.gif',
