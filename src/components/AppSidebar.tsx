@@ -39,6 +39,7 @@ import {
   Building2,
   FolderOpen,
   ListChecks,
+  UserSearch,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -100,6 +101,7 @@ const navGroups: NavGroup[] = [
       { label: 'Task Repository', icon: ListChecks, href: '/admin/tasks', roles: ['admin', 'pod_lead'] },
       { label: 'Reimbursements', icon: Receipt, href: '/reimbursements', roles: ['provider', 'admin'] },
       { label: 'Agencies', icon: Building2, href: '/admin/agencies', roles: ['admin'] },
+      { label: 'Hiring Pipeline', icon: UserSearch, href: '/admin/hiring', roles: ['admin'] },
       { label: 'Calendar', icon: Calendar, href: '/admin/calendar', roles: ['admin', 'pod_lead'] },
     ],
   },
