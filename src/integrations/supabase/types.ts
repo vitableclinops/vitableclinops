@@ -1490,6 +1490,78 @@ export type Database = {
           },
         ]
       }
+      hiring_candidates: {
+        Row: {
+          candidate_name: string
+          candidates_provided_date: string | null
+          covered_states: string[] | null
+          created_at: string
+          ds_request_date: string | null
+          first_shift_date: string | null
+          hiring_decision: string | null
+          hiring_decision_date: string | null
+          id: string
+          interview_completed: boolean | null
+          interview_date: string | null
+          notes: string | null
+          notion_page_id: string | null
+          onboarding_start_date: string | null
+          role: string | null
+          slack_thread_url: string | null
+          source: string | null
+          source_context: Json | null
+          stage: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          candidate_name: string
+          candidates_provided_date?: string | null
+          covered_states?: string[] | null
+          created_at?: string
+          ds_request_date?: string | null
+          first_shift_date?: string | null
+          hiring_decision?: string | null
+          hiring_decision_date?: string | null
+          id?: string
+          interview_completed?: boolean | null
+          interview_date?: string | null
+          notes?: string | null
+          notion_page_id?: string | null
+          onboarding_start_date?: string | null
+          role?: string | null
+          slack_thread_url?: string | null
+          source?: string | null
+          source_context?: Json | null
+          stage?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          candidate_name?: string
+          candidates_provided_date?: string | null
+          covered_states?: string[] | null
+          created_at?: string
+          ds_request_date?: string | null
+          first_shift_date?: string | null
+          hiring_decision?: string | null
+          hiring_decision_date?: string | null
+          id?: string
+          interview_completed?: boolean | null
+          interview_date?: string | null
+          notes?: string | null
+          notion_page_id?: string | null
+          onboarding_start_date?: string | null
+          role?: string | null
+          slack_thread_url?: string | null
+          source?: string | null
+          source_context?: Json | null
+          stage?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       kb_articles: {
         Row: {
           category: string
