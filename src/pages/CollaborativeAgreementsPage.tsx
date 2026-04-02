@@ -497,8 +497,9 @@ const CollaborativeAgreementsPage = () => {
       if (existing) {
         existing.agreements.push(agreement);
         existing.activeProviders.push(...activeProviders);
-        if (!existing.physicians.includes(agreement.physician_name)) {
-          existing.physicians.push(agreement.physician_name);
+        const phName = agreement.physician_name || 'Unassigned';
+        if (!existing.physicians.includes(phName)) {
+          existing.physicians.push(phName);
         }
       } else {
         map.set(agreement.state_abbreviation, {
