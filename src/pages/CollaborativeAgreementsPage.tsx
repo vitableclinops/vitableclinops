@@ -507,7 +507,7 @@ const CollaborativeAgreementsPage = () => {
           name: agreement.state_name,
           agreements: [agreement],
           activeProviders: [...activeProviders],
-          physicians: [agreement.physician_name]
+          physicians: [agreement.physician_name || 'Unassigned']
         });
       }
     });
