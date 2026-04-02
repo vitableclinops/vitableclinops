@@ -451,7 +451,9 @@ const CollaborativeAgreementsPage = () => {
     }>();
 
     dbAgreements.forEach(agreement => {
-      const existing = map.get(agreement.physician_email);
+      const phEmail = agreement.physician_email || 'unknown';
+      const phName = agreement.physician_name || 'Unassigned';
+      const existing = map.get(phEmail);
       const activeProviders = dbProviders.filter(p => p.agreement_id === agreement.id && p.is_active);
       const terminatedProviders = dbProviders.filter(p => p.agreement_id === agreement.id && !p.is_active);
       
@@ -463,9 +465,9 @@ const CollaborativeAgreementsPage = () => {
           existing.states.push(agreement.state_abbreviation);
         }
       } else {
-        map.set(agreement.physician_email, {
-          name: agreement.physician_name,
-          email: agreement.physician_email,
+        map.set(phEmail, {
+          name: phName,
+          email: phEmail,
           npi: agreement.physician_npi,
           agreements: [agreement],
           activeProviders: [...activeProviders],
@@ -495,8 +497,9 @@ const CollaborativeAgreementsPage = () => {
       if (existing) {
         existing.agreements.push(agreement);
         existing.activeProviders.push(...activeProviders);
-        if (!existing.physicians.includes(agreement.physician_name)) {
-          existing.physicians.push(agreement.physician_name);
+        const phName = agreement.physician_name || 'Unassigned';
+        if (!existing.physicians.includes(phName)) {
+          existing.physicians.push(phName);
         }
       } else {
         map.set(agreement.state_abbreviation, {
@@ -504,7 +507,7 @@ const CollaborativeAgreementsPage = () => {
           name: agreement.state_name,
           agreements: [agreement],
           activeProviders: [...activeProviders],
-          physicians: [agreement.physician_name]
+          physicians: [agreement.physician_name || 'Unassigned']
         });
       }
     });
