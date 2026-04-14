@@ -301,13 +301,11 @@ export default function LicenseOptimizerPage() {
   // ── Trigger sync ────────────────────────────────────────────────────────────
   const syncMutation = useMutation({
     mutationFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-homebase`,
-        { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` } }
-      );
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
+      const { data, error } = await supabase.functions.invoke('sync-homebase', {
+        method: 'POST',
+      });
+      if (error) throw error;
+      return data;
     },
     onSuccess: () => {
       toast({ title: 'Homebase sync complete' });
@@ -321,13 +319,11 @@ export default function LicenseOptimizerPage() {
 
   const computeMutation = useMutation({
     mutationFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/compute-license-utilization`,
-        { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` } }
-      );
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
+      const { data, error } = await supabase.functions.invoke('compute-license-utilization', {
+        method: 'POST',
+      });
+      if (error) throw error;
+      return data;
     },
     onSuccess: (result) => {
       toast({ title: `Optimization computed`, description: `${result.snapshots_written} snapshots written` });
@@ -354,20 +350,11 @@ export default function LicenseOptimizerPage() {
     ).map(vals => Object.fromEntries(cols.map((c, i) => [c, vals[i]])));
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${endpoint}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session?.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(buildBody(rows as any)),
-        }
-      );
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error);
+      const { data: result, error } = await supabase.functions.invoke(endpoint, {
+        method: 'POST',
+        body: buildBody(rows as any),
+      });
+      if (error) throw error;
       toast({ title: `Imported ${result.inserted} rows`, description: result.errors?.length ? `${result.errors.length} rows skipped` : undefined });
     } catch (err: any) {
       toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
