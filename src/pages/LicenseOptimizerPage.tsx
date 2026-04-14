@@ -56,10 +56,7 @@ function useSnapshots(view: 'historical' | 'forward') {
     queryFn: async () => {
       const query = (supabase as any)
         .from('license_optimization_snapshots')
-        .select(`
-          *,
-          profiles!license_optimization_snapshots_profile_id_fkey(full_name, first_name, last_name)
-        `)
+        .select('*')
         .order('snapshot_date', { ascending: true })
         .limit(2000);
 
@@ -71,7 +68,36 @@ function useSnapshots(view: 'historical' | 'forward') {
 
       const { data, error } = await query;
       if (error) throw error;
-      return (data ?? []) as Snapshot[];
+
+      const snapshots = (data ?? []) as Snapshot[];
+      const profileIds = [...new Set(snapshots.map((row) => row.profile_id).filter(Boolean))];
+
+      if (profileIds.length === 0) {
+        return snapshots;
+      }
+
+      const { data: profiles, error: profilesError } = await (supabase as any)
+        .from('profiles')
+        .select('id, full_name, first_name, last_name')
+        .in('id', profileIds);
+
+      if (profilesError) throw profilesError;
+
+      const profilesById = new Map(
+        (profiles ?? []).map((profile: any) => [
+          profile.id,
+          {
+            full_name: profile.full_name ?? null,
+            first_name: profile.first_name ?? null,
+            last_name: profile.last_name ?? null,
+          },
+        ])
+      );
+
+      return snapshots.map((snapshot) => ({
+        ...snapshot,
+        profiles: profilesById.get(snapshot.profile_id),
+      }));
     },
     staleTime: 5 * 60 * 1000,
   });
