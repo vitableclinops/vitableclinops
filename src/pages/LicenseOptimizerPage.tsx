@@ -53,7 +53,7 @@ function useSnapshots(view: 'historical' | 'forward') {
   const today = new Date().toISOString().slice(0, 10);
   return useQuery({
     queryKey: ['license_optimizer_snapshots', view],
-    queryFn: async () => {
+    queryFn: async (): Promise<Snapshot[]> => {
       const query = (supabase as any)
         .from('license_optimization_snapshots')
         .select('*')
@@ -69,8 +69,8 @@ function useSnapshots(view: 'historical' | 'forward') {
       const { data, error } = await query;
       if (error) throw error;
 
-      const snapshots = (data ?? []) as Snapshot[];
-      const profileIds = [...new Set(snapshots.map((row) => row.profile_id).filter(Boolean))];
+      const snapshots: Snapshot[] = (data ?? []) as Snapshot[];
+      const profileIds = [...new Set(snapshots.map((row) => row.profile_id).filter(Boolean))] as string[];
 
       if (profileIds.length === 0) {
         return snapshots;
@@ -83,7 +83,7 @@ function useSnapshots(view: 'historical' | 'forward') {
 
       if (profilesError) throw profilesError;
 
-      const profilesById = new Map(
+      const profilesById = new Map<string, NonNullable<Snapshot['profiles']>>(
         (profiles ?? []).map((profile: any) => [
           profile.id,
           {
@@ -94,7 +94,7 @@ function useSnapshots(view: 'historical' | 'forward') {
         ])
       );
 
-      return snapshots.map((snapshot) => ({
+      return snapshots.map<Snapshot>((snapshot) => ({
         ...snapshot,
         profiles: profilesById.get(snapshot.profile_id),
       }));
