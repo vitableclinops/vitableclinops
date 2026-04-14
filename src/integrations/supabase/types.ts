@@ -1869,6 +1869,57 @@ export type Database = {
         }
         Relationships: []
       }
+      license_optimization_snapshots: {
+        Row: {
+          active_license_count: number | null
+          allocated_hours: number | null
+          coverage_ratio: number | null
+          created_at: string
+          estimated_demand_hours: number | null
+          id: string
+          profile_id: string
+          provider_hours_total: number | null
+          quadrant: string | null
+          sla_pct: number | null
+          snapshot_date: string
+          state_abbreviation: string
+          unfilled_slots: number | null
+          wasted_flag: boolean | null
+        }
+        Insert: {
+          active_license_count?: number | null
+          allocated_hours?: number | null
+          coverage_ratio?: number | null
+          created_at?: string
+          estimated_demand_hours?: number | null
+          id?: string
+          profile_id: string
+          provider_hours_total?: number | null
+          quadrant?: string | null
+          sla_pct?: number | null
+          snapshot_date: string
+          state_abbreviation: string
+          unfilled_slots?: number | null
+          wasted_flag?: boolean | null
+        }
+        Update: {
+          active_license_count?: number | null
+          allocated_hours?: number | null
+          coverage_ratio?: number | null
+          created_at?: string
+          estimated_demand_hours?: number | null
+          id?: string
+          profile_id?: string
+          provider_hours_total?: number | null
+          quadrant?: string | null
+          sla_pct?: number | null
+          snapshot_date?: string
+          state_abbreviation?: string
+          unfilled_slots?: number | null
+          wasted_flag?: boolean | null
+        }
+        Relationships: []
+      }
       licensure_application_steps: {
         Row: {
           admin_notes: string | null
@@ -3150,6 +3201,30 @@ export type Database = {
         }
         Relationships: []
       }
+      state_activation: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          state_abbreviation: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          state_abbreviation: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          state_abbreviation?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       state_compliance_requirements: {
         Row: {
           ca_meeting_cadence: string | null
@@ -3246,6 +3321,33 @@ export type Database = {
         }
         Relationships: []
       }
+      state_leftover_slots: {
+        Row: {
+          created_at: string
+          id: string
+          slot_date: string
+          state_abbreviation: string
+          unfilled_slots: number
+          window_type: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          slot_date: string
+          state_abbreviation: string
+          unfilled_slots?: number
+          window_type?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          slot_date?: string
+          state_abbreviation?: string
+          unfilled_slots?: number
+          window_type?: string | null
+        }
+        Relationships: []
+      }
       state_licensure_templates: {
         Row: {
           application_url: string | null
@@ -3307,6 +3409,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      state_sla_attainment: {
+        Row: {
+          created_at: string
+          id: string
+          sla_pct: number
+          state_abbreviation: string
+          window_label: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          sla_pct?: number
+          state_abbreviation: string
+          window_label?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          sla_pct?: number
+          state_abbreviation?: string
+          window_label?: string | null
+        }
+        Relationships: []
       }
       supervision_meetings: {
         Row: {
