@@ -360,31 +360,90 @@ export default function LicenseOptimizerPage() {
     },
   });
 
-  // ── CSV upload handler ──────────────────────────────────────────────────────
-  const handleCsvUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-    endpoint: string,
-    buildBody: (rows: string[][]) => object
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const text = await file.text();
+  // ── Smart CSV upload — auto-detects file type from headers ─────────────────
+  const [uploadStatuses, setUploadStatuses] = useState<{ name: string; status: 'uploading' | 'done' | 'error'; msg: string }[]>([]);
+
+  const parseCSV = (text: string) => {
     const [header, ...dataRows] = text.trim().split('\n');
     const cols = header.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-    const rows = dataRows.map(line =>
+    return { cols, rows: dataRows.map(line =>
       line.split(',').map(v => v.trim().replace(/^"|"$/g, ''))
-    ).map(vals => Object.fromEntries(cols.map((c, i) => [c, vals[i]])));
+    ).map(vals => Object.fromEntries(cols.map((c, i) => [c, vals[i]]))) };
+  };
+
+  const detectAndUpload = async (file: File): Promise<{ name: string; status: 'done' | 'error'; msg: string }> => {
+    const text = await file.text();
+    const { cols, rows } = parseCSV(text);
+    const colSet = new Set(cols.map(c => c.toLowerCase()));
+    const today = new Date().toISOString().slice(0, 10);
+    const start14 = new Date(); start14.setDate(start14.getDate() - 14);
+
+    let endpoint = '';
+    let body: object = {};
+
+    // Detect by column signature
+    if (colSet.has('provider') && colSet.has('total timeslots')) {
+      // provider_utilization_last_14_days
+      endpoint = 'import-provider-utilization';
+      body = {
+        rows: rows.map((r: any) => ({
+          provider: r['Provider'] || r['provider'],
+          total_timeslots: r['Total Timeslots'] || r['total timeslots'],
+          avg_utilization: r['Avg Time Slot Utilization'] || r['avg time slot utilization'],
+        })),
+        window_start: start14.toISOString().slice(0, 10),
+        window_end: today,
+      };
+    } else if (colSet.has('period') || colSet.has('%')) {
+      // utilization_rate_past_2_months
+      endpoint = 'import-utilization-daily';
+      body = { rows: rows.map((r: any) => ({ date: r['Period'] || r['period'], pct: r['%'] || r['pct'] })) };
+    } else if ((colSet.has('state') || colSet.has('state_abbreviation')) && colSet.has('sla attainment rate')) {
+      // SLA attainment — detect window from filename
+      const isLong = file.name.toLowerCase().includes('feb') || file.name.toLowerCase().includes('current');
+      endpoint = 'import-sla-attainment';
+      body = {
+        rows: rows.map((r: any) => ({ state: r['State'] || r['state'], sla: r['SLA Attainment Rate'] || r['sla attainment rate'] })),
+        window_label: isLong ? 'feb2026_current' : 'past_2_weeks',
+      };
+    } else if (colSet.has('state') && (colSet.has('sum of same_next_day_available_slots') || colSet.has('same_next_day_available_slots'))) {
+      // Leftover slots — detect historical vs forecast from filename
+      const isForecast = file.name.toLowerCase().includes('future') || file.name.toLowerCase().includes('forecast');
+      endpoint = 'import-leftover-slots';
+      body = {
+        rows: rows.map((r: any) => ({
+          state: r['state'] || r['State'],
+          date: r['date_actual: Day'] || r['date_actual'] || r['date'],
+          slots: r['Sum of same_next_day_available_slots'] || r['same_next_day_available_slots'],
+        })),
+        window_type: isForecast ? 'forecast' : 'historical',
+      };
+    } else {
+      return { name: file.name, status: 'error', msg: `Could not detect file type from columns: ${cols.slice(0, 3).join(', ')}` };
+    }
 
     try {
-      const { data: result, error } = await supabase.functions.invoke(endpoint, {
-        method: 'POST',
-        body: buildBody(rows as any),
-      });
+      const { data: result, error } = await supabase.functions.invoke(endpoint, { method: 'POST', body });
       if (error) throw error;
-      toast({ title: `Imported ${result.inserted} rows`, description: result.errors?.length ? `${result.errors.length} rows skipped` : undefined });
+      return { name: file.name, status: 'done', msg: `${result.inserted ?? '?'} rows imported` };
     } catch (err: any) {
-      toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
+      return { name: file.name, status: 'error', msg: err.message };
     }
+  };
+
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setUploadStatuses(files.map(f => ({ name: f.name, status: 'uploading', msg: 'Uploading…' })));
+    const results = await Promise.all(files.map(detectAndUpload));
+    setUploadStatuses(results);
+    const ok = results.filter(r => r.status === 'done').length;
+    const fail = results.filter(r => r.status === 'error').length;
+    toast({
+      title: `${ok} file${ok !== 1 ? 's' : ''} imported${fail ? `, ${fail} failed` : ''}`,
+      description: fail ? 'Check the upload panel for details.' : 'Click Recompute to refresh the heatmap.',
+      variant: fail && !ok ? 'destructive' : 'default',
+    });
     e.target.value = '';
   };
 
@@ -703,80 +762,52 @@ export default function LicenseOptimizerPage() {
             </CardContent>
           </Card>
 
-          {/* CSV upload section */}
+          {/* CSV upload section — single multi-file uploader */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Upload className="h-4 w-4" /> Upload CSV data
+                <Upload className="h-4 w-4" /> Upload data files
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                Export your .numbers files as CSV and upload here. After uploading all files, click
-                <strong> Recompute</strong> to refresh the optimizer.
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Export your <strong>.numbers</strong> files as CSV (File → Export → CSV in Numbers),
+                then select <strong>all of them at once</strong> below. The system auto-detects which
+                file is which. After uploading, click <strong>Recompute</strong>.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
-                <CsvUploadCard
-                  label="Leftover slots (historical)"
-                  columns="state, date, slots"
-                  onChange={e => handleCsvUpload(e, 'import-leftover-slots', rows =>
-                    ({ rows: rows.map((r: any) => ({ state: r.state, date: r['date_actual: Day'] || r.date, slots: r['Sum of same_next_day_available_slots'] || r.slots })), window_type: 'historical' })
-                  )}
+              <label className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/40 transition-colors">
+                <Upload className="h-8 w-8 text-muted-foreground" />
+                <div className="text-center">
+                  <p className="font-medium">Click to select all 6 CSV files at once</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    leftover visits (×2) · SLA attainment (×2) · provider utilization · daily utilization
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept=".csv"
+                  multiple
+                  className="hidden"
+                  onChange={handleBulkUpload}
                 />
+              </label>
 
-                <CsvUploadCard
-                  label="Leftover slots (forecast)"
-                  columns="state, date, slots"
-                  onChange={e => handleCsvUpload(e, 'import-leftover-slots', rows =>
-                    ({ rows: rows.map((r: any) => ({ state: r.state, date: r['date_actual: Day'] || r.date, slots: r['Sum of same_next_day_available_slots'] || r.slots })), window_type: 'forecast' })
-                  )}
-                />
-
-                <CsvUploadCard
-                  label="SLA attainment (long window)"
-                  columns="State, SLA Attainment Rate"
-                  onChange={e => handleCsvUpload(e, 'import-sla-attainment', rows =>
-                    ({ rows: rows.map((r: any) => ({ state: r.State || r.state, sla: r['SLA Attainment Rate'] || r.sla })), window_label: 'feb2026_current' })
-                  )}
-                />
-
-                <CsvUploadCard
-                  label="SLA attainment (past 2 weeks)"
-                  columns="State, SLA Attainment Rate"
-                  onChange={e => handleCsvUpload(e, 'import-sla-attainment', rows =>
-                    ({ rows: rows.map((r: any) => ({ state: r.State || r.state, sla: r['SLA Attainment Rate'] || r.sla })), window_label: 'past_2_weeks' })
-                  )}
-                />
-
-                <CsvUploadCard
-                  label="Provider utilization (14 days)"
-                  columns="Provider, Total Timeslots, Avg Time Slot Utilization"
-                  onChange={e => {
-                    const today = new Date().toISOString().slice(0, 10);
-                    const start = new Date(); start.setDate(start.getDate() - 14);
-                    handleCsvUpload(e, 'import-provider-utilization', rows =>
-                      ({
-                        rows: rows.map((r: any) => ({
-                          provider: r.Provider || r.provider,
-                          total_timeslots: r['Total Timeslots'] || r.total_timeslots,
-                          avg_utilization: r['Avg Time Slot Utilization'] || r.avg_utilization,
-                        })),
-                        window_start: start.toISOString().slice(0, 10),
-                        window_end: today,
-                      })
-                    );
-                  }}
-                />
-
-                <CsvUploadCard
-                  label="Daily utilization rate"
-                  columns="Period, %"
-                  onChange={e => handleCsvUpload(e, 'import-utilization-daily', rows =>
-                    ({ rows: rows.map((r: any) => ({ date: r.Period || r.period || r.date, pct: r['%'] || r.pct })) })
-                  )}
-                />
-              </div>
+              {uploadStatuses.length > 0 && (
+                <div className="space-y-2">
+                  {uploadStatuses.map((s, i) => (
+                    <div key={i} className="flex items-center gap-3 text-sm p-2 rounded-md bg-muted/40">
+                      {s.status === 'uploading' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />}
+                      {s.status === 'done'      && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
+                      {s.status === 'error'     && <XCircle className="h-4 w-4 text-destructive shrink-0" />}
+                      <span className="flex-1 truncate font-medium">{s.name}</span>
+                      <span className={cn('text-xs shrink-0', s.status === 'error' ? 'text-destructive' : 'text-muted-foreground')}>
+                        {s.msg}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -786,19 +817,3 @@ export default function LicenseOptimizerPage() {
   );
 }
 
-function CsvUploadCard({
-  label, columns, onChange,
-}: {
-  label: string; columns: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5 p-3 border rounded-lg cursor-pointer hover:bg-muted/40 transition-colors">
-      <span className="text-sm font-medium">{label}</span>
-      <span className="text-xs text-muted-foreground">{columns}</span>
-      <input type="file" accept=".csv" className="hidden" onChange={onChange} />
-      <span className="flex items-center gap-1 text-xs text-primary mt-1">
-        <Upload className="h-3 w-3" /> Upload CSV
-      </span>
-    </label>
-  );
-}
