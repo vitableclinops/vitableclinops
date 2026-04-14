@@ -1695,7 +1695,15 @@ export type Database = {
           start_at?: string | null
           synced_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "homebase_shifts_homebase_employee_id_fkey"
+            columns: ["homebase_employee_id"]
+            isOneToOne: false
+            referencedRelation: "homebase_employees"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       homebase_sync_runs: {
         Row: {
