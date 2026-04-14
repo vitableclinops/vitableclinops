@@ -372,54 +372,77 @@ export default function LicenseOptimizerPage() {
   };
 
   const detectAndUpload = async (file: File): Promise<{ name: string; status: 'done' | 'error'; msg: string }> => {
-    const text = await file.text();
+    // Normalize line endings explicitly before parsing
+    const raw = await file.text();
+    const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const { cols, rows } = parseCSV(text);
-    const colSet = new Set(cols.map(c => c.toLowerCase()));
+
+    // Helper: check if any column partially matches a keyword (case-insensitive)
+    const has = (...keywords: string[]) =>
+      keywords.every(kw => cols.some(c => c.toLowerCase().includes(kw.toLowerCase())));
+    const hasAny = (...keywords: string[]) =>
+      keywords.some(kw => cols.some(c => c.toLowerCase().includes(kw.toLowerCase())));
+
+    // Helper: find the actual column name that contains a keyword
+    const col = (kw: string) => cols.find(c => c.toLowerCase().includes(kw.toLowerCase())) ?? '';
+
     const today = new Date().toISOString().slice(0, 10);
     const start14 = new Date(); start14.setDate(start14.getDate() - 14);
 
     let endpoint = '';
     let body: object = {};
 
-    // Detect by column signature
-    if (colSet.has('provider') && colSet.has('total timeslots')) {
+    // Detect by column signature — ordered most-specific first
+    if (has('provider') && has('timeslot')) {
       // provider_utilization_last_14_days
       endpoint = 'import-provider-utilization';
       body = {
         rows: rows.map((r: any) => ({
-          provider: r['Provider'] || r['provider'],
-          total_timeslots: r['Total Timeslots'] || r['total timeslots'],
-          avg_utilization: r['Avg Time Slot Utilization'] || r['avg time slot utilization'],
+          provider: r[col('provider')],
+          total_timeslots: r[col('timeslot')],
+          avg_utilization: r[col('utilization')] || r[col('avg')],
         })),
         window_start: start14.toISOString().slice(0, 10),
         window_end: today,
       };
-    } else if (colSet.has('period') || colSet.has('%')) {
-      // utilization_rate_past_2_months
-      endpoint = 'import-utilization-daily';
-      body = { rows: rows.map((r: any) => ({ date: r['Period'] || r['period'], pct: r['%'] || r['pct'] })) };
-    } else if ((colSet.has('state') || colSet.has('state_abbreviation')) && colSet.has('sla attainment rate')) {
-      // SLA attainment — detect window from filename
+    } else if (has('sla') || has('attainment')) {
+      // SLA attainment files
       const isLong = file.name.toLowerCase().includes('feb') || file.name.toLowerCase().includes('current');
       endpoint = 'import-sla-attainment';
       body = {
-        rows: rows.map((r: any) => ({ state: r['State'] || r['state'], sla: r['SLA Attainment Rate'] || r['sla attainment rate'] })),
+        rows: rows.map((r: any) => ({
+          state: r[col('state')],
+          sla: r[col('sla')] || r[col('attainment')],
+        })),
         window_label: isLong ? 'feb2026_current' : 'past_2_weeks',
       };
-    } else if (colSet.has('state') && (colSet.has('sum of same_next_day_available_slots') || colSet.has('same_next_day_available_slots'))) {
-      // Leftover slots — detect historical vs forecast from filename
+    } else if (has('available') || has('same_next') || has('leftover') || (has('state') && has('slot'))) {
+      // Leftover / available slots files
       const isForecast = file.name.toLowerCase().includes('future') || file.name.toLowerCase().includes('forecast');
       endpoint = 'import-leftover-slots';
       body = {
         rows: rows.map((r: any) => ({
-          state: r['state'] || r['State'],
-          date: r['date_actual: Day'] || r['date_actual'] || r['date'],
-          slots: r['Sum of same_next_day_available_slots'] || r['same_next_day_available_slots'],
+          state: r[col('state')],
+          date: r[col('date')] || r[col('day')] || r[col('period')],
+          slots: r[col('available')] || r[col('slot')] || r[col('same_next')],
         })),
         window_type: isForecast ? 'forecast' : 'historical',
       };
+    } else if (hasAny('period', 'date') && hasAny('%', 'pct', 'utilization')) {
+      // utilization_rate_past_2_months
+      endpoint = 'import-utilization-daily';
+      body = {
+        rows: rows.map((r: any) => ({
+          date: r[col('period')] || r[col('date')],
+          pct: r[col('%')] || r[col('pct')] || r[col('utilization')],
+        })),
+      };
     } else {
-      return { name: file.name, status: 'error', msg: `Could not detect file type from columns: ${cols.slice(0, 3).join(', ')}` };
+      return {
+        name: file.name,
+        status: 'error',
+        msg: `Unknown format. Columns found: ${cols.join(' | ')}`,
+      };
     }
 
     try {
