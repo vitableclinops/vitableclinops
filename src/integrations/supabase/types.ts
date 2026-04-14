@@ -1562,6 +1562,186 @@ export type Database = {
         }
         Relationships: []
       }
+      homebase_employees: {
+        Row: {
+          created_at: string
+          email: string | null
+          first_name: string | null
+          homebase_id: number
+          id: string
+          last_name: string | null
+          location_homebase_uuid: string | null
+          match_confidence: string | null
+          normalized_name: string | null
+          profile_id: string | null
+          synced_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          homebase_id: number
+          id?: string
+          last_name?: string | null
+          location_homebase_uuid?: string | null
+          match_confidence?: string | null
+          normalized_name?: string | null
+          profile_id?: string | null
+          synced_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          homebase_id?: number
+          id?: string
+          last_name?: string | null
+          location_homebase_uuid?: string | null
+          match_confidence?: string | null
+          normalized_name?: string | null
+          profile_id?: string | null
+          synced_at?: string | null
+        }
+        Relationships: []
+      }
+      homebase_locations: {
+        Row: {
+          address_1: string | null
+          address_2: string | null
+          city: string | null
+          created_at: string
+          homebase_uuid: string
+          id: string
+          name: string | null
+          state: string | null
+          synced_at: string | null
+          time_zone: string | null
+          zip: string | null
+        }
+        Insert: {
+          address_1?: string | null
+          address_2?: string | null
+          city?: string | null
+          created_at?: string
+          homebase_uuid: string
+          id?: string
+          name?: string | null
+          state?: string | null
+          synced_at?: string | null
+          time_zone?: string | null
+          zip?: string | null
+        }
+        Update: {
+          address_1?: string | null
+          address_2?: string | null
+          city?: string | null
+          created_at?: string
+          homebase_uuid?: string
+          id?: string
+          name?: string | null
+          state?: string | null
+          synced_at?: string | null
+          time_zone?: string | null
+          zip?: string | null
+        }
+        Relationships: []
+      }
+      homebase_shifts: {
+        Row: {
+          created_at: string
+          department: string | null
+          end_at: string | null
+          homebase_employee_id: string | null
+          homebase_id: number
+          homebase_user_id: number | null
+          id: string
+          location_homebase_uuid: string | null
+          published: boolean | null
+          role: string | null
+          scheduled: boolean | null
+          scheduled_hours: number | null
+          start_at: string | null
+          synced_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          department?: string | null
+          end_at?: string | null
+          homebase_employee_id?: string | null
+          homebase_id: number
+          homebase_user_id?: number | null
+          id?: string
+          location_homebase_uuid?: string | null
+          published?: boolean | null
+          role?: string | null
+          scheduled?: boolean | null
+          scheduled_hours?: number | null
+          start_at?: string | null
+          synced_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          department?: string | null
+          end_at?: string | null
+          homebase_employee_id?: string | null
+          homebase_id?: number
+          homebase_user_id?: number | null
+          id?: string
+          location_homebase_uuid?: string | null
+          published?: boolean | null
+          role?: string | null
+          scheduled?: boolean | null
+          scheduled_hours?: number | null
+          start_at?: string | null
+          synced_at?: string | null
+        }
+        Relationships: []
+      }
+      homebase_sync_runs: {
+        Row: {
+          created_at: string
+          employees_matched: number | null
+          employees_synced: number | null
+          employees_unmatched: number | null
+          error: string | null
+          finished_at: string | null
+          id: string
+          locations_synced: number | null
+          shifts_synced: number | null
+          started_at: string
+          status: string
+          unmatched_sample: Json | null
+        }
+        Insert: {
+          created_at?: string
+          employees_matched?: number | null
+          employees_synced?: number | null
+          employees_unmatched?: number | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          locations_synced?: number | null
+          shifts_synced?: number | null
+          started_at?: string
+          status?: string
+          unmatched_sample?: Json | null
+        }
+        Update: {
+          created_at?: string
+          employees_matched?: number | null
+          employees_synced?: number | null
+          employees_unmatched?: number | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          locations_synced?: number | null
+          shifts_synced?: number | null
+          started_at?: string
+          status?: string
+          unmatched_sample?: Json | null
+        }
+        Relationships: []
+      }
       kb_articles: {
         Row: {
           category: string
@@ -2615,6 +2795,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      provider_name_mappings: {
+        Row: {
+          created_at: string
+          homebase_name: string
+          id: string
+          profile_id: string
+        }
+        Insert: {
+          created_at?: string
+          homebase_name: string
+          id?: string
+          profile_id: string
+        }
+        Update: {
+          created_at?: string
+          homebase_name?: string
+          id?: string
+          profile_id?: string
+        }
+        Relationships: []
       }
       provider_state_collab_decisions: {
         Row: {

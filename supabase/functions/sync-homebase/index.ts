@@ -71,8 +71,8 @@ Deno.serve(async (req: Request) => {
 
     // ── Date window ───────────────────────────────────────────────────────────
     const now = new Date();
-    const past = new Date(now); past.setDate(past.getDate() - 30);
-    const future = new Date(now); future.setDate(future.getDate() + 30);
+    const past = new Date(now); past.setDate(past.getDate() - 14);
+    const future = new Date(now); future.setDate(future.getDate() + 14);
     const startDate = past.toISOString().slice(0, 10);
     const endDate = future.toISOString().slice(0, 10);
 
