@@ -194,7 +194,7 @@ Deno.serve(async (req: Request) => {
       for (const e of (empRows ?? [])) empIdMap.set(e.homebase_id, e.id);
 
       for await (const shift of hb.iterateShifts(loc.uuid, startDate, endDate)) {
-        await supabase.from('homebase_shifts').upsert({
+        const { error: shiftErr } = await supabase.from('homebase_shifts').upsert({
           homebase_id: shift.id,
           homebase_user_id: shift.user_id,
           homebase_employee_id: empIdMap.get(shift.user_id) ?? null,
@@ -208,6 +208,9 @@ Deno.serve(async (req: Request) => {
           scheduled: shift.scheduled ?? true,
           synced_at: new Date().toISOString(),
         }, { onConflict: 'homebase_id' });
+        if (shiftErr) {
+          console.error('Shift upsert error:', shift.id, shiftErr.message);
+        }
         counters.shifts_synced++;
       }
     }
