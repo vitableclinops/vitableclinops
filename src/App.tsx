@@ -38,6 +38,7 @@ import TaskRepositoryPage from "./pages/TaskRepositoryPage";
 import MyLicensesPage from "./pages/MyLicensesPage";
 import MyPodPage from "./pages/MyPodPage";
 import HiringPipelinePage from "./pages/HiringPipelinePage";
+import LicenseOptimizerPage from "./pages/LicenseOptimizerPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -205,6 +206,11 @@ const App = () => (
             <Route path="/admin/hiring" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <HiringPipelinePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/license-optimizer" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <LicenseOptimizerPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

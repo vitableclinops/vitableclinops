@@ -20,3 +20,21 @@ verify_jwt = false
 
 [functions.send-birthday-slack]
 verify_jwt = false
+
+[functions.sync-homebase]
+verify_jwt = false
+
+[functions.import-leftover-slots]
+verify_jwt = false
+
+[functions.import-sla-attainment]
+verify_jwt = false
+
+[functions.import-provider-utilization]
+verify_jwt = false
+
+[functions.import-utilization-daily]
+verify_jwt = false
+
+[functions.compute-license-utilization]
+verify_jwt = false

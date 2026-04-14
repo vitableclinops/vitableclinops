@@ -40,6 +40,7 @@ import {
   FolderOpen,
   ListChecks,
   UserSearch,
+  Sliders,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -92,6 +93,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'States & Compliance', icon: MapPin, href: '/admin/states', roles: ['admin'] },
       { label: 'Agreements', icon: Shield, href: '/admin/agreements', roles: ['admin', 'physician'] },
+      { label: 'License Optimizer', icon: Sliders, href: '/admin/license-optimizer', roles: ['admin'] },
     ],
   },
   {
