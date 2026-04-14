@@ -365,9 +365,11 @@ export default function LicenseOptimizerPage() {
 
   const parseCSV = (text: string) => {
     const [header, ...dataRows] = text.trim().split('\n');
-    const cols = header.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+    // Auto-detect delimiter: tab wins if more tabs than commas in header
+    const delim = (header.match(/\t/g) || []).length >= (header.match(/,/g) || []).length ? '\t' : ',';
+    const cols = header.split(delim).map(c => c.trim().replace(/^"|"$/g, ''));
     return { cols, rows: dataRows.map(line =>
-      line.split(',').map(v => v.trim().replace(/^"|"$/g, ''))
+      line.split(delim).map(v => v.trim().replace(/^"|"$/g, ''))
     ).map(vals => Object.fromEntries(cols.map((c, i) => [c, vals[i]]))) };
   };
 
@@ -388,61 +390,81 @@ export default function LicenseOptimizerPage() {
 
     const today = new Date().toISOString().slice(0, 10);
     const start14 = new Date(); start14.setDate(start14.getDate() - 14);
+    const fname = file.name.toLowerCase();
 
     let endpoint = '';
     let body: object = {};
 
-    // Detect by column signature — ordered most-specific first
-    if (has('provider') && has('timeslot')) {
-      // provider_utilization_last_14_days
+    // Utility: get value from row using first column whose name contains keyword
+    const val = (r: any, ...kws: string[]) => {
+      for (const kw of kws) {
+        const k = cols.find(c => c.toLowerCase().includes(kw.toLowerCase()));
+        if (k && r[k] !== undefined && r[k] !== '') return r[k];
+      }
+      // Fallback: return values by position based on which file type this is
+      return undefined;
+    };
+
+    // Detect by filename first (most reliable for Metabase generic column names),
+    // then fall back to column content matching.
+    const isProvider    = fname.includes('provider') || fname.includes('utilization') && fname.includes('last');
+    const isSlaLong     = fname.includes('feb') || (fname.includes('current') && fname.includes('sla'));
+    const isSlaShort    = fname.includes('2 week') || fname.includes('2week') || fname.includes('past') && fname.includes('week');
+    const isForecast    = fname.includes('future') || fname.includes('forecast') || fname.includes('next_day') && fname.includes('available');
+    const isLeftover    = fname.includes('leftover') || fname.includes('visit') || (fname.includes('available') && !isForecast);
+    const isDailyUtil   = fname.includes('utilization') && (fname.includes('month') || fname.includes('rate') || fname.includes('booking'));
+    // SLA attainment: filename contains sla OR "same day" without "available" pattern
+    const isSla         = fname.includes('sla') || fname.includes('attainment') || isSlaLong || isSlaShort;
+
+    if (isProvider && !isSla) {
       endpoint = 'import-provider-utilization';
       body = {
         rows: rows.map((r: any) => ({
-          provider: r[col('provider')],
-          total_timeslots: r[col('timeslot')],
-          avg_utilization: r[col('utilization')] || r[col('avg')],
+          provider: val(r, 'provider', 'name') ?? Object.values(r)[0],
+          total_timeslots: val(r, 'timeslot', 'total', 'slot') ?? Object.values(r)[1],
+          avg_utilization: val(r, 'utilization', 'avg', 'rate') ?? Object.values(r)[2],
         })),
         window_start: start14.toISOString().slice(0, 10),
         window_end: today,
       };
-    } else if (has('sla') || has('attainment')) {
-      // SLA attainment files
-      const isLong = file.name.toLowerCase().includes('feb') || file.name.toLowerCase().includes('current');
+    } else if (isSla) {
       endpoint = 'import-sla-attainment';
       body = {
         rows: rows.map((r: any) => ({
-          state: r[col('state')],
-          sla: r[col('sla')] || r[col('attainment')],
+          state: val(r, 'state') ?? Object.values(r)[0],
+          sla: val(r, 'sla', 'attainment', 'rate', '%') ?? Object.values(r)[1],
         })),
-        window_label: isLong ? 'feb2026_current' : 'past_2_weeks',
+        window_label: (isSlaShort && !isSlaLong) ? 'past_2_weeks' : 'feb2026_current',
       };
-    } else if (has('available') || has('same_next') || has('leftover') || (has('state') && has('slot'))) {
-      // Leftover / available slots files
-      const isForecast = file.name.toLowerCase().includes('future') || file.name.toLowerCase().includes('forecast');
+    } else if (isForecast || isLeftover) {
       endpoint = 'import-leftover-slots';
       body = {
         rows: rows.map((r: any) => ({
-          state: r[col('state')],
-          date: r[col('date')] || r[col('day')] || r[col('period')],
-          slots: r[col('available')] || r[col('slot')] || r[col('same_next')],
+          state: val(r, 'state') ?? Object.values(r)[0],
+          date: val(r, 'date', 'day', 'period', 'time') ?? Object.values(r)[1],
+          slots: val(r, 'available', 'slot', 'same_next', 'count', 'sum') ?? Object.values(r)[2],
         })),
         window_type: isForecast ? 'forecast' : 'historical',
       };
-    } else if (hasAny('period', 'date') && hasAny('%', 'pct', 'utilization')) {
-      // utilization_rate_past_2_months
+    } else if (isDailyUtil) {
       endpoint = 'import-utilization-daily';
       body = {
         rows: rows.map((r: any) => ({
-          date: r[col('period')] || r[col('date')],
-          pct: r[col('%')] || r[col('pct')] || r[col('utilization')],
+          date: val(r, 'date', 'period', 'time', 'day') ?? Object.values(r)[0],
+          pct: val(r, '%', 'pct', 'utilization', 'rate', 'booking') ?? Object.values(r)[1],
         })),
       };
     } else {
-      return {
-        name: file.name,
-        status: 'error',
-        msg: `Unknown format. Columns found: ${cols.join(' | ')}`,
-      };
+      // Last resort: try column-content matching
+      if (has('provider') && has('timeslot')) {
+        endpoint = 'import-provider-utilization';
+        body = { rows: rows.map((r: any) => ({ provider: val(r, 'provider'), total_timeslots: val(r, 'timeslot'), avg_utilization: val(r, 'utilization', 'avg') })), window_start: start14.toISOString().slice(0, 10), window_end: today };
+      } else if (has('sla') || has('attainment')) {
+        endpoint = 'import-sla-attainment';
+        body = { rows: rows.map((r: any) => ({ state: val(r, 'state') ?? Object.values(r)[0], sla: val(r, 'sla', 'attainment') ?? Object.values(r)[1] })), window_label: 'past_2_weeks' };
+      } else {
+        return { name: file.name, status: 'error', msg: `Could not identify file. Rename it to include: "provider", "leftover", "future", "sla", "feb2026", or "utilization". Columns: ${cols.slice(0,4).join(' | ')}` };
+      }
     }
 
     try {
