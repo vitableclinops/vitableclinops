@@ -3030,6 +3030,45 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_utilization: {
+        Row: {
+          avg_utilization_pct: number | null
+          created_at: string
+          id: string
+          imported_at: string
+          match_confidence: string | null
+          profile_id: string | null
+          provider_name: string
+          total_timeslots: number
+          window_end: string
+          window_start: string
+        }
+        Insert: {
+          avg_utilization_pct?: number | null
+          created_at?: string
+          id?: string
+          imported_at?: string
+          match_confidence?: string | null
+          profile_id?: string | null
+          provider_name: string
+          total_timeslots: number
+          window_end: string
+          window_start: string
+        }
+        Update: {
+          avg_utilization_pct?: number | null
+          created_at?: string
+          id?: string
+          imported_at?: string
+          match_confidence?: string | null
+          profile_id?: string | null
+          provider_name?: string
+          total_timeslots?: number
+          window_end?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       reimbursement_requests: {
         Row: {
           admin_hours_spent: number | null
