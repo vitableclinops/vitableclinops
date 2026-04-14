@@ -1562,6 +1562,194 @@ export type Database = {
         }
         Relationships: []
       }
+      homebase_employees: {
+        Row: {
+          created_at: string
+          email: string | null
+          first_name: string | null
+          homebase_id: number
+          id: string
+          last_name: string | null
+          location_homebase_uuid: string | null
+          match_confidence: string | null
+          normalized_name: string | null
+          profile_id: string | null
+          synced_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          homebase_id: number
+          id?: string
+          last_name?: string | null
+          location_homebase_uuid?: string | null
+          match_confidence?: string | null
+          normalized_name?: string | null
+          profile_id?: string | null
+          synced_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          homebase_id?: number
+          id?: string
+          last_name?: string | null
+          location_homebase_uuid?: string | null
+          match_confidence?: string | null
+          normalized_name?: string | null
+          profile_id?: string | null
+          synced_at?: string | null
+        }
+        Relationships: []
+      }
+      homebase_locations: {
+        Row: {
+          address_1: string | null
+          address_2: string | null
+          city: string | null
+          created_at: string
+          homebase_uuid: string
+          id: string
+          name: string | null
+          state: string | null
+          synced_at: string | null
+          time_zone: string | null
+          zip: string | null
+        }
+        Insert: {
+          address_1?: string | null
+          address_2?: string | null
+          city?: string | null
+          created_at?: string
+          homebase_uuid: string
+          id?: string
+          name?: string | null
+          state?: string | null
+          synced_at?: string | null
+          time_zone?: string | null
+          zip?: string | null
+        }
+        Update: {
+          address_1?: string | null
+          address_2?: string | null
+          city?: string | null
+          created_at?: string
+          homebase_uuid?: string
+          id?: string
+          name?: string | null
+          state?: string | null
+          synced_at?: string | null
+          time_zone?: string | null
+          zip?: string | null
+        }
+        Relationships: []
+      }
+      homebase_shifts: {
+        Row: {
+          created_at: string
+          department: string | null
+          end_at: string | null
+          homebase_employee_id: string | null
+          homebase_id: number
+          homebase_user_id: number | null
+          id: string
+          location_homebase_uuid: string | null
+          published: boolean | null
+          role: string | null
+          scheduled: boolean | null
+          scheduled_hours: number | null
+          start_at: string | null
+          synced_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          department?: string | null
+          end_at?: string | null
+          homebase_employee_id?: string | null
+          homebase_id: number
+          homebase_user_id?: number | null
+          id?: string
+          location_homebase_uuid?: string | null
+          published?: boolean | null
+          role?: string | null
+          scheduled?: boolean | null
+          scheduled_hours?: number | null
+          start_at?: string | null
+          synced_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          department?: string | null
+          end_at?: string | null
+          homebase_employee_id?: string | null
+          homebase_id?: number
+          homebase_user_id?: number | null
+          id?: string
+          location_homebase_uuid?: string | null
+          published?: boolean | null
+          role?: string | null
+          scheduled?: boolean | null
+          scheduled_hours?: number | null
+          start_at?: string | null
+          synced_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "homebase_shifts_homebase_employee_id_fkey"
+            columns: ["homebase_employee_id"]
+            isOneToOne: false
+            referencedRelation: "homebase_employees"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      homebase_sync_runs: {
+        Row: {
+          created_at: string
+          employees_matched: number | null
+          employees_synced: number | null
+          employees_unmatched: number | null
+          error: string | null
+          finished_at: string | null
+          id: string
+          locations_synced: number | null
+          shifts_synced: number | null
+          started_at: string
+          status: string
+          unmatched_sample: Json | null
+        }
+        Insert: {
+          created_at?: string
+          employees_matched?: number | null
+          employees_synced?: number | null
+          employees_unmatched?: number | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          locations_synced?: number | null
+          shifts_synced?: number | null
+          started_at?: string
+          status?: string
+          unmatched_sample?: Json | null
+        }
+        Update: {
+          created_at?: string
+          employees_matched?: number | null
+          employees_synced?: number | null
+          employees_unmatched?: number | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          locations_synced?: number | null
+          shifts_synced?: number | null
+          started_at?: string
+          status?: string
+          unmatched_sample?: Json | null
+        }
+        Relationships: []
+      }
       kb_articles: {
         Row: {
           category: string
@@ -1686,6 +1874,57 @@ export type Database = {
           id?: string
           name?: string
           sort_order?: number | null
+        }
+        Relationships: []
+      }
+      license_optimization_snapshots: {
+        Row: {
+          active_license_count: number | null
+          allocated_hours: number | null
+          coverage_ratio: number | null
+          created_at: string
+          estimated_demand_hours: number | null
+          id: string
+          profile_id: string
+          provider_hours_total: number | null
+          quadrant: string | null
+          sla_pct: number | null
+          snapshot_date: string
+          state_abbreviation: string
+          unfilled_slots: number | null
+          wasted_flag: boolean | null
+        }
+        Insert: {
+          active_license_count?: number | null
+          allocated_hours?: number | null
+          coverage_ratio?: number | null
+          created_at?: string
+          estimated_demand_hours?: number | null
+          id?: string
+          profile_id: string
+          provider_hours_total?: number | null
+          quadrant?: string | null
+          sla_pct?: number | null
+          snapshot_date: string
+          state_abbreviation: string
+          unfilled_slots?: number | null
+          wasted_flag?: boolean | null
+        }
+        Update: {
+          active_license_count?: number | null
+          allocated_hours?: number | null
+          coverage_ratio?: number | null
+          created_at?: string
+          estimated_demand_hours?: number | null
+          id?: string
+          profile_id?: string
+          provider_hours_total?: number | null
+          quadrant?: string | null
+          sla_pct?: number | null
+          snapshot_date?: string
+          state_abbreviation?: string
+          unfilled_slots?: number | null
+          wasted_flag?: boolean | null
         }
         Relationships: []
       }
@@ -2616,6 +2855,27 @@ export type Database = {
           },
         ]
       }
+      provider_name_mappings: {
+        Row: {
+          created_at: string
+          homebase_name: string
+          id: string
+          profile_id: string
+        }
+        Insert: {
+          created_at?: string
+          homebase_name: string
+          id?: string
+          profile_id: string
+        }
+        Update: {
+          created_at?: string
+          homebase_name?: string
+          id?: string
+          profile_id?: string
+        }
+        Relationships: []
+      }
       provider_state_collab_decisions: {
         Row: {
           created_at: string
@@ -2949,6 +3209,30 @@ export type Database = {
         }
         Relationships: []
       }
+      state_activation: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          state_abbreviation: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          state_abbreviation: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          state_abbreviation?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       state_compliance_requirements: {
         Row: {
           ca_meeting_cadence: string | null
@@ -3045,6 +3329,33 @@ export type Database = {
         }
         Relationships: []
       }
+      state_leftover_slots: {
+        Row: {
+          created_at: string
+          id: string
+          slot_date: string
+          state_abbreviation: string
+          unfilled_slots: number
+          window_type: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          slot_date: string
+          state_abbreviation: string
+          unfilled_slots?: number
+          window_type?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          slot_date?: string
+          state_abbreviation?: string
+          unfilled_slots?: number
+          window_type?: string | null
+        }
+        Relationships: []
+      }
       state_licensure_templates: {
         Row: {
           application_url: string | null
@@ -3106,6 +3417,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      state_sla_attainment: {
+        Row: {
+          created_at: string
+          id: string
+          sla_pct: number
+          state_abbreviation: string
+          window_label: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          sla_pct?: number
+          state_abbreviation: string
+          window_label?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          sla_pct?: number
+          state_abbreviation?: string
+          window_label?: string | null
+        }
+        Relationships: []
       }
       supervision_meetings: {
         Row: {

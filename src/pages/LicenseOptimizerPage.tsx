@@ -53,13 +53,10 @@ function useSnapshots(view: 'historical' | 'forward') {
   const today = new Date().toISOString().slice(0, 10);
   return useQuery({
     queryKey: ['license_optimizer_snapshots', view],
-    queryFn: async () => {
-      const query = supabase
+    queryFn: async (): Promise<Snapshot[]> => {
+      const query = (supabase as any)
         .from('license_optimization_snapshots')
-        .select(`
-          *,
-          profiles!license_optimization_snapshots_profile_id_fkey(full_name, first_name, last_name)
-        `)
+        .select('*')
         .order('snapshot_date', { ascending: true })
         .limit(2000);
 
@@ -71,7 +68,36 @@ function useSnapshots(view: 'historical' | 'forward') {
 
       const { data, error } = await query;
       if (error) throw error;
-      return (data ?? []) as Snapshot[];
+
+      const snapshots: Snapshot[] = (data ?? []) as Snapshot[];
+      const profileIds = [...new Set(snapshots.map((row) => row.profile_id).filter(Boolean))] as string[];
+
+      if (profileIds.length === 0) {
+        return snapshots;
+      }
+
+      const { data: profiles, error: profilesError } = await (supabase as any)
+        .from('profiles')
+        .select('id, full_name, first_name, last_name')
+        .in('id', profileIds);
+
+      if (profilesError) throw profilesError;
+
+      const profilesById = new Map<string, NonNullable<Snapshot['profiles']>>(
+        (profiles ?? []).map((profile: any) => [
+          profile.id,
+          {
+            full_name: profile.full_name ?? null,
+            first_name: profile.first_name ?? null,
+            last_name: profile.last_name ?? null,
+          },
+        ])
+      );
+
+      return snapshots.map<Snapshot>((snapshot) => ({
+        ...snapshot,
+        profiles: profilesById.get(snapshot.profile_id),
+      }));
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -81,7 +107,7 @@ function useSyncRuns() {
   return useQuery({
     queryKey: ['homebase_sync_runs'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('homebase_sync_runs')
         .select('*')
         .order('started_at', { ascending: false })
@@ -98,7 +124,7 @@ function useStateActivation() {
   return useQuery({
     queryKey: ['state_activation'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('state_activation')
         .select('state_abbreviation, is_active')
         .eq('is_active', true);
