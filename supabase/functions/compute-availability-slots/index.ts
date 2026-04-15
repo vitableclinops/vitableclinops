@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  let daysBack = 7;
+  let daysBack = 14;
   let daysAhead = 14;
   try {
     const body = await req.json().catch(() => ({}));
