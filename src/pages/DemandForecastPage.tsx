@@ -38,7 +38,7 @@ function useDemandForecast() {
   return useQuery({
     queryKey: ['demand_forecast'],
     queryFn: async (): Promise<ForecastRow[]> => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('demand_forecast')
         .select('id, state_abbreviation, week_start, projected_visits')
         .order('week_start', { ascending: true })
@@ -102,9 +102,9 @@ export default function DemandForecastPage() {
           visits:     colVal(r, 'visit', 'demand', 'projected', 'forecast') ?? Object.values(r)[2] ?? '0',
         })).filter((r) => r.state && r.week_start);
 
-        const { data: result, error } = await (supabase as any).functions.invoke(
+        const { data: result, error } = await supabase.functions.invoke(
           'import-demand-forecast',
-          { method: 'POST', body: { rows: importRows } }
+          { body: { rows: importRows } }
         );
         if (error) throw error;
         toast({

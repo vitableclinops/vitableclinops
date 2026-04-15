@@ -61,7 +61,7 @@ function useForecast(weekStart: string) {
   return useQuery({
     queryKey: ['demand_forecast_week', weekStart],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('demand_forecast')
         .select('state_abbreviation, projected_visits')
         .eq('week_start', weekStart);
@@ -84,7 +84,7 @@ function useProviderShifts(weekStart: string) {
   return useQuery({
     queryKey: ['homebase_shifts_week', weekStart],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('homebase_shifts')
         .select('homebase_employee_id, scheduled_hours')
         .gte('start_at', weekStart + 'T00:00:00')
@@ -106,7 +106,7 @@ function useEmployeeProfiles() {
   return useQuery({
     queryKey: ['homebase_employees_profiles'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('homebase_employees')
         .select('id, profile_id, first_name, last_name, normalized_name')
         .not('profile_id', 'is', null);
@@ -124,7 +124,7 @@ function useProviderActiveStates() {
       // Use recent snapshots to determine which states each provider routes to
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 14);
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('license_optimization_snapshots')
         .select('profile_id, state_abbreviation')
         .gte('snapshot_date', cutoff.toISOString().slice(0, 10))
@@ -145,7 +145,7 @@ function useProfileNames() {
   return useQuery({
     queryKey: ['profile_names'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, first_name, last_name');
       if (error) throw error;

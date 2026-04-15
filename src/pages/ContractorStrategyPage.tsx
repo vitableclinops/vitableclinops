@@ -99,14 +99,14 @@ function useContractors() {
     queryKey: ['contractors'],
     queryFn: async () => {
       const [profilesRes, opsInfoRes, homebaseRes] = await Promise.all([
-        (supabase as any)
+        supabase
           .from('profiles')
           .select('id, full_name, credentials, profession, employment_status, employment_type, agency_id')
           .neq('employment_status', 'termed'),
-        (supabase as any)
+        supabase
           .from('provider_ops_info')
           .select('profile_id, hourly_rate, employment_type, contractor_org'),
-        (supabase as any)
+        supabase
           .from('homebase_employees')
           .select('profile_id, homebase_id')
           .not('profile_id', 'is', null),
@@ -144,7 +144,7 @@ function useProviderActiveStates() {
     queryFn: async () => {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 14);
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('license_optimization_snapshots')
         .select('profile_id, state_abbreviation, allocated_hours, quadrant')
         .gte('snapshot_date', cutoff.toISOString().slice(0, 10));
@@ -166,7 +166,7 @@ function useComplianceDocs() {
   return useQuery({
     queryKey: ['contractor_compliance_docs'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('contractor_compliance_docs')
         .select('*');
       if (error) throw error;
@@ -180,7 +180,7 @@ function useActiveStates() {
   return useQuery({
     queryKey: ['state_activation'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('state_activation')
         .select('state_abbreviation, is_active')
         .eq('is_active', true);
@@ -438,7 +438,7 @@ export default function ContractorStrategyPage() {
     mutationFn: async ({
       profileId, state, docType, status,
     }: { profileId: string; state: string; docType: DocType; status: string }) => {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('contractor_compliance_docs')
         .upsert({
           profile_id: profileId,

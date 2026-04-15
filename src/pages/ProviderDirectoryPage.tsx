@@ -117,10 +117,10 @@ function useOpsRoster() {
     queryKey: ['ops_roster'],
     queryFn: async () => {
       const [opsInfoRes, homebaseEmpRes] = await Promise.all([
-        (supabase as any)
+        supabase
           .from('provider_ops_info')
           .select('profile_id, hourly_rate, employment_type, contractor_org'),
-        (supabase as any)
+        supabase
           .from('homebase_employees')
           .select('profile_id, homebase_id, match_confidence')
           .not('profile_id', 'is', null),
