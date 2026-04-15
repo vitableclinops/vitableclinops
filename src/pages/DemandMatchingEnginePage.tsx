@@ -399,6 +399,23 @@ export default function DemandMatchingEnginePage() {
     return runMatching(weekStart, forecast, shifts, employees, providerStates, profileNames);
   }, [isLoading, weekStart, forecast, shifts, employees, providerStates, profileNames]);
 
+  const deactivateStates = useMutation({
+    mutationFn: async (states: string[]) => {
+      const rows = states.map((s) => ({ state_abbreviation: s, is_active: false }));
+      const { error } = await supabase
+        .from('state_activation')
+        .upsert(rows, { onConflict: 'state_abbreviation' });
+      if (error) throw error;
+    },
+    onSuccess: (_, states) => {
+      toast({
+        title: `${states.length} state${states.length !== 1 ? 's' : ''} deactivated`,
+        description: states.join(', '),
+      });
+    },
+    onError: (e: Error) => toast({ title: 'Deactivate failed', description: e.message, variant: 'destructive' }),
+  });
+
   const prevWeek = () => setWeekOffset((o) => o - 1);
   const nextWeek = () => setWeekOffset((o) => Math.min(o + 1, 4));
 
@@ -609,8 +626,24 @@ export default function DemandMatchingEnginePage() {
                 {/* Deactivate tab */}
                 <TabsContent value="deactivate" className="mt-4">
                   <Card>
-                    <CardHeader>
+                    <CardHeader className="flex flex-row items-center justify-between">
                       <CardTitle className="text-base">States to Deactivate from Routing</CardTitle>
+                      {result.deactivateCandidates.length > 0 && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={deactivateStates.isPending}
+                          onClick={() => {
+                            if (confirm(`Deactivate ${result.deactivateCandidates.join(', ')} from routing?`)) {
+                              deactivateStates.mutate(result.deactivateCandidates);
+                            }
+                          }}
+                        >
+                          {deactivateStates.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                          Deactivate All ({result.deactivateCandidates.length})
+                        </Button>
+                      )}
                     </CardHeader>
                     <CardContent>
                       {result.deactivateCandidates.length === 0 ? (
@@ -621,7 +654,7 @@ export default function DemandMatchingEnginePage() {
                         <div className="space-y-2">
                           <p className="text-sm text-muted-foreground mb-3">
                             These states have projected supply significantly exceeding demand.
-                            Removing them from routing can reduce wasted contractor hours.
+                            Deactivating removes them from the active routing pool in the Ops Dashboard.
                           </p>
                           <div className="flex flex-wrap gap-2">
                             {result.deactivateCandidates.map((state) => {
@@ -642,7 +675,7 @@ export default function DemandMatchingEnginePage() {
                             })}
                           </div>
                           <p className="text-xs text-muted-foreground mt-3">
-                            Review in the License Optimizer before updating state_activation.
+                            Individual states can also be toggled in the Ops Dashboard.
                           </p>
                         </div>
                       )}
