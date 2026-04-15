@@ -1,5 +1,10 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { Resend } from "npm:resend@^2.0.0";
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+// Dynamic import for Resend to avoid build-time resolution issues
+const getResend = async () => {
+  const mod = await import("https://esm.sh/resend@2.0.0");
+  return mod.Resend;
+};
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
