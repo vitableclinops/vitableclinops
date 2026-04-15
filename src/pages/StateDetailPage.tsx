@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { InitiateLicensureDialog } from '@/components/licensure/InitiateLicensureDialog';
 import { useAllLicensureApplications, useStateTemplates } from '@/hooks/useLicensureApplications';
 import { useParams, Link } from 'react-router-dom';
@@ -31,6 +32,7 @@ import {
   BookOpen,
   Gauge,
   DollarSign,
+  Activity,
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -77,8 +79,43 @@ export default function StateDetailPage() {
 
   
 
-  const userRole = roles.includes('admin') ? 'admin' : 
+  const userRole = roles.includes('admin') ? 'admin' :
                    roles.includes('physician') ? 'physician' : 'provider';
+
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: stateOps } = useQuery({
+    queryKey: ['state_ops_summary', stateAbbr, today],
+    enabled: !!stateAbbr,
+    queryFn: async () => {
+      const [activationRes, slotsRes, slaRes] = await Promise.all([
+        supabase
+          .from('state_activation')
+          .select('is_active')
+          .eq('state_abbreviation', stateAbbr!)
+          .maybeSingle(),
+        supabase
+          .from('state_leftover_slots')
+          .select('unfilled_slots')
+          .eq('state_abbreviation', stateAbbr!)
+          .eq('slot_date', today)
+          .eq('window_type', 'historical')
+          .maybeSingle(),
+        supabase
+          .from('state_sla_attainment')
+          .select('sla_pct, created_at')
+          .eq('state_abbreviation', stateAbbr!)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      return {
+        isActive: activationRes.data?.is_active ?? false,
+        slotsToday: slotsRes.data?.unfilled_slots ?? null,
+        slaPct: slaRes.data?.sla_pct ?? null,
+      };
+    },
+    staleTime: 5 * 60_000,
+  });
 
   useEffect(() => {
     if (!stateAbbr) return;
@@ -673,6 +710,52 @@ export default function StateDetailPage() {
 
             {/* Sidebar - Related Links */}
             <div className="space-y-6">
+              {/* Ops coverage card */}
+              {stateOps && (stateOps.isActive || stateOps.slotsToday !== null || stateOps.slaPct !== null) && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-primary" />
+                      Ops Coverage
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Status</span>
+                      {stateOps.isActive ? (
+                        <Badge className="bg-emerald-500 text-white text-xs">Active</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-muted-foreground">Inactive</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Slots today</span>
+                      <span className="font-mono font-semibold">
+                        {stateOps.slotsToday !== null ? stateOps.slotsToday : '—'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">SLA attainment</span>
+                      <span className={cn(
+                        'font-mono font-semibold text-sm',
+                        stateOps.slaPct === null ? 'text-muted-foreground' :
+                        stateOps.slaPct >= 80 ? 'text-emerald-600' :
+                        stateOps.slaPct >= 60 ? 'text-yellow-600' : 'text-destructive'
+                      )}>
+                        {stateOps.slaPct !== null ? `${stateOps.slaPct.toFixed(1)}%` : '—'}
+                      </span>
+                    </div>
+                    <Link
+                      to="/admin/ops"
+                      className="flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      <Activity className="h-3 w-3" />
+                      Open Ops Dashboard
+                    </Link>
+                  </CardContent>
+                </Card>
+              )}
+
               <RelatedLinksCard
                 title="Quick Actions"
                 links={[
