@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -7,11 +7,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts';
-import { Upload, RefreshCw, Loader2 } from 'lucide-react';
+import { Upload, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+
+const LINE_COLORS = [
+  '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6',
+  '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
+];
 
 // ── Business logic ─────────────────────────────────────────────────────────────
 
@@ -83,6 +90,7 @@ export default function DemandForecastPage() {
   const { data: rows = [], isLoading, refetch, isRefetching } = useDemandForecast();
   const [uploading, setUploading] = useState(false);
   const [filterState, setFilterState] = useState('');
+  const [selectedWeek, setSelectedWeek] = useState<string>('all');
 
   // ── CSV import ──────────────────────────────────────────────────────────────
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -130,6 +138,11 @@ export default function DemandForecastPage() {
 
   const latestWeek = weeks[weeks.length - 1] ?? null;
 
+  // Default to latest week once data loads
+  useEffect(() => {
+    if (latestWeek && selectedWeek === 'all') setSelectedWeek(latestWeek);
+  }, [latestWeek]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const latestRows = useMemo(
     () => (latestWeek ? rows.filter((r) => r.week_start === latestWeek) : []),
     [rows, latestWeek]
@@ -159,12 +172,46 @@ export default function DemandForecastPage() {
     });
   }, [rows, weeks]);
 
+  // Week-over-week delta lookup
+  const priorWeek = weeks.length >= 2 ? weeks[weeks.length - 2] : null;
+  const priorMap = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!priorWeek) return m;
+    rows.filter((r) => r.week_start === priorWeek).forEach((r) => {
+      m.set(r.state_abbreviation, r.projected_visits);
+    });
+    return m;
+  }, [rows, priorWeek]);
+
   const filtered = useMemo(() => {
-    if (!filterState) return rows;
-    return rows.filter((r) =>
-      r.state_abbreviation.toLowerCase().includes(filterState.toLowerCase())
+    let r = rows;
+    if (selectedWeek !== 'all') r = r.filter((row) => row.week_start === selectedWeek);
+    if (filterState) r = r.filter((row) =>
+      row.state_abbreviation.toLowerCase().includes(filterState.toLowerCase())
     );
-  }, [rows, filterState]);
+    return r;
+  }, [rows, filterState, selectedWeek]);
+
+  // Top states by latest week for trend chart
+  const topStates = useMemo(() => {
+    return [...latestRows]
+      .sort((a, b) => b.projected_visits - a.projected_visits)
+      .slice(0, 10)
+      .map((r) => r.state_abbreviation);
+  }, [latestRows]);
+
+  // Trend chart: last 8 weeks × top states
+  const trendData = useMemo(() => {
+    return weeks.slice(-8).map((w) => {
+      const entry: Record<string, any> = { week: w.slice(5) };
+      const wRows = rows.filter((r) => r.week_start === w);
+      topStates.forEach((st) => {
+        const match = wRows.find((r) => r.state_abbreviation === st);
+        entry[st] = match?.projected_visits ?? null;
+      });
+      return entry;
+    });
+  }, [rows, weeks, topStates]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -270,16 +317,71 @@ export default function DemandForecastPage() {
             </Card>
           )}
 
+          {/* State trend lines */}
+          {trendData.length > 1 && topStates.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  State Demand Trends
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">
+                    top {topStates.length} states · last 8 weeks
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart
+                    data={trendData}
+                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="week" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {topStates.map((st, i) => (
+                      <Line
+                        key={st}
+                        type="monotone"
+                        dataKey={st}
+                        stroke={LINE_COLORS[i % LINE_COLORS.length]}
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Forecast table */}
           <Card>
-            <CardHeader className="flex flex-row items-center gap-3">
-              <CardTitle className="text-base flex-1">Forecast by State & Week</CardTitle>
-              <input
-                placeholder="Filter state…"
-                value={filterState}
-                onChange={(e) => setFilterState(e.target.value)}
-                className="px-3 py-1.5 border rounded text-sm w-32 bg-background"
-              />
+            <CardHeader className="flex flex-row items-center gap-3 flex-wrap">
+              <CardTitle className="text-base flex-1">Forecast by State</CardTitle>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={selectedWeek}
+                  onValueChange={(v) => setSelectedWeek(v as string)}
+                >
+                  <SelectTrigger className="h-8 text-xs w-36">
+                    <SelectValue placeholder="All weeks" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All weeks</SelectItem>
+                    {[...weeks].reverse().map((w) => (
+                      <SelectItem key={w} value={w}>{w}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <input
+                  placeholder="Filter state…"
+                  value={filterState}
+                  onChange={(e) => setFilterState(e.target.value)}
+                  className="px-3 py-1.5 border rounded text-sm w-28 bg-background h-8"
+                />
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               {isLoading ? (
@@ -294,31 +396,69 @@ export default function DemandForecastPage() {
                     <thead>
                       <tr className="border-b bg-muted/50">
                         <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">State</th>
-                        <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Week Start</th>
+                        {selectedWeek === 'all' && (
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Week</th>
+                        )}
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Projected Visits</th>
+                        {selectedWeek !== 'all' && priorWeek && (
+                          <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">vs Prior Week</th>
+                        )}
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Hours Needed</th>
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Daily SLA Target</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((r) => (
-                        <tr
-                          key={`${r.state_abbreviation}-${r.week_start}`}
-                          className="border-b hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="px-4 py-2.5 font-semibold">{r.state_abbreviation}</td>
-                          <td className="px-4 py-2.5 text-muted-foreground">{r.week_start}</td>
-                          <td className="px-4 py-2.5 text-right font-mono">
-                            {r.projected_visits.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-mono">
-                            {hoursNeeded(r.projected_visits).toFixed(1)}
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-mono">
-                            {slaTargetDaily(r.projected_visits)}
-                          </td>
-                        </tr>
-                      ))}
+                      {filtered.map((r) => {
+                        const prior = priorMap.get(r.state_abbreviation);
+                        const delta = prior != null ? r.projected_visits - prior : null;
+                        const deltaPct = prior != null && prior > 0
+                          ? ((r.projected_visits - prior) / prior) * 100
+                          : null;
+                        return (
+                          <tr
+                            key={`${r.state_abbreviation}-${r.week_start}`}
+                            className="border-b hover:bg-muted/30 transition-colors"
+                          >
+                            <td className="px-4 py-2.5 font-semibold">{r.state_abbreviation}</td>
+                            {selectedWeek === 'all' && (
+                              <td className="px-4 py-2.5 text-muted-foreground">{r.week_start}</td>
+                            )}
+                            <td className="px-4 py-2.5 text-right font-mono">
+                              {r.projected_visits.toLocaleString()}
+                            </td>
+                            {selectedWeek !== 'all' && priorWeek && (
+                              <td className="px-4 py-2.5 text-right">
+                                {delta == null ? (
+                                  <span className="text-muted-foreground">—</span>
+                                ) : (
+                                  <span className={cn(
+                                    'inline-flex items-center gap-1 font-mono text-xs',
+                                    delta > 0 ? 'text-emerald-600' : delta < 0 ? 'text-destructive' : 'text-muted-foreground'
+                                  )}>
+                                    {delta > 0
+                                      ? <TrendingUp className="h-3 w-3" />
+                                      : delta < 0
+                                        ? <TrendingDown className="h-3 w-3" />
+                                        : <Minus className="h-3 w-3" />}
+                                    {delta > 0 ? '+' : ''}{delta}
+                                    {deltaPct != null && (
+                                      <span className="text-muted-foreground">
+                                        ({deltaPct > 0 ? '+' : ''}{deltaPct.toFixed(0)}%)
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                              </td>
+                            )}
+                            <td className="px-4 py-2.5 text-right font-mono">
+                              {hoursNeeded(r.projected_visits).toFixed(1)}
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-mono">
+                              {slaTargetDaily(r.projected_visits)}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
