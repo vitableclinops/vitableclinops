@@ -13,11 +13,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { 
-  LayoutDashboard, 
-  MapPin, 
-  ClipboardList, 
-  Users, 
+import {
+  LayoutDashboard,
+  MapPin,
+  ClipboardList,
+  Users,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -41,6 +41,10 @@ import {
   ListChecks,
   UserSearch,
   Sliders,
+  Activity,
+  TrendingUp,
+  Network,
+  Cpu,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -94,6 +98,17 @@ const navGroups: NavGroup[] = [
       { label: 'States & Compliance', icon: MapPin, href: '/admin/states', roles: ['admin'] },
       { label: 'Agreements', icon: Shield, href: '/admin/agreements', roles: ['admin', 'physician'] },
       { label: 'License Optimizer', icon: Sliders, href: '/admin/license-optimizer', roles: ['admin'] },
+    ],
+  },
+  {
+    label: 'Coverage & Ops',
+    roles: ['admin', 'pod_lead'],
+    items: [
+      { label: 'Ops Dashboard',     icon: Activity,    href: '/admin/ops',              roles: ['admin', 'pod_lead'] },
+      { label: 'Demand Forecast',   icon: TrendingUp,  href: '/admin/demand-forecast',  roles: ['admin'] },
+      { label: 'Utilization',       icon: BarChart3,   href: '/admin/utilization',      roles: ['admin', 'pod_lead'] },
+      { label: 'Routing Intelligence', icon: Network,  href: '/admin/routing',          roles: ['admin'] },
+      { label: 'Matching Engine',   icon: Cpu,         href: '/admin/matching',         roles: ['admin'] },
     ],
   },
   {

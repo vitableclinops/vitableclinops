@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2 } from 'lucide-react';
+import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -89,15 +90,64 @@ interface DirectoryProvider {
   address_state: string | null;
 }
 
+// ── DirectShifts default hourly rates by credential ──────────────────────────
+const DS_RATES: Record<string, number> = {
+  NP: 125, APRN: 125, APN: 125,
+  LPC: 105, LCSW: 105, MFT: 105,
+  MD: 175, DO: 175,
+};
+const EMP_RATES: Record<string, number> = {
+  NP: 85, APRN: 85, APN: 85,
+  LPC: 72, LCSW: 72, MFT: 72,
+  MD: 120, DO: 120,
+};
+
+function getDSRate(credentials: string | null | undefined): number {
+  const cred = (credentials ?? '').toUpperCase().split('/')[0].trim();
+  return DS_RATES[cred] ?? 100;
+}
+function getEmpRate(credentials: string | null | undefined): number {
+  const cred = (credentials ?? '').toUpperCase().split('/')[0].trim();
+  return EMP_RATES[cred] ?? 80;
+}
+
+// ── Ops data hook ─────────────────────────────────────────────────────────────
+function useOpsRoster() {
+  return useQuery({
+    queryKey: ['ops_roster'],
+    queryFn: async () => {
+      const [opsInfoRes, homebaseEmpRes] = await Promise.all([
+        (supabase as any)
+          .from('provider_ops_info')
+          .select('profile_id, hourly_rate, employment_type, contractor_org'),
+        (supabase as any)
+          .from('homebase_employees')
+          .select('profile_id, homebase_id, match_confidence')
+          .not('profile_id', 'is', null),
+      ]);
+
+      const opsInfoByProfile = new Map<string, any>(
+        (opsInfoRes.data ?? []).map((r: any) => [r.profile_id, r])
+      );
+      const homebaseByProfile = new Map<string, any>(
+        (homebaseEmpRes.data ?? []).map((r: any) => [r.profile_id, r])
+      );
+
+      return { opsInfoByProfile, homebaseByProfile };
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 const ProviderDirectoryPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { profile, roles } = useAuth();
-  
+
   // Determine initial tab from URL or default based on role
   const tabParam = searchParams.get('tab');
   const isAdmin = roles.includes('admin');
-  const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : 'management') : 'directory';
+  const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : tabParam === 'ops' ? 'ops' : 'management') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -188,6 +238,14 @@ const ProviderDirectoryPage = () => {
 
   // Provider readiness data for management tab
   const { data: readinessData, isLoading: readinessLoading } = useProviderReadiness();
+
+  // Ops roster data (rates + Homebase IDs)
+  const { data: opsData } = useOpsRoster();
+  const opsInfoByProfile = opsData?.opsInfoByProfile ?? new Map();
+  const homebaseByProfile = opsData?.homebaseByProfile ?? new Map();
+
+  // Ops search
+  const [opsSearch, setOpsSearch] = useState('');
 
 
   // Extract unique values for filter dropdowns
@@ -434,6 +492,10 @@ const ProviderDirectoryPage = () => {
                   <Users className="h-4 w-4" />
                   Directory
                 </TabsTrigger>
+                <TabsTrigger value="ops" className="gap-2">
+                  <Activity className="h-4 w-4" />
+                  Ops
+                </TabsTrigger>
               </TabsList>
 
               {/* Management Tab - Real data driven */}
@@ -560,6 +622,105 @@ const ProviderDirectoryPage = () => {
                   </div>
                 )}
               </TabsContent>
+              {/* Ops Tab — rates, Homebase IDs, employment type */}
+              <TabsContent value="ops" className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Input
+                    placeholder="Search providers…"
+                    value={opsSearch}
+                    onChange={(e) => setOpsSearch(e.target.value)}
+                    className="max-w-64"
+                  />
+                  <Button variant="outline" size="sm" onClick={() => navigate('/admin/contractor-strategy')}>
+                    <DollarSign className="h-4 w-4 mr-2" />
+                    Contractor Strategy
+                  </Button>
+                </div>
+                <Card>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Provider</th>
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Credential</th>
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Employment</th>
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Contractor Org</th>
+                          <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Hourly Rate</th>
+                          <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">DS Default Rate</th>
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Homebase ID</th>
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Match</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {providers
+                          .filter((p) => p.employment_status !== 'termed')
+                          .filter((p) =>
+                            !opsSearch ||
+                            (p.full_name ?? '').toLowerCase().includes(opsSearch.toLowerCase())
+                          )
+                          .map((p) => {
+                            const opsInfo = opsInfoByProfile.get(p.id);
+                            const hbEmp = homebaseByProfile.get(p.id);
+                            const empType = opsInfo?.employment_type ?? p.employment_type ?? 'employee';
+                            const isDS = opsInfo?.contractor_org === 'DirectShifts' ||
+                              p.agency_id !== null; // agencies often indicate contractors
+                            return (
+                              <tr key={p.id} className="border-b hover:bg-muted/30 transition-colors">
+                                <td className="px-4 py-2.5 font-medium">
+                                  {p.full_name ?? '—'}
+                                </td>
+                                <td className="px-4 py-2.5 text-muted-foreground">
+                                  {p.credentials ?? p.profession ?? '—'}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <Badge
+                                    variant={empType === 'contractor' ? 'outline' : 'secondary'}
+                                    className="text-xs"
+                                  >
+                                    {empType}
+                                  </Badge>
+                                </td>
+                                <td className="px-4 py-2.5 text-sm">
+                                  {opsInfo?.contractor_org ?? (p.agency_id ? 'Agency' : '—')}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono">
+                                  {opsInfo?.hourly_rate != null
+                                    ? `$${Number(opsInfo.hourly_rate).toFixed(0)}/hr`
+                                    : <span className="text-muted-foreground text-xs">not set</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono text-muted-foreground text-xs">
+                                  {isDS || empType === 'contractor'
+                                    ? `$${getDSRate(p.credentials)}/hr`
+                                    : `$${getEmpRate(p.credentials)}/hr emp`}
+                                </td>
+                                <td className="px-4 py-2.5 font-mono text-xs">
+                                  {hbEmp?.homebase_id ?? <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {hbEmp ? (
+                                    <Badge
+                                      variant="outline"
+                                      className={
+                                        hbEmp.match_confidence === 'email' || hbEmp.match_confidence === 'name_exact'
+                                          ? 'border-emerald-300 text-emerald-700 text-xs'
+                                          : 'text-xs'
+                                      }
+                                    >
+                                      {hbEmp.match_confidence}
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">unmatched</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </TabsContent>
+
             </Tabs>
           ) : (
             // Non-admin view - Just the directory

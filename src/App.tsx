@@ -39,6 +39,11 @@ import MyLicensesPage from "./pages/MyLicensesPage";
 import MyPodPage from "./pages/MyPodPage";
 import HiringPipelinePage from "./pages/HiringPipelinePage";
 import LicenseOptimizerPage from "./pages/LicenseOptimizerPage";
+import OpsDashboardPage from "./pages/OpsDashboardPage";
+import DemandForecastPage from "./pages/DemandForecastPage";
+import UtilizationPage from "./pages/UtilizationPage";
+import RoutingIntelligencePage from "./pages/RoutingIntelligencePage";
+import DemandMatchingEnginePage from "./pages/DemandMatchingEnginePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -211,6 +216,31 @@ const App = () => (
             <Route path="/admin/license-optimizer" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <LicenseOptimizerPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/ops" element={
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
+                <OpsDashboardPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/demand-forecast" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <DemandForecastPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/utilization" element={
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
+                <UtilizationPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/routing" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <RoutingIntelligencePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/matching" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <DemandMatchingEnginePage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
