@@ -157,6 +157,22 @@ function useWeekSlots(weekStart: string, activeStates: Set<string>) {
   });
 }
 
+function useLastSlotImport() {
+  return useQuery({
+    queryKey: ['last_slot_import'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('state_leftover_slots')
+        .select('created_at')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      return data?.created_at ?? null;
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 const SLA_LINE_COLORS = [
   '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6',
   '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
@@ -244,6 +260,7 @@ export default function OpsDashboardPage() {
   const [showWeekView, setShowWeekView] = useState(false);
 
   const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate);
+  const { data: lastImportedAt } = useLastSlotImport();
 
   const weekStart = getMonday(selectedDate);
   const activeStateSet = useMemo(
@@ -353,6 +370,11 @@ export default function OpsDashboardPage() {
               <h1 className="text-2xl font-bold">Ops Dashboard</h1>
               <p className="text-sm text-muted-foreground mt-1">
                 Daily state-level coverage and SLA status
+                {lastImportedAt && (
+                  <span className="ml-2 text-xs">
+                    · slot data imported {new Date(lastImportedAt).toLocaleString()}
+                  </span>
+                )}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
