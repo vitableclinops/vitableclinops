@@ -12,14 +12,27 @@ import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
 import { TaskDialog, type TaskDialogTask } from '@/components/tasks/TaskDialog';
 import { AddTaskDialog } from '@/components/admin/AddTaskDialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ListChecks, ShieldCheck } from 'lucide-react';
+import { ListChecks, ShieldCheck, Activity, TrendingUp, BarChart3, Network, Cpu, DollarSign, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useAdminDashboard } from '@/hooks/useAdminDashboard';
 import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
 
+const OPS_LINKS = [
+  { label: 'Ops Dashboard', icon: Activity,    href: '/admin/ops',                  color: 'text-primary' },
+  { label: 'Demand Forecast', icon: TrendingUp,  href: '/admin/demand-forecast',       color: 'text-emerald-600' },
+  { label: 'Utilization',   icon: BarChart3,   href: '/admin/utilization',           color: 'text-yellow-600' },
+  { label: 'Routing',       icon: Network,     href: '/admin/routing',               color: 'text-blue-600' },
+  { label: 'Matching',      icon: Cpu,         href: '/admin/matching',              color: 'text-violet-600' },
+  { label: 'DS Strategy',   icon: DollarSign,  href: '/admin/contractor-strategy',   color: 'text-orange-600' },
+];
+
 const AdminDashboard = () => {
   const { profile, hasRole } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('tasks');
   const { stats, actionableTasks, archivedTasks, taskStatusCounts, loading, refetch } = useAdminDashboard();
   const [archiveTarget, setArchiveTarget] = useState<{ id: string; title: string } | null>(null);
@@ -81,6 +94,39 @@ const AdminDashboard = () => {
               escalatedCount={escalatedCount}
               completedCount={taskStatusCounts['completed'] || 0}
             />
+          )}
+
+          {/* Coverage & Ops quick links — admin only */}
+          {!isPodLead && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                  Coverage &amp; Ops
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs gap-1"
+                  onClick={() => navigate('/admin/ops')}
+                >
+                  Open Ops Dashboard <ArrowRight className="h-3 w-3" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                {OPS_LINKS.map(({ label, icon: Icon, href, color }) => (
+                  <Card
+                    key={href}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(href)}
+                  >
+                    <CardContent className="p-3 flex flex-col items-center gap-1.5">
+                      <Icon className={`h-5 w-5 ${color}`} />
+                      <span className="text-xs font-medium text-center leading-tight">{label}</span>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Main Content */}
