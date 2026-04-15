@@ -45,6 +45,7 @@ import {
   TrendingUp,
   Network,
   Cpu,
+  DollarSign,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -109,6 +110,7 @@ const navGroups: NavGroup[] = [
       { label: 'Utilization',       icon: BarChart3,   href: '/admin/utilization',      roles: ['admin', 'pod_lead'] },
       { label: 'Routing Intelligence', icon: Network,  href: '/admin/routing',          roles: ['admin'] },
       { label: 'Matching Engine',   icon: Cpu,         href: '/admin/matching',         roles: ['admin'] },
+      { label: 'Contractor Strategy', icon: DollarSign, href: '/admin/contractor-strategy', roles: ['admin'] },
     ],
   },
   {

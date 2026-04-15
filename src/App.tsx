@@ -44,6 +44,7 @@ import DemandForecastPage from "./pages/DemandForecastPage";
 import UtilizationPage from "./pages/UtilizationPage";
 import RoutingIntelligencePage from "./pages/RoutingIntelligencePage";
 import DemandMatchingEnginePage from "./pages/DemandMatchingEnginePage";
+import ContractorStrategyPage from "./pages/ContractorStrategyPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -241,6 +242,11 @@ const App = () => (
             <Route path="/admin/matching" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <DemandMatchingEnginePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/contractor-strategy" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <ContractorStrategyPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
