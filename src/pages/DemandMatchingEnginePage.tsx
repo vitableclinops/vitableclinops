@@ -7,8 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
-import { Zap, RefreshCw, Save, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { cn, downloadCSV } from '@/lib/utils';
+import { Zap, RefreshCw, Save, Loader2, ChevronDown, ChevronRight, Download } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend,
+} from 'recharts';
 import { useToast } from '@/hooks/use-toast';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -526,6 +530,28 @@ export default function DemandMatchingEnginePage() {
                 {/* Assignments tab */}
                 <TabsContent value="assignments" className="mt-4">
                   <Card>
+                    {result.assignments.length > 0 && (
+                      <div className="flex justify-end px-4 pt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 text-xs"
+                          onClick={() =>
+                            downloadCSV(
+                              result.assignments.map((a) => ({
+                                provider: a.providerName,
+                                scheduled_hours: a.totalHours.toFixed(1),
+                                primary_states: a.primaryStates.join(';'),
+                                overflow_states: a.overflowStates.join(';'),
+                              })),
+                              `matching-assignments-${weekStart}.csv`,
+                            )
+                          }
+                        >
+                          <Download className="h-3 w-3" /> Export
+                        </Button>
+                      </div>
+                    )}
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -583,6 +609,29 @@ export default function DemandMatchingEnginePage() {
                 {/* State results tab */}
                 <TabsContent value="states" className="mt-4">
                   <Card>
+                    {result.stateResults.length > 0 && (
+                      <div className="flex justify-end px-4 pt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 text-xs"
+                          onClick={() =>
+                            downloadCSV(
+                              result.stateResults.map((s) => ({
+                                state: s.state,
+                                demand_hours: s.demandHours.toFixed(1),
+                                supply_hours: s.supplyHours.toFixed(1),
+                                coverage_pct: (s.coverageRatio * 100).toFixed(0),
+                                status: s.status,
+                              })),
+                              `matching-states-${weekStart}.csv`,
+                            )
+                          }
+                        >
+                          <Download className="h-3 w-3" /> Export
+                        </Button>
+                      </div>
+                    )}
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -684,7 +733,34 @@ export default function DemandMatchingEnginePage() {
                 </TabsContent>
 
                 {/* Run History tab */}
-                <TabsContent value="history" className="mt-4">
+                <TabsContent value="history" className="mt-4 space-y-4">
+                  {runHistory.length > 1 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm">Gap vs. Surplus Over Runs</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={180}>
+                          <BarChart
+                            data={[...runHistory].reverse().map((r) => ({
+                              week: r.week_start.slice(5),
+                              gap: r.gap_hours != null ? Math.round(r.gap_hours) : 0,
+                              surplus: r.surplus_hours != null ? Math.round(r.surplus_hours) : 0,
+                            }))}
+                            margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="week" tick={{ fontSize: 11 }} />
+                            <YAxis tick={{ fontSize: 11 }} unit="h" />
+                            <Tooltip formatter={(v: any) => `${v}h`} />
+                            <Legend wrapperStyle={{ fontSize: 11 }} />
+                            <Bar dataKey="gap"     fill="#ef4444" name="Gap Hrs" />
+                            <Bar dataKey="surplus" fill="#3b82f6" name="Surplus Hrs" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+                  )}
                   <Card>
                     <CardContent className="p-0">
                       {runHistory.length === 0 ? (
