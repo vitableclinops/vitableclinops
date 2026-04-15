@@ -339,7 +339,7 @@ export default function OpsDashboardPage() {
   const refreshAvailability = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.functions.invoke('compute-availability-slots', {
-        body: { days_back: 7, days_ahead: 14 },
+        body: { days_back: 14, days_ahead: 14 },
       });
       if (error) throw error;
     },
