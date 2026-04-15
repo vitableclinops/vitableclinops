@@ -161,6 +161,22 @@ function useProfileNames() {
   });
 }
 
+function useRunHistory() {
+  return useQuery({
+    queryKey: ['matching_engine_runs_history'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('matching_engine_runs')
+        .select('id, week_start, surplus_hours, gap_hours, states_deactivated, created_at')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
+}
+
 // ── Matching algorithm ────────────────────────────────────────────────────────
 
 function runMatching(
@@ -279,6 +295,7 @@ export default function DemandMatchingEnginePage() {
   const { data: employees = [], isLoading: loadingEmployees } = useEmployeeProfiles();
   const { data: providerStates = new Map(), isLoading: loadingStates } = useProviderActiveStates();
   const { data: profileNames = new Map(), isLoading: loadingNames } = useProfileNames();
+  const { data: runHistory = [], refetch: refetchHistory } = useRunHistory();
 
   const isLoading = loadingForecast || loadingShifts || loadingEmployees || loadingStates || loadingNames;
   const { toast } = useToast();
@@ -327,6 +344,7 @@ export default function DemandMatchingEnginePage() {
       return run.id;
     },
     onSuccess: (runId) => {
+      refetchHistory();
       toast({
         title: 'Run saved',
         description: `Run ${runId.slice(0, 8)} saved for week of ${weekStart}`,
@@ -441,6 +459,9 @@ export default function DemandMatchingEnginePage() {
                   </TabsTrigger>
                   <TabsTrigger value="deactivate">
                     Deactivate ({result.deactivateCandidates.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="history">
+                    History ({runHistory.length})
                   </TabsTrigger>
                 </TabsList>
 
@@ -582,6 +603,56 @@ export default function DemandMatchingEnginePage() {
                           <p className="text-xs text-muted-foreground mt-3">
                             Review in the License Optimizer before updating state_activation.
                           </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Run History tab */}
+                <TabsContent value="history" className="mt-4">
+                  <Card>
+                    <CardContent className="p-0">
+                      {runHistory.length === 0 ? (
+                        <div className="p-8 text-center text-muted-foreground">
+                          No saved runs yet. Click "Save Run" to persist a result.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b bg-muted/50">
+                                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Week</th>
+                                <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Surplus Hrs</th>
+                                <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Gap Hrs</th>
+                                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Deactivate Candidates</th>
+                                <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Saved</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {runHistory.map((run) => (
+                                <tr key={run.id} className="border-b hover:bg-muted/30 transition-colors">
+                                  <td className="px-4 py-2.5 font-medium font-mono">{run.week_start}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono text-blue-600">
+                                    {run.surplus_hours != null ? `+${run.surplus_hours.toFixed(0)}h` : '—'}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-mono text-destructive">
+                                    {run.gap_hours != null && run.gap_hours > 0 ? `-${run.gap_hours.toFixed(0)}h` : '—'}
+                                  </td>
+                                  <td className="px-4 py-2.5">
+                                    {Array.isArray(run.states_deactivated) && run.states_deactivated.length > 0
+                                      ? (run.states_deactivated as string[]).map((s) => (
+                                          <Badge key={s} variant="outline" className="text-xs mr-1">{s}</Badge>
+                                        ))
+                                      : <span className="text-muted-foreground text-xs">none</span>}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
+                                    {new Date(run.created_at).toLocaleDateString()}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       )}
                     </CardContent>
