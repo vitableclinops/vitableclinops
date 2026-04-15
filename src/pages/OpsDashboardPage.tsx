@@ -18,12 +18,13 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type WeekStatus = 'ok' | 'low' | 'critical' | 'zero';
+type WeekStatus = 'ok' | 'low' | 'critical' | 'zero' | 'no_data';
 
 interface StateOpsRow {
   state: string;
   isActive: boolean;
   availableSlots: number | null;
+  hasSlotData: boolean;
   slaTargetDaily: number | null;
   slaPct: number | null;
   weekStatus: WeekStatus;
@@ -37,7 +38,8 @@ function slaTargetFromVisits(weeklyVisits: number): number {
   return Math.max(5, (weeklyVisits / 5) * 1.5);
 }
 
-function computeWeekStatus(available: number | null, target: number | null): WeekStatus {
+function computeWeekStatus(available: number | null, hasData: boolean, target: number | null): WeekStatus {
+  if (!hasData) return 'no_data';
   if (available === null || available === 0) return 'zero';
   const t = target ?? 10;   // default threshold when no forecast loaded
   if (available >= t) return 'ok';
@@ -98,7 +100,8 @@ function useOpsData(date: string) {
 
       return activations.map((a) => {
         const state = a.state_abbreviation;
-        const available = slotsByState.has(state) ? slotsByState.get(state)! : null;
+        const hasSlotData = slotsByState.has(state);
+        const available = hasSlotData ? slotsByState.get(state)! : null;
         const visits = forecastByState.get(state) ?? null;
         const slaTarget = visits !== null ? slaTargetFromVisits(visits) : null;
         const slaPct = slaByState.get(state) ?? null;
@@ -108,9 +111,10 @@ function useOpsData(date: string) {
           state,
           isActive: a.is_active,
           availableSlots: available,
+          hasSlotData,
           slaTargetDaily: slaTarget !== null ? Math.round(slaTarget) : null,
           slaPct,
-          weekStatus: computeWeekStatus(available, slaTarget),
+          weekStatus: computeWeekStatus(available, hasSlotData, slaTarget),
           coverageRatio,
         };
       });
@@ -157,6 +161,7 @@ function StatusBadge({ status }: { status: WeekStatus }) {
     case 'low':      return <Badge className="bg-yellow-500 text-white hover:bg-yellow-500">LOW</Badge>;
     case 'critical': return <Badge className="bg-orange-500 text-white hover:bg-orange-500">CRITICAL</Badge>;
     case 'zero':     return <Badge variant="destructive">ZERO</Badge>;
+    case 'no_data':  return <Badge variant="outline" className="text-muted-foreground">NO DATA</Badge>;
   }
 }
 
@@ -166,6 +171,7 @@ function StatusIcon({ status }: { status: WeekStatus }) {
     case 'low':      return <MinusCircle className="h-4 w-4 text-yellow-500 shrink-0" />;
     case 'critical': return <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />;
     case 'zero':     return <XCircle className="h-4 w-4 text-destructive shrink-0" />;
+    case 'no_data':  return <MinusCircle className="h-4 w-4 text-muted-foreground shrink-0" />;
   }
 }
 
@@ -193,7 +199,7 @@ function KpiCard({
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-const STATUS_ORDER: Record<WeekStatus, number> = { zero: 0, critical: 1, low: 2, ok: 3 };
+const STATUS_ORDER: Record<WeekStatus, number> = { zero: 0, critical: 1, low: 2, ok: 3, no_data: 4 };
 
 export default function OpsDashboardPage() {
   const { profile, roles } = useAuth();
@@ -254,6 +260,7 @@ export default function OpsDashboardPage() {
       low: active.filter((r) => r.weekStatus === 'low').length,
       critical: active.filter((r) => r.weekStatus === 'critical').length,
       zero: active.filter((r) => r.weekStatus === 'zero').length,
+      noData: active.filter((r) => r.weekStatus === 'no_data').length,
     };
   }, [rows]);
 
@@ -311,12 +318,13 @@ export default function OpsDashboardPage() {
           </div>
 
           {/* KPI strip */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <KpiCard title="Active States" value={kpis.total} icon={Activity} color="bg-primary" />
-            <KpiCard title="Coverage OK"  value={kpis.ok}    icon={CheckCircle2} color="bg-emerald-500" />
-            <KpiCard title="Low"          value={kpis.low}   icon={MinusCircle}  color="bg-yellow-500" />
-            <KpiCard title="Critical"     value={kpis.critical} icon={AlertTriangle} color="bg-orange-500" />
-            <KpiCard title="Zero"         value={kpis.zero}  icon={XCircle}      color="bg-destructive" />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <KpiCard title="Active States" value={kpis.total}    icon={Activity}      color="bg-primary" />
+            <KpiCard title="Coverage OK"   value={kpis.ok}       icon={CheckCircle2}  color="bg-emerald-500" />
+            <KpiCard title="Low"           value={kpis.low}      icon={MinusCircle}   color="bg-yellow-500" />
+            <KpiCard title="Critical"      value={kpis.critical} icon={AlertTriangle} color="bg-orange-500" />
+            <KpiCard title="Zero"          value={kpis.zero}     icon={XCircle}       color="bg-destructive" />
+            <KpiCard title="No Data"       value={kpis.noData}   icon={MinusCircle}   color="bg-muted-foreground" />
           </div>
 
           {/* Filter row */}
