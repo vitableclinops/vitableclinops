@@ -54,7 +54,7 @@ function useSnapshots(view: 'historical' | 'forward') {
   return useQuery({
     queryKey: ['license_optimizer_snapshots', view],
     queryFn: async (): Promise<Snapshot[]> => {
-      const query = (supabase as any)
+      const query = supabase
         .from('license_optimization_snapshots')
         .select('*')
         .order('snapshot_date', { ascending: true })
@@ -76,7 +76,7 @@ function useSnapshots(view: 'historical' | 'forward') {
         return snapshots;
       }
 
-      const { data: profiles, error: profilesError } = await (supabase as any)
+      const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, full_name, first_name, last_name')
         .in('id', profileIds);
@@ -107,7 +107,7 @@ function useSyncRuns() {
   return useQuery({
     queryKey: ['homebase_sync_runs'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('homebase_sync_runs')
         .select('*')
         .order('started_at', { ascending: false })
@@ -124,7 +124,7 @@ function useStateActivation() {
   return useQuery({
     queryKey: ['state_activation'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('state_activation')
         .select('state_abbreviation, is_active')
         .eq('is_active', true);
