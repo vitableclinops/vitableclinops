@@ -227,7 +227,7 @@ export default function SystemSettingsPage() {
         .select('id, homebase_name, profile_id, created_at, profiles(full_name, email)')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data ?? []) as Array<{
+      return (data ?? []) as unknown as Array<{
         id: string;
         homebase_name: string;
         profile_id: string;

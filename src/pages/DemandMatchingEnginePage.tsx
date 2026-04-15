@@ -293,7 +293,7 @@ function runMatching(
       state,
       demandHours: demand,
       supplyHours: supply,
-      status: ratio >= 1.3 ? 'SURPLUS' : ratio >= 0.8 ? 'BALANCED' : 'DEFICIT',
+      status: (ratio >= 1.3 ? 'SURPLUS' : ratio >= 0.8 ? 'BALANCED' : 'DEFICIT') as 'SURPLUS' | 'BALANCED' | 'DEFICIT',
       coverageRatio: ratio,
     };
   }).sort((a, b) => a.coverageRatio - b.coverageRatio);
