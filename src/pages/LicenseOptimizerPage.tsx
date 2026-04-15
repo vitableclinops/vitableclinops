@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
+import { cn, downloadCSV } from '@/lib/utils';
 import {
   RefreshCw,
   TrendingUp,
@@ -25,6 +25,7 @@ import {
   BarChart3,
   Zap,
   Clock,
+  Download,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -748,8 +749,34 @@ export default function LicenseOptimizerPage() {
 
           {/* State detail table */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base font-semibold">State-level detail</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={filtered.length === 0}
+                onClick={() =>
+                  downloadCSV(
+                    filtered.map((s) => ({
+                      state: s.state_abbreviation,
+                      date: s.snapshot_date,
+                      provider: s.profiles?.full_name ?? '',
+                      supply_hrs: s.allocated_hours ?? '',
+                      demand_hrs: s.estimated_demand_hours ?? '',
+                      coverage_pct: s.coverage_ratio != null
+                        ? `${(s.coverage_ratio * 100).toFixed(0)}%` : '',
+                      sla_pct: s.sla_pct != null ? `${s.sla_pct.toFixed(1)}%` : '',
+                      quadrant: s.quadrant,
+                      wasted: s.wasted_flag ? 'yes' : 'no',
+                    })),
+                    `license-optimizer-${view}-${new Date().toISOString().slice(0, 10)}.csv`
+                  )
+                }
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export ({filtered.length})
+              </Button>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               {isLoading ? (
