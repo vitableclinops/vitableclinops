@@ -166,7 +166,6 @@ Deno.serve(async (req: Request) => {
         slot_date:          date,
         unfilled_slots:     Math.round(slots),
         window_type:        'forecast',
-        imported_at:        new Date().toISOString(),
       });
     }
 
