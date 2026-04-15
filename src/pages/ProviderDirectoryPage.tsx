@@ -2,11 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, DollarSign } from 'lucide-react';
+import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, DollarSign, Pencil, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -23,6 +23,8 @@ import { ProviderTable, ProviderTableData } from '@/components/directory/Provide
 import { ProviderDetailModal } from '@/components/directory/ProviderDetailModal';
 import { ManagementTable } from '@/components/directory/ManagementTable';
 import { useProviderReadiness } from '@/hooks/useProviderReadiness';
+import { useToast } from '@/hooks/use-toast';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { Provider } from '@/types';
 
@@ -244,8 +246,37 @@ const ProviderDirectoryPage = () => {
   const opsInfoByProfile = opsData?.opsInfoByProfile ?? new Map();
   const homebaseByProfile = opsData?.homebaseByProfile ?? new Map();
 
-  // Ops search
+  // Ops search + inline editing
   const [opsSearch, setOpsSearch] = useState('');
+  const [editingOpsId, setEditingOpsId] = useState<string | null>(null);
+  const [editRate, setEditRate] = useState('');
+  const [editEmpType, setEditEmpType] = useState('');
+  const [editContractorOrg, setEditContractorOrg] = useState('');
+
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const upsertOpsInfo = useMutation({
+    mutationFn: async ({
+      profileId, hourly_rate, employment_type, contractor_org,
+    }: { profileId: string; hourly_rate: number | null; employment_type: string; contractor_org: string }) => {
+      const { error } = await supabase
+        .from('provider_ops_info')
+        .upsert({
+          profile_id: profileId,
+          hourly_rate,
+          employment_type,
+          contractor_org: contractor_org || null,
+        }, { onConflict: 'profile_id' });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ops_roster'] });
+      setEditingOpsId(null);
+      toast({ title: 'Saved' });
+    },
+    onError: (e: Error) => toast({ title: 'Save failed', description: e.message, variant: 'destructive' }),
+  });
 
 
   // Extract unique values for filter dropdowns
@@ -646,9 +677,10 @@ const ProviderDirectoryPage = () => {
                           <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Employment</th>
                           <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Contractor Org</th>
                           <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Hourly Rate</th>
-                          <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">DS Default Rate</th>
+                          <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">DS Default</th>
                           <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Homebase ID</th>
                           <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Match</th>
+                          <th className="px-4 py-2.5" />
                         </tr>
                       </thead>
                       <tbody>
@@ -663,9 +695,10 @@ const ProviderDirectoryPage = () => {
                             const hbEmp = homebaseByProfile.get(p.id);
                             const empType = opsInfo?.employment_type ?? p.employment_type ?? 'employee';
                             const isDS = opsInfo?.contractor_org === 'DirectShifts' ||
-                              p.agency_id !== null; // agencies often indicate contractors
+                              p.agency_id !== null;
+                            const isEditing = editingOpsId === p.id;
                             return (
-                              <tr key={p.id} className="border-b hover:bg-muted/30 transition-colors">
+                              <tr key={p.id} className={cn('group border-b transition-colors', isEditing ? 'bg-muted/50' : 'hover:bg-muted/30')}>
                                 <td className="px-4 py-2.5 font-medium">
                                   {p.full_name ?? '—'}
                                 </td>
@@ -673,25 +706,56 @@ const ProviderDirectoryPage = () => {
                                   {p.credentials ?? p.profession ?? '—'}
                                 </td>
                                 <td className="px-4 py-2.5">
-                                  <Badge
-                                    variant={empType === 'contractor' ? 'outline' : 'secondary'}
-                                    className="text-xs"
-                                  >
-                                    {empType}
-                                  </Badge>
+                                  {isEditing ? (
+                                    <Select value={editEmpType} onValueChange={setEditEmpType}>
+                                      <SelectTrigger className="h-7 text-xs w-28">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="employee">employee</SelectItem>
+                                        <SelectItem value="contractor">contractor</SelectItem>
+                                        <SelectItem value="per_diem">per_diem</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
+                                    <Badge
+                                      variant={empType === 'contractor' ? 'outline' : 'secondary'}
+                                      className="text-xs"
+                                    >
+                                      {empType}
+                                    </Badge>
+                                  )}
                                 </td>
                                 <td className="px-4 py-2.5 text-sm">
-                                  {opsInfo?.contractor_org ?? (p.agency_id ? 'Agency' : '—')}
+                                  {isEditing ? (
+                                    <Input
+                                      value={editContractorOrg}
+                                      onChange={(e) => setEditContractorOrg(e.target.value)}
+                                      placeholder="Org name…"
+                                      className="h-7 text-xs w-32"
+                                    />
+                                  ) : (
+                                    opsInfo?.contractor_org ?? (p.agency_id ? 'Agency' : '—')
+                                  )}
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-mono">
-                                  {opsInfo?.hourly_rate != null
+                                  {isEditing ? (
+                                    <Input
+                                      value={editRate}
+                                      onChange={(e) => setEditRate(e.target.value)}
+                                      placeholder="0"
+                                      className="h-7 text-xs w-20 text-right"
+                                      type="number"
+                                      min={0}
+                                    />
+                                  ) : opsInfo?.hourly_rate != null
                                     ? `$${Number(opsInfo.hourly_rate).toFixed(0)}/hr`
                                     : <span className="text-muted-foreground text-xs">not set</span>}
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-mono text-muted-foreground text-xs">
                                   {isDS || empType === 'contractor'
                                     ? `$${getDSRate(p.credentials)}/hr`
-                                    : `$${getEmpRate(p.credentials)}/hr emp`}
+                                    : `$${getEmpRate(p.credentials)}/hr`}
                                 </td>
                                 <td className="px-4 py-2.5 font-mono text-xs">
                                   {hbEmp?.homebase_id ?? <span className="text-muted-foreground">—</span>}
@@ -711,6 +775,50 @@ const ProviderDirectoryPage = () => {
                                   ) : (
                                     <span className="text-xs text-muted-foreground">unmatched</span>
                                   )}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-1">
+                                    {isEditing ? (
+                                      <>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-6 w-6"
+                                          onClick={() => upsertOpsInfo.mutate({
+                                            profileId: p.id,
+                                            hourly_rate: editRate ? Number(editRate) : null,
+                                            employment_type: editEmpType,
+                                            contractor_org: editContractorOrg,
+                                          })}
+                                          disabled={upsertOpsInfo.isPending}
+                                        >
+                                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                        </Button>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-6 w-6"
+                                          onClick={() => setEditingOpsId(null)}
+                                        >
+                                          <X className="h-3.5 w-3.5 text-muted-foreground" />
+                                        </Button>
+                                      </>
+                                    ) : (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                                        onClick={() => {
+                                          setEditingOpsId(p.id);
+                                          setEditRate(opsInfo?.hourly_rate != null ? String(Number(opsInfo.hourly_rate)) : '');
+                                          setEditEmpType(empType);
+                                          setEditContractorOrg(opsInfo?.contractor_org ?? '');
+                                        }}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );
