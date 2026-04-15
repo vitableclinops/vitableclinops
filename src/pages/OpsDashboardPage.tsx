@@ -8,6 +8,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn, downloadCSV } from '@/lib/utils';
 import {
   RefreshCw, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
-  Activity, Target, Download, CalendarDays, Plus,
+  Activity, Target, Download, CalendarDays, Plus, Info, ChevronDown,
 } from 'lucide-react';
 import { QuickTaskDialog, QuickTaskTarget } from '@/components/admin/QuickTaskDialog';
 
@@ -260,6 +262,7 @@ export default function OpsDashboardPage() {
   const [showAll, setShowAll] = useState(false);
   const [showWeekView, setShowWeekView] = useState(false);
   const [quickTaskTarget, setQuickTaskTarget] = useState<QuickTaskTarget | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate);
   const { data: lastImportedAt } = useLastSlotImport();
@@ -414,6 +417,58 @@ export default function OpsDashboardPage() {
               )}
             </div>
           </div>
+
+          {/* Setup guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground -mt-2 mb-1 h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="mb-4 bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Getting data into Coverage Hub — 3 steps:</p>
+                  <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                    <li>
+                      <span className="font-medium text-foreground">Export from Metabase</span>
+                      {' '}— run the <em>same-day / next-day leftover slots</em> question and download as CSV.
+                      The file needs columns: <code className="bg-muted px-1 rounded text-xs">State</code>,{' '}
+                      <code className="bg-muted px-1 rounded text-xs">Day</code>,{' '}
+                      <code className="bg-muted px-1 rounded text-xs">Sum of same_next_day_available_slots</code>.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Upload in Settings</span>
+                      {' '}—{' '}
+                      <a href="/admin/settings?tab=import" className="underline text-primary">
+                        Settings → Data Import → Slot Data
+                      </a>
+                      . Select <em>Historical</em> window type, pick your file, click Import.
+                      The timestamp in the header updates when data lands.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Activate states</span>
+                      {' '}— first time only: click <strong>+ Add State</strong> (or toggle the Active switch) for each state you cover.
+                      States default to inactive so they don't appear until you enable them.
+                    </li>
+                  </ol>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Optional — SLA %:</span>
+                    {' '}Upload the SLA attainment CSV (same Settings page → SLA Data tab) to populate the SLA % column and trend chart.
+                    Columns needed: <code className="bg-muted px-1 rounded text-xs">State</code>,{' '}
+                    <code className="bg-muted px-1 rounded text-xs">SLA Attainment Rate</code>.
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Daily workflow:</span>
+                    {' '}Download fresh CSVs from Metabase each morning → upload → come back here → check Today and Tomorrow
+                    → hit <strong>+ Task</strong> on any ZERO or CRITICAL state → tasks appear in the Admin Dashboard task queue.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
 
           {/* KPI strip */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
