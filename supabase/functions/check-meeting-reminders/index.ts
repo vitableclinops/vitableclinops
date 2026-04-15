@@ -1,11 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-// Dynamic import for Resend to avoid build-time resolution issues
-const getResend = async () => {
-  const mod = await import("https://esm.sh/resend@2.0.0");
-  return mod.Resend;
-};
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { Resend } from "https://esm.sh/resend@2.0.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
