@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { Zap, RefreshCw, Save, Loader2 } from 'lucide-react';
+import { Zap, RefreshCw, Save, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -177,6 +177,45 @@ function useRunHistory() {
   });
 }
 
+function useRunDetail(runId: string | null) {
+  return useQuery({
+    queryKey: ['matching_run_detail', runId],
+    enabled: !!runId,
+    queryFn: async () => {
+      const [assignmentsRes, profilesRes] = await Promise.all([
+        supabase
+          .from('matching_assignments')
+          .select('profile_id, state_abbreviation, assignment_type, assigned_hours')
+          .eq('run_id', runId!),
+        supabase
+          .from('profiles')
+          .select('id, full_name, credentials'),
+      ]);
+      if (assignmentsRes.error) throw assignmentsRes.error;
+      const nameMap = new Map<string, string>(
+        (profilesRes.data ?? []).map((p: any) => [p.id, `${p.full_name ?? '—'} (${p.credentials ?? ''})`])
+      );
+      const assignments = (assignmentsRes.data ?? []).map((a: any) => ({
+        ...a,
+        providerName: nameMap.get(a.profile_id) ?? a.profile_id.slice(0, 8),
+      }));
+      // Group by state for the state summary
+      const byState = new Map<string, { primary: string[]; overflow: string[]; hours: number }>();
+      for (const a of assignments) {
+        if (!byState.has(a.state_abbreviation)) {
+          byState.set(a.state_abbreviation, { primary: [], overflow: [], hours: 0 });
+        }
+        const entry = byState.get(a.state_abbreviation)!;
+        entry.hours += Number(a.assigned_hours ?? 0);
+        if (a.assignment_type === 'primary') entry.primary.push(a.providerName);
+        else entry.overflow.push(a.providerName);
+      }
+      return { assignments, byState };
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 // ── Matching algorithm ────────────────────────────────────────────────────────
 
 function runMatching(
@@ -296,6 +335,8 @@ export default function DemandMatchingEnginePage() {
   const { data: providerStates = new Map(), isLoading: loadingStates } = useProviderActiveStates();
   const { data: profileNames = new Map(), isLoading: loadingNames } = useProfileNames();
   const { data: runHistory = [], refetch: refetchHistory } = useRunHistory();
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const { data: runDetail } = useRunDetail(selectedRunId);
 
   const isLoading = loadingForecast || loadingShifts || loadingEmployees || loadingStates || loadingNames;
   const { toast } = useToast();
@@ -631,25 +672,69 @@ export default function DemandMatchingEnginePage() {
                             </thead>
                             <tbody>
                               {runHistory.map((run) => (
-                                <tr key={run.id} className="border-b hover:bg-muted/30 transition-colors">
-                                  <td className="px-4 py-2.5 font-medium font-mono">{run.week_start}</td>
-                                  <td className="px-4 py-2.5 text-right font-mono text-blue-600">
-                                    {run.surplus_hours != null ? `+${run.surplus_hours.toFixed(0)}h` : '—'}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-right font-mono text-destructive">
-                                    {run.gap_hours != null && run.gap_hours > 0 ? `-${run.gap_hours.toFixed(0)}h` : '—'}
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    {Array.isArray(run.states_deactivated) && run.states_deactivated.length > 0
-                                      ? (run.states_deactivated as string[]).map((s) => (
-                                          <Badge key={s} variant="outline" className="text-xs mr-1">{s}</Badge>
-                                        ))
-                                      : <span className="text-muted-foreground text-xs">none</span>}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
-                                    {new Date(run.created_at).toLocaleDateString()}
-                                  </td>
-                                </tr>
+                                <>
+                                  <tr
+                                    key={run.id}
+                                    className="border-b hover:bg-muted/30 transition-colors cursor-pointer"
+                                    onClick={() => setSelectedRunId((prev) => prev === run.id ? null : run.id)}
+                                  >
+                                    <td className="px-4 py-2.5 font-medium font-mono flex items-center gap-1.5">
+                                      {selectedRunId === run.id
+                                        ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                        : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                                      {run.week_start}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right font-mono text-blue-600">
+                                      {run.surplus_hours != null ? `+${run.surplus_hours.toFixed(0)}h` : '—'}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right font-mono text-destructive">
+                                      {run.gap_hours != null && run.gap_hours > 0 ? `-${run.gap_hours.toFixed(0)}h` : '—'}
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      {Array.isArray(run.states_deactivated) && run.states_deactivated.length > 0
+                                        ? (run.states_deactivated as string[]).map((s) => (
+                                            <Badge key={s} variant="outline" className="text-xs mr-1">{s}</Badge>
+                                          ))
+                                        : <span className="text-muted-foreground text-xs">none</span>}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
+                                      {new Date(run.created_at).toLocaleDateString()}
+                                    </td>
+                                  </tr>
+                                  {selectedRunId === run.id && runDetail && (
+                                    <tr key={`${run.id}-detail`}>
+                                      <td colSpan={5} className="bg-muted/20 px-6 py-4">
+                                        <div className="space-y-3">
+                                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                            State Assignments — Week of {run.week_start}
+                                          </p>
+                                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                            {[...runDetail.byState.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([state, info]) => (
+                                              <div key={state} className="rounded-lg border bg-background p-3">
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                  <span className="font-bold text-sm">{state}</span>
+                                                  <span className="text-xs text-muted-foreground font-mono">{info.hours.toFixed(0)}h</span>
+                                                </div>
+                                                {info.primary.length > 0 && (
+                                                  <div className="text-xs text-foreground">
+                                                    <span className="text-muted-foreground">Primary: </span>
+                                                    {info.primary.join(', ')}
+                                                  </div>
+                                                )}
+                                                {info.overflow.length > 0 && (
+                                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                                    <span>Overflow: </span>
+                                                    {info.overflow.join(', ')}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </>
                               ))}
                             </tbody>
                           </table>
