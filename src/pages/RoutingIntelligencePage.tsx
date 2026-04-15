@@ -46,7 +46,7 @@ function useWasteData() {
   return useQuery({
     queryKey: ['routing_waste'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('license_optimization_snapshots')
         .select('state_abbreviation, wasted_flag, quadrant, allocated_hours, coverage_ratio')
         .order('snapshot_date', { ascending: false })
@@ -62,7 +62,7 @@ function useStateActivation() {
   return useQuery({
     queryKey: ['state_activation'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('state_activation')
         .select('state_abbreviation, is_active');
       if (error) throw error;
@@ -79,12 +79,12 @@ function useStateRouting() {
     queryKey: ['state_routing_analysis'],
     queryFn: async () => {
       const [shiftsRes, locationsRes] = await Promise.all([
-        (supabase as any)
+        supabase
           .from('homebase_shifts')
           .select('location_homebase_uuid, role, scheduled_hours')
           .not('scheduled_hours', 'is', null)
           .limit(5000),
-        (supabase as any)
+        supabase
           .from('homebase_locations')
           .select('homebase_uuid, state'),
       ]);
