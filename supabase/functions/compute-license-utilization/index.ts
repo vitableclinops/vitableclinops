@@ -85,21 +85,22 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ── Load leftover slot data ───────────────────────────────────────────────
+    // ── Load leftover slot data (historical only) ─────────────────────────────
+    // Leftover visits = unfilled slots from the EMR/Metabase export.
+    // These are used to infer actual demand (booked = supply - leftover).
+    // Forecast slots (from Homebase hours) represent total capacity, not
+    // leftover visits, so they would break the demand formula here.
     const { data: leftoverRows } = await supabase
       .from('state_leftover_slots')
-      .select('state_abbreviation, slot_date, unfilled_slots, window_type')
+      .select('state_abbreviation, slot_date, unfilled_slots')
+      .eq('window_type', 'historical')
       .gte('slot_date', windowStart)
       .lte('slot_date', windowEnd);
 
     // key = "state|date"
     const leftoverMap = new Map<string, number>();
     for (const row of (leftoverRows ?? [])) {
-      const key = `${row.state_abbreviation}|${row.slot_date}`;
-      // Prefer historical over forecast for same slot
-      if (!leftoverMap.has(key) || row.window_type === 'historical') {
-        leftoverMap.set(key, Number(row.unfilled_slots));
-      }
+      leftoverMap.set(`${row.state_abbreviation}|${row.slot_date}`, Number(row.unfilled_slots));
     }
 
     // Compute percentile thresholds for leftover slots (for quadrant classification)
