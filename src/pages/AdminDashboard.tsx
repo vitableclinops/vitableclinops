@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { AppSidebar } from '@/components/AppSidebar';
 import { MvpBanner } from '@/components/MvpBanner';
 import { AdminStatsGrid } from '@/components/admin/AdminStatsGrid';
@@ -15,11 +17,43 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ListChecks, ShieldCheck, Activity, TrendingUp, BarChart3, Network, Cpu, DollarSign, ArrowRight } from 'lucide-react';
+import { ListChecks, ShieldCheck, Activity, TrendingUp, BarChart3, Network, Cpu, DollarSign, ArrowRight, AlertTriangle, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useAdminDashboard } from '@/hooks/useAdminDashboard';
 import type { DashboardTaskItem } from '@/hooks/useAdminDashboard';
+
+function useOpsCoverage() {
+  const today = new Date().toISOString().slice(0, 10);
+  return useQuery({
+    queryKey: ['ops_coverage_summary', today],
+    queryFn: async () => {
+      const [activationRes, slotsRes] = await Promise.all([
+        supabase.from('state_activation').select('state_abbreviation').eq('is_active', true),
+        supabase
+          .from('state_leftover_slots')
+          .select('state_abbreviation, unfilled_slots')
+          .eq('slot_date', today)
+          .eq('window_type', 'historical'),
+      ]);
+      const activeStates = new Set((activationRes.data ?? []).map((r: any) => r.state_abbreviation));
+      const slotMap = new Map<string, number>(
+        (slotsRes.data ?? []).map((r: any) => [r.state_abbreviation, r.unfilled_slots])
+      );
+      let ok = 0, low = 0, critical = 0, zero = 0, noData = 0;
+      for (const state of activeStates) {
+        if (!slotMap.has(state)) { noData++; continue; }
+        const s = slotMap.get(state)!;
+        if (s === 0) zero++;
+        else if (s >= 10) ok++;
+        else if (s >= 5) low++;
+        else critical++;
+      }
+      return { total: activeStates.size, ok, low, critical, zero, noData, date: today };
+    },
+    staleTime: 5 * 60_000,
+  });
+}
 
 const OPS_LINKS = [
   { label: 'Ops Dashboard', icon: Activity,    href: '/admin/ops',                  color: 'text-primary' },
@@ -45,6 +79,7 @@ const AdminDashboard = () => {
   const isAdmin = hasRole('admin');
   const isPodLead = hasRole('pod_lead') && !isAdmin;
   const userRole = isAdmin ? 'admin' : isPodLead ? 'pod_lead' : 'admin';
+  const { data: coverage } = useOpsCoverage();
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
   const userId = profile?.id;
@@ -112,6 +147,41 @@ const AdminDashboard = () => {
                   Open Ops Dashboard <ArrowRight className="h-3 w-3" />
                 </Button>
               </div>
+              {/* Today's coverage health pill */}
+              {coverage && coverage.total > 0 && (
+                <div
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg border bg-muted/30 mb-3 cursor-pointer hover:bg-muted/50 transition-colors text-xs"
+                  onClick={() => navigate('/admin/ops')}
+                >
+                  <span className="text-muted-foreground font-medium">Today's coverage</span>
+                  <span className="text-muted-foreground">·</span>
+                  {coverage.ok > 0 && (
+                    <span className="flex items-center gap-1 text-emerald-600 font-semibold">
+                      <CheckCircle2 className="h-3 w-3" /> {coverage.ok} OK
+                    </span>
+                  )}
+                  {coverage.low > 0 && (
+                    <span className="flex items-center gap-1 text-yellow-600 font-semibold">
+                      <MinusCircle className="h-3 w-3" /> {coverage.low} Low
+                    </span>
+                  )}
+                  {coverage.critical > 0 && (
+                    <span className="flex items-center gap-1 text-orange-600 font-semibold">
+                      <AlertTriangle className="h-3 w-3" /> {coverage.critical} Critical
+                    </span>
+                  )}
+                  {coverage.zero > 0 && (
+                    <span className="flex items-center gap-1 text-destructive font-semibold">
+                      <XCircle className="h-3 w-3" /> {coverage.zero} Zero
+                    </span>
+                  )}
+                  {coverage.noData > 0 && (
+                    <span className="text-muted-foreground">{coverage.noData} no data</span>
+                  )}
+                  <ArrowRight className="h-3 w-3 text-muted-foreground ml-auto" />
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                 {OPS_LINKS.map(({ label, icon: Icon, href, color }) => (
                   <Card
