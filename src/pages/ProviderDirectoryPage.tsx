@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, DollarSign, Pencil, Check, X } from 'lucide-react';
+import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, DollarSign, Pencil, Check, X, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -25,7 +25,7 @@ import { ManagementTable } from '@/components/directory/ManagementTable';
 import { useProviderReadiness } from '@/hooks/useProviderReadiness';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { cn, downloadCSV } from '@/lib/utils';
 import type { Provider } from '@/types';
 
 interface FullProvider {
@@ -665,6 +665,33 @@ const ProviderDirectoryPage = () => {
                   <Button variant="outline" size="sm" onClick={() => navigate('/admin/contractor-strategy')}>
                     <DollarSign className="h-4 w-4 mr-2" />
                     Contractor Strategy
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 ml-auto"
+                    onClick={() => {
+                      const rows = providers
+                        .filter((p) => p.employment_status !== 'termed')
+                        .filter((p) => !opsSearch || (p.full_name ?? '').toLowerCase().includes(opsSearch.toLowerCase()))
+                        .map((p) => {
+                          const opsInfo = opsInfoByProfile.get(p.id);
+                          const hbEmp = homebaseByProfile.get(p.id);
+                          const empType = opsInfo?.employment_type ?? p.employment_type ?? 'employee';
+                          return {
+                            name: p.full_name ?? '',
+                            credentials: p.credentials ?? p.profession ?? '',
+                            employment_type: empType,
+                            contractor_org: opsInfo?.contractor_org ?? (p.agency_id ? 'Agency' : ''),
+                            hourly_rate: opsInfo?.hourly_rate != null ? Number(opsInfo.hourly_rate) : '',
+                            homebase_id: hbEmp?.homebase_id ?? '',
+                          };
+                        });
+                      downloadCSV(rows, 'provider-ops.csv');
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export
                   </Button>
                 </div>
                 <Card>
