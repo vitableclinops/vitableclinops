@@ -1241,6 +1241,93 @@ export type Database = {
         }
         Relationships: []
       }
+      contractor_compliance_docs: {
+        Row: {
+          created_at: string
+          doc_type: string
+          expiry_date: string | null
+          id: string
+          notes: string | null
+          profile_id: string
+          state_abbreviation: string
+          status: string
+          submitted_at: string | null
+          updated_at: string
+          verified_at: string | null
+          verified_by_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          doc_type: string
+          expiry_date?: string | null
+          id?: string
+          notes?: string | null
+          profile_id: string
+          state_abbreviation: string
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+          verified_at?: string | null
+          verified_by_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          doc_type?: string
+          expiry_date?: string | null
+          id?: string
+          notes?: string | null
+          profile_id?: string
+          state_abbreviation?: string
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+          verified_at?: string | null
+          verified_by_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contractor_compliance_docs_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contractor_compliance_docs_verified_by_id_fkey"
+            columns: ["verified_by_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      demand_forecast: {
+        Row: {
+          created_at: string
+          id: string
+          projected_visits: number
+          state_abbreviation: string
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          projected_visits: number
+          state_abbreviation: string
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          projected_visits?: number
+          state_abbreviation?: string
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: []
+      }
       ehr_activation_events: {
         Row: {
           actor_id: string | null
@@ -2131,6 +2218,81 @@ export type Database = {
           },
         ]
       }
+      matching_assignments: {
+        Row: {
+          assigned_hours: number | null
+          assignment_type: string
+          created_at: string
+          id: string
+          profile_id: string
+          run_id: string
+          state_abbreviation: string
+        }
+        Insert: {
+          assigned_hours?: number | null
+          assignment_type: string
+          created_at?: string
+          id?: string
+          profile_id: string
+          run_id: string
+          state_abbreviation: string
+        }
+        Update: {
+          assigned_hours?: number | null
+          assignment_type?: string
+          created_at?: string
+          id?: string
+          profile_id?: string
+          run_id?: string
+          state_abbreviation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matching_assignments_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "matching_engine_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matching_assignments_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matching_engine_runs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          gap_hours: number | null
+          id: string
+          states_deactivated: Json | null
+          surplus_hours: number | null
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          gap_hours?: number | null
+          id?: string
+          states_deactivated?: Json | null
+          surplus_hours?: number | null
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          gap_hours?: number | null
+          id?: string
+          states_deactivated?: Json | null
+          surplus_hours?: number | null
+          week_start?: string
+        }
+        Relationships: []
+      }
       meeting_attendees: {
         Row: {
           assigned_slot: string | null
@@ -2875,6 +3037,47 @@ export type Database = {
           profile_id?: string
         }
         Relationships: []
+      }
+      provider_ops_info: {
+        Row: {
+          contractor_org: string | null
+          created_at: string
+          employment_type: string
+          homebase_employee_id: string | null
+          hourly_rate: number | null
+          id: string
+          profile_id: string
+          updated_at: string
+        }
+        Insert: {
+          contractor_org?: string | null
+          created_at?: string
+          employment_type?: string
+          homebase_employee_id?: string | null
+          hourly_rate?: number | null
+          id?: string
+          profile_id: string
+          updated_at?: string
+        }
+        Update: {
+          contractor_org?: string | null
+          created_at?: string
+          employment_type?: string
+          homebase_employee_id?: string | null
+          hourly_rate?: number | null
+          id?: string
+          profile_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_ops_info_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       provider_state_collab_decisions: {
         Row: {

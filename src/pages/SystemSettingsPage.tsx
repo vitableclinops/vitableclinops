@@ -10,7 +10,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Building2, Info, BookOpen, FileCheck, Shield, Users, Settings, ArrowLeft } from 'lucide-react';
+import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Building2, Info, BookOpen, FileCheck, Shield, Users, Settings, ArrowLeft, RefreshCw, Link2, XCircle, Clock } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -88,7 +90,9 @@ export default function SystemSettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  const [activeTab, setActiveTab] = useState(tabParam === 'roles' ? 'roles' : 'import');
+  const [activeTab, setActiveTab] = useState(
+    tabParam === 'roles' ? 'roles' : tabParam === 'homebase' ? 'homebase' : 'import'
+  );
   const [updatingUser, setUpdatingUser] = useState<string | null>(null);
   
   // Import state
@@ -114,6 +118,12 @@ export default function SystemSettingsPage() {
   const medallionInputRef = useRef<HTMLInputElement>(null);
   const notionInputRef = useRef<HTMLInputElement>(null);
   const supervisionsInputRef = useRef<HTMLInputElement>(null);
+
+  // ========== Homebase Tab State ==========
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [mappingSearch, setMappingSearch] = useState('');
+  const [newMappingName, setNewMappingName] = useState('');
+  const [newMappingProfileId, setNewMappingProfileId] = useState('');
 
   const userRole = roles[0] || 'provider';
   const userName = profile?.full_name || profile?.email || 'User';
@@ -179,6 +189,98 @@ export default function SystemSettingsPage() {
     setUpdatingUser(`${userId}-${role}`);
     toggleRoleMutation.mutate({ userId, role, hasRole });
   };
+
+  // ========== Homebase Logic ==========
+  const { data: syncRuns, isLoading: syncRunsLoading, refetch: refetchSyncRuns } = useQuery({
+    queryKey: ['homebase_sync_runs'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('homebase_sync_runs')
+        .select('*')
+        .order('started_at', { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const { data: nameMappings, refetch: refetchMappings } = useQuery({
+    queryKey: ['provider_name_mappings'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('provider_name_mappings')
+        .select('id, homebase_name, profile_id, created_at, profiles(full_name, email)')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        id: string;
+        homebase_name: string;
+        profile_id: string;
+        created_at: string;
+        profiles: { full_name: string | null; email: string | null } | null;
+      }>;
+    },
+  });
+
+  const { data: allProfiles } = useQuery({
+    queryKey: ['all-profiles-for-mapping'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .order('full_name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: activeTab === 'homebase',
+  });
+
+  const addMappingMutation = useMutation({
+    mutationFn: async ({ homebase_name, profile_id }: { homebase_name: string; profile_id: string }) => {
+      const { error } = await supabase
+        .from('provider_name_mappings')
+        .insert({ homebase_name, profile_id });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['provider_name_mappings'] });
+      setNewMappingName('');
+      setNewMappingProfileId('');
+      toast({ title: 'Mapping added' });
+    },
+    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+  });
+
+  const deleteMappingMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('provider_name_mappings').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['provider_name_mappings'] });
+      toast({ title: 'Mapping removed' });
+    },
+    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+  });
+
+  const handleTriggerSync = async () => {
+    setSyncLoading(true);
+    try {
+      const { error } = await supabase.functions.invoke('sync-homebase');
+      if (error) throw error;
+      toast({ title: 'Homebase sync started', description: 'Refresh in a few seconds to see results.' });
+      setTimeout(() => refetchSyncRuns(), 5000);
+    } catch (e: any) {
+      toast({ title: 'Sync failed', description: e.message, variant: 'destructive' });
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const latestRun = syncRuns?.[0];
+  const filteredMappings = (nameMappings ?? []).filter(
+    (m) => !mappingSearch || m.homebase_name.toLowerCase().includes(mappingSearch.toLowerCase())
+  );
 
   // ========== Import Logic ==========
   const handleFileSelect = (file: File, type: 'medallion' | 'notion') => {
@@ -388,6 +490,10 @@ export default function SystemSettingsPage() {
                 <Database className="h-4 w-4" />
                 Data Import
               </TabsTrigger>
+              <TabsTrigger value="homebase" className="gap-2">
+                <Link2 className="h-4 w-4" />
+                Homebase
+              </TabsTrigger>
               <TabsTrigger value="roles" className="gap-2">
                 <Shield className="h-4 w-4" />
                 User Roles
@@ -570,6 +676,177 @@ export default function SystemSettingsPage() {
                   </Card>
                 </TabsContent>
               </Tabs>
+            </TabsContent>
+
+            {/* Homebase Tab */}
+            <TabsContent value="homebase" className="space-y-6">
+
+              {/* Sync status card */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div>
+                    <CardTitle className="text-base">Homebase Sync</CardTitle>
+                    <CardDescription>Pulls employees, shifts, and locations from Homebase API.</CardDescription>
+                  </div>
+                  <Button onClick={handleTriggerSync} disabled={syncLoading} size="sm" className="gap-2">
+                    {syncLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {syncLoading ? 'Syncing…' : 'Sync Now'}
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {latestRun && (
+                    <div className="rounded-lg border p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        {latestRun.status === 'done' && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+                        {latestRun.status === 'running' && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+                        {latestRun.status === 'error' && <XCircle className="h-4 w-4 text-destructive" />}
+                        <span className="font-medium capitalize">{latestRun.status}</span>
+                        <span className="text-sm text-muted-foreground ml-auto">
+                          {new Date(latestRun.started_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                        {[
+                          { label: 'Locations', val: latestRun.locations_synced },
+                          { label: 'Employees', val: latestRun.employees_synced },
+                          { label: 'Matched', val: latestRun.employees_matched },
+                          { label: 'Unmatched', val: latestRun.employees_unmatched },
+                        ].map(({ label, val }) => (
+                          <div key={label} className="rounded bg-muted px-3 py-2">
+                            <p className="text-xs text-muted-foreground">{label}</p>
+                            <p className="text-lg font-semibold">{val ?? '—'}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {latestRun.shifts_synced !== null && (
+                        <p className="text-sm text-muted-foreground">
+                          Shifts synced: <span className="font-medium text-foreground">{latestRun.shifts_synced}</span>
+                        </p>
+                      )}
+                      {latestRun.error && (
+                        <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertTitle>Sync error</AlertTitle>
+                          <AlertDescription>{latestRun.error}</AlertDescription>
+                        </Alert>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Sync history */}
+                  {syncRunsLoading ? (
+                    <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                  ) : (syncRuns ?? []).length > 1 ? (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Recent runs</p>
+                      <div className="space-y-1">
+                        {(syncRuns ?? []).slice(1).map((run) => (
+                          <div key={run.id} className="flex items-center gap-3 text-sm px-1 py-1">
+                            <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="text-muted-foreground w-36 shrink-0">
+                              {new Date(run.started_at).toLocaleString()}
+                            </span>
+                            <Badge
+                              variant={run.status === 'done' ? 'default' : run.status === 'error' ? 'destructive' : 'secondary'}
+                              className="capitalize text-xs"
+                            >
+                              {run.status}
+                            </Badge>
+                            <span className="text-muted-foreground">
+                              {run.employees_synced ?? 0} employees · {run.shifts_synced ?? 0} shifts
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              {/* Provider name mappings */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Provider Name Mappings</CardTitle>
+                  <CardDescription>
+                    Map Homebase employee names to provider profiles when automatic matching fails.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Add new mapping */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                    <Input
+                      placeholder="Homebase display name (exact)"
+                      value={newMappingName}
+                      onChange={(e) => setNewMappingName(e.target.value)}
+                    />
+                    <Select value={newMappingProfileId} onValueChange={setNewMappingProfileId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select provider…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(allProfiles ?? []).map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.full_name || p.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={() => addMappingMutation.mutate({ homebase_name: newMappingName.trim(), profile_id: newMappingProfileId })}
+                      disabled={!newMappingName.trim() || !newMappingProfileId || addMappingMutation.isPending}
+                      size="sm"
+                    >
+                      {addMappingMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
+                    </Button>
+                  </div>
+
+                  {/* Search existing */}
+                  <Input
+                    placeholder="Search mappings…"
+                    value={mappingSearch}
+                    onChange={(e) => setMappingSearch(e.target.value)}
+                    className="max-w-xs"
+                  />
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Homebase Name</TableHead>
+                        <TableHead>Mapped Provider</TableHead>
+                        <TableHead>Added</TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredMappings.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                            No mappings yet
+                          </TableCell>
+                        </TableRow>
+                      ) : filteredMappings.map((m) => (
+                        <TableRow key={m.id}>
+                          <TableCell className="font-medium">{m.homebase_name}</TableCell>
+                          <TableCell>{m.profiles?.full_name ?? m.profiles?.email ?? m.profile_id}</TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {new Date(m.created_at).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteMappingMutation.mutate(m.id)}
+                              disabled={deleteMappingMutation.isPending}
+                            >
+                              <XCircle className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* User Roles Tab */}
