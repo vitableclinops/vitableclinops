@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
 import { ProviderStateGrid } from '@/components/grid/ProviderStateGrid';
@@ -5,15 +6,19 @@ import { useRealGridData } from '@/hooks/useRealGridData';
 import { useActivationStats } from '@/hooks/useProviderStateStatus';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Link } from 'react-router-dom';
-import { 
-  AlertTriangle, 
-  CheckCircle2, 
-  Clock, 
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
   ShieldAlert,
   ArrowRight,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Info,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -22,8 +27,9 @@ export default function ProviderStateGridPage() {
   const { profile, roles } = useAuth();
   const { data: gridData, isLoading, refetch, isRefetching } = useRealGridData();
   const { data: stats, isLoading: statsLoading } = useActivationStats();
-  
-  const userRole = roles.includes('admin') ? 'admin' : 
+  const [showGuide, setShowGuide] = useState(false);
+
+  const userRole = roles.includes('admin') ? 'admin' :
                    roles.includes('physician') ? 'physician' : 'provider';
 
   return (
@@ -37,7 +43,7 @@ export default function ProviderStateGridPage() {
       
       <main className="ml-16 lg:ml-64 transition-all duration-300 min-w-0">
         <div className="p-4 md:p-6 lg:p-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-3">
             <div>
               <h1 className="text-2xl font-bold">Provider–State Grid</h1>
               <p className="text-muted-foreground mt-1">
@@ -89,6 +95,34 @@ export default function ProviderStateGridPage() {
               )}
             </div>
           </div>
+
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide} className="mb-4">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: see every provider's license status across every state in one matrix — identify gaps, mismatches, and activation opportunities at a glance.</p>
+                  <div className="space-y-2 text-muted-foreground">
+                    <p><span className="font-medium text-foreground">Reading the grid</span> — rows = providers, columns = states. Each cell shows the license/credentialing status for that provider–state combination. Color coding: green = active and ready, yellow = pending/in-progress, red = blocked or missing, gray = no license.</p>
+                    <p><span className="font-medium text-foreground">Critical Mismatches banner</span> (top-right) — providers who are marked "active" in a state but whose licensure is not actually ready. These are compliance risks. Click the banner to go directly to the Activation Queue to resolve them.</p>
+                    <p><span className="font-medium text-foreground">Ready but Inactive banner</span> — providers who have valid credentials for a state but aren't activated there. These are your fastest expansion opportunities — no licensing work required, just flip the EHR activation switch in the Activation Queue.</p>
+                    <p><span className="font-medium text-foreground">Evaluating coverage gaps</span> — find a state column with few green cells. Those are your licensure bottlenecks. Cross-reference with the <a href="/admin/license-optimizer" className="underline text-primary">License Optimizer</a> to see if those are also demand-deficit states worth prioritizing.</p>
+                  </div>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">For leadership:</span>
+                    {' '}The Critical Mismatches count is a compliance KPI. "Ready but Inactive" count is your fastest path to expanding active states without additional licensing spend.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
 
           {isLoading ? (
             <div className="flex items-center justify-center py-20">

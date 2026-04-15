@@ -9,9 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   AlertTriangle, CheckCircle2, Clock, XCircle, RefreshCw,
   TrendingUp, TrendingDown, Users, DollarSign, Shield, Zap, Download,
+  Info, ChevronDown,
 } from 'lucide-react';
 import { downloadCSV } from '@/lib/utils';
 
@@ -242,6 +245,7 @@ export default function ContractorStrategyPage() {
 
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [docStatusUpdating, setDocStatusUpdating] = useState<string | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   // ── Derived: contractor vs employee split ──────────────────────────────────
 
@@ -484,6 +488,34 @@ export default function ContractorStrategyPage() {
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
+
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground -mt-2 mb-1 h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="mb-4 bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: decide when to use contractors vs. employees to fill coverage gaps, track contractor compliance, and plan bridge coverage for new state launches.</p>
+                  <div className="space-y-2 text-muted-foreground">
+                    <p><span className="font-medium text-foreground">Decision Analysis tab</span> — the make-vs-buy model compares the fully-loaded cost of a W2 provider against a contractor for a given state's demand. Use it when the Demand Matching Engine shows a persistent gap in a state and you need to decide whether to hire, license an existing provider, or bring in a contractor. A contractor makes financial sense when demand is uncertain or the gap is temporary ({'<'} 3 months).</p>
+                    <p><span className="font-medium text-foreground">Compliance Tracker tab</span> — per-contractor document status (W9, insurance, NPI, state registrations). Each doc shows expiry date and status. Flag expiring docs proactively — a contractor with lapsed insurance creates compliance risk. Filter by contractor to do a readiness audit before activating them in a new state.</p>
+                    <p><span className="font-medium text-foreground">DS Intake tab</span> — onboarding checklist for new direct-source (DS) contractors. Walk through each item to track their readiness. Link to their profile for credential tracking.</p>
+                    <p><span className="font-medium text-foreground">Coverage Bridge tab</span> — plan temporary contractor coverage for states with known demand spikes or new launches. Map bridge periods against the demand forecast to right-size contractor hours. Cross-reference with the <a href="/admin/matching" className="underline text-primary">Demand Matching Engine</a> to see if contractor hours close the gap.</p>
+                  </div>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">For leadership:</span>
+                    {' '}The Decision Analysis cost comparison is the key metric for make-vs-buy budget conversations. Compliance Tracker shows contractor risk exposure. Coverage Bridge shows how contractor spend maps to specific time-bounded needs.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
 
           <Tabs defaultValue="decision">
             <TabsList className="flex-wrap h-auto gap-1">

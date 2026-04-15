@@ -18,17 +18,21 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { Link } from 'react-router-dom';
-import { 
-  AlertTriangle, 
-  Power, 
-  PowerOff, 
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  AlertTriangle,
+  Power,
+  PowerOff,
   Search,
   CheckCircle2,
   Clock,
   Loader2,
   ShieldAlert,
   Users,
-  BarChart3
+  BarChart3,
+  Info,
+  ChevronDown,
 } from 'lucide-react';
 import {
   useProviderStateStatuses,
@@ -49,6 +53,7 @@ type MismatchType = Enums<'mismatch_type'>;
 export default function ActivationQueuePage() {
   const { profile, roles } = useAuth();
   const [activeTab, setActiveTab] = useState<'mismatches' | 'requests' | 'all'>('mismatches');
+  const [showGuide, setShowGuide] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stateFilter, setStateFilter] = useState<string>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -176,7 +181,7 @@ export default function ActivationQueuePage() {
       <main className="ml-16 lg:ml-64 transition-all duration-300 min-w-0">
         <div className="p-4 md:p-6 lg:p-8">
           {/* Header */}
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-3">
             <div>
               <h1 className="text-2xl font-bold">EHR Activation Queue</h1>
               <p className="text-muted-foreground">
@@ -184,6 +189,31 @@ export default function ActivationQueuePage() {
               </p>
             </div>
           </div>
+
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide} className="mb-4">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: ensure every provider who should be active in a state actually is — and that no provider is active somewhere their credentials don't support.</p>
+                  <div className="space-y-2 text-muted-foreground">
+                    <p><span className="font-medium text-foreground">Critical Mismatches tab</span> — providers flagged as "active" in a state but lacking the required credentials (license, EHR activation, or collab agreement). These are your top priority — an active provider without proper credentials is a compliance and liability risk. Resolve by either completing their credentialing or deactivating the state.</p>
+                    <p><span className="font-medium text-foreground">Pending Requests tab</span> — providers who have requested activation or deactivation. Review and approve/deny here. Activation requests come from providers completing their licensure workflow.</p>
+                    <p><span className="font-medium text-foreground">All Providers tab</span> — full roster with current activation status per state. Use filters to find providers by state, readiness status, or EHR activation status. Bulk-select to activate or deactivate multiple provider–state pairs at once.</p>
+                    <p><span className="font-medium text-foreground">Optimal activation</span> — "Ready but Inactive" count (shown in stats) represents providers with complete credentials not yet generating revenue. Each one you activate expands coverage capacity instantly. Cross-reference with the <a href="/admin/ops" className="underline text-primary">Ops Dashboard</a> to see which states need more providers.</p>
+                    <p><span className="font-medium text-foreground">Status definitions</span> — Ready = license valid + EHR active + (collab agreement if required). Not Ready = one or more missing. Inactive = credentials may be valid but provider isn't routing visits here.</p>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
 
           {/* Stats Cards */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-6">

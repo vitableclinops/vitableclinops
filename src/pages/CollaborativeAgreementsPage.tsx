@@ -28,9 +28,9 @@ import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance'
 import { useScheduledMeetings } from '@/hooks/useScheduledMeetings';
 import { supervisionMeetings } from '@/data/mockData';
 import { 
-  Users, 
-  FileText, 
-  Calendar, 
+  Users,
+  FileText,
+  Calendar,
   AlertTriangle,
   Search,
   Plus,
@@ -48,14 +48,19 @@ import {
   MoreHorizontal,
   Link as LinkIcon,
   ArrowRightLeft,
-  UserMinus
+  UserMinus,
+  Info,
+  ChevronDown,
 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
@@ -152,6 +157,7 @@ const CollaborativeAgreementsPage = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [stateFilter, setStateFilter] = useState<string>('all');
   const [physicianFilter, setPhysicianFilter] = useState<string>('all');
+  const [showGuide, setShowGuide] = useState(false);
   const [meetingFilter, setMeetingFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'all-agreements');
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -561,7 +567,7 @@ const CollaborativeAgreementsPage = () => {
       <main className="ml-16 lg:ml-64 transition-all duration-300 min-w-0">
         <div className="p-4 md:p-6 lg:p-8 overflow-x-auto">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center justify-between mb-3">
             <div>
               <h1 className="text-2xl font-bold text-foreground">
                 Collaborative Agreements
@@ -667,6 +673,36 @@ const CollaborativeAgreementsPage = () => {
               </div>
             </div>
           )}
+
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide} className="mb-4">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: track every NP–physician collaborative agreement by state — ensure compliance in restricted-practice states and catch expiring agreements before they become a credentialing gap.</p>
+                  <div className="space-y-2 text-muted-foreground">
+                    <p><span className="font-medium text-foreground">What is a collaborative agreement?</span> — In states with reduced or restricted NP practice authority, nurse practitioners must have a formal supervisory agreement with a licensed physician. Without an active agreement, an NP cannot legally see patients in that state. Check the <a href="/admin/routing" className="underline text-primary">NP Authority Map</a> (Routing Intelligence page) to see which states require them.</p>
+                    <p><span className="font-medium text-foreground">Agreement statuses</span> — <span className="font-medium text-foreground">Active</span> = currently valid, NP can practice; <span className="font-medium text-foreground">Pending</span> = agreement created but not yet countersigned — NP cannot practice until active; <span className="font-medium text-foreground">Expiring Soon</span> = renewal due within 60 days — schedule a renewal meeting now; <span className="font-medium text-foreground">Expired</span> = lapsed, NP is non-compliant in that state — remove from scheduling immediately.</p>
+                    <p><span className="font-medium text-foreground">All Agreements tab</span> — full list, filterable by state, physician, or provider. Use this to audit coverage when you're adding a new state or onboarding a new NP.</p>
+                    <p><span className="font-medium text-foreground">By Physician tab</span> — shows each physician's agreement load. Most states cap the number of NPs a physician can supervise (commonly 3–5). Check this before assigning a new NP to an existing physician.</p>
+                    <p><span className="font-medium text-foreground">By State tab</span> — shows which states have full agreement coverage, partial coverage, or gaps. Cross-reference with the <a href="/admin/activation" className="underline text-primary">Activation Queue</a>: if a state shows "Ready but Inactive," confirm an active agreement exists before flipping the activation switch.</p>
+                    <p><span className="font-medium text-foreground">Schedule Meeting button</span> — use this to initiate a renewal or onboarding meeting with a physician. Always schedule renewals at least 30 days before expiry to allow time for countersignature and credentialing processing.</p>
+                  </div>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">For leadership:</span>
+                    {' '}The incomplete-agreement banner (shown when any agreement is pending or expired) is a compliance KPI. Aim for 0 expired and 0 pending agreements older than 7 days. Use the By State tab to verify that every state where NPs are scheduled has at least one active agreement with capacity.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
 
           {/* Main Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>

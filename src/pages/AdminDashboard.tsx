@@ -16,8 +16,10 @@ import { AddTaskDialog } from '@/components/admin/AddTaskDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ListChecks, ShieldCheck, Activity, TrendingUp, BarChart3, Network, Cpu, DollarSign, ArrowRight, AlertTriangle, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
+import { ListChecks, ShieldCheck, Activity, TrendingUp, BarChart3, Network, Cpu, DollarSign, ArrowRight, AlertTriangle, CheckCircle2, XCircle, MinusCircle, Info, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useAdminDashboard } from '@/hooks/useAdminDashboard';
@@ -78,6 +80,7 @@ const AdminDashboard = () => {
 
   const isAdmin = hasRole('admin');
   const isPodLead = hasRole('pod_lead') && !isAdmin;
+  const [showGuide, setShowGuide] = useState(false);
   const userRole = isAdmin ? 'admin' : isPodLead ? 'pod_lead' : 'admin';
   const { data: coverage } = useOpsCoverage();
   const userName = profile?.full_name || profile?.email || 'Admin User';
@@ -117,6 +120,36 @@ const AdminDashboard = () => {
                 : 'Real-time oversight of provider compliance, agreements, and operational workflows.'}
             </p>
           </div>
+
+          {/* How to use guide */}
+          {!isPodLead && (
+            <Collapsible open={showGuide} onOpenChange={setShowGuide} className="mb-6">
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground h-7 px-2 text-xs">
+                  <Info className="h-3.5 w-3.5" />
+                  How to use this dashboard
+                  <ChevronDown className={`h-3 w-3 transition-transform ${showGuide ? 'rotate-180' : ''}`} />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <Alert className="mt-2 bg-muted/40 border-border">
+                  <AlertDescription className="text-sm space-y-3">
+                    <p className="font-semibold text-foreground">Purpose: your daily command center — see today's coverage health at a glance, manage the task queue, and navigate to any ops tool.</p>
+                    <div className="space-y-2 text-muted-foreground">
+                      <p><span className="font-medium text-foreground">Today's coverage pill</span> — the bar below "Coverage &amp; Ops" shows a live count of states by status (OK / Low / Critical / Zero). Click it to jump to the Ops Dashboard. If you see any Zero or Critical states, that's the first thing to action each morning.</p>
+                      <p><span className="font-medium text-foreground">Task Queue tab</span> — actionable tasks generated from coverage gaps (via "+ Task" in Ops Dashboard), licensure workflows, and agreement milestones. Assign, reassign, or archive tasks here. Unassigned tasks appear at the top. Escalated tasks are flagged in red.</p>
+                      <p><span className="font-medium text-foreground">Compliance tab</span> — snapshot of provider compliance health: active licenses, expiring credentials, pending agreements. Use this for leadership reporting on network readiness.</p>
+                      <p><span className="font-medium text-foreground">Ops quick links</span> — one-click navigation to all 6 ops tools. Daily workflow order: Ops Dashboard (slots) → Demand Forecast (volume) → Matching Engine (allocations) → License Optimizer (licensure health) → Utilization (efficiency) → DS Strategy (contractor decisions).</p>
+                    </div>
+                    <p className="text-muted-foreground">
+                      <span className="font-medium text-foreground">For leadership:</span>
+                      {' '}The stats grid at top shows network totals (providers, active agreements, open tasks). The Compliance tab has the exportable readiness snapshot. Coverage health + task queue together answer "what's at risk today and who owns it."
+                    </p>
+                  </AlertDescription>
+                </Alert>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
 
           {/* Stats Grid - only for admins */}
           {!isPodLead && (
