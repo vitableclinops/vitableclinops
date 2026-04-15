@@ -10,7 +10,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { cn } from '@/lib/utils';
+import { Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn, downloadCSV } from '@/lib/utils';
 
 // ── NP Practice Authority (2024-2025 · verify with current state regulations) ──
 
@@ -285,8 +287,38 @@ export default function RoutingIntelligencePage() {
             {/* ── State Routing ─────────────────────────────────────────────── */}
             <TabsContent value="routing" className="mt-4">
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-base">Scheduled Hours by State & Role</CardTitle>
+                  {routingRows.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs"
+                      onClick={() =>
+                        downloadCSV(
+                          routingRows.map((r: any) => {
+                            const mdHrs = Object.entries(r.roles as Record<string, number>)
+                              .filter(([role]) => /md|do|physician/i.test(role))
+                              .reduce((s, [, h]) => s + h, 0);
+                            const npHrs = Object.entries(r.roles as Record<string, number>)
+                              .filter(([role]) => /np|nurse practitioner|apn|aprn/i.test(role))
+                              .reduce((s, [, h]) => s + h, 0);
+                            return {
+                              state: r.state,
+                              total_hours: r.totalHours.toFixed(1),
+                              md_do_pct: pct(mdHrs, r.totalHours),
+                              np_pct: pct(npHrs, r.totalHours),
+                              other_pct: pct(r.totalHours - mdHrs - npHrs, r.totalHours),
+                              is_active: activeStates.has(r.state) ? 'yes' : 'no',
+                            };
+                          }),
+                          'state_routing.csv',
+                        )
+                      }
+                    >
+                      <Download className="h-3 w-3" /> Export
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent className="p-0">
                   {loadingRouting ? (

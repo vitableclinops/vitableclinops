@@ -11,8 +11,9 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
   AlertTriangle, CheckCircle2, Clock, XCircle, RefreshCw,
-  TrendingUp, TrendingDown, Users, DollarSign, Shield, Zap,
+  TrendingUp, TrendingDown, Users, DollarSign, Shield, Zap, Download,
 } from 'lucide-react';
+import { downloadCSV } from '@/lib/utils';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -617,11 +618,32 @@ export default function ContractorStrategyPage() {
             {/* ── 2. Compliance Tracker ─────────────────────────────────────── */}
             <TabsContent value="tracker" className="mt-4">
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Shield className="h-4 w-4" />
                     DS Provider Compliance Readiness
                   </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs"
+                    onClick={() =>
+                      downloadCSV(
+                        contractorCompliance.map((p) => ({
+                          name: p.full_name ?? '',
+                          credentials: p.credentials ?? p.profession ?? '',
+                          org: p.contractorOrg ?? '',
+                          active_states: p.states.join(';'),
+                          docs_verified: p.verifiedDocs,
+                          docs_total: p.totalDocs,
+                          readiness_pct: p.readinessPct,
+                        })),
+                        'ds_compliance_readiness.csv',
+                      )
+                    }
+                  >
+                    <Download className="h-3 w-3" /> Export
+                  </Button>
                 </CardHeader>
                 <CardContent className="p-0">
                   {loadingProviders || loadingDocs ? (
@@ -898,10 +920,32 @@ export default function ContractorStrategyPage() {
               </div>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-base">
                     Interim Coverage Plan — States Where DS {'>'} 40% of Hours
                   </CardTitle>
+                  {bridgePlan.atRiskStates.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs"
+                      onClick={() =>
+                        downloadCSV(
+                          bridgePlan.atRiskStates.map((r) => ({
+                            state: r.state,
+                            ds_hrs_wk: r.contractorHrs,
+                            total_hrs_wk: r.totalHrs,
+                            ds_pct: r.contractorPct,
+                            bridge_hrs_wk: r.bridgeHrsNeeded,
+                            bridge_cost_wk: r.weeklyCost,
+                          })),
+                          'coverage_bridge_plan.csv',
+                        )
+                      }
+                    >
+                      <Download className="h-3 w-3" /> Export
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {bridgePlan.atRiskStates.length === 0 ? (
