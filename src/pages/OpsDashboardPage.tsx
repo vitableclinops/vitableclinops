@@ -60,39 +60,38 @@ function useOpsData(date: string) {
       const weekStart = getMonday(date);
 
       const [activationsRes, slotsRes, slaRes, forecastRes] = await Promise.all([
-        (supabase as any).from('state_activation').select('state_abbreviation, is_active'),
-        (supabase as any)
+        supabase.from('state_activation').select('state_abbreviation, is_active'),
+        supabase
           .from('state_leftover_slots')
           .select('state_abbreviation, unfilled_slots')
           .eq('slot_date', date)
           .eq('window_type', 'historical'),
-        (supabase as any)
+        supabase
           .from('state_sla_attainment')
-          .select('state_abbreviation, sla_pct, imported_at')
-          .order('imported_at', { ascending: false }),
-        (supabase as any)
+          .select('state_abbreviation, sla_pct, created_at')
+          .order('created_at', { ascending: false }),
+        supabase
           .from('demand_forecast')
           .select('state_abbreviation, projected_visits')
           .eq('week_start', weekStart),
       ]);
 
-      const activations: { state_abbreviation: string; is_active: boolean }[] =
-        activationsRes.data ?? [];
+      const activations = activationsRes.data ?? [];
 
       const slotsByState = new Map<string, number>(
-        (slotsRes.data ?? []).map((r: any) => [r.state_abbreviation, r.unfilled_slots])
+        (slotsRes.data ?? []).map((r) => [r.state_abbreviation, r.unfilled_slots])
       );
 
-      // Use most-recent SLA attainment per state
+      // Use most-recent SLA attainment per state (ordered by created_at desc)
       const slaByState = new Map<string, number>();
-      for (const r of (slaRes.data ?? []) as any[]) {
+      for (const r of slaRes.data ?? []) {
         if (!slaByState.has(r.state_abbreviation)) {
           slaByState.set(r.state_abbreviation, Number(r.sla_pct));
         }
       }
 
       const forecastByState = new Map<string, number>(
-        (forecastRes.data ?? []).map((r: any) => [r.state_abbreviation, r.projected_visits])
+        (forecastRes.data ?? []).map((r) => [r.state_abbreviation, r.projected_visits])
       );
 
       return activations.map((a) => {
@@ -270,8 +269,18 @@ export default function OpsDashboardPage() {
               {isLoading ? (
                 <div className="p-8 text-center text-muted-foreground">Loading…</div>
               ) : filtered.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">
-                  No data for this date. Upload a Metabase leftover-slots CSV in the License Optimizer.
+                <div className="p-8 text-center space-y-3">
+                  <p className="text-muted-foreground">No data for this date.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Upload a Metabase leftover-slots CSV in{' '}
+                    <a href="/admin/settings?tab=import" className="underline text-primary hover:opacity-80">
+                      Settings → Slot Data
+                    </a>
+                    , or activate states in{' '}
+                    <a href="/admin/states" className="underline text-primary hover:opacity-80">
+                      States & Compliance
+                    </a>.
+                  </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
