@@ -1,5 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend, ReferenceLine,
+} from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
@@ -153,6 +157,29 @@ function useWeekSlots(weekStart: string, activeStates: Set<string>) {
   });
 }
 
+const SLA_LINE_COLORS = [
+  '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6',
+  '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
+];
+
+function useSlaTrend(activeStates: Set<string>) {
+  return useQuery({
+    queryKey: ['sla_trend', [...activeStates].sort().join(',')],
+    enabled: activeStates.size > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('state_sla_attainment')
+        .select('state_abbreviation, sla_pct, created_at, window_label')
+        .in('state_abbreviation', [...activeStates])
+        .order('created_at', { ascending: true })
+        .limit(2000);
+      if (error) throw error;
+      return (data ?? []) as { state_abbreviation: string; sla_pct: number; created_at: string; window_label: string | null }[];
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: WeekStatus }) {
@@ -228,6 +255,46 @@ export default function OpsDashboardPage() {
     [rows]
   );
   const { data: weekData } = useWeekSlots(weekStart, activeStateSet);
+  const { data: slaTrendRaw = [] } = useSlaTrend(activeStateSet);
+
+  // Build SLA trend chart data: last 10 distinct dates × bottom-10 SLA states
+  const { slaTrendData, slaTrendStates } = useMemo(() => {
+    if (!slaTrendRaw.length) return { slaTrendData: [], slaTrendStates: [] };
+
+    // Group by label (window_label if set, else YYYY-MM-DD from created_at)
+    const labelFor = (r: typeof slaTrendRaw[0]) =>
+      r.window_label ?? r.created_at.slice(0, 10);
+
+    const allLabels = [...new Set(slaTrendRaw.map(labelFor))].sort();
+    const last10 = allLabels.slice(-10);
+
+    // Average SLA per state across all data (to pick bottom 10)
+    const stateSums = new Map<string, { sum: number; count: number }>();
+    for (const r of slaTrendRaw) {
+      const e = stateSums.get(r.state_abbreviation) ?? { sum: 0, count: 0 };
+      e.sum += r.sla_pct; e.count += 1;
+      stateSums.set(r.state_abbreviation, e);
+    }
+    const bottomStates = [...stateSums.entries()]
+      .filter(([, v]) => v.count >= 2)
+      .map(([state, v]) => ({ state, avg: v.sum / v.count }))
+      .sort((a, b) => a.avg - b.avg)   // ascending → worst first
+      .slice(0, 10)
+      .map((e) => e.state);
+
+    // Build chart rows
+    const trendData = last10.map((label) => {
+      const entry: Record<string, any> = { label };
+      for (const r of slaTrendRaw) {
+        if (labelFor(r) === label && bottomStates.includes(r.state_abbreviation)) {
+          entry[r.state_abbreviation] = Math.round(r.sla_pct * 10) / 10;
+        }
+      }
+      return entry;
+    });
+
+    return { slaTrendData: trendData, slaTrendStates: bottomStates };
+  }, [slaTrendRaw]);
 
   const toggleActivation = useMutation({
     mutationFn: async ({ state, isActive }: { state: string; isActive: boolean }) => {
@@ -541,6 +608,48 @@ export default function OpsDashboardPage() {
                 <p className="text-xs text-muted-foreground px-4 pb-3 pt-2">
                   Green = at/above target · Yellow = 50–99% · Red = below 50% · — = no data
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* SLA trend chart */}
+          {slaTrendData.length > 1 && slaTrendStates.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  SLA Attainment Trend
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">
+                    lowest-performing active states · last {slaTrendData.length} snapshots
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart
+                    data={slaTrendData}
+                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
+                    <Tooltip formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <ReferenceLine y={80} stroke="#10b981" strokeDasharray="4 2" label={{ value: '80%', fontSize: 10 }} />
+                    <ReferenceLine y={60} stroke="#f59e0b" strokeDasharray="4 2" label={{ value: '60%', fontSize: 10 }} />
+                    {slaTrendStates.map((st, i) => (
+                      <Line
+                        key={st}
+                        type="monotone"
+                        dataKey={st}
+                        stroke={SLA_LINE_COLORS[i % SLA_LINE_COLORS.length]}
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
               </CardContent>
             </Card>
           )}
