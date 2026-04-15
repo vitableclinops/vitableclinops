@@ -38,7 +38,7 @@ function useProviderUtilization() {
   return useQuery({
     queryKey: ['provider_utilization'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('provider_utilization')
         .select('id, provider_name, profile_id, total_timeslots, avg_utilization_pct, window_start, window_end, imported_at')
         .order('avg_utilization_pct', { ascending: false });
@@ -53,7 +53,7 @@ function useUtilizationDaily() {
   return useQuery({
     queryKey: ['utilization_daily'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('utilization_daily')
         .select('util_date, overall_pct')
         .order('util_date', { ascending: true })

@@ -3660,6 +3660,27 @@ export type Database = {
           },
         ]
       }
+      utilization_daily: {
+        Row: {
+          id: string
+          imported_at: string
+          overall_pct: number
+          util_date: string
+        }
+        Insert: {
+          id?: string
+          imported_at?: string
+          overall_pct: number
+          util_date: string
+        }
+        Update: {
+          id?: string
+          imported_at?: string
+          overall_pct?: number
+          util_date?: string
+        }
+        Relationships: []
+      }
       state_sla_attainment: {
         Row: {
           created_at: string

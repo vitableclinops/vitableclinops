@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
   RefreshCw, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
@@ -168,12 +170,33 @@ export default function OpsDashboardPage() {
   const userRole = roles.includes('admin') ? 'admin'
     : roles.includes('pod_lead') ? 'pod_lead' : 'provider';
 
+  const isAdmin = roles.includes('admin');
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const today = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState(today);
   const [filterState, setFilterState] = useState('');
   const [showAll, setShowAll] = useState(false);
 
   const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate);
+
+  const toggleActivation = useMutation({
+    mutationFn: async ({ state, isActive }: { state: string; isActive: boolean }) => {
+      const { error } = await supabase
+        .from('state_activation')
+        .upsert({ state_abbreviation: state, is_active: isActive }, { onConflict: 'state_abbreviation' });
+      if (error) throw error;
+    },
+    onSuccess: (_, { state, isActive }) => {
+      queryClient.invalidateQueries({ queryKey: ['ops_dashboard'] });
+      toast({
+        title: `${state} ${isActive ? 'activated' : 'deactivated'}`,
+        description: isActive ? 'State is now visible in ops tracking.' : 'State hidden from active ops view.',
+      });
+    },
+    onError: (e: Error) => toast({ title: 'Toggle failed', description: e.message, variant: 'destructive' }),
+  });
 
   const filtered = useMemo(() => {
     let r = showAll ? rows : rows.filter((x) => x.isActive);
@@ -229,6 +252,19 @@ export default function OpsDashboardPage() {
               <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isRefetching}>
                 <RefreshCw className={cn('h-4 w-4', isRefetching && 'animate-spin')} />
               </Button>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    const abbr = prompt('State abbreviation to add (e.g. TX):')?.toUpperCase().trim();
+                    if (!abbr || abbr.length !== 2) return;
+                    toggleActivation.mutate({ state: abbr, isActive: true });
+                  }}
+                >
+                  + Add State
+                </Button>
+              )}
             </div>
           </div>
 
@@ -293,6 +329,9 @@ export default function OpsDashboardPage() {
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Coverage</th>
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">SLA %</th>
                         <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Status</th>
+                        {isAdmin && (
+                          <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Active</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -310,9 +349,6 @@ export default function OpsDashboardPage() {
                             <div className="flex items-center gap-2">
                               <StatusIcon status={row.weekStatus} />
                               <span className="font-semibold">{row.state}</span>
-                              {!row.isActive && (
-                                <Badge variant="outline" className="text-xs">inactive</Badge>
-                              )}
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono">
@@ -332,6 +368,18 @@ export default function OpsDashboardPage() {
                           <td className="px-4 py-2.5 text-center">
                             <StatusBadge status={row.weekStatus} />
                           </td>
+                          {isAdmin && (
+                            <td className="px-4 py-2.5 text-center">
+                              <Switch
+                                checked={row.isActive}
+                                onCheckedChange={(checked) =>
+                                  toggleActivation.mutate({ state: row.state, isActive: checked })
+                                }
+                                disabled={toggleActivation.isPending}
+                                aria-label={`Toggle ${row.state} activation`}
+                              />
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
