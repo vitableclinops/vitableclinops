@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { Zap, RefreshCw } from 'lucide-react';
+import { Zap, RefreshCw, Save, Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -280,6 +281,59 @@ export default function DemandMatchingEnginePage() {
   const { data: profileNames = new Map(), isLoading: loadingNames } = useProfileNames();
 
   const isLoading = loadingForecast || loadingShifts || loadingEmployees || loadingStates || loadingNames;
+  const { toast } = useToast();
+
+  const saveRun = useMutation({
+    mutationFn: async (r: MatchingResult) => {
+      // 1. Insert run record
+      const { data: run, error: runErr } = await supabase
+        .from('matching_engine_runs')
+        .insert({
+          week_start: weekStart,
+          surplus_hours: r.surplusHours,
+          gap_hours: r.gapHours,
+          states_deactivated: r.deactivateCandidates,
+          created_by: profile?.id ?? null,
+        })
+        .select('id')
+        .single();
+      if (runErr) throw runErr;
+
+      // 2. Insert all assignments
+      const assignmentRows = r.assignments.flatMap((a) => [
+        ...a.primaryStates.map((state) => ({
+          run_id: run.id,
+          profile_id: a.profileId,
+          state_abbreviation: state,
+          assignment_type: 'primary',
+          assigned_hours: a.allocatedHours / Math.max(a.primaryStates.length + a.overflowStates.length, 1),
+        })),
+        ...a.overflowStates.map((state) => ({
+          run_id: run.id,
+          profile_id: a.profileId,
+          state_abbreviation: state,
+          assignment_type: 'overflow',
+          assigned_hours: a.allocatedHours / Math.max(a.primaryStates.length + a.overflowStates.length, 1),
+        })),
+      ]);
+
+      if (assignmentRows.length > 0) {
+        const { error: assErr } = await supabase
+          .from('matching_assignments')
+          .insert(assignmentRows);
+        if (assErr) throw assErr;
+      }
+
+      return run.id;
+    },
+    onSuccess: (runId) => {
+      toast({
+        title: 'Run saved',
+        description: `Run ${runId.slice(0, 8)} saved for week of ${weekStart}`,
+      });
+    },
+    onError: (e: Error) => toast({ title: 'Save failed', description: e.message, variant: 'destructive' }),
+  });
 
   const result = useMemo<MatchingResult | null>(() => {
     if (isLoading || forecast.size === 0) return null;
@@ -316,6 +370,18 @@ export default function DemandMatchingEnginePage() {
               <Button variant="ghost" size="sm" onClick={() => refetch()}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
+              {result && (
+                <Button
+                  size="sm"
+                  onClick={() => saveRun.mutate(result)}
+                  disabled={saveRun.isPending}
+                  className="gap-1.5"
+                >
+                  {saveRun.isPending
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</>
+                    : <><Save className="h-3.5 w-3.5" /> Save Run</>}
+                </Button>
+              )}
             </div>
           </div>
 
