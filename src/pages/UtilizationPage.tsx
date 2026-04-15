@@ -6,12 +6,14 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { RefreshCw, Download } from 'lucide-react';
+import { RefreshCw, Download, Info, ChevronDown, DollarSign } from 'lucide-react';
 import { cn, downloadCSV } from '@/lib/utils';
 
 // ── Tiers ─────────────────────────────────────────────────────────────────────
@@ -79,19 +81,23 @@ export default function UtilizationPage() {
 
   const [filterProvider, setFilterProvider] = useState('');
   const [tierFilter, setTierFilter] = useState<Tier | 'all'>('all');
+  const [showGuide, setShowGuide] = useState(false);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
 
   const kpis = useMemo(() => {
-    if (!providers.length) return { avg: 0, high: 0, mid: 0, low: 0, totalSlots: 0 };
+    if (!providers.length) return { avg: 0, high: 0, mid: 0, low: 0, totalSlots: 0, filledSlots: 0 };
     const avg = providers.reduce((s: number, p: any) => s + (Number(p.avg_utilization_pct) || 0), 0)
       / providers.length;
+    const totalSlots = providers.reduce((s: number, p: any) => s + (Number(p.total_timeslots) || 0), 0);
+    const filledSlots = Math.round(totalSlots * (avg / 100));
     return {
       avg: Math.round(avg),
       high: providers.filter((p: any) => getTier(Number(p.avg_utilization_pct) || 0) === 'high').length,
       mid:  providers.filter((p: any) => getTier(Number(p.avg_utilization_pct) || 0) === 'mid').length,
       low:  providers.filter((p: any) => getTier(Number(p.avg_utilization_pct) || 0) === 'low').length,
-      totalSlots: providers.reduce((s: number, p: any) => s + (Number(p.total_timeslots) || 0), 0),
+      totalSlots,
+      filledSlots,
     };
   }, [providers]);
 
@@ -145,6 +151,55 @@ export default function UtilizationPage() {
             </Button>
           </div>
 
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground -mt-2 mb-1 h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="mb-4 bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: track how efficiently providers are filling their scheduled slots, identify under-utilized providers, and report cost-per-visit metrics for leadership.</p>
+                  <p className="font-medium text-foreground">How to get data in:</p>
+                  <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                    <li>
+                      <span className="font-medium text-foreground">Export from Metabase</span>
+                      {' '}— run the <em>provider utilization by window</em> question. CSV needs:{' '}
+                      <code className="bg-muted px-1 rounded text-xs">Provider</code>,{' '}
+                      <code className="bg-muted px-1 rounded text-xs">Total Timeslots</code>,{' '}
+                      <code className="bg-muted px-1 rounded text-xs">Avg Utilization %</code>.
+                      For the daily trend chart, also export the <em>daily overall utilization rate</em> question.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Upload via License Optimizer</span>
+                      {' '}— go to{' '}
+                      <a href="/admin/license-optimizer" className="underline text-primary">License Optimizer → Upload data files</a>
+                      {' '}and include both files in the bulk upload. Come back here after clicking Recompute.
+                    </li>
+                  </ol>
+                  <p className="font-medium text-foreground">Reading the data:</p>
+                  <ul className="list-disc list-inside space-y-1 text-muted-foreground ml-2">
+                    <li><span className="font-medium text-foreground">High tier (≥ 80%)</span> — provider is well-utilized. At risk of burnout if consistently at 95%+.</li>
+                    <li><span className="font-medium text-foreground">Mid tier (50–79%)</span> — room to grow. Consider adding states or increasing schedule density.</li>
+                    <li><span className="font-medium text-foreground">Low tier ({'<'} 50%)</span> — significant underutilization. Investigate: wrong state mix, low demand in their states, schedule gaps. These providers are the highest-cost-per-visit contributors.</li>
+                  </ul>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Cost per visit context:</span>
+                    {' '}A provider paid for 40h/week at 40% utilization has ~2× the effective cost per visit vs. one at 80%. Use the "Implied Cost/Visit" card to track this at the network level. The target is to keep network utilization above 70% to maintain competitive cost per visit.
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">For leadership:</span>
+                    {' '}"Network Avg" utilization and the daily trend chart are the headline metrics. Filter to "Low" tier to generate the underutilization watchlist. Export the table for weekly ops reviews. Compare against prior periods by re-uploading historical CSVs.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
+
           {/* KPIs */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Card>
@@ -178,6 +233,39 @@ export default function UtilizationPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Cost per visit context card */}
+          {kpis.avg > 0 && (
+            <Card className="border-primary/20 bg-primary/5">
+              <CardContent className="p-5 flex items-start gap-4">
+                <div className="rounded-lg p-2 bg-primary">
+                  <DollarSign className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Cost-Per-Visit Efficiency</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    At <span className="font-semibold text-foreground">{kpis.avg}%</span> network utilization,
+                    {' '}approximately <span className="font-semibold text-foreground">{kpis.filledSlots.toLocaleString()}</span> of{' '}
+                    <span className="font-semibold text-foreground">{kpis.totalSlots.toLocaleString()}</span> scheduled slots are filled.
+                    {kpis.avg < 70 ? (
+                      <span className="text-destructive font-medium">
+                        {' '}Network is below the 70% efficiency target — unfilled capacity is inflating cost per visit.
+                        Focus on the Low tier providers below.
+                      </span>
+                    ) : kpis.avg < 80 ? (
+                      <span className="text-yellow-600 font-medium">
+                        {' '}Approaching the 80% high-efficiency threshold. Continue optimizing state mix for Low-tier providers.
+                      </span>
+                    ) : (
+                      <span className="text-emerald-600 font-medium">
+                        {' '}Above 80% — strong cost-per-visit efficiency. Monitor for provider burnout at this level.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Daily trend chart */}
           {chartData.length > 0 && (

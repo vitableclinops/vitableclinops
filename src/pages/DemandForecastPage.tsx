@@ -5,13 +5,15 @@ import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts';
-import { Upload, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Download } from 'lucide-react';
+import { Upload, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Download, Info, ChevronDown } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn, downloadCSV } from '@/lib/utils';
 
@@ -91,6 +93,7 @@ export default function DemandForecastPage() {
   const [uploading, setUploading] = useState(false);
   const [filterState, setFilterState] = useState('');
   const [selectedWeek, setSelectedWeek] = useState<string>('all');
+  const [showGuide, setShowGuide] = useState(false);
 
   // ── CSV import ──────────────────────────────────────────────────────────────
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -259,6 +262,56 @@ export default function DemandForecastPage() {
               </label>
             </div>
           </div>
+
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground -mt-2 mb-1 h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="mb-4 bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: predict visit volume per state so you can right-size provider coverage before the week starts.</p>
+                  <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                    <li>
+                      <span className="font-medium text-foreground">Export from Metabase</span>
+                      {' '}— run the <em>weekly demand forecast by state</em> question. CSV needs columns:{' '}
+                      <code className="bg-muted px-1 rounded text-xs">State</code>,{' '}
+                      <code className="bg-muted px-1 rounded text-xs">Week</code>,{' '}
+                      <code className="bg-muted px-1 rounded text-xs">Visits</code>{' '}
+                      (exact names don't matter — the importer matches by keyword).
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Click "Import CSV"</span>
+                      {' '}(top-right of this page) and select your file. You'll see a toast confirming rows imported.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Read the table</span>
+                      {' '}— sort by Projected Visits descending. The "vs Prior Week" column flags demand spikes ({'>'}+20% warrants extra staffing). "Daily SLA Target" is the minimum same/next-day slots needed each day to hit SLA.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Act on high-demand states</span>
+                      {' '}— take states with large WoW increases to the{' '}
+                      <a href="/admin/matching" className="underline text-primary">Demand Matching Engine</a>
+                      {' '}to ensure enough provider hours are allocated.
+                    </li>
+                  </ol>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">For leadership:</span>
+                    {' '}Use the "Network Weekly Demand" bar chart to show total visit volume trend. Export the table for weekly ops reviews. The "Hours Needed" column (visits × 0.5h × 1.5× buffer) tells you the provider hours required to meet demand.
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Data freshness:</span>
+                    {' '}Re-import every Monday morning before the weekly staffing call. Historical weeks are preserved — use the week selector to compare any two periods.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
 
           {/* KPIs */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

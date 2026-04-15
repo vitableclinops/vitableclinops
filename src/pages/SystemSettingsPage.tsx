@@ -6,11 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Building2, Info, BookOpen, FileCheck, Shield, Users, Settings, ArrowLeft, RefreshCw, Link2, XCircle, Clock, Activity } from 'lucide-react';
+import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Building2, Info, BookOpen, FileCheck, Shield, Users, Settings, ArrowLeft, RefreshCw, Link2, XCircle, Clock, Activity, ChevronDown } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -136,6 +137,7 @@ export default function SystemSettingsPage() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [mappingSearch, setMappingSearch] = useState('');
   const [newMappingName, setNewMappingName] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
   const [newMappingProfileId, setNewMappingProfileId] = useState('');
 
   const userRole = roles[0] || 'provider';
@@ -556,6 +558,34 @@ export default function SystemSettingsPage() {
             </div>
           </div>
 
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground h-7 px-2 text-xs -mt-2">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={`h-3 w-3 transition-transform ${showGuide ? 'rotate-180' : ''}`} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="bg-muted/40 border-border mb-4">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: the data pipeline control center — import all Metabase CSVs, manage the Homebase sync, and configure user access.</p>
+                  <div className="space-y-2 text-muted-foreground">
+                    <p><span className="font-medium text-foreground">Data Import tab</span> — upload CSVs for slot data and SLA attainment directly here. Use these tabs for the manual Ops Dashboard data pipeline. For the License Optimizer's full 6-file upload, go directly to the <a href="/admin/license-optimizer" className="underline text-primary">License Optimizer page</a> which auto-detects file types.</p>
+                    <p><span className="font-medium text-foreground">Homebase tab</span> — trigger a manual sync or review recent sync history. The sync pulls all locations, employees, and shifts (±14 days) from the Homebase API and matches employees to provider profiles by email, then name. If providers aren't matching, add a manual name mapping in the "Provider Name Mappings" section below the sync status. After syncing, return to the License Optimizer and click "Recompute" to refresh all optimization snapshots.</p>
+                    <p><span className="font-medium text-foreground">Sync status indicators</span> — green checkmark = sync completed successfully. Spinner = sync running (refresh in a few seconds). Red X = sync failed, check the error message. "Unmatched" count shows how many Homebase employees couldn't be linked to provider profiles — add mappings to fix these.</p>
+                    <p><span className="font-medium text-foreground">User Roles tab</span> — assign admin, pod_lead, or provider roles. Admins see all ops tools. Pod leads see their team's tasks only.</p>
+                  </div>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Weekly checklist:</span>
+                    {' '}Homebase → Sync Now · wait for green checkmark · License Optimizer → Recompute · upload Metabase CSVs here (Slot Data + SLA) or via License Optimizer bulk upload.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
+
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList>
               <TabsTrigger value="import" className="gap-2">
@@ -912,7 +942,7 @@ export default function SystemSettingsPage() {
                   {latestRun && (
                     <div className="rounded-lg border p-4 space-y-3">
                       <div className="flex items-center gap-2">
-                        {latestRun.status === 'done' && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+                        {latestRun.status === 'success' && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
                         {latestRun.status === 'running' && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
                         {latestRun.status === 'error' && <XCircle className="h-4 w-4 text-destructive" />}
                         <span className="font-medium capitalize">{latestRun.status}</span>
@@ -962,7 +992,7 @@ export default function SystemSettingsPage() {
                               {new Date(run.started_at).toLocaleString()}
                             </span>
                             <Badge
-                              variant={run.status === 'done' ? 'default' : run.status === 'error' ? 'destructive' : 'secondary'}
+                              variant={run.status === 'success' ? 'default' : run.status === 'error' ? 'destructive' : 'secondary'}
                               className="capitalize text-xs"
                             >
                               {run.status}

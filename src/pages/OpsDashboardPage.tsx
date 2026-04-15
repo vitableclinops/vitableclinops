@@ -462,8 +462,21 @@ export default function OpsDashboardPage() {
                   </p>
                   <p className="text-muted-foreground">
                     <span className="font-medium text-foreground">Daily workflow:</span>
-                    {' '}Download fresh CSVs from Metabase each morning → upload → come back here → check Today and Tomorrow
+                    {' '}Download fresh CSVs from Metabase each morning → upload → come back here → check <strong>Today</strong> using the Today button, then switch to <strong>Tomorrow</strong> to see next-day availability
                     → hit <strong>+ Task</strong> on any ZERO or CRITICAL state → tasks appear in the Admin Dashboard task queue.
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Status thresholds explained:</span>
+                    {' '}OK = available slots ≥ SLA target · LOW = 50–99% of target · CRITICAL = {'<'} 50% · ZERO = no slots at all · NO DATA = CSV not yet uploaded for this date.
+                    SLA target = <code className="bg-muted px-1 rounded text-xs">max(5, weekly_visits / 5 × 1.5)</code> daily slots.
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">For leadership / SLA reporting:</span>
+                    {' '}The SLA Attainment heatmap (bottom of page) gives the snapshot view for executive reporting — green = ≥ 80%, yellow = 60–79%, red = {'<'} 60%. The trend chart shows lowest-performing states over time. Export the full table for board decks. Upload SLA attainment CSVs weekly to keep the trend current.
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Coverage vs. cost:</span>
+                    {' '}A state consistently at ZERO or CRITICAL has both an SLA problem and a revenue problem — missed same/next-day visits are lost visits. A state at SURPLUS may indicate over-staffing relative to demand. Cross-reference with the <a href="/admin/matching" className="underline text-primary">Demand Matching Engine</a> to right-size.
                   </p>
                 </AlertDescription>
               </Alert>

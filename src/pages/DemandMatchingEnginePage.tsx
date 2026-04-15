@@ -6,9 +6,11 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn, downloadCSV } from '@/lib/utils';
-import { Zap, RefreshCw, Save, Loader2, ChevronDown, ChevronRight, Download } from 'lucide-react';
+import { Zap, RefreshCw, Save, Loader2, ChevronDown, ChevronRight, Download, Info } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -332,6 +334,7 @@ export default function DemandMatchingEnginePage() {
 
   const [weekOffset, setWeekOffset] = useState(0);
   const weekStart = useMemo(() => getMonday(weekOffset), [weekOffset]);
+  const [showGuide, setShowGuide] = useState(false);
 
   const { data: forecast = new Map(), isLoading: loadingForecast, refetch } = useForecast(weekStart);
   const { data: shifts = new Map(), isLoading: loadingShifts } = useProviderShifts(weekStart);
@@ -464,6 +467,59 @@ export default function DemandMatchingEnginePage() {
               )}
             </div>
           </div>
+
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground -mt-2 mb-1 h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="mb-4 bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: determine whether you have enough provider hours to cover each state's demand — and flag where supply gaps or surpluses exist.</p>
+                  <p className="text-muted-foreground font-medium text-foreground">Prerequisites (must be done first):</p>
+                  <ul className="list-disc list-inside space-y-1 text-muted-foreground ml-2">
+                    <li>Demand forecast uploaded for the target week (<a href="/admin/demand-forecast" className="underline text-primary">Demand Forecast</a>)</li>
+                    <li>Homebase synced so provider shifts are current (<a href="/admin/license-optimizer" className="underline text-primary">License Optimizer → Sync Homebase</a>)</li>
+                  </ul>
+                  <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                    <li>
+                      <span className="font-medium text-foreground">Select the week</span>
+                      {' '}using the ← → arrows. Use week 0 (current week) for immediate staffing decisions; future weeks for planning.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Read the Network Summary</span>
+                      {' '}KPIs at the top — "Network Gap" (red) means total provider hours fall short of demand; "Surplus" (blue) means over-staffed. A gap requires immediate action: add hours, pull in contractors, or reduce active states.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Check the State Results tab</span>
+                      {' '}— sorted from worst (DEFICIT) to best (SURPLUS). DEFICIT states need more provider coverage. BALANCED = 80–130% coverage. SURPLUS = {'>'}130%.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Review the Assignments tab</span>
+                      {' '}— shows which providers are allocated to which states (primary vs. overflow). Use this to confirm no single provider is covering too many states.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Click "Save Run"</span>
+                      {' '}to persist the result. Saved runs appear in the History tab for week-over-week gap trending. Always save before making staffing decisions so there's a record.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Use the Deactivate tab</span>
+                      {' '}— surplus states identified here can be removed from active routing to reduce overhead. Only deactivate if demand is genuinely low for the week.
+                    </li>
+                  </ol>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">For leadership:</span>
+                    {' '}The History chart (Gap vs. Surplus over time) is the key visual for showing supply-demand balance improvement week over week. Export State Results for board-level reporting. A consistent gap in the same states signals a licensing gap — escalate to the License Optimizer.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
 
           {isLoading ? (
             <div className="p-12 text-center text-muted-foreground">Computing assignments…</div>

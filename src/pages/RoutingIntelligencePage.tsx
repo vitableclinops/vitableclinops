@@ -1,16 +1,18 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { Download } from 'lucide-react';
+import { Download, Info, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn, downloadCSV } from '@/lib/utils';
 
@@ -141,6 +143,7 @@ export default function RoutingIntelligencePage() {
   const { data: wasteRows = [], isLoading: loadingWaste } = useWasteData();
   const { data: activeStates = new Set<string>() } = useStateActivation();
   const { data: routingRows = [], isLoading: loadingRouting } = useStateRouting();
+  const [showGuide, setShowGuide] = useState(false);
 
   // ── Waste analysis ──────────────────────────────────────────────────────────
 
@@ -217,6 +220,51 @@ export default function RoutingIntelligencePage() {
               Waste analysis, state routing mix, NP practice authority, and expansion opportunities
             </p>
           </div>
+
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground -mt-2 mb-1 h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="mb-4 bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: identify where provider hours are misrouted or wasted, understand NP scope-of-practice constraints by state, and find the best states to expand licensing into.</p>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Data source:</span>
+                    {' '}This page reads from the same snapshots as the License Optimizer. Recompute there first if data looks stale.
+                  </p>
+                  <div className="space-y-2 text-muted-foreground">
+                    <p className="font-medium text-foreground">Tab-by-tab guide:</p>
+                    <p>
+                      <span className="font-semibold">Waste Analysis</span>
+                      {' '}— "Structural Waste" = licensed capacity sitting in surplus states with no demand. "Routing Gap" = demand exists but not enough providers routed there. The bar chart ranks states by total waste. High structural waste → deactivate or redirect licenses. High routing gap → activate more providers in that state.
+                    </p>
+                    <p>
+                      <span className="font-semibold">State Routing</span>
+                      {' '}— shows scheduled hours from Homebase broken down by provider type (MD/DO vs NP). Use this to check whether high-cost MD/DO hours are concentrated in states where NPs could handle the volume independently. Export to share with finance for cost optimization.
+                    </p>
+                    <p>
+                      <span className="font-semibold">NP Authority Map</span>
+                      {' '}— green = full practice (NPs operate independently, no physician required). Yellow = collaborative agreement needed. Red = physician supervision required. Active states are outlined in blue. Use this map before deciding to activate a new state — restricted states require additional infrastructure (physician agreements, supervision hours).
+                    </p>
+                    <p>
+                      <span className="font-semibold">Expansion Recs</span>
+                      {' '}— deficit states ranked by coverage gap. Providers currently sitting in surplus states are the best licensing candidates for each. States with "Full" authority are fastest/cheapest to activate. Use this list to prioritize the licensing roadmap for leadership.
+                    </p>
+                  </div>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">For leadership:</span>
+                    {' '}Structural waste and routing gap totals are the headline cost-efficiency metrics. Every hour of structural waste is a cost with no revenue offset. Expansion recs give the prioritized list for network growth investment.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
 
           <Tabs defaultValue="waste">
             <TabsList className="flex-wrap h-auto gap-1">
