@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
@@ -26,6 +28,8 @@ import {
   Zap,
   Clock,
   Download,
+  Info,
+  ChevronDown,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -216,6 +220,7 @@ export default function LicenseOptimizerPage() {
   const [view, setView] = useState<'historical' | 'forward'>('historical');
   const [filterState, setFilterState] = useState('');
   const [filterProvider, setFilterProvider] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   const { data: snapshots = [], isLoading, refetch, isRefetching } = useSnapshots(view);
   const { data: lastSync } = useSyncRuns();
@@ -549,6 +554,61 @@ export default function LicenseOptimizerPage() {
               </Button>
             </div>
           </div>
+
+          {/* How to use guide */}
+          <Collapsible open={showGuide} onOpenChange={setShowGuide}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground -mt-2 mb-1 h-7 px-2 text-xs">
+                <Info className="h-3.5 w-3.5" />
+                How to use this page
+                <ChevronDown className={cn('h-3 w-3 transition-transform', showGuide && 'rotate-180')} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <Alert className="mb-4 bg-muted/40 border-border">
+                <AlertDescription className="text-sm space-y-3">
+                  <p className="font-semibold text-foreground">Purpose: evaluate whether each provider's licenses are being used efficiently — identify wasted capacity in over-licensed states and gaps in under-licensed states.</p>
+                  <p className="font-medium text-foreground text-muted-foreground">Weekly refresh workflow (takes ~5 min):</p>
+                  <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                    <li>
+                      <span className="font-medium text-foreground">Sync Homebase</span>
+                      {' '}(top-right button) — pulls the latest provider schedules and shift hours. Do this first every week. The header shows the last sync timestamp.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Upload your Metabase CSVs</span>
+                      {' '}using the upload section at the bottom. Drag all 6 files at once — the system auto-detects each type:{' '}
+                      leftover slots (×2), SLA attainment (×2), provider utilization, daily utilization.
+                      Rename files to include keywords if auto-detect fails (e.g. "sla_attainment.csv", "leftover_visits.csv").
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Click Recompute</span>
+                      {' '}— runs the optimization algorithm against fresh data. The heatmap and KPIs update immediately.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Read the heatmap</span>
+                      {' '}— each cell is a provider × state × date combination. Red = DEFICIT (demand exceeds supply). Blue = SURPLUS (too much capacity). Green = BALANCED. Amber = anomaly (data issue). Use "Historical" view for past performance; "Forward" for planning.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Act on recommendations</span>
+                      {' '}— the right panel lists specific DEACTIVATE actions (providers in surplus states who should be redirected to deficit states). Share these with your scheduling team.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Review wasted hours</span>
+                      {' '}— the left panel shows which providers are burning hours in over-saturated states. These are candidates for reallocation or license expansion into deficit markets.
+                    </li>
+                  </ol>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Quadrant definitions:</span>
+                    {' '}DEFICIT = coverage ratio {'<'} 100% · BALANCED = 100–130% · SURPLUS = {'>'}130% · ANOMALY = missing or inconsistent data (investigate before acting).
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">For leadership:</span>
+                    {' '}"Avg SLA attainment" KPI and "Wasted hrs/day" are the headline metrics for efficiency reporting. Export the state-level table for board decks. Filter by a specific state to drill into its providers.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CollapsibleContent>
+          </Collapsible>
 
           {/* View toggle */}
           <Tabs value={view} onValueChange={v => setView(v as 'historical' | 'forward')}>
