@@ -43,9 +43,6 @@ import {
   Sliders,
   Activity,
   TrendingUp,
-  Network,
-  Cpu,
-  DollarSign,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -105,12 +102,9 @@ const navGroups: NavGroup[] = [
     label: 'Coverage & Ops',
     roles: ['admin', 'pod_lead'],
     items: [
-      { label: 'Ops Dashboard',     icon: Activity,    href: '/admin/ops',              roles: ['admin', 'pod_lead'] },
-      { label: 'Demand Forecast',   icon: TrendingUp,  href: '/admin/demand-forecast',  roles: ['admin'] },
-      { label: 'Utilization',       icon: BarChart3,   href: '/admin/utilization',      roles: ['admin', 'pod_lead'] },
-      { label: 'Routing Intelligence', icon: Network,  href: '/admin/routing',          roles: ['admin'] },
-      { label: 'Matching Engine',   icon: Cpu,         href: '/admin/matching',         roles: ['admin'] },
-      { label: 'Contractor Strategy', icon: DollarSign, href: '/admin/contractor-strategy', roles: ['admin'] },
+      { label: 'Coverage Hub',    icon: Activity,    href: '/admin/ops',             roles: ['admin', 'pod_lead'] },
+      { label: 'Utilization',     icon: BarChart3,   href: '/admin/utilization',     roles: ['admin', 'pod_lead'] },
+      { label: 'Demand Forecast', icon: TrendingUp,  href: '/admin/demand-forecast', roles: ['admin'] },
     ],
   },
   {

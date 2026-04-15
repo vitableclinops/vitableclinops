@@ -11,14 +11,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { cn, downloadCSV } from '@/lib/utils';
 import {
   RefreshCw, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
-  Activity, Target, Download, CalendarDays,
+  Activity, Target, Download, CalendarDays, Plus,
 } from 'lucide-react';
+import { QuickTaskDialog, QuickTaskTarget } from '@/components/admin/QuickTaskDialog';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -258,6 +259,7 @@ export default function OpsDashboardPage() {
   const [filterState, setFilterState] = useState('');
   const [showAll, setShowAll] = useState(false);
   const [showWeekView, setShowWeekView] = useState(false);
+  const [quickTaskTarget, setQuickTaskTarget] = useState<QuickTaskTarget | null>(null);
 
   const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate);
   const { data: lastImportedAt } = useLastSlotImport();
@@ -387,6 +389,13 @@ export default function OpsDashboardPage() {
               <Button variant="outline" size="sm" onClick={() => setSelectedDate(today)}>
                 Today
               </Button>
+              <Button variant="outline" size="sm" onClick={() => {
+                const d = new Date(today + 'T00:00:00');
+                d.setDate(d.getDate() + 1);
+                setSelectedDate(d.toISOString().slice(0, 10));
+              }}>
+                Tomorrow
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isRefetching}>
                 <RefreshCw className={cn('h-4 w-4', isRefetching && 'animate-spin')} />
               </Button>
@@ -500,6 +509,7 @@ export default function OpsDashboardPage() {
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Coverage</th>
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">SLA %</th>
                         <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Status</th>
+                        <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Action</th>
                         {isAdmin && (
                           <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Active</th>
                         )}
@@ -538,6 +548,30 @@ export default function OpsDashboardPage() {
                           </td>
                           <td className="px-4 py-2.5 text-center">
                             <StatusBadge status={row.weekStatus} />
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <Button
+                              variant={
+                                row.weekStatus === 'zero' || row.weekStatus === 'critical'
+                                  ? 'destructive'
+                                  : row.weekStatus === 'low'
+                                  ? 'default'
+                                  : 'ghost'
+                              }
+                              size="sm"
+                              className="h-7 px-2 gap-1 text-xs"
+                              onClick={() =>
+                                setQuickTaskTarget({
+                                  state: row.state,
+                                  status: row.weekStatus,
+                                  slotsToday: row.availableSlots,
+                                  slaTarget: row.slaTargetDaily,
+                                })
+                              }
+                            >
+                              <Plus className="h-3 w-3" />
+                              Task
+                            </Button>
                           </td>
                           {isAdmin && (
                             <td className="px-4 py-2.5 text-center">
@@ -718,6 +752,17 @@ export default function OpsDashboardPage() {
 
         </div>
       </main>
+
+      <QuickTaskDialog
+        open={quickTaskTarget !== null}
+        onClose={() => setQuickTaskTarget(null)}
+        onSuccess={() => {
+          setQuickTaskTarget(null);
+          toast({ title: 'Task queued', description: 'Coverage task added to the task queue.' });
+        }}
+        target={quickTaskTarget}
+        date={selectedDate}
+      />
     </div>
   );
 }
