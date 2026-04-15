@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn, downloadCSV } from '@/lib/utils';
 import {
   RefreshCw, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
-  Activity, Target, Download,
+  Activity, Target, Download, CalendarDays,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -119,6 +119,36 @@ function useOpsData(date: string) {
   });
 }
 
+function useWeekSlots(weekStart: string, activeStates: Set<string>) {
+  // Build the 7 dates Mon–Sun for the given weekStart
+  const dates = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart + 'T00:00:00');
+    d.setDate(d.getDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+
+  return useQuery({
+    queryKey: ['ops_week_slots', weekStart],
+    enabled: activeStates.size > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('state_leftover_slots')
+        .select('state_abbreviation, slot_date, unfilled_slots')
+        .in('slot_date', dates)
+        .eq('window_type', 'historical');
+      if (error) throw error;
+      // Map: state → date → slots
+      const m = new Map<string, Map<string, number>>();
+      for (const r of data ?? []) {
+        if (!m.has(r.state_abbreviation)) m.set(r.state_abbreviation, new Map());
+        m.get(r.state_abbreviation)!.set(r.slot_date, r.unfilled_slots);
+      }
+      return { dates, slotMap: m };
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: WeekStatus }) {
@@ -178,8 +208,20 @@ export default function OpsDashboardPage() {
   const [selectedDate, setSelectedDate] = useState(today);
   const [filterState, setFilterState] = useState('');
   const [showAll, setShowAll] = useState(false);
+  const [showWeekView, setShowWeekView] = useState(false);
 
   const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate);
+
+  const weekStart = getMonday(selectedDate);
+  const activeStateSet = useMemo(
+    () => new Set(rows.filter((r) => r.isActive).map((r) => r.state)),
+    [rows]
+  );
+  const slaTargetMap = useMemo(
+    () => new Map(rows.map((r) => [r.state, r.slaTargetDaily])),
+    [rows]
+  );
+  const { data: weekData } = useWeekSlots(weekStart, activeStateSet);
 
   const toggleActivation = useMutation({
     mutationFn: async ({ state, isActive }: { state: string; isActive: boolean }) => {
@@ -294,6 +336,15 @@ export default function OpsDashboardPage() {
             <span className="text-xs text-muted-foreground hidden sm:block">
               {filtered.length} state{filtered.length !== 1 ? 's' : ''}
             </span>
+            <Button
+              variant={showWeekView ? 'default' : 'outline'}
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setShowWeekView((v) => !v)}
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              Week View
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -411,6 +462,80 @@ export default function OpsDashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Week-level slot heatmap */}
+          {showWeekView && weekData && weekData.slotMap.size > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4" />
+                  Week Coverage Heatmap
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">
+                    {weekStart} – {weekData.dates[6]}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground w-12">State</th>
+                        {weekData.dates.map((d) => (
+                          <th key={d} className="px-2 py-2 text-center font-medium text-muted-foreground">
+                            {new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
+                            <div className="text-[10px] font-normal">{d.slice(5)}</div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...weekData.slotMap.entries()]
+                        .filter(([state]) => activeStateSet.has(state))
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([state, dayMap]) => {
+                          const target = slaTargetMap.get(state) ?? null;
+                          return (
+                            <tr key={state} className="border-b">
+                              <td className="px-3 py-1.5 font-semibold">{state}</td>
+                              {weekData.dates.map((d) => {
+                                const slots = dayMap.get(d) ?? null;
+                                const ratio = slots != null && target != null && target > 0
+                                  ? slots / target : null;
+                                return (
+                                  <td key={d} className="px-1 py-1 text-center">
+                                    <div
+                                      className={cn(
+                                        'mx-auto rounded px-1.5 py-0.5 font-mono text-[11px] min-w-[28px]',
+                                        slots == null
+                                          ? 'text-muted-foreground bg-muted/30'
+                                          : ratio == null
+                                            ? 'bg-muted/30 text-foreground'
+                                            : ratio >= 1
+                                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                              : ratio >= 0.5
+                                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300'
+                                                : 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300',
+                                      )}
+                                      title={slots != null ? `${slots} slots${target != null ? ` / ${target} target` : ''}` : 'No data'}
+                                    >
+                                      {slots ?? '—'}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-muted-foreground px-4 pb-3 pt-2">
+                  Green = at/above target · Yellow = 50–99% · Red = below 50% · — = no data
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* SLA attainment heat grid */}
           {rows.some((r) => r.slaPct !== null) && (
