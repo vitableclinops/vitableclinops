@@ -88,6 +88,19 @@ shadcn-ui primitives live in `src/components/ui/`. New primitive components shou
 
 `downloadCSV` in `src/lib/utils.ts` — converts an array of flat objects to a downloaded CSV file.
 
+#### Ops page feature inventory
+
+| Page | Key features |
+|------|-------------|
+| OpsDashboard | status KPIs, coverage table, week heatmap, SLA trend chart (lowest-SLA states), last-slot-import timestamp, CSV export |
+| DemandForecast | network bar chart, per-state trend lines (top 10), week selector, WoW delta, CSV export |
+| DemandMatching | greedy matching algorithm, assignments + state results tabs, gap/surplus history bar chart, save-run + run detail drill-down, deactivate-all, CSV exports |
+| Utilization | daily trend line, provider table with progress bars, CSV export |
+| RoutingIntelligence | waste chart (structural vs routing gap), state routing table with CSV export, NP authority map, expansion recs |
+| ContractorStrategy | make-vs-buy analysis, compliance tracker with CSV export, DS intake checklist, coverage bridge plan with CSV export |
+| StateDetailPage | ops coverage card (active status, today's slots, SLA %) in sidebar |
+| AdminDashboard | coverage health pill (ok/low/critical/zero/noData), ops quick-links grid |
+
 ### Key Provider Types
 
 `NP` (Nurse Practitioner) — requires collaborative agreement and prescriptive authority per state  
