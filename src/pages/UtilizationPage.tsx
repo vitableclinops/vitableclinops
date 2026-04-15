@@ -11,8 +11,8 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { RefreshCw } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { RefreshCw, Download } from 'lucide-react';
+import { cn, downloadCSV } from '@/lib/utils';
 
 // ── Tiers ─────────────────────────────────────────────────────────────────────
 
@@ -225,6 +225,28 @@ export default function UtilizationPage() {
             <CardHeader className="flex flex-row items-center gap-3 flex-wrap">
               <CardTitle className="text-base flex-1">Provider Utilization</CardTitle>
               <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() =>
+                    downloadCSV(
+                      filtered.map((p: any) => ({
+                        provider_name: p.provider_name,
+                        total_timeslots: p.total_timeslots ?? '',
+                        avg_utilization_pct: Number(p.avg_utilization_pct || 0).toFixed(1),
+                        tier: getTier(Number(p.avg_utilization_pct) || 0),
+                        window_start: p.window_start ?? '',
+                        window_end: p.window_end ?? '',
+                      })),
+                      'provider-utilization.csv'
+                    )
+                  }
+                  disabled={filtered.length === 0}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </Button>
                 {(['all', 'high', 'mid', 'low'] as const).map((t) => (
                   <button
                     key={t}

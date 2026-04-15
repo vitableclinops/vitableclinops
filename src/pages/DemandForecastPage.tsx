@@ -11,9 +11,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts';
-import { Upload, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Upload, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Download } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { cn, downloadCSV } from '@/lib/utils';
 
 const LINE_COLORS = [
   '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6',
@@ -361,6 +361,31 @@ export default function DemandForecastPage() {
             <CardHeader className="flex flex-row items-center gap-3 flex-wrap">
               <CardTitle className="text-base flex-1">Forecast by State</CardTitle>
               <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() =>
+                    downloadCSV(
+                      filtered.map((r) => {
+                        const prior = priorMap.get(r.state_abbreviation);
+                        return {
+                          state: r.state_abbreviation,
+                          week_start: r.week_start,
+                          projected_visits: r.projected_visits,
+                          vs_prior_week: prior != null ? r.projected_visits - prior : '',
+                          hours_needed: hoursNeeded(r.projected_visits),
+                          daily_sla_target: slaTargetDaily(r.projected_visits),
+                        };
+                      }),
+                      `demand-forecast-${selectedWeek !== 'all' ? selectedWeek : 'all'}.csv`
+                    )
+                  }
+                  disabled={filtered.length === 0}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </Button>
                 <Select
                   value={selectedWeek}
                   onValueChange={(v) => setSelectedWeek(v as string)}

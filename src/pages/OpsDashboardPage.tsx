@@ -10,10 +10,10 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
+import { cn, downloadCSV } from '@/lib/utils';
 import {
   RefreshCw, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
-  Activity, Target,
+  Activity, Target, Download,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -291,9 +291,32 @@ export default function OpsDashboardPage() {
               onChange={(e) => setFilterState(e.target.value)}
               className="max-w-48"
             />
-            <span className="text-xs text-muted-foreground ml-auto hidden sm:block">
+            <span className="text-xs text-muted-foreground hidden sm:block">
               {filtered.length} state{filtered.length !== 1 ? 's' : ''}
             </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto gap-1.5"
+              onClick={() =>
+                downloadCSV(
+                  filtered.map((r) => ({
+                    state: r.state,
+                    is_active: r.isActive,
+                    available_slots: r.availableSlots ?? '',
+                    sla_target_daily: r.slaTargetDaily ?? '',
+                    coverage_pct: r.coverageRatio != null
+                      ? `${(r.coverageRatio * 100).toFixed(0)}%` : '',
+                    sla_pct: r.slaPct != null ? `${r.slaPct.toFixed(1)}%` : '',
+                    status: r.weekStatus,
+                  })),
+                  `ops-coverage-${selectedDate}.csv`
+                )
+              }
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </Button>
           </div>
 
           {/* State coverage table */}
