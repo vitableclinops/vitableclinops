@@ -58,7 +58,7 @@ shadcn-ui primitives live in `src/components/ui/`. New primitive components shou
 
 ### Domain Overview
 
-- **Admin Dashboard** (`/admin`) — overview for `admin` and `pod_lead` roles
+- **Admin Dashboard** (`/admin`) — overview for `admin` and `pod_lead` roles; includes live ops coverage health pill
 - **Provider Dashboard** (`/provider`) — task tracking for individual providers
 - **State Compliance** (`/admin/states`, `/states/:stateAbbr`) — per-state licensing rules
 - **Collaborative Agreements** (`/admin/agreements`) — NP–physician supervision agreements
@@ -68,6 +68,25 @@ shadcn-ui primitives live in `src/components/ui/`. New primitive components shou
 - **Hiring Pipeline** (`/admin/hiring`) — recruitment tracking
 - **Calendar** (`/admin/calendar`) — scheduling and meeting management
 - **Task Repository** (`/admin/tasks`) — reusable task templates
+
+#### Coverage & Ops tools (admin only)
+
+- **Ops Dashboard** (`/admin/ops`) — daily state coverage status (slots vs. SLA target), week heatmap toggle, state activation switches, CSV export
+- **Demand Forecast** (`/admin/demand-forecast`) — weekly projected visits per state, state trend lines chart, WoW delta, week selector, CSV export
+- **Utilization** (`/admin/utilization`) — provider-level utilization snapshots, daily trend chart, tier filtering, CSV export
+- **Routing Intelligence** (`/admin/routing`) — waste analysis, NP practice authority map, state routing mix, expansion recommendations
+- **Demand Matching Engine** (`/admin/matching`) — greedy provider–state assignment engine, save run → `matching_engine_runs`+`matching_assignments`, run history with drill-down, "Deactivate All" candidates action
+- **License Optimizer** (`/admin/license-optimizer`) — supply/demand heatmap, bulk CSV upload (auto-detects file type), recompute snapshots, CSV export
+- **Contractor Strategy** (`/admin/contractor-strategy`) — DS make-vs-buy analysis, compliance doc tracker, intake checklist, coverage bridge plan
+- **System Settings** (`/admin/settings`) — bulk import tabs (provider/licensure/supervision/SLA/slots), role management, Homebase sync with name mappings CRUD
+
+#### Key tables added (not in generated types by default)
+
+`contractor_compliance_docs`, `demand_forecast`, `matching_assignments`, `matching_engine_runs`, `provider_ops_info`, `utilization_daily` — all manually added to `src/integrations/supabase/types.ts`.
+
+#### Shared utilities
+
+`downloadCSV` in `src/lib/utils.ts` — converts an array of flat objects to a downloaded CSV file.
 
 ### Key Provider Types
 
