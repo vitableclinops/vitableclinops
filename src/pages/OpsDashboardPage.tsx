@@ -19,19 +19,21 @@ import { useToast } from '@/hooks/use-toast';
 import { cn, downloadCSV } from '@/lib/utils';
 import {
   RefreshCw, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
-  Activity, Target, Download, CalendarDays, Plus, Info, ChevronDown,
+  Activity, Target, Download, CalendarDays, Plus, Info, ChevronDown, Zap,
 } from 'lucide-react';
 import { QuickTaskDialog, QuickTaskTarget } from '@/components/admin/QuickTaskDialog';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type WeekStatus = 'ok' | 'low' | 'critical' | 'zero' | 'no_data';
+type SlotSource = 'historical' | 'forecast' | null;
 
 interface StateOpsRow {
   state: string;
   isActive: boolean;
   availableSlots: number | null;
   hasSlotData: boolean;
+  slotSource: SlotSource;
   slaTargetDaily: number | null;
   slaPct: number | null;
   weekStatus: WeekStatus;
@@ -72,11 +74,12 @@ function useOpsData(date: string) {
 
       const [activationsRes, slotsRes, slaRes, forecastRes] = await Promise.all([
         supabase.from('state_activation').select('state_abbreviation, is_active'),
+        // Query both historical (Metabase) and forecast (Homebase-derived); prefer historical
         supabase
           .from('state_leftover_slots')
-          .select('state_abbreviation, unfilled_slots')
+          .select('state_abbreviation, unfilled_slots, window_type')
           .eq('slot_date', date)
-          .eq('window_type', 'historical'),
+          .in('window_type', ['historical', 'forecast']),
         supabase
           .from('state_sla_attainment')
           .select('state_abbreviation, sla_pct, created_at')
@@ -89,9 +92,17 @@ function useOpsData(date: string) {
 
       const activations = activationsRes.data ?? [];
 
-      const slotsByState = new Map<string, number>(
-        (slotsRes.data ?? []).map((r) => [r.state_abbreviation, r.unfilled_slots])
-      );
+      // Prefer historical (Metabase) over forecast (Homebase) for same state/date
+      const slotsByState = new Map<string, { slots: number; source: SlotSource }>();
+      for (const r of slotsRes.data ?? []) {
+        const existing = slotsByState.get(r.state_abbreviation);
+        if (!existing || existing.source === 'forecast') {
+          slotsByState.set(r.state_abbreviation, {
+            slots: r.unfilled_slots,
+            source: r.window_type as SlotSource,
+          });
+        }
+      }
 
       // Use most-recent SLA attainment per state (ordered by created_at desc)
       const slaByState = new Map<string, number>();
@@ -107,8 +118,10 @@ function useOpsData(date: string) {
 
       return activations.map((a) => {
         const state = a.state_abbreviation;
-        const hasSlotData = slotsByState.has(state);
-        const available = hasSlotData ? slotsByState.get(state)! : null;
+        const slotEntry = slotsByState.get(state) ?? null;
+        const hasSlotData = slotEntry !== null;
+        const available = slotEntry?.slots ?? null;
+        const slotSource = slotEntry?.source ?? null;
         const visits = forecastByState.get(state) ?? null;
         const slaTarget = visits !== null ? slaTargetFromVisits(visits) : null;
         const slaPct = slaByState.get(state) ?? null;
@@ -119,6 +132,7 @@ function useOpsData(date: string) {
           isActive: a.is_active,
           availableSlots: available,
           hasSlotData,
+          slotSource,
           slaTargetDaily: slaTarget !== null ? Math.round(slaTarget) : null,
           slaPct,
           weekStatus: computeWeekStatus(available, hasSlotData, slaTarget),
@@ -144,15 +158,19 @@ function useWeekSlots(weekStart: string, activeStates: Set<string>) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('state_leftover_slots')
-        .select('state_abbreviation, slot_date, unfilled_slots')
+        .select('state_abbreviation, slot_date, unfilled_slots, window_type')
         .in('slot_date', dates)
-        .eq('window_type', 'historical');
+        .in('window_type', ['historical', 'forecast']);
       if (error) throw error;
-      // Map: state → date → slots
-      const m = new Map<string, Map<string, number>>();
+      // Map: state → date → { slots, source }; prefer historical over forecast
+      const m = new Map<string, Map<string, { slots: number; source: SlotSource }>>();
       for (const r of data ?? []) {
         if (!m.has(r.state_abbreviation)) m.set(r.state_abbreviation, new Map());
-        m.get(r.state_abbreviation)!.set(r.slot_date, r.unfilled_slots);
+        const dayMap = m.get(r.state_abbreviation)!;
+        const existing = dayMap.get(r.slot_date);
+        if (!existing || existing.source === 'forecast') {
+          dayMap.set(r.slot_date, { slots: r.unfilled_slots, source: r.window_type as SlotSource });
+        }
       }
       return { dates, slotMap: m };
     },
@@ -318,6 +336,21 @@ export default function OpsDashboardPage() {
     return { slaTrendData: trendData, slaTrendStates: bottomStates };
   }, [slaTrendRaw]);
 
+  const refreshAvailability = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.functions.invoke('compute-availability-slots', {
+        body: { days_back: 7, days_ahead: 14 },
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ops_dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['ops_week_slots'] });
+      toast({ title: 'Availability refreshed', description: 'Homebase forecast slots updated from latest shifts.' });
+    },
+    onError: (e: Error) => toast({ title: 'Refresh failed', description: e.message, variant: 'destructive' }),
+  });
+
   const toggleActivation = useMutation({
     mutationFn: async ({ state, isActive }: { state: string; isActive: boolean }) => {
       const { error } = await supabase
@@ -377,9 +410,12 @@ export default function OpsDashboardPage() {
                 Daily state-level coverage and SLA status
                 {lastImportedAt && (
                   <span className="ml-2 text-xs">
-                    · slot data imported {new Date(lastImportedAt).toLocaleString()}
+                    · Metabase data imported {new Date(lastImportedAt).toLocaleString()}
                   </span>
                 )}
+                <span className="ml-2 text-xs inline-flex items-center gap-1">
+                  · <span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-medium"><Zap className="h-2.5 w-2.5" />HB</span> = Homebase forecast
+                </span>
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -402,6 +438,19 @@ export default function OpsDashboardPage() {
               <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isRefetching}>
                 <RefreshCw className={cn('h-4 w-4', isRefetching && 'animate-spin')} />
               </Button>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => refreshAvailability.mutate()}
+                  disabled={refreshAvailability.isPending}
+                  title="Re-derive forecast slots from current Homebase shifts"
+                >
+                  <Zap className={cn('h-3.5 w-3.5', refreshAvailability.isPending && 'animate-pulse')} />
+                  {refreshAvailability.isPending ? 'Refreshing…' : 'Refresh Availability'}
+                </Button>
+              )}
               {isAdmin && (
                 <Button
                   variant="outline"
@@ -529,6 +578,7 @@ export default function OpsDashboardPage() {
                     state: r.state,
                     is_active: r.isActive,
                     available_slots: r.availableSlots ?? '',
+                    slot_data_source: r.slotSource ?? 'no_data',
                     sla_target_daily: r.slaTargetDaily ?? '',
                     coverage_pct: r.coverageRatio != null
                       ? `${(r.coverageRatio * 100).toFixed(0)}%` : '',
@@ -601,7 +651,18 @@ export default function OpsDashboardPage() {
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono">
-                            {row.availableSlots ?? <span className="text-muted-foreground">—</span>}
+                            <div className="flex items-center justify-end gap-1.5">
+                              {row.availableSlots ?? <span className="text-muted-foreground">—</span>}
+                              {row.slotSource === 'forecast' && (
+                                <span
+                                  title="Homebase forecast — projected from scheduled shifts. Upload Metabase CSV to replace with actuals."
+                                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                >
+                                  <Zap className="h-2.5 w-2.5" />
+                                  HB
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">
                             {row.slaTargetDaily ?? '—'}
@@ -698,7 +759,9 @@ export default function OpsDashboardPage() {
                             <tr key={state} className="border-b">
                               <td className="px-3 py-1.5 font-semibold">{state}</td>
                               {weekData.dates.map((d) => {
-                                const slots = dayMap.get(d) ?? null;
+                                const entry = dayMap.get(d) ?? null;
+                                const slots = entry?.slots ?? null;
+                                const isForecast = entry?.source === 'forecast';
                                 const ratio = slots != null && target != null && target > 0
                                   ? slots / target : null;
                                 return (
@@ -706,6 +769,7 @@ export default function OpsDashboardPage() {
                                     <div
                                       className={cn(
                                         'mx-auto rounded px-1.5 py-0.5 font-mono text-[11px] min-w-[28px]',
+                                        isForecast && 'ring-1 ring-blue-300 dark:ring-blue-700',
                                         slots == null
                                           ? 'text-muted-foreground bg-muted/30'
                                           : ratio == null
@@ -716,7 +780,11 @@ export default function OpsDashboardPage() {
                                                 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300'
                                                 : 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300',
                                       )}
-                                      title={slots != null ? `${slots} slots${target != null ? ` / ${target} target` : ''}` : 'No data'}
+                                      title={
+                                        slots != null
+                                          ? `${slots} slots${target != null ? ` / ${target} target` : ''}${isForecast ? ' (Homebase forecast)' : ''}`
+                                          : 'No data'
+                                      }
                                     >
                                       {slots ?? '—'}
                                     </div>
@@ -730,7 +798,7 @@ export default function OpsDashboardPage() {
                   </table>
                 </div>
                 <p className="text-xs text-muted-foreground px-4 pb-3 pt-2">
-                  Green = at/above target · Yellow = 50–99% · Red = below 50% · — = no data
+                  Green = at/above target · Yellow = 50–99% · Red = below 50% · — = no data · Blue outline = Homebase forecast (upload Metabase CSV to replace)
                 </p>
               </CardContent>
             </Card>

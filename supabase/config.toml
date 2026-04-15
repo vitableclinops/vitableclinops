@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.compute-license-utilization]
 verify_jwt = false
+
+[functions.compute-availability-slots]
+verify_jwt = false
