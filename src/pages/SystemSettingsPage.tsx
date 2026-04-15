@@ -10,7 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Building2, Info, BookOpen, FileCheck, Shield, Users, Settings, ArrowLeft, RefreshCw, Link2, XCircle, Clock } from 'lucide-react';
+import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Database, Building2, Info, BookOpen, FileCheck, Shield, Users, Settings, ArrowLeft, RefreshCw, Link2, XCircle, Clock, Activity } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -118,6 +118,19 @@ export default function SystemSettingsPage() {
   const medallionInputRef = useRef<HTMLInputElement>(null);
   const notionInputRef = useRef<HTMLInputElement>(null);
   const supervisionsInputRef = useRef<HTMLInputElement>(null);
+
+  // ========== SLA / Slots import state ==========
+  const [slaFile, setSlaFile] = useState<File | null>(null);
+  const [slaWindowLabel, setSlaWindowLabel] = useState<'feb2026_current' | 'past_2_weeks'>('past_2_weeks');
+  const [slaLoading, setSlaLoading] = useState(false);
+  const [slaResult, setSlaResult] = useState<{ inserted: number; errors: string[] } | null>(null);
+  const slaInputRef = useRef<HTMLInputElement>(null);
+
+  const [slotsFile, setSlotsFile] = useState<File | null>(null);
+  const [slotsWindowType, setSlotsWindowType] = useState<'historical' | 'forecast'>('historical');
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsResult, setSlotsResult] = useState<{ inserted: number; errors: string[] } | null>(null);
+  const slotsInputRef = useRef<HTMLInputElement>(null);
 
   // ========== Homebase Tab State ==========
   const [syncLoading, setSyncLoading] = useState(false);
@@ -281,6 +294,65 @@ export default function SystemSettingsPage() {
   const filteredMappings = (nameMappings ?? []).filter(
     (m) => !mappingSearch || m.homebase_name.toLowerCase().includes(mappingSearch.toLowerCase())
   );
+
+  // ========== SLA Import ==========
+  const handleSlaImport = async () => {
+    if (!slaFile) return;
+    setSlaLoading(true);
+    setSlaResult(null);
+    Papa.parse(slaFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const rows = (results.data as any[]).map((r) => ({
+            state: r['State'] ?? r['state'] ?? '',
+            sla: r['SLA Attainment Rate'] ?? r['SLA'] ?? r['sla'] ?? '',
+          })).filter((r) => r.state);
+          const { data, error } = await supabase.functions.invoke('import-sla-attainment', {
+            body: { rows, window_label: slaWindowLabel },
+          });
+          if (error) throw error;
+          setSlaResult({ inserted: data?.inserted ?? rows.length, errors: data?.errors ?? [] });
+          toast({ title: 'SLA import complete', description: `${data?.inserted ?? rows.length} rows inserted` });
+        } catch (e: any) {
+          toast({ title: 'SLA import failed', description: e.message, variant: 'destructive' });
+        } finally {
+          setSlaLoading(false);
+        }
+      },
+    });
+  };
+
+  // ========== Slots Import ==========
+  const handleSlotsImport = async () => {
+    if (!slotsFile) return;
+    setSlotsLoading(true);
+    setSlotsResult(null);
+    Papa.parse(slotsFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const rows = (results.data as any[]).map((r) => ({
+            state: r['State'] ?? r['state'] ?? '',
+            date: r['Day'] ?? r['Date'] ?? r['date'] ?? '',
+            slots: Number(r['Sum of same_next_day_available_slots'] ?? r['slots'] ?? r['Slots'] ?? 0),
+          })).filter((r) => r.state && r.date);
+          const { data, error } = await supabase.functions.invoke('import-leftover-slots', {
+            body: { rows, window_type: slotsWindowType },
+          });
+          if (error) throw error;
+          setSlotsResult({ inserted: data?.inserted ?? rows.length, errors: data?.errors ?? [] });
+          toast({ title: 'Slots import complete', description: `${data?.inserted ?? rows.length} rows inserted` });
+        } catch (e: any) {
+          toast({ title: 'Slots import failed', description: e.message, variant: 'destructive' });
+        } finally {
+          setSlotsLoading(false);
+        }
+      },
+    });
+  };
 
   // ========== Import Logic ==========
   const handleFileSelect = (file: File, type: 'medallion' | 'notion') => {
@@ -511,7 +583,7 @@ export default function SystemSettingsPage() {
               </Alert>
 
               <Tabs defaultValue="medallion" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-5">
                   <TabsTrigger value="medallion" className="flex items-center gap-2">
                     <Building2 className="h-4 w-4" />
                     Medallion
@@ -523,6 +595,14 @@ export default function SystemSettingsPage() {
                   <TabsTrigger value="supervisions" className="flex items-center gap-2">
                     <FileCheck className="h-4 w-4" />
                     Supervisions
+                  </TabsTrigger>
+                  <TabsTrigger value="sla" className="flex items-center gap-2">
+                    <Activity className="h-4 w-4" />
+                    SLA Data
+                  </TabsTrigger>
+                  <TabsTrigger value="slots" className="flex items-center gap-2">
+                    <Database className="h-4 w-4" />
+                    Slot Data
                   </TabsTrigger>
                 </TabsList>
 
@@ -675,6 +755,141 @@ export default function SystemSettingsPage() {
                     </CardContent>
                   </Card>
                 </TabsContent>
+
+                {/* SLA Attainment */}
+                <TabsContent value="sla" className="space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Activity className="h-5 w-5" />
+                        SLA Attainment Data
+                      </CardTitle>
+                      <CardDescription>
+                        Upload Metabase SLA CSV — columns: State, SLA Attainment Rate
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <Select value={slaWindowLabel} onValueChange={(v) => setSlaWindowLabel(v as any)}>
+                          <SelectTrigger className="w-56">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="past_2_weeks">Past 2 Weeks</SelectItem>
+                            <SelectItem value="feb2026_current">Feb 2026 → Current</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span className="text-sm text-muted-foreground">window</span>
+                      </div>
+
+                      <input ref={slaInputRef} type="file" accept=".csv" className="hidden"
+                        onChange={(e) => { setSlaFile(e.target.files?.[0] ?? null); setSlaResult(null); }} />
+
+                      {slaFile ? (
+                        <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
+                          <div>
+                            <p className="font-medium">{slaFile.name}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Badge variant="secondary"><CheckCircle2 className="h-3 w-3 mr-1" />Ready</Badge>
+                            <Button variant="ghost" size="sm" onClick={() => { setSlaFile(null); setSlaResult(null); }}>Remove</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button variant="outline" className="w-full h-24 border-dashed" onClick={() => slaInputRef.current?.click()}>
+                          <div className="flex flex-col items-center gap-2">
+                            <Upload className="h-6 w-6 text-muted-foreground" />
+                            <span>Upload SLA attainment CSV</span>
+                          </div>
+                        </Button>
+                      )}
+
+                      {slaFile && !slaResult && (
+                        <Button onClick={handleSlaImport} disabled={slaLoading} className="w-full">
+                          {slaLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : 'Import SLA Data'}
+                        </Button>
+                      )}
+
+                      {slaResult && (
+                        <Alert variant={slaResult.errors.length > 0 ? 'destructive' : 'default'}>
+                          <CheckCircle2 className="h-4 w-4" />
+                          <AlertTitle>{slaResult.inserted} rows inserted</AlertTitle>
+                          {slaResult.errors.length > 0 && (
+                            <AlertDescription>{slaResult.errors.slice(0, 5).join(', ')}</AlertDescription>
+                          )}
+                        </Alert>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Leftover Slots */}
+                <TabsContent value="slots" className="space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Database className="h-5 w-5" />
+                        Slot Availability Data
+                      </CardTitle>
+                      <CardDescription>
+                        Upload Metabase leftover slots CSV — columns: State, Day, Sum of same_next_day_available_slots
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <Select value={slotsWindowType} onValueChange={(v) => setSlotsWindowType(v as any)}>
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="historical">Historical</SelectItem>
+                            <SelectItem value="forecast">Forecast</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span className="text-sm text-muted-foreground">window type</span>
+                      </div>
+
+                      <input ref={slotsInputRef} type="file" accept=".csv" className="hidden"
+                        onChange={(e) => { setSlotsFile(e.target.files?.[0] ?? null); setSlotsResult(null); }} />
+
+                      {slotsFile ? (
+                        <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
+                          <div>
+                            <p className="font-medium">{slotsFile.name}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Badge variant="secondary"><CheckCircle2 className="h-3 w-3 mr-1" />Ready</Badge>
+                            <Button variant="ghost" size="sm" onClick={() => { setSlotsFile(null); setSlotsResult(null); }}>Remove</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button variant="outline" className="w-full h-24 border-dashed" onClick={() => slotsInputRef.current?.click()}>
+                          <div className="flex flex-col items-center gap-2">
+                            <Upload className="h-6 w-6 text-muted-foreground" />
+                            <span>Upload slot availability CSV</span>
+                          </div>
+                        </Button>
+                      )}
+
+                      {slotsFile && !slotsResult && (
+                        <Button onClick={handleSlotsImport} disabled={slotsLoading} className="w-full">
+                          {slotsLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : 'Import Slot Data'}
+                        </Button>
+                      )}
+
+                      {slotsResult && (
+                        <Alert variant={slotsResult.errors.length > 0 ? 'destructive' : 'default'}>
+                          <CheckCircle2 className="h-4 w-4" />
+                          <AlertTitle>{slotsResult.inserted} rows inserted</AlertTitle>
+                          {slotsResult.errors.length > 0 && (
+                            <AlertDescription>{slotsResult.errors.slice(0, 5).join(', ')}</AlertDescription>
+                          )}
+                        </Alert>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
               </Tabs>
             </TabsContent>
 
