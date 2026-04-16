@@ -131,7 +131,7 @@ export class HomebaseClient {
     locationUuid: string,
     startDate: string,
     endDate: string,
-    { perPage = 200 } = {}
+    { perPage = 100 } = {}
   ): AsyncGenerator<HBShift> {
     let page = 1;
     while (true) {
