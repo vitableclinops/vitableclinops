@@ -22,6 +22,8 @@ import {
   Activity, Target, Download, CalendarDays, Plus, Info, ChevronDown, Zap,
 } from 'lucide-react';
 import { QuickTaskDialog, QuickTaskTarget } from '@/components/admin/QuickTaskDialog';
+import { useProviderCoverage } from '@/hooks/useProviderCoverage';
+import { ProviderCoverageTable } from '@/components/ops/ProviderCoverageTable';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
