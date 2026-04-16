@@ -750,6 +750,7 @@ export default function OpsDashboardPage() {
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Week-level slot heatmap */}
           {showWeekView && weekData && weekData.slotMap.size > 0 && (
