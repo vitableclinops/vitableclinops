@@ -283,6 +283,7 @@ export default function OpsDashboardPage() {
   const [showWeekView, setShowWeekView] = useState(false);
   const [quickTaskTarget, setQuickTaskTarget] = useState<QuickTaskTarget | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [viewMode, setViewMode] = useState<'by_state' | 'by_provider'>('by_state');
 
   const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate);
   const { data: lastImportedAt } = useLastSlotImport();
