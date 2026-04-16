@@ -2509,6 +2509,33 @@ export type Database = {
           },
         ]
       }
+      pcp_state_coverage: {
+        Row: {
+          coverage_pct: number | null
+          id: string
+          imported_at: string
+          pcp_count: number | null
+          report_date: string
+          state_abbreviation: string
+        }
+        Insert: {
+          coverage_pct?: number | null
+          id?: string
+          imported_at?: string
+          pcp_count?: number | null
+          report_date: string
+          state_abbreviation: string
+        }
+        Update: {
+          coverage_pct?: number | null
+          id?: string
+          imported_at?: string
+          pcp_count?: number | null
+          report_date?: string
+          state_abbreviation?: string
+        }
+        Relationships: []
+      }
       pods: {
         Row: {
           created_at: string
@@ -2785,6 +2812,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      provider_appointment_count: {
+        Row: {
+          appointment_count: number
+          id: string
+          imported_at: string
+          provider_name_raw: string
+          report_date: string
+        }
+        Insert: {
+          appointment_count?: number
+          id?: string
+          imported_at?: string
+          provider_name_raw: string
+          report_date: string
+        }
+        Update: {
+          appointment_count?: number
+          id?: string
+          imported_at?: string
+          provider_name_raw?: string
+          report_date?: string
+        }
+        Relationships: []
       }
       provider_license_applications: {
         Row: {
@@ -3415,6 +3466,27 @@ export type Database = {
         }
         Relationships: []
       }
+      sla_attainment_aggregate: {
+        Row: {
+          avg_sla_pct: number
+          id: string
+          imported_at: string
+          report_date: string
+        }
+        Insert: {
+          avg_sla_pct: number
+          id?: string
+          imported_at?: string
+          report_date: string
+        }
+        Update: {
+          avg_sla_pct?: number
+          id?: string
+          imported_at?: string
+          report_date?: string
+        }
+        Relationships: []
+      }
       state_activation: {
         Row: {
           created_at: string
@@ -3863,6 +3935,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      telemedicine_availability: {
+        Row: {
+          availability_pct: number | null
+          available_count: number | null
+          id: string
+          imported_at: string
+          report_date: string
+          state_abbreviation: string
+        }
+        Insert: {
+          availability_pct?: number | null
+          available_count?: number | null
+          id?: string
+          imported_at?: string
+          report_date: string
+          state_abbreviation: string
+        }
+        Update: {
+          availability_pct?: number | null
+          available_count?: number | null
+          id?: string
+          imported_at?: string
+          report_date?: string
+          state_abbreviation?: string
+        }
+        Relationships: []
       }
       transfer_activity_log: {
         Row: {
