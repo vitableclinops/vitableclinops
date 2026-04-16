@@ -753,7 +753,7 @@ export default function OpsDashboardPage() {
           )}
 
           {/* Week-level slot heatmap */}
-          {showWeekView && weekData && weekData.slotMap.size > 0 && (
+          {viewMode === 'by_state' && showWeekView && weekData && weekData.slotMap.size > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
