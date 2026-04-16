@@ -104,10 +104,10 @@ function useProvidersWithoutLicenses() {
     queryKey: ['dq_providers_no_licenses'],
     queryFn: async () => {
       // Get all active providers
-      const { data: profiles, error: profilesError } = await supabase
+      const query = supabase
         .from('profiles')
-        .select('id, full_name, first_name, last_name, credentials')
-        .eq('is_active' as any, true);
+        .select('id, full_name, first_name, last_name, credentials');
+      const { data: profiles, error: profilesError } = await (query as any).eq('is_active', true);
       if (profilesError) throw profilesError;
 
       if (!profiles || profiles.length === 0) return [];
