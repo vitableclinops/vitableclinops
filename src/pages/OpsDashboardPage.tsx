@@ -548,18 +548,28 @@ export default function OpsDashboardPage() {
 
           {/* Filter row */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Tabs value={showAll ? 'all' : 'active'} onValueChange={(v) => setShowAll(v === 'all')}>
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'by_state' | 'by_provider')}>
               <TabsList>
-                <TabsTrigger value="active">Active States</TabsTrigger>
-                <TabsTrigger value="all">All States</TabsTrigger>
+                <TabsTrigger value="by_state">By State</TabsTrigger>
+                <TabsTrigger value="by_provider">By Provider</TabsTrigger>
               </TabsList>
             </Tabs>
-            <Input
-              placeholder="Filter by state…"
-              value={filterState}
-              onChange={(e) => setFilterState(e.target.value)}
-              className="max-w-48"
-            />
+            {viewMode === 'by_state' && (
+              <Tabs value={showAll ? 'all' : 'active'} onValueChange={(v) => setShowAll(v === 'all')}>
+                <TabsList>
+                  <TabsTrigger value="active">Active States</TabsTrigger>
+                  <TabsTrigger value="all">All States</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
+            {viewMode === 'by_state' && (
+              <Input
+                placeholder="Filter by state…"
+                value={filterState}
+                onChange={(e) => setFilterState(e.target.value)}
+                className="max-w-48"
+              />
+            )}
             <span className="text-xs text-muted-foreground hidden sm:block">
               {filtered.length} state{filtered.length !== 1 ? 's' : ''}
             </span>
