@@ -44,6 +44,9 @@ import {
   Activity,
   TrendingUp,
   ShieldCheck,
+  Target,
+  Wifi,
+  CalendarCheck,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -104,9 +107,13 @@ const navGroups: NavGroup[] = [
     label: 'Coverage & Ops',
     roles: ['admin', 'pod_lead'],
     items: [
-      { label: 'Coverage Hub',    icon: Activity,    href: '/admin/ops',             roles: ['admin', 'pod_lead'] },
-      { label: 'Utilization',     icon: BarChart3,   href: '/admin/utilization',     roles: ['admin', 'pod_lead'] },
-      { label: 'Demand Forecast', icon: TrendingUp,  href: '/admin/demand-forecast', roles: ['admin'] },
+      { label: 'Coverage Hub',           icon: Activity,      href: '/admin/ops',                          roles: ['admin', 'pod_lead'] },
+      { label: 'Utilization',            icon: BarChart3,     href: '/admin/utilization',                  roles: ['admin', 'pod_lead'] },
+      { label: 'Demand Forecast',        icon: TrendingUp,    href: '/admin/demand-forecast',              roles: ['admin'] },
+      { label: 'SLA Average',            icon: Target,        href: '/admin/sla-aggregate',                roles: ['admin', 'pod_lead'] },
+      { label: 'Telemedicine Avail.',    icon: Wifi,          href: '/admin/telemedicine-availability',    roles: ['admin', 'pod_lead'] },
+      { label: 'PCP Coverage',           icon: Stethoscope,   href: '/admin/pcp-coverage',                 roles: ['admin', 'pod_lead'] },
+      { label: 'Provider Appointments',  icon: CalendarCheck, href: '/admin/provider-appointments',        roles: ['admin', 'pod_lead'] },
     ],
   },
   {

@@ -46,6 +46,10 @@ import RoutingIntelligencePage from "./pages/RoutingIntelligencePage";
 import DemandMatchingEnginePage from "./pages/DemandMatchingEnginePage";
 import ContractorStrategyPage from "./pages/ContractorStrategyPage";
 import DataQualityPage from "./pages/DataQualityPage";
+import SlaAggregatePage from "./pages/SlaAggregatePage";
+import TelemedicineAvailabilityPage from "./pages/TelemedicineAvailabilityPage";
+import PCPCoveragePage from "./pages/PCPCoveragePage";
+import ProviderAppointmentsPage from "./pages/ProviderAppointmentsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -253,6 +257,26 @@ const App = () => (
             <Route path="/admin/data-quality" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <DataQualityPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/sla-aggregate" element={
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
+                <SlaAggregatePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/telemedicine-availability" element={
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
+                <TelemedicineAvailabilityPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/pcp-coverage" element={
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
+                <PCPCoveragePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/provider-appointments" element={
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
+                <ProviderAppointmentsPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

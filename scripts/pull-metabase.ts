@@ -112,11 +112,22 @@ const REPORTS: Report[] = [
       return callFunction("import-provider-utilization", { rows: mapped, window_start, window_end });
     },
   },
-  // Reports without dedicated import functions — log and skip for now
-  { name: "Average of SLA Attainment Rate",                    handle: logOnly },
-  { name: "rpt_telemedicine_availability_by_state_per_day",    handle: logOnly },
-  { name: "PCP State Coverage",                                handle: logOnly },
-  { name: "Provider Appointment Count",                        handle: logOnly },
+  {
+    name: "Average of SLA Attainment Rate",
+    handle: async (rows) => callFunction("import-sla-aggregate", { rows }),
+  },
+  {
+    name: "rpt_telemedicine_availability_by_state_per_day",
+    handle: async (rows) => callFunction("import-telemedicine-availability", { rows }),
+  },
+  {
+    name: "PCP State Coverage",
+    handle: async (rows) => callFunction("import-pcp-coverage", { rows }),
+  },
+  {
+    name: "Provider Appointment Count",
+    handle: async (rows) => callFunction("import-provider-appointments", { rows }),
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -211,11 +222,6 @@ function col(row: Row, ...candidates: string[]): string {
     if (key !== undefined) return (row[key] ?? "").trim();
   }
   return "";
-}
-
-async function logOnly(rows: Row[]): Promise<{ inserted: number; errors: string[] }> {
-  console.log(`    (no import function yet — ${rows.length} rows available, skipping)`);
-  return { inserted: 0, errors: [] };
 }
 
 // ---------------------------------------------------------------------------
