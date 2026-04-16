@@ -144,7 +144,7 @@ export class HomebaseClient {
       const batch = await this.get<HBShift[]>(
         `/locations/${locationUuid}/shifts?${params}`
       );
-      console.log(`[homebase] shifts page=${page} perPage=${perPage} returned=${batch.length} window=${startDate}→${endDate}`);
+      
       for (const shift of batch) yield shift;
       if (batch.length < perPage) break;
       page++;
