@@ -570,45 +570,59 @@ export default function OpsDashboardPage() {
                 className="max-w-48"
               />
             )}
-            <span className="text-xs text-muted-foreground hidden sm:block">
-              {filtered.length} state{filtered.length !== 1 ? 's' : ''}
-            </span>
-            <Button
-              variant={showWeekView ? 'default' : 'outline'}
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setShowWeekView((v) => !v)}
-            >
-              <CalendarDays className="h-3.5 w-3.5" />
-              Week View
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto gap-1.5"
-              onClick={() =>
-                downloadCSV(
-                  filtered.map((r) => ({
-                    state: r.state,
-                    is_active: r.isActive,
-                    available_slots: r.availableSlots ?? '',
-                    slot_data_source: r.slotSource ?? 'no_data',
-                    sla_target_daily: r.slaTargetDaily ?? '',
-                    coverage_pct: r.coverageRatio != null
-                      ? `${(r.coverageRatio * 100).toFixed(0)}%` : '',
-                    sla_pct: r.slaPct != null ? `${r.slaPct.toFixed(1)}%` : '',
-                    status: r.weekStatus,
-                  })),
-                  `ops-coverage-${selectedDate}.csv`
-                )
-              }
-            >
-              <Download className="h-3.5 w-3.5" />
-              Export
-            </Button>
+            {viewMode === 'by_state' && (
+              <>
+                <span className="text-xs text-muted-foreground hidden sm:block">
+                  {filtered.length} state{filtered.length !== 1 ? 's' : ''}
+                </span>
+                <Button
+                  variant={showWeekView ? 'default' : 'outline'}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setShowWeekView((v) => !v)}
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Week View
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto gap-1.5"
+                  onClick={() =>
+                    downloadCSV(
+                      filtered.map((r) => ({
+                        state: r.state,
+                        is_active: r.isActive,
+                        available_slots: r.availableSlots ?? '',
+                        slot_data_source: r.slotSource ?? 'no_data',
+                        sla_target_daily: r.slaTargetDaily ?? '',
+                        coverage_pct: r.coverageRatio != null
+                          ? `${(r.coverageRatio * 100).toFixed(0)}%` : '',
+                        sla_pct: r.slaPct != null ? `${r.slaPct.toFixed(1)}%` : '',
+                        status: r.weekStatus,
+                      })),
+                      `ops-coverage-${selectedDate}.csv`
+                    )
+                  }
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </Button>
+              </>
+            )}
           </div>
 
+          {/* Provider coverage view */}
+          {viewMode === 'by_provider' && (
+            <ProviderCoverageTable
+              data={providerCoverage}
+              isLoading={isLoadingProviders}
+              selectedDate={selectedDate}
+            />
+          )}
+
           {/* State coverage table */}
+          {viewMode === 'by_state' && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">State Coverage — {displayDate}</CardTitle>
