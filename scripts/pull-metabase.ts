@@ -208,6 +208,11 @@ async function callFunction(
     body: JSON.stringify(body),
   });
   const text = await res.text();
+  if (res.status === 404) {
+    // Function not yet deployed — warn but don't fail the whole run
+    console.log(`    ⏳ ${name} not deployed yet (404) — will work after Lovable syncs`);
+    return { inserted: 0, errors: [] };
+  }
   if (!res.ok) throw new Error(`${name} returned ${res.status}: ${text}`);
   const data = JSON.parse(text) as { inserted?: number; errors?: string[] };
   return { inserted: data.inserted ?? 0, errors: data.errors ?? [] };
