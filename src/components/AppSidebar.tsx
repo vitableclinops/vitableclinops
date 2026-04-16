@@ -43,6 +43,7 @@ import {
   Sliders,
   Activity,
   TrendingUp,
+  ShieldCheck,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -96,6 +97,7 @@ const navGroups: NavGroup[] = [
       { label: 'States & Compliance', icon: MapPin, href: '/admin/states', roles: ['admin'] },
       { label: 'Agreements', icon: Shield, href: '/admin/agreements', roles: ['admin', 'physician'] },
       { label: 'License Optimizer', icon: Sliders, href: '/admin/license-optimizer', roles: ['admin'] },
+      { label: 'Data Quality', icon: ShieldCheck, href: '/admin/data-quality', roles: ['admin'] },
     ],
   },
   {

@@ -567,6 +567,64 @@ export default function DemandMatchingEnginePage() {
                 </Card>
               </div>
 
+              {/* Leadership briefing */}
+              <Card className="border-primary/30 bg-primary/5">
+                <CardContent className="p-4 flex items-start gap-3">
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-semibold">Leadership Summary</p>
+                    <p className="text-sm text-muted-foreground">
+                      {(() => {
+                        const coveragePct = result.totalDemandHours > 0
+                          ? (result.totalSupplyHours / result.totalDemandHours * 100).toFixed(0)
+                          : '0';
+                        const netStatus = result.gapHours > 0
+                          ? `Supply is short by ${result.gapHours.toFixed(0)}h — staffing action needed.`
+                          : result.surplusHours > 0
+                          ? `Supply exceeds demand by ${result.surplusHours.toFixed(0)}h.`
+                          : 'Supply and demand are balanced.';
+                        const deficitStates = result.stateResults.filter(s => s.status === 'DEFICIT');
+                        const deficitStr = deficitStates.length > 0
+                          ? ` ${deficitStates.length} state${deficitStates.length !== 1 ? 's' : ''} need more coverage (${deficitStates.slice(0, 3).map(s => s.state).join(', ')}${deficitStates.length > 3 ? '…' : ''}).`
+                          : ' All states are adequately covered.';
+                        const deactivateStr = result.deactivateCandidates.length > 0
+                          ? ` ${result.deactivateCandidates.length} surplus state${result.deactivateCandidates.length !== 1 ? 's' : ''} can be deactivated.`
+                          : '';
+                        return `Week of ${weekStart}: ${coveragePct}% of demand covered. ${netStatus}${deficitStr}${deactivateStr}`;
+                      })()}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-xs"
+                    onClick={() => {
+                      const coveragePct = result.totalDemandHours > 0
+                        ? (result.totalSupplyHours / result.totalDemandHours * 100).toFixed(0)
+                        : '0';
+                      const deficitStates = result.stateResults.filter(s => s.status === 'DEFICIT');
+                      const text = [
+                        `Demand Matching Report — Week of ${weekStart}`,
+                        '',
+                        `Demand: ${result.totalDemandHours.toFixed(0)}h  |  Supply: ${result.totalSupplyHours.toFixed(0)}h  |  Coverage: ${coveragePct}%`,
+                        `Network Gap: ${result.gapHours > 0 ? `-${result.gapHours.toFixed(0)}h` : 'none'}  |  Surplus: ${result.surplusHours > 0 ? `+${result.surplusHours.toFixed(0)}h` : 'none'}`,
+                        '',
+                        `Deficit States (${deficitStates.length}):`,
+                        ...deficitStates.slice(0, 10).map(s =>
+                          `  ${s.state}: ${(s.coverageRatio * 100).toFixed(0)}% covered (need ${(s.demandHours - s.supplyHours).toFixed(0)}h more)`
+                        ),
+                        ...(deficitStates.length === 0 ? ['  None'] : []),
+                        '',
+                        `States to Deactivate: ${result.deactivateCandidates.join(', ') || 'None'}`,
+                      ].join('\n');
+                      navigator.clipboard.writeText(text);
+                      toast({ title: 'Summary copied to clipboard' });
+                    }}
+                  >
+                    Copy
+                  </Button>
+                </CardContent>
+              </Card>
+
               <Tabs defaultValue="assignments">
                 <TabsList>
                   <TabsTrigger value="assignments">

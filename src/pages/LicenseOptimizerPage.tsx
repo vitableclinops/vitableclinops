@@ -654,6 +654,58 @@ export default function LicenseOptimizerPage() {
             />
           </div>
 
+          {/* Leadership briefing */}
+          {snapshots.length > 0 && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardContent className="p-4 flex items-start gap-3">
+                <div className="flex-1 space-y-1">
+                  <p className="text-sm font-semibold">Leadership Summary</p>
+                  <p className="text-sm text-muted-foreground">
+                    {(() => {
+                      const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                      const slaStatus = kpis.avgSla >= 95 ? 'above target' : kpis.avgSla >= 85 ? 'near target' : 'below target';
+                      const wasteStr = kpis.wastedHours > 0
+                        ? ` ${kpis.wastedHours.toFixed(1)} provider hrs/day are wasted in over-licensed states.`
+                        : '';
+                      const topRec = recommendations[0];
+                      const recStr = topRec
+                        ? ` Top action: redirect ${topRec.provider} from ${topRec.state} to a deficit market (~${topRec.impact.toFixed(1)} hrs/day recovered).`
+                        : '';
+                      return `As of ${today}: Network SLA is ${kpis.avgSla.toFixed(1)}% (${slaStatus}). ${kpis.deficitCount} state${kpis.deficitCount !== 1 ? 's' : ''} under-covered, ${kpis.surplusCount} with excess capacity.${wasteStr}${recStr}`;
+                    })()}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-xs"
+                  onClick={() => {
+                    const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    const slaStatus = kpis.avgSla >= 95 ? 'above target' : kpis.avgSla >= 85 ? 'near target' : 'below target';
+                    const text = [
+                      `License Optimizer Update — ${today}`,
+                      '',
+                      `SLA Attainment: ${kpis.avgSla.toFixed(1)}% (${slaStatus}, target ≥95%)`,
+                      `Deficit States: ${kpis.deficitCount} (coverage <100%)`,
+                      `Surplus States: ${kpis.surplusCount} (coverage ≥130%)`,
+                      `Wasted Capacity: ${kpis.wastedHours.toFixed(1)} hrs/day`,
+                      '',
+                      'Top Recommendations:',
+                      ...recommendations.slice(0, 3).map((r, i) =>
+                        `${i + 1}. ${r.provider} · ${r.state}: ${r.rationale} (~${r.impact.toFixed(1)} hrs/day)`
+                      ),
+                      ...(recommendations.length === 0 ? ['  None'] : []),
+                    ].join('\n');
+                    navigator.clipboard.writeText(text);
+                    toast({ title: 'Summary copied to clipboard' });
+                  }}
+                >
+                  Copy
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Filters */}
           <div className="flex gap-3 flex-wrap">
             <Input
