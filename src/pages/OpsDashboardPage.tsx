@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { cn, downloadCSV } from '@/lib/utils';
+import { cn, downloadCSV, formatLocalDate, parseLocalDate } from '@/lib/utils';
 import {
   RefreshCw, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
   Activity, Target, Download, CalendarDays, Plus, Info, ChevronDown, Zap,
@@ -57,11 +57,11 @@ function computeWeekStatus(available: number | null, hasData: boolean, target: n
 }
 
 function getMonday(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
+  const d = parseLocalDate(dateStr);
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return formatLocalDate(d);
 }
 
 // ── Data hook ─────────────────────────────────────────────────────────────────
@@ -147,9 +147,9 @@ function useOpsData(date: string) {
 function useWeekSlots(weekStart: string, activeStates: Set<string>) {
   // Build the 7 dates Mon–Sun for the given weekStart
   const dates = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart + 'T00:00:00');
+    const d = parseLocalDate(weekStart);
     d.setDate(d.getDate() + i);
-    return d.toISOString().slice(0, 10);
+    return formatLocalDate(d);
   });
 
   return useQuery({
@@ -274,7 +274,7 @@ export default function OpsDashboardPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = formatLocalDate(new Date());
   const [selectedDate, setSelectedDate] = useState(today);
   const [filterState, setFilterState] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -429,9 +429,9 @@ export default function OpsDashboardPage() {
                 Today
               </Button>
               <Button variant="outline" size="sm" onClick={() => {
-                const d = new Date(today + 'T00:00:00');
+                const d = parseLocalDate(today);
                 d.setDate(d.getDate() + 1);
-                setSelectedDate(d.toISOString().slice(0, 10));
+                setSelectedDate(formatLocalDate(d));
               }}>
                 Tomorrow
               </Button>
