@@ -1,0 +1,30 @@
+name: Daily Metabase CSV Pull
+
+on:
+  schedule:
+    # Every day at 7:00 AM ET (11:00 UTC)
+    - cron: "0 11 * * *"
+  workflow_dispatch: # allows manual trigger from the GitHub Actions tab
+
+jobs:
+  trigger-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger sync-metabase edge function
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://saksjvmqyudkowxypoce.supabase.co/functions/v1/sync-metabase" \
+            -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}" \
+            -H "Content-Type: application/json")
+
+          body=$(echo "$response" | head -n -1)
+          status=$(echo "$response" | tail -n 1)
+
+          echo "Status: $status"
+          echo "Response: $body"
+
+          if [ "$status" != "200" ]; then
+            echo "::error::sync-metabase returned HTTP $status"
+            exit 1
+          fi

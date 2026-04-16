@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Metabase automation
+.env.metabase
+exports/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

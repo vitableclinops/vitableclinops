@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.vitable.metabase-pull</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/maddiswanagan/Desktop/Scheduling/vitableclinops-main/scripts/run-metabase-pull.sh</string>
+  </array>
+
+  <!-- Run every day at 7:00 AM -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>7</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <!-- Re-run at next opportunity if the Mac was asleep at 7 AM -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/maddiswanagan/Desktop/Scheduling/vitableclinops-main/exports/launchd-stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/maddiswanagan/Desktop/Scheduling/vitableclinops-main/exports/launchd-stderr.log</string>
+</dict>
+</plist>
