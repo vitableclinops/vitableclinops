@@ -7,39 +7,23 @@ on:
   workflow_dispatch: # allows manual trigger from the GitHub Actions tab
 
 jobs:
-  deploy-and-sync:
+  pull-csvs:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Deploy sync-metabase edge function
-        uses: supabase/setup-cli@v1
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          version: latest
+          node-version: "20"
 
-      - name: Link Supabase project and deploy function
+      - name: Install dependencies
+        run: npm install
+
+      - name: Pull CSVs from Metabase and import into Lovable Cloud
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          supabase link --project-ref saksjvmqyudkowxypoce
-          supabase functions deploy sync-metabase --no-verify-jwt
-
-      - name: Trigger sync-metabase edge function
-        run: |
-          response=$(curl -s -w "\n%{http_code}" -X POST \
-            "https://saksjvmqyudkowxypoce.supabase.co/functions/v1/sync-metabase" \
-            -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}" \
-            -H "Content-Type: application/json")
-
-          body=$(echo "$response" | head -n -1)
-          status=$(echo "$response" | tail -n 1)
-
-          echo "Status: $status"
-          echo "Response: $body"
-
-          if [ "$status" != "200" ]; then
-            echo "::error::sync-metabase returned HTTP $status"
-            exit 1
-          fi
+          METABASE_USERNAME: ${{ secrets.METABASE_USERNAME }}
+          METABASE_PASSWORD: ${{ secrets.METABASE_PASSWORD }}
+        run: npx tsx scripts/pull-metabase.ts

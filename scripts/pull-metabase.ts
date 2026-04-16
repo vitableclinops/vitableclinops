@@ -2,253 +2,275 @@
 /**
  * pull-metabase.ts
  *
- * Authenticates to Metabase, downloads configured reports as CSVs,
- * saves them locally under exports/YYYY-MM-DD/, and uploads to Supabase Storage.
+ * Downloads Metabase reports as CSVs, parses them, and sends rows to
+ * the already-deployed Lovable Cloud import edge functions.
  *
- * Run:  node --experimental-strip-types scripts/pull-metabase.ts
- *   or: npx tsx scripts/pull-metabase.ts
+ * No service role key required — uses the public anon key to call functions.
  *
- * Credentials are read from <project-root>/.env.metabase
- * Copy .env.metabase.example → .env.metabase and fill in values.
+ * Run:  npx tsx scripts/pull-metabase.ts
  */
 
-import { createClient } from "@supabase/supabase-js";
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 // ---------------------------------------------------------------------------
-// Load .env.metabase (project-root relative)
+// Load .env.metabase if running locally
 // ---------------------------------------------------------------------------
-
 function loadEnvFile(filePath: string): void {
   if (!existsSync(filePath)) return;
-  const lines = readFileSync(filePath, "utf8").split("\n");
-  for (const raw of lines) {
+  for (const raw of readFileSync(filePath, "utf8").split("\n")) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
-    const eqIdx = line.indexOf("=");
-    if (eqIdx === -1) continue;
-    const key = line.slice(0, eqIdx).trim();
-    const val = line.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
+    const eq = line.indexOf("=");
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    const val = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
     if (key && !(key in process.env)) process.env[key] = val;
   }
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, "..");
+const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 loadEnvFile(join(PROJECT_ROOT, ".env.metabase"));
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-
-const METABASE_URL = (
-  process.env.METABASE_URL || "https://metabase.vitablehealth.com"
-).replace(/\/$/, "");
+const METABASE_URL = "https://metabase.vitablehealth.com";
+const SUPABASE_URL = "https://saksjvmqyudkowxypoce.supabase.co";
+// Anon key is intentionally public — safe to hardcode
+const SUPABASE_ANON_KEY =
+  process.env.SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNha3Nqdm1xeXVka293eHlwb2NlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyNDQzMzUsImV4cCI6MjA4NTgyMDMzNX0.5uy0o02y6fNWM2LDFmpOI-baEmSlOFEZ7GEA4kUG64E";
 
 const METABASE_USERNAME = process.env.METABASE_USERNAME ?? "";
 const METABASE_PASSWORD = process.env.METABASE_PASSWORD ?? "";
 
-const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ?? "";
-const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || "metabase-exports";
+// ---------------------------------------------------------------------------
+// Report definitions: name → handler
+// ---------------------------------------------------------------------------
+type Row = Record<string, string>;
 
-const EXPORTS_BASE = join(PROJECT_ROOT, "exports");
+interface Report {
+  name: string;
+  handle: (rows: Row[]) => Promise<{ inserted: number; errors: string[] }>;
+}
 
-const REPORT_NAMES = [
-  "SLA Attainment Rate by State",
-  "Average of SLA Attainment Rate",
-  "rpt_telemedicine_availability_by_state_per_day",
-  "Sum of same_next_day_available_slots by state and date_actual: Day",
-  "Weekly demand forecast + active members by state",
-  "PCP State Coverage",
-  "Provider Appointment Count",
-  "Utilization Rate by Provider (5-week)",
+const REPORTS: Report[] = [
+  {
+    name: "SLA Attainment Rate by State",
+    handle: async (rows) => {
+      const today = new Date().toISOString().slice(0, 10);
+      const mapped = rows.map((r) => ({
+        state: col(r, "State", "state"),
+        sla: col(r, "SLA Attainment Rate", "SLA Attainment Rate", "sla"),
+      })).filter((r) => r.state);
+      return callFunction("import-sla-attainment", {
+        rows: mapped,
+        window_label: "daily_auto",
+        window_start: today,
+        window_end: today,
+      });
+    },
+  },
+  {
+    name: "Sum of same_next_day_available_slots by state and date_actual: Day",
+    handle: async (rows) => {
+      const mapped = rows.map((r) => ({
+        state: col(r, "State", "state"),
+        date: col(r, "date_actual: Day", "date_actual", "date", "Day"),
+        slots: col(r, "Sum of same_next_day_available_slots", "slots", "available_slots"),
+      })).filter((r) => r.state);
+      return callFunction("import-leftover-slots", {
+        rows: mapped,
+        window_type: "forecast",
+      });
+    },
+  },
+  {
+    name: "Weekly demand forecast + active members by state",
+    handle: async (rows) => {
+      const mapped = rows.map((r) => ({
+        state: col(r, "State", "state"),
+        week_start: col(r, "Week", "week_start", "date", "Period"),
+        visits: col(r, "Visits", "visits", "projected_visits", "Count", "Active Members", "members"),
+      })).filter((r) => r.state && r.week_start);
+      return callFunction("import-demand-forecast", { rows: mapped });
+    },
+  },
+  {
+    name: "Utilization Rate by Provider (5-week)",
+    handle: async (rows) => {
+      const now = new Date();
+      const window_end = now.toISOString().slice(0, 10);
+      const window_start = new Date(now.getTime() - 35 * 864e5).toISOString().slice(0, 10);
+      const mapped = rows.map((r) => ({
+        provider: col(r, "Provider", "provider", "Name"),
+        avg_utilization: col(r, "Avg Time Slot Utilization", "Utilization Rate", "utilization"),
+        total_timeslots: col(r, "Total Timeslots", "total_timeslots", "timeslots"),
+      })).filter((r) => r.provider);
+      return callFunction("import-provider-utilization", { rows: mapped, window_start, window_end });
+    },
+  },
+  // Reports without dedicated import functions — log and skip for now
+  { name: "Average of SLA Attainment Rate",                    handle: logOnly },
+  { name: "rpt_telemedicine_availability_by_state_per_day",    handle: logOnly },
+  { name: "PCP State Coverage",                                handle: logOnly },
+  { name: "Provider Appointment Count",                        handle: logOnly },
 ];
 
 // ---------------------------------------------------------------------------
 // Metabase helpers
 // ---------------------------------------------------------------------------
-
 async function getMetabaseToken(): Promise<string> {
   const res = await fetch(`${METABASE_URL}/api/session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      username: METABASE_USERNAME,
-      password: METABASE_PASSWORD,
-    }),
+    body: JSON.stringify({ username: METABASE_USERNAME, password: METABASE_PASSWORD }),
   });
-  if (!res.ok) {
-    throw new Error(`Metabase auth failed (${res.status}): ${await res.text()}`);
-  }
-  const data = (await res.json()) as { id: string };
-  return data.id;
+  if (!res.ok) throw new Error(`Auth failed (${res.status}): ${await res.text()}`);
+  return ((await res.json()) as { id: string }).id;
 }
 
-async function findCardsByNames(
-  token: string,
-  names: string[]
-): Promise<Map<string, number>> {
-  const results = new Map<string, number>();
-
-  for (const name of names) {
-    const encoded = encodeURIComponent(name);
-    const res = await fetch(
-      `${METABASE_URL}/api/search?q=${encoded}&models=card`,
-      { headers: { "X-Metabase-Session": token } }
-    );
-    if (!res.ok) {
-      console.warn(`  ⚠️  Search failed for "${name}": ${res.statusText}`);
-      continue;
-    }
-    const body = (await res.json()) as { data: { id: number; name: string }[] };
-    const exact = body.data?.find(
-      (c) => c.name.trim().toLowerCase() === name.trim().toLowerCase()
-    );
-    if (exact) {
-      results.set(name, exact.id);
-    } else {
-      console.warn(
-        `  ⚠️  No exact match found for "${name}" (${body.data?.length ?? 0} partial results)`
-      );
-    }
-  }
-  return results;
+async function findCardId(token: string, name: string): Promise<number | null> {
+  const res = await fetch(
+    `${METABASE_URL}/api/search?q=${encodeURIComponent(name)}&models=card`,
+    { headers: { "X-Metabase-Session": token } }
+  );
+  if (!res.ok) return null;
+  const body = (await res.json()) as { data: { id: number; name: string }[] };
+  return body.data?.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())?.id ?? null;
 }
 
-async function downloadCSV(token: string, cardId: number): Promise<Uint8Array> {
+async function downloadCSVText(token: string, cardId: number): Promise<string> {
   const res = await fetch(`${METABASE_URL}/api/card/${cardId}/query/csv`, {
     method: "POST",
-    headers: {
-      "X-Metabase-Session": token,
-      "Content-Type": "application/json",
-    },
+    headers: { "X-Metabase-Session": token, "Content-Type": "application/json" },
     body: JSON.stringify({}),
   });
-  if (!res.ok) {
-    throw new Error(
-      `CSV download failed for card ${cardId} (${res.status}): ${await res.text()}`
-    );
+  if (!res.ok) throw new Error(`Download failed (${res.status}): ${await res.text()}`);
+  return res.text();
+}
+
+// ---------------------------------------------------------------------------
+// CSV parser (handles quoted fields)
+// ---------------------------------------------------------------------------
+function parseCSV(text: string): Row[] {
+  const lines = text.trim().split("\n");
+  if (lines.length < 2) return [];
+  const headers = splitLine(lines[0]);
+  return lines.slice(1).filter((l) => l.trim()).map((line) => {
+    const vals = splitLine(line);
+    return Object.fromEntries(headers.map((h, i) => [h, (vals[i] ?? "").trim()]));
+  });
+}
+
+function splitLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (ch === "," && !inQ) { out.push(cur.trim()); cur = ""; }
+    else cur += ch;
   }
-  return new Uint8Array(await res.arrayBuffer());
+  out.push(cur.trim());
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Supabase helper
+// Edge function caller
 // ---------------------------------------------------------------------------
-
-async function uploadToSupabase(
-  supabase: ReturnType<typeof createClient>,
-  bucket: string,
-  remotePath: string,
-  data: Uint8Array
-): Promise<void> {
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(remotePath, data, {
-      contentType: "text/csv",
-      upsert: true,
-    });
-  if (error) throw new Error(`Supabase upload error: ${error.message}`);
+async function callFunction(
+  name: string,
+  body: unknown
+): Promise<{ inserted: number; errors: string[] }> {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${name} returned ${res.status}: ${text}`);
+  const data = JSON.parse(text) as { inserted?: number; errors?: string[] };
+  return { inserted: data.inserted ?? 0, errors: data.errors ?? [] };
 }
 
 // ---------------------------------------------------------------------------
-// Filename helper
+// Helpers
 // ---------------------------------------------------------------------------
+function col(row: Row, ...candidates: string[]): string {
+  for (const c of candidates) {
+    const key = Object.keys(row).find((k) => k.trim().toLowerCase() === c.toLowerCase());
+    if (key !== undefined) return (row[key] ?? "").trim();
+  }
+  return "";
+}
 
-function toFilename(reportName: string): string {
-  return (
-    reportName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_|_$/g, "") + ".csv"
-  );
+async function logOnly(rows: Row[]): Promise<{ inserted: number; errors: string[] }> {
+  console.log(`    (no import function yet — ${rows.length} rows available, skipping)`);
+  return { inserted: 0, errors: [] };
 }
 
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
-
 async function main() {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const today = new Date().toISOString().slice(0, 10);
   console.log(`\n=== Metabase CSV Pull — ${today} ===\n`);
 
-  // Validate required env vars
-  const missing = [];
-  if (!METABASE_USERNAME) missing.push("METABASE_USERNAME");
-  if (!METABASE_PASSWORD) missing.push("METABASE_PASSWORD");
-  if (!SUPABASE_URL) missing.push("SUPABASE_URL");
-  if (!SUPABASE_SERVICE_KEY) missing.push("SUPABASE_SERVICE_KEY");
-  if (missing.length) {
-    console.error(`Missing required env vars: ${missing.join(", ")}`);
-    console.error("Set them in .env.metabase — see .env.metabase.example");
+  if (!METABASE_USERNAME || !METABASE_PASSWORD) {
+    console.error("Missing METABASE_USERNAME or METABASE_PASSWORD");
     process.exit(1);
   }
 
-  // Set up local exports directory
-  const exportDir = join(EXPORTS_BASE, today);
-  mkdirSync(exportDir, { recursive: true });
-
-  // Set up Supabase client
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-
-  // Authenticate to Metabase
   console.log("Authenticating to Metabase...");
   const token = await getMetabaseToken();
   console.log("  ✓ Authenticated\n");
 
-  // Find card IDs by report name
-  console.log("Looking up report IDs...");
-  const cardMap = await findCardsByNames(token, REPORT_NAMES);
-  console.log(`  Found ${cardMap.size} / ${REPORT_NAMES.length} reports\n`);
+  const overallErrors: string[] = [];
 
-  if (cardMap.size === 0) {
-    console.error("No reports found — check report names in the script.");
-    process.exit(1);
-  }
-
-  // Download and save each report
-  const errors: string[] = [];
-
-  for (const [name, cardId] of cardMap.entries()) {
-    const filename = toFilename(name);
-    const localPath = join(exportDir, filename);
-    const remotePath = `${today}/${filename}`;
-
-    process.stdout.write(`Pulling "${name}" (card ${cardId})...`);
+  for (const report of REPORTS) {
+    process.stdout.write(`• ${report.name}\n`);
 
     try {
-      const csv = await downloadCSV(token, cardId);
+      const cardId = await findCardId(token, report.name);
+      if (!cardId) {
+        console.log("    ⚠️  Card not found in Metabase — skipping");
+        continue;
+      }
 
-      // Save locally
-      writeFileSync(localPath, csv);
+      const csvText = await downloadCSVText(token, cardId);
+      const rows = parseCSV(csvText);
+      console.log(`    Downloaded ${rows.length} rows (card ${cardId})`);
 
-      // Upload to Supabase
-      await uploadToSupabase(supabase, SUPABASE_BUCKET, remotePath, csv);
-
-      console.log(` ✓  (${(csv.length / 1024).toFixed(1)} KB)`);
-    } catch (err: unknown) {
+      const { inserted, errors } = await report.handle(rows);
+      if (inserted > 0) console.log(`    ✓ Inserted/updated ${inserted} records`);
+      if (errors.length > 0) {
+        errors.forEach((e) => console.log(`    ⚠️  ${e}`));
+        overallErrors.push(...errors.map((e) => `${report.name}: ${e}`));
+      }
+    } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.log(` ✗  ${msg}`);
-      errors.push(`${name}: ${msg}`);
+      console.log(`    ✗ ${msg}`);
+      overallErrors.push(`${report.name}: ${msg}`);
     }
+
+    console.log();
   }
 
-  console.log(`\nSaved locally → exports/${today}/`);
-  console.log(`Uploaded to   → ${SUPABASE_BUCKET}/${today}/`);
-
-  if (errors.length > 0) {
-    console.error(`\n${errors.length} error(s):`);
-    errors.forEach((e) => console.error(`  - ${e}`));
+  if (overallErrors.length > 0) {
+    console.error(`Finished with ${overallErrors.length} error(s).`);
     process.exit(1);
   } else {
-    console.log(`\nAll ${cardMap.size} reports pulled successfully.\n`);
+    console.log("All reports processed successfully.");
   }
 }
 
-main().catch((err) => {
-  console.error("Fatal:", err);
-  process.exit(1);
-});
+main().catch((err) => { console.error("Fatal:", err); process.exit(1); });
