@@ -7,10 +7,25 @@ on:
   workflow_dispatch: # allows manual trigger from the GitHub Actions tab
 
 jobs:
-  trigger-sync:
+  deploy-and-sync:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Deploy sync-metabase edge function
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase project and deploy function
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase link --project-ref saksjvmqyudkowxypoce
+          supabase functions deploy sync-metabase --no-verify-jwt
+
       - name: Trigger sync-metabase edge function
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
