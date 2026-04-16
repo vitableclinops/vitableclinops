@@ -152,7 +152,7 @@ const ExecutiveBriefingPage = () => {
       gap_slots: r.gap_slots,
       coverage_ratio: r.coverage_ratio,
       confidence: r.confidence,
-    })));
+    })), 'executive-briefing.csv');
   };
 
   return (
