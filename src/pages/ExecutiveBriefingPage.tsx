@@ -144,7 +144,7 @@ const ExecutiveBriefingPage = () => {
 
   const handleExport = () => {
     if (!latestBridge.length) return;
-    downloadCSV('executive-briefing.csv', latestBridge.map((r) => ({
+    downloadCSV(latestBridge.map((r) => ({
       state: r.state_abbreviation,
       status: r.status,
       supply_hours: r.supply_hours,
