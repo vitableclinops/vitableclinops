@@ -131,7 +131,7 @@ export class HomebaseClient {
     locationUuid: string,
     startDate: string,
     endDate: string,
-    { perPage = 200 } = {}
+    { perPage = 100 } = {}
   ): AsyncGenerator<HBShift> {
     let page = 1;
     while (true) {
@@ -144,6 +144,7 @@ export class HomebaseClient {
       const batch = await this.get<HBShift[]>(
         `/locations/${locationUuid}/shifts?${params}`
       );
+      
       for (const shift of batch) yield shift;
       if (batch.length < perPage) break;
       page++;

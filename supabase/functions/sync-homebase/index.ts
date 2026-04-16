@@ -75,6 +75,7 @@ Deno.serve(async (req: Request) => {
     const future = new Date(now); future.setDate(future.getDate() + 14);
     const startDate = past.toISOString().slice(0, 10);
     const endDate = future.toISOString().slice(0, 10);
+    
 
     // ── Load provider profiles for matching ───────────────────────────────────
     const { data: profiles } = await supabase
