@@ -22,6 +22,8 @@ import {
   Activity, Target, Download, CalendarDays, Plus, Info, ChevronDown, Zap,
 } from 'lucide-react';
 import { QuickTaskDialog, QuickTaskTarget } from '@/components/admin/QuickTaskDialog';
+import { useProviderCoverage } from '@/hooks/useProviderCoverage';
+import { ProviderCoverageTable } from '@/components/ops/ProviderCoverageTable';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -281,6 +283,7 @@ export default function OpsDashboardPage() {
   const [showWeekView, setShowWeekView] = useState(false);
   const [quickTaskTarget, setQuickTaskTarget] = useState<QuickTaskTarget | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [viewMode, setViewMode] = useState<'by_state' | 'by_provider'>('by_state');
 
   const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate);
   const { data: lastImportedAt } = useLastSlotImport();
@@ -296,6 +299,7 @@ export default function OpsDashboardPage() {
   );
   const { data: weekData } = useWeekSlots(weekStart, activeStateSet);
   const { data: slaTrendRaw = [] } = useSlaTrend(activeStateSet);
+  const { data: providerCoverage = [], isLoading: isLoadingProviders } = useProviderCoverage(selectedDate);
 
   // Build SLA trend chart data: last 10 distinct dates × bottom-10 SLA states
   const { slaTrendData, slaTrendStates } = useMemo(() => {
@@ -544,57 +548,81 @@ export default function OpsDashboardPage() {
 
           {/* Filter row */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Tabs value={showAll ? 'all' : 'active'} onValueChange={(v) => setShowAll(v === 'all')}>
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'by_state' | 'by_provider')}>
               <TabsList>
-                <TabsTrigger value="active">Active States</TabsTrigger>
-                <TabsTrigger value="all">All States</TabsTrigger>
+                <TabsTrigger value="by_state">By State</TabsTrigger>
+                <TabsTrigger value="by_provider">By Provider</TabsTrigger>
               </TabsList>
             </Tabs>
-            <Input
-              placeholder="Filter by state…"
-              value={filterState}
-              onChange={(e) => setFilterState(e.target.value)}
-              className="max-w-48"
-            />
-            <span className="text-xs text-muted-foreground hidden sm:block">
-              {filtered.length} state{filtered.length !== 1 ? 's' : ''}
-            </span>
-            <Button
-              variant={showWeekView ? 'default' : 'outline'}
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setShowWeekView((v) => !v)}
-            >
-              <CalendarDays className="h-3.5 w-3.5" />
-              Week View
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto gap-1.5"
-              onClick={() =>
-                downloadCSV(
-                  filtered.map((r) => ({
-                    state: r.state,
-                    is_active: r.isActive,
-                    available_slots: r.availableSlots ?? '',
-                    slot_data_source: r.slotSource ?? 'no_data',
-                    sla_target_daily: r.slaTargetDaily ?? '',
-                    coverage_pct: r.coverageRatio != null
-                      ? `${(r.coverageRatio * 100).toFixed(0)}%` : '',
-                    sla_pct: r.slaPct != null ? `${r.slaPct.toFixed(1)}%` : '',
-                    status: r.weekStatus,
-                  })),
-                  `ops-coverage-${selectedDate}.csv`
-                )
-              }
-            >
-              <Download className="h-3.5 w-3.5" />
-              Export
-            </Button>
+            {viewMode === 'by_state' && (
+              <Tabs value={showAll ? 'all' : 'active'} onValueChange={(v) => setShowAll(v === 'all')}>
+                <TabsList>
+                  <TabsTrigger value="active">Active States</TabsTrigger>
+                  <TabsTrigger value="all">All States</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
+            {viewMode === 'by_state' && (
+              <Input
+                placeholder="Filter by state…"
+                value={filterState}
+                onChange={(e) => setFilterState(e.target.value)}
+                className="max-w-48"
+              />
+            )}
+            {viewMode === 'by_state' && (
+              <>
+                <span className="text-xs text-muted-foreground hidden sm:block">
+                  {filtered.length} state{filtered.length !== 1 ? 's' : ''}
+                </span>
+                <Button
+                  variant={showWeekView ? 'default' : 'outline'}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setShowWeekView((v) => !v)}
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Week View
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto gap-1.5"
+                  onClick={() =>
+                    downloadCSV(
+                      filtered.map((r) => ({
+                        state: r.state,
+                        is_active: r.isActive,
+                        available_slots: r.availableSlots ?? '',
+                        slot_data_source: r.slotSource ?? 'no_data',
+                        sla_target_daily: r.slaTargetDaily ?? '',
+                        coverage_pct: r.coverageRatio != null
+                          ? `${(r.coverageRatio * 100).toFixed(0)}%` : '',
+                        sla_pct: r.slaPct != null ? `${r.slaPct.toFixed(1)}%` : '',
+                        status: r.weekStatus,
+                      })),
+                      `ops-coverage-${selectedDate}.csv`
+                    )
+                  }
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </Button>
+              </>
+            )}
           </div>
 
+          {/* Provider coverage view */}
+          {viewMode === 'by_provider' && (
+            <ProviderCoverageTable
+              data={providerCoverage}
+              isLoading={isLoadingProviders}
+              selectedDate={selectedDate}
+            />
+          )}
+
           {/* State coverage table */}
+          {viewMode === 'by_state' && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">State Coverage — {displayDate}</CardTitle>
@@ -722,9 +750,10 @@ export default function OpsDashboardPage() {
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Week-level slot heatmap */}
-          {showWeekView && weekData && weekData.slotMap.size > 0 && (
+          {viewMode === 'by_state' && showWeekView && weekData && weekData.slotMap.size > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
