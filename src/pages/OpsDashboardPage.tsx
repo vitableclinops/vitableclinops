@@ -299,6 +299,7 @@ export default function OpsDashboardPage() {
   );
   const { data: weekData } = useWeekSlots(weekStart, activeStateSet);
   const { data: slaTrendRaw = [] } = useSlaTrend(activeStateSet);
+  const { data: providerCoverage = [], isLoading: isLoadingProviders } = useProviderCoverage(selectedDate);
 
   // Build SLA trend chart data: last 10 distinct dates × bottom-10 SLA states
   const { slaTrendData, slaTrendStates } = useMemo(() => {
