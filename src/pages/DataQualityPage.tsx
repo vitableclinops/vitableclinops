@@ -107,7 +107,7 @@ function useProvidersWithoutLicenses() {
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, full_name, first_name, last_name, credentials')
-        .eq('is_active', true);
+        .eq('is_active' as any, true);
       if (profilesError) throw profilesError;
 
       if (!profiles || profiles.length === 0) return [];
