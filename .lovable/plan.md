@@ -1,30 +1,45 @@
 
 
-## Problem: Homebase API pagination cap at 100
+## Provider Coverage View — Ops Dashboard
 
-The `iterateShifts` method requests `per_page=200`, but the Homebase API silently caps responses at **100 records**. When the function receives 100 records back, it checks `100 < 200` → true → stops paginating. This means it only ever fetches the first 100 shifts (March 31 – April 7) and never reaches current/future dates.
+Add a "By Provider" tab to the Ops Dashboard that shows each provider's Homebase shift hours for the selected date and how those hours are split across their licensed (active) states.
 
-The same issue likely affects `iterateEmployees` (set to `perPage=100`, which happens to match the cap — so it works by luck).
+### What the user will see
 
-## Fix
+A new tab alongside the existing state coverage table. When selected, it shows a table with:
 
-### Step 1: Lower `perPage` to 100 in `homebaseClient.ts`
-Change the default `perPage` from `200` to `100` for `iterateShifts`. This way when Homebase returns exactly 100 results, the function correctly recognizes there may be more pages and continues paginating.
+| Provider | Total Hours | Slots | States | Allocation |
+|----------|-------------|-------|--------|------------|
+| Amanda Clement | 5h | 10 | AK, AZ, CA, … (48 states) | 0.10 hrs / 0.2 slots each |
+| Lisa Brittmon | 7h | 14 | TX, FL, NY (3 states) | 2.33 hrs / 4.7 slots each |
 
-```
-iterateShifts(..., { perPage = 100 } = {})
-```
+Each row is expandable to show the per-state breakdown in a sub-table: State, Allocated Hours, Projected Slots.
 
-### Step 2: Re-deploy and re-sync
-1. Deploy the updated `sync-homebase` function (shares the client)
-2. Invoke `sync-homebase` to pull all shifts (should now paginate beyond page 1)
-3. Invoke `compute-availability-slots` to regenerate forecast rows
-4. Verify `shifts_synced` is significantly more than 100 and dates extend to current week
+A search/filter input for provider names, and a CSV export button.
 
-### Step 3: Verify on Ops Dashboard
-Confirm the state coverage table populates with current-day forecast data showing the ⚡ HB badge.
+### Data source
 
----
+All data is already in the database — no new tables or edge functions needed. The view queries:
+1. `homebase_shifts` (joined via `homebase_employees` to `profiles`) for the selected date — gets total scheduled hours per provider
+2. `provider_licenses` (status = 'active') — gets each provider's licensed states
+3. `state_activation` (is_active = true) — filters to operationally active states
 
-**Technical detail**: One-character fix in `homebaseClient.ts` line 134: `perPage = 200` → `perPage = 100`. The pagination termination condition `batch.length < perPage` then correctly triggers only when a page is genuinely partial.
+The even-split math (same as `compute-availability-slots`) is done client-side:
+- `eligible_states` = intersection of provider's active licenses and active states
+- `hours_per_state` = total_hours / eligible_states.length
+- `slots_per_state` = hours_per_state × 2 (30-min slots)
+
+### Implementation
+
+**File: `src/pages/OpsDashboardPage.tsx`**
+
+1. Add a new `useProviderCoverage(date)` hook that fetches the three tables above and computes the per-provider, per-state allocation
+2. Add a `viewMode` state (`'by_state' | 'by_provider'`) with tab triggers in the filter row
+3. Add a `ProviderCoverageTable` component rendered when `viewMode === 'by_provider'`
+   - Collapsible rows (click to expand per-state breakdown)
+   - Provider name, total hours, total slots, number of eligible states, hours/state, slots/state
+   - Sub-row table: state abbreviation, allocated hours, projected slots
+4. Add CSV export for the provider view (provider, total_hours, state, allocated_hours, projected_slots)
+
+No database changes required.
 
