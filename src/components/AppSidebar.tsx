@@ -107,6 +107,7 @@ const navGroups: NavGroup[] = [
     label: 'Coverage & Ops',
     roles: ['admin', 'pod_lead'],
     items: [
+      { label: 'Executive Briefing',     icon: Target,        href: '/admin/executive-briefing',           roles: ['admin'] },
       { label: 'Coverage Hub',           icon: Activity,      href: '/admin/ops',                          roles: ['admin', 'pod_lead'] },
       { label: 'Utilization',            icon: BarChart3,     href: '/admin/utilization',                  roles: ['admin', 'pod_lead'] },
       { label: 'Demand Forecast',        icon: TrendingUp,    href: '/admin/demand-forecast',              roles: ['admin'] },
