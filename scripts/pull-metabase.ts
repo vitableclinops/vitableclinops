@@ -118,7 +118,8 @@ const REPORTS: Report[] = [
   },
   {
     name: "rpt_telemedicine_availability_by_state_per_day",
-    handle: async (rows) => callFunction("import-telemedicine-availability", { rows }),
+    // 49k+ rows — chunk to avoid edge function memory limits
+    handle: async (rows) => chunkedCall("import-telemedicine-availability", rows, 2000),
   },
   {
     name: "PCP State Coverage",
@@ -126,9 +127,42 @@ const REPORTS: Report[] = [
   },
   {
     name: "Provider Appointment Count",
-    handle: async (rows) => callFunction("import-provider-appointments", { rows }),
+    // 5k+ rows + may use "Provider Full Name" column — pre-normalize and chunk
+    handle: async (rows) => {
+      const mapped = rows.map((r) => ({
+        provider: col(r, "Provider Full Name", "Provider", "provider", "Name"),
+        count:    col(r, "Booked Appointment Count", "Completed Appointment Count", "Provider Appointment Count", "Count", "count"),
+        date:     col(r, "Date", "date", "day"),
+      })).filter((r) => r.provider);
+      return chunkedCall("import-provider-appointments", mapped, 2000);
+    },
   },
 ];
+
+/**
+ * Calls an import function in batches of `chunkSize` rows so we don't blow past
+ * the edge function memory/CPU limits on multi-thousand-row reports.
+ */
+async function chunkedCall(
+  name: string,
+  rows: unknown[],
+  chunkSize: number
+): Promise<{ inserted: number; errors: string[] }> {
+  let totalInserted = 0;
+  const allErrors: string[] = [];
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const batch = rows.slice(i, i + chunkSize);
+    try {
+      const { inserted, errors } = await callFunction(name, { rows: batch });
+      totalInserted += inserted;
+      allErrors.push(...errors);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      allErrors.push(`Chunk ${i}-${i + batch.length}: ${msg}`);
+    }
+  }
+  return { inserted: totalInserted, errors: allErrors };
+}
 
 // ---------------------------------------------------------------------------
 // Metabase helpers
