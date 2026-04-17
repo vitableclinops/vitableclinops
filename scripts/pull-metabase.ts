@@ -94,9 +94,9 @@ const REPORTS: Report[] = [
     handle: async (rows) => {
       const mapped = rows.map((r) => ({
         state: col(r, "State", "state"),
-        week_start: col(r, "Week", "week_start", "date", "Period"),
-        visits: col(r, "Visits", "visits", "projected_visits", "Count", "Active Members", "members"),
-      })).filter((r) => r.state && r.week_start);
+        week_start: col(r, "Week", "week_start", "Week Start", "date_actual", "date_actual: Week", "date", "Period", "Day"),
+        visits: col(r, "Visits", "visits", "projected_visits", "Forecasted Visits", "Forecast", "Count", "Active Members", "members", "Sum"),
+      })).filter((r) => r.state && r.week_start && r.visits);
       return callFunction("import-demand-forecast", { rows: mapped });
     },
   },
@@ -107,9 +107,9 @@ const REPORTS: Report[] = [
       const window_end = now.toISOString().slice(0, 10);
       const window_start = new Date(now.getTime() - 35 * 864e5).toISOString().slice(0, 10);
       const mapped = rows.map((r) => ({
-        provider: col(r, "Provider", "provider", "Name"),
-        avg_utilization: col(r, "Avg Time Slot Utilization", "Utilization Rate", "utilization"),
-        total_timeslots: col(r, "Total Timeslots", "total_timeslots", "timeslots"),
+        provider: col(r, "Provider", "provider", "Provider Full Name", "Name", "Provider Name"),
+        avg_utilization: col(r, "Avg Time Slot Utilization", "Average of Time Slot Utilization", "Utilization Rate", "utilization", "Avg Utilization"),
+        total_timeslots: col(r, "Total Timeslots", "Sum of Total Timeslots", "total_timeslots", "timeslots", "Timeslots"),
       })).filter((r) => r.provider);
       return callFunction("import-provider-utilization", { rows: mapped, window_start, window_end });
     },
