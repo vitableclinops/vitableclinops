@@ -92,10 +92,17 @@ const REPORTS: Report[] = [
   {
     name: "Weekly demand forecast + active members by state",
     handle: async (rows) => {
+      // Card 2957 returns: State | Weekly Demand | Active Members Count...
+      // No week column — use current week's Monday as week_start.
+      const now = new Date();
+      const dow = now.getUTCDay(); // 0=Sun
+      const daysToMonday = (dow + 6) % 7;
+      const monday = new Date(now.getTime() - daysToMonday * 864e5);
+      const defaultWeekStart = monday.toISOString().slice(0, 10);
       const mapped = rows.map((r) => ({
         state: col(r, "State", "state"),
-        week_start: col(r, "Week", "week_start", "Week Start", "date_actual", "date_actual: Week", "date", "Period", "Day"),
-        visits: col(r, "Visits", "visits", "projected_visits", "Forecasted Visits", "Forecast", "Count", "Active Members", "members", "Sum"),
+        week_start: col(r, "Week", "week_start", "Week Start", "date_actual", "date_actual: Week", "date", "Period", "Day") || defaultWeekStart,
+        visits: col(r, "Weekly Demand", "Visits", "visits", "projected_visits", "Forecasted Visits", "Forecast", "Count", "Active Members", "members", "Sum"),
       })).filter((r) => r.state && r.week_start && r.visits);
       return callFunction("import-demand-forecast", { rows: mapped });
     },
