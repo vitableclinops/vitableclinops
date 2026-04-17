@@ -52,6 +52,7 @@ const METABASE_PASSWORD = process.env.METABASE_PASSWORD ?? "";
 type Row = Record<string, string>;
 
 interface Report {
+  cardId?: number;
   name: string;
   handle: (rows: Row[]) => Promise<{ inserted: number; errors: string[] }>;
 }
@@ -74,7 +75,8 @@ const REPORTS: Report[] = [
     },
   },
   {
-    name: "Sum of same_next_day_available_slots by state and date_actual: Day",
+    cardId: 2431,
+    name: "Same & Next Day Available Slots By State and Day (Next 7 days)",
     handle: async (rows) => {
       const mapped = rows.map((r) => ({
         state: col(r, "State", "state"),
@@ -113,7 +115,8 @@ const REPORTS: Report[] = [
     },
   },
   {
-    name: "Average of SLA Attainment Rate",
+    cardId: 2931,
+    name: "SD/ND SLA Attainment Rate - MTD",
     handle: async (rows) => callFunction("import-sla-aggregate", { rows }),
   },
   {
@@ -122,6 +125,7 @@ const REPORTS: Report[] = [
     handle: async (rows) => chunkedCall("import-telemedicine-availability", rows, 2000),
   },
   {
+    cardId: 2940,
     name: "PCP State Coverage",
     handle: async (rows) => callFunction("import-pcp-coverage", { rows }),
   },
@@ -310,7 +314,15 @@ async function main() {
     process.stdout.write(`• ${report.name}\n`);
 
     try {
-      const { id: cardId, candidates } = await findCardId(token, report.name);
+      let cardId = report.cardId ?? null;
+      let candidates: { id: number; name: string }[] = [];
+
+      if (!cardId) {
+        const result = await findCardId(token, report.name);
+        cardId = result.id;
+        candidates = result.candidates;
+      }
+
       if (!cardId) {
         console.log(`    ✗ Card not found: "${report.name}"`);
         if (candidates.length > 0) {
