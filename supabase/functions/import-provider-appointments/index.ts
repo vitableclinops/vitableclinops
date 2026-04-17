@@ -67,11 +67,24 @@ Deno.serve(async (req: Request) => {
 
   let inserted = 0;
   if (records.length > 0) {
+    // Deduplicate: aggregate counts per (provider_name_raw, report_date)
+    const dedupMap = new Map<string, any>();
+    for (const r of records as any[]) {
+      const key = `${r.provider_name_raw}|${r.report_date}`;
+      const existing = dedupMap.get(key);
+      if (existing) {
+        existing.appointment_count += r.appointment_count;
+      } else {
+        dedupMap.set(key, { ...r });
+      }
+    }
+    const deduped = Array.from(dedupMap.values());
+
     const { error } = await supabase
       .from('provider_appointment_count')
-      .upsert(records, { onConflict: 'provider_name_raw,report_date' });
+      .upsert(deduped, { onConflict: 'provider_name_raw,report_date' });
     if (error) return respond({ error: error.message }, 500);
-    inserted = records.length;
+    inserted = deduped.length;
   }
 
   return respond({ ok: true, inserted, errors });

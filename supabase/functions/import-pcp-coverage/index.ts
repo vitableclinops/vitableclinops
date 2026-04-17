@@ -68,11 +68,19 @@ Deno.serve(async (req: Request) => {
 
   let inserted = 0;
   if (records.length > 0) {
+    // Deduplicate: keep last occurrence per (state_abbreviation, report_date)
+    const dedupMap = new Map<string, object>();
+    for (const r of records) {
+      const key = `${(r as any).state_abbreviation}|${(r as any).report_date}`;
+      dedupMap.set(key, r);
+    }
+    const deduped = Array.from(dedupMap.values());
+
     const { error } = await supabase
       .from('pcp_state_coverage')
-      .upsert(records, { onConflict: 'state_abbreviation,report_date' });
+      .upsert(deduped, { onConflict: 'state_abbreviation,report_date' });
     if (error) return respond({ error: error.message }, 500);
-    inserted = records.length;
+    inserted = deduped.length;
   }
 
   return respond({ ok: true, inserted, errors });
