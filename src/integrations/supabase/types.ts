@@ -3726,6 +3726,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          imported_at: string
           slot_date: string
           state_abbreviation: string
           unfilled_slots: number
@@ -3734,6 +3735,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          imported_at?: string
           slot_date: string
           state_abbreviation: string
           unfilled_slots?: number
@@ -3742,6 +3744,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          imported_at?: string
           slot_date?: string
           state_abbreviation?: string
           unfilled_slots?: number
