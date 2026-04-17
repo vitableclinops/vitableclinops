@@ -115,8 +115,8 @@ const REPORTS: Report[] = [
       const window_start = new Date(now.getTime() - 35 * 864e5).toISOString().slice(0, 10);
       const mapped = rows.map((r) => ({
         provider: col(r, "Provider", "provider", "Provider Full Name", "Name", "Provider Name"),
-        avg_utilization: col(r, "Avg Time Slot Utilization", "Average of Time Slot Utilization", "Utilization Rate", "utilization", "Avg Utilization"),
-        total_timeslots: col(r, "Total Timeslots", "Sum of Total Timeslots", "total_timeslots", "timeslots", "Timeslots"),
+        avg_utilization: col(r, "Average of Utilization rate", "Average of Utilization Rate", "Avg Time Slot Utilization", "Average of Time Slot Utilization", "Utilization Rate", "utilization", "Avg Utilization"),
+        total_timeslots: col(r, "Sum of Distinct values of Time Slot ID", "Total Timeslots", "Sum of Total Timeslots", "total_timeslots", "timeslots", "Timeslots"),
       })).filter((r) => r.provider);
       return callFunction("import-provider-utilization", { rows: mapped, window_start, window_end });
     },
