@@ -143,14 +143,39 @@ async function getMetabaseToken(): Promise<string> {
   return ((await res.json()) as { id: string }).id;
 }
 
-async function findCardId(token: string, name: string): Promise<number | null> {
+async function findCardId(
+  token: string,
+  name: string
+): Promise<{ id: number | null; candidates: { id: number; name: string }[] }> {
   const res = await fetch(
     `${METABASE_URL}/api/search?q=${encodeURIComponent(name)}&models=card`,
     { headers: { "X-Metabase-Session": token } }
   );
-  if (!res.ok) return null;
+  if (!res.ok) return { id: null, candidates: [] };
   const body = (await res.json()) as { data: { id: number; name: string }[] };
-  return body.data?.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())?.id ?? null;
+  const candidates = body.data ?? [];
+
+  const target = name.trim().toLowerCase();
+
+  // 1) Exact match (case-insensitive)
+  const exact = candidates.find((c) => c.name.trim().toLowerCase() === target);
+  if (exact) return { id: exact.id, candidates };
+
+  // 2) Normalized match: collapse whitespace + strip punctuation
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const tNorm = norm(name);
+  const normMatch = candidates.find((c) => norm(c.name) === tNorm);
+  if (normMatch) return { id: normMatch.id, candidates };
+
+  // 3) Substring match (target words all appear in candidate)
+  const targetWords = tNorm.split(" ").filter((w) => w.length > 2);
+  const substr = candidates.find((c) => {
+    const cn = norm(c.name);
+    return targetWords.every((w) => cn.includes(w));
+  });
+  if (substr) return { id: substr.id, candidates };
+
+  return { id: null, candidates };
 }
 
 async function downloadCSVText(token: string, cardId: number): Promise<string> {
@@ -251,9 +276,19 @@ async function main() {
     process.stdout.write(`• ${report.name}\n`);
 
     try {
-      const cardId = await findCardId(token, report.name);
+      const { id: cardId, candidates } = await findCardId(token, report.name);
       if (!cardId) {
-        console.log("    ⚠️  Card not found in Metabase — skipping");
+        console.log(`    ✗ Card not found: "${report.name}"`);
+        if (candidates.length > 0) {
+          console.log(`      Closest matches in Metabase search results:`);
+          candidates.slice(0, 5).forEach((c) =>
+            console.log(`        • [${c.id}] ${c.name}`)
+          );
+        } else {
+          console.log(`      (no candidates returned by Metabase search)`);
+        }
+        overallErrors.push(`${report.name}: card not found in Metabase`);
+        console.log();
         continue;
       }
 
@@ -261,10 +296,23 @@ async function main() {
       const rows = parseCSV(csvText);
       console.log(`    Downloaded ${rows.length} rows (card ${cardId})`);
 
+      if (rows.length === 0) {
+        console.log(`    ⚠️  Card returned 0 rows — check Metabase query`);
+        overallErrors.push(`${report.name}: card returned 0 rows`);
+        console.log();
+        continue;
+      }
+
       const { inserted, errors } = await report.handle(rows);
-      if (inserted > 0) console.log(`    ✓ Inserted/updated ${inserted} records`);
+      if (inserted > 0) {
+        console.log(`    ✓ Inserted/updated ${inserted} records`);
+      } else {
+        console.log(`    ⚠️  0 records inserted (all rows rejected)`);
+        overallErrors.push(`${report.name}: 0 of ${rows.length} rows inserted`);
+      }
       if (errors.length > 0) {
-        errors.forEach((e) => console.log(`    ⚠️  ${e}`));
+        errors.slice(0, 10).forEach((e) => console.log(`    ⚠️  ${e}`));
+        if (errors.length > 10) console.log(`    ⚠️  ...and ${errors.length - 10} more errors`);
         overallErrors.push(...errors.map((e) => `${report.name}: ${e}`));
       }
     } catch (err) {
@@ -276,11 +324,13 @@ async function main() {
     console.log();
   }
 
+  console.log("=== Summary ===");
   if (overallErrors.length > 0) {
-    console.error(`Finished with ${overallErrors.length} error(s).`);
+    console.error(`❌ Finished with ${overallErrors.length} error(s):`);
+    overallErrors.forEach((e) => console.error(`   - ${e}`));
     process.exit(1);
   } else {
-    console.log("All reports processed successfully.");
+    console.log("✅ All reports processed successfully.");
   }
 }
 
