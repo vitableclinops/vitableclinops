@@ -354,6 +354,8 @@ async function main() {
         console.log(`    ✓ Inserted/updated ${inserted} records`);
       } else {
         console.log(`    ⚠️  0 records inserted (all rows rejected)`);
+        console.log(`      CSV columns: ${Object.keys(rows[0] ?? {}).join(" | ")}`);
+        console.log(`      First row sample: ${JSON.stringify(rows[0] ?? {}).slice(0, 300)}`);
         overallErrors.push(`${report.name}: 0 of ${rows.length} rows inserted`);
       }
       if (errors.length > 0) {
