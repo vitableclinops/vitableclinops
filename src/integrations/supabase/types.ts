@@ -1335,6 +1335,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          imported_at: string
           projected_visits: number
           state_abbreviation: string
           updated_at: string
@@ -1343,6 +1344,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          imported_at?: string
           projected_visits?: number
           state_abbreviation: string
           updated_at?: string
@@ -1351,6 +1353,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          imported_at?: string
           projected_visits?: number
           state_abbreviation?: string
           updated_at?: string
@@ -3812,23 +3815,32 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          imported_at: string
           sla_pct: number
           state_abbreviation: string
+          window_end: string | null
           window_label: string | null
+          window_start: string | null
         }
         Insert: {
           created_at?: string
           id?: string
+          imported_at?: string
           sla_pct?: number
           state_abbreviation: string
+          window_end?: string | null
           window_label?: string | null
+          window_start?: string | null
         }
         Update: {
           created_at?: string
           id?: string
+          imported_at?: string
           sla_pct?: number
           state_abbreviation?: string
+          window_end?: string | null
           window_label?: string | null
+          window_start?: string | null
         }
         Relationships: []
       }
