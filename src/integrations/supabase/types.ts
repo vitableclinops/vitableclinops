@@ -3970,6 +3970,7 @@ export type Database = {
           finished_at: string | null
           function_name: string
           id: string
+          last_alerted_at: string | null
           rows_failed: number | null
           rows_processed: number | null
           started_at: string
@@ -3983,6 +3984,7 @@ export type Database = {
           finished_at?: string | null
           function_name: string
           id?: string
+          last_alerted_at?: string | null
           rows_failed?: number | null
           rows_processed?: number | null
           started_at?: string
@@ -3996,6 +3998,7 @@ export type Database = {
           finished_at?: string | null
           function_name?: string
           id?: string
+          last_alerted_at?: string | null
           rows_failed?: number | null
           rows_processed?: number | null
           started_at?: string
