@@ -41,13 +41,16 @@ type Row = Record<string, string>;
 type SupabaseClient = ReturnType<typeof createClient>;
 type ImportResult = { inserted: number; errors: string[] };
 
-const REPORTS: Array<{ name: string; handler: Handler }> = [
+// Known card IDs are pinned to bypass fuzzy search and avoid "Card not found".
+// Names are still used for fuzzy fallback if a card is moved/renamed.
+const REPORTS: Array<{ name: string; cardId?: number; handler: Handler }> = [
   {
     name: 'SLA Attainment Rate by State',
     handler: handleSlaByState,
   },
   {
-    name: 'Average of SLA Attainment Rate',
+    cardId: 2931,
+    name: 'SD/ND SLA Attainment Rate - MTD',
     handler: handleRawStore('average_sla_attainment'),
   },
   {
@@ -55,7 +58,8 @@ const REPORTS: Array<{ name: string; handler: Handler }> = [
     handler: handleRawStore('telemedicine_availability'),
   },
   {
-    name: 'Sum of same_next_day_available_slots by state and date_actual: Day',
+    cardId: 2431,
+    name: 'Same & Next Day Available Slots By State and Day (Next 7 days)',
     handler: handleLeftoverSlots,
   },
   {
@@ -63,6 +67,7 @@ const REPORTS: Array<{ name: string; handler: Handler }> = [
     handler: handleDemandForecast,
   },
   {
+    cardId: 2940,
     name: 'PCP State Coverage',
     handler: handleRawStore('pcp_state_coverage'),
   },
@@ -75,6 +80,7 @@ const REPORTS: Array<{ name: string; handler: Handler }> = [
     handler: handleProviderUtilization,
   },
   {
+    cardId: 2424,
     name: 'time-slot-utilization-booking-rate',
     handler: handleUtilizationDaily,
   },
@@ -148,8 +154,8 @@ Deno.serve(async (req: Request) => {
 
   for (const report of REPORTS) {
     try {
-      // Find card ID by name
-      const cardId = await findCardId(token, report.name);
+      // Use pinned card ID if available, otherwise fuzzy-search by name
+      const cardId = report.cardId ?? await findCardId(token, report.name);
       if (!cardId) {
         results[report.name] = { skipped: true, reason: 'Card not found in Metabase' };
         reportFailures++;
@@ -215,10 +221,26 @@ async function findCardId(token: string, name: string): Promise<number | null> {
   );
   if (!res.ok) return null;
   const body = await res.json() as { data: { id: number; name: string }[] };
-  const exact = body.data?.find(
-    (c) => c.name.trim().toLowerCase() === name.trim().toLowerCase(),
-  );
-  return exact?.id ?? null;
+  const candidates = body.data ?? [];
+  const target = name.trim().toLowerCase();
+
+  // 1) Exact match (case-insensitive)
+  const exact = candidates.find((c) => c.name.trim().toLowerCase() === target);
+  if (exact) return exact.id;
+
+  // 2) Normalized match: collapse whitespace + strip punctuation
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const tNorm = norm(name);
+  const normMatch = candidates.find((c) => norm(c.name) === tNorm);
+  if (normMatch) return normMatch.id;
+
+  // 3) Substring match (target words all appear in candidate)
+  const words = tNorm.split(' ').filter((w) => w.length > 2);
+  const substr = candidates.find((c) => {
+    const cn = norm(c.name);
+    return words.every((w) => cn.includes(w));
+  });
+  return substr?.id ?? null;
 }
 
 async function downloadCSV(token: string, cardId: number): Promise<string> {
@@ -381,18 +403,31 @@ async function handleDemandForecast(rows: Row[], supabase: SupabaseClient): Prom
   const records = [];
   const errors: string[] = [];
 
+  // Card 2957 returns: State | Weekly Demand | Active Members Count
+  // No week column — fall back to current Monday.
+  const now = new Date();
+  const dow = now.getUTCDay(); // 0=Sun
+  const daysToMonday = (dow + 6) % 7;
+  const monday = new Date(now.getTime() - daysToMonday * 864e5).toISOString().slice(0, 10);
+
   for (const row of rows) {
     const stateName = col(row, 'State', 'state');
-    const weekRaw = col(row, 'Week', 'week_start', 'date', 'period');
-    const visitsRaw = col(row, 'Visits', 'visits', 'projected_visits', 'count', 'active_members', 'members');
+    const weekRaw = col(
+      row, 'Week', 'week_start', 'Week Start',
+      'date_actual', 'date_actual: Week', 'date', 'Period', 'Day',
+    );
+    const visitsRaw = col(
+      row, 'Weekly Demand', 'Visits', 'visits', 'projected_visits',
+      'Forecasted Visits', 'Forecast', 'Count',
+      'Active Members', 'Active Members Count', 'members', 'Sum',
+    );
 
-    if (!stateName || !weekRaw) { errors.push(`Skipping row missing state/week: ${JSON.stringify(row)}`); continue; }
+    if (!stateName) { errors.push(`Skipping row missing state: ${JSON.stringify(row)}`); continue; }
 
     const abbr = toAbbreviation(stateName);
     if (!abbr) { errors.push(`Unknown state: "${stateName}"`); continue; }
 
-    const weekStart = toMonday(parseDate(weekRaw) ?? '');
-    if (!weekStart) { errors.push(`Unparseable week: "${weekRaw}" for ${stateName}`); continue; }
+    const weekStart = toMonday(parseDate(weekRaw) ?? '') ?? monday;
 
     const visits = parseInt(visitsRaw.replace(/[^0-9.-]/g, ''), 10);
     if (isNaN(visits)) { errors.push(`Non-numeric visits: "${visitsRaw}" for ${stateName}`); continue; }
@@ -425,9 +460,21 @@ async function handleProviderUtilization(rows: Row[], supabase: SupabaseClient):
   const windowStart = new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   for (const row of rows) {
-    const providerName = col(row, 'Provider', 'provider', 'name');
-    const utilRaw = col(row, 'Avg Time Slot Utilization', 'utilization', 'avg_utilization', 'Utilization Rate');
-    const slotsRaw = col(row, 'Total Timeslots', 'total_timeslots', 'timeslots');
+    const providerName = col(
+      row, 'Provider', 'provider', 'Provider Full Name', 'Provider Name', 'Name', 'name',
+    );
+    const utilRaw = col(
+      row,
+      'Average of Utilization rate', 'Average of Utilization Rate',
+      'Avg Time Slot Utilization', 'Average of Time Slot Utilization',
+      'Utilization Rate', 'utilization', 'avg_utilization', 'Avg Utilization',
+    );
+    const slotsRaw = col(
+      row,
+      'Sum of Distinct values of Time Slot ID',
+      'Total Timeslots', 'Sum of Total Timeslots',
+      'total_timeslots', 'timeslots', 'Timeslots',
+    );
 
     if (!providerName) { errors.push(`Row missing provider name: ${JSON.stringify(row)}`); continue; }
 
