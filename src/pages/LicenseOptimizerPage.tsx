@@ -255,6 +255,7 @@ export default function LicenseOptimizerPage() {
   const { data: snapshots = [], isLoading, refetch, isRefetching } = useSnapshots(view);
   const { data: lastSync } = useSyncRuns();
   const { data: activeStates = new Set() } = useStateActivation();
+  const { data: inactiveLicenses = new Map<string, Set<string>>() } = useInactiveLicenses();
 
   const userRole = roles.includes('admin') ? 'admin'
     : roles.includes('pod_lead') ? 'pod_lead' : 'provider';
