@@ -24,39 +24,38 @@ import {
 import { QuickTaskDialog, QuickTaskTarget } from '@/components/admin/QuickTaskDialog';
 import { useProviderCoverage } from '@/hooks/useProviderCoverage';
 import { ProviderCoverageTable } from '@/components/ops/ProviderCoverageTable';
+import { useSlaBufferMultiplier } from '@/hooks/useSystemConfig';
+import {
+  slaTargetSlots,
+  slaTargetHours,
+  slotsToHours,
+  coverageRatio as computeCoverageRatio,
+  computeWeekStatus as sharedComputeWeekStatus,
+  round1,
+  type WeekStatus as SharedWeekStatus,
+} from '@/lib/slaFormulas';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type WeekStatus = 'ok' | 'low' | 'critical' | 'zero' | 'no_data';
+type WeekStatus = SharedWeekStatus;
 type SlotSource = 'historical' | 'forecast' | null;
 
 interface StateOpsRow {
   state: string;
   isActive: boolean;
   availableSlots: number | null;
+  availableHours: number | null;
   hasSlotData: boolean;
   slotSource: SlotSource;
-  slaTargetDaily: number | null;
+  weeklyVisits: number | null;
+  slaTargetSlots: number | null;
+  slaTargetHours: number | null;
   slaPct: number | null;
   weekStatus: WeekStatus;
   coverageRatio: number | null;
 }
 
 // ── Business logic ─────────────────────────────────────────────────────────────
-
-/** SLA target: max(5, (weekly_demand / 5) × 1.5) */
-function slaTargetFromVisits(weeklyVisits: number): number {
-  return Math.max(5, (weeklyVisits / 5) * 1.5);
-}
-
-function computeWeekStatus(available: number | null, hasData: boolean, target: number | null): WeekStatus {
-  if (!hasData) return 'no_data';
-  if (available === null || available === 0) return 'zero';
-  const t = target ?? 10;   // default threshold when no forecast loaded
-  if (available >= t) return 'ok';
-  if (available >= t * 0.5) return 'low';
-  return 'critical';
-}
 
 function getMonday(dateStr: string): string {
   const d = parseLocalDate(dateStr);
@@ -68,15 +67,14 @@ function getMonday(dateStr: string): string {
 
 // ── Data hook ─────────────────────────────────────────────────────────────────
 
-function useOpsData(date: string) {
+function useOpsData(date: string, buffer: number) {
   return useQuery({
-    queryKey: ['ops_dashboard', date],
+    queryKey: ['ops_dashboard', date, buffer],
     queryFn: async (): Promise<StateOpsRow[]> => {
       const weekStart = getMonday(date);
 
       const [activationsRes, slotsRes, slaRes, forecastRes] = await Promise.all([
         supabase.from('state_activation').select('state_abbreviation, is_active'),
-        // Query both historical (Metabase) and forecast (Homebase-derived); prefer historical
         supabase
           .from('state_leftover_slots')
           .select('state_abbreviation, unfilled_slots, window_type')
@@ -94,7 +92,6 @@ function useOpsData(date: string) {
 
       const activations = activationsRes.data ?? [];
 
-      // Prefer historical (Metabase) over forecast (Homebase) for same state/date
       const slotsByState = new Map<string, { slots: number; source: SlotSource }>();
       for (const r of slotsRes.data ?? []) {
         const existing = slotsByState.get(r.state_abbreviation);
@@ -106,7 +103,6 @@ function useOpsData(date: string) {
         }
       }
 
-      // Use most-recent SLA attainment per state (ordered by created_at desc)
       const slaByState = new Map<string, number>();
       for (const r of slaRes.data ?? []) {
         if (!slaByState.has(r.state_abbreviation)) {
@@ -125,20 +121,25 @@ function useOpsData(date: string) {
         const available = slotEntry?.slots ?? null;
         const slotSource = slotEntry?.source ?? null;
         const visits = forecastByState.get(state) ?? null;
-        const slaTarget = visits !== null ? slaTargetFromVisits(visits) : null;
+        const targetSlots = visits !== null ? slaTargetSlots(visits, buffer) : null;
+        const targetHours = visits !== null ? slaTargetHours(visits, buffer) : null;
         const slaPct = slaByState.get(state) ?? null;
-        const coverageRatio =
-          slaTarget !== null && available !== null ? available / slaTarget : null;
+        const ratio = targetSlots !== null && available !== null
+          ? computeCoverageRatio(available, targetSlots)
+          : null;
         return {
           state,
           isActive: a.is_active,
           availableSlots: available,
+          availableHours: available !== null ? slotsToHours(available) : null,
           hasSlotData,
           slotSource,
-          slaTargetDaily: slaTarget !== null ? Math.round(slaTarget) : null,
+          weeklyVisits: visits,
+          slaTargetSlots: targetSlots,
+          slaTargetHours: targetHours,
           slaPct,
-          weekStatus: computeWeekStatus(available, hasSlotData, slaTarget),
-          coverageRatio,
+          weekStatus: sharedComputeWeekStatus(available, hasSlotData, targetSlots),
+          coverageRatio: ratio,
         };
       });
     },
@@ -285,7 +286,8 @@ export default function OpsDashboardPage() {
   const [showGuide, setShowGuide] = useState(false);
   const [viewMode, setViewMode] = useState<'by_state' | 'by_provider'>('by_state');
 
-  const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate);
+  const slaBuffer = useSlaBufferMultiplier();
+  const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate, slaBuffer);
   const { data: lastImportedAt } = useLastSlotImport();
 
   const weekStart = getMonday(selectedDate);
@@ -294,7 +296,7 @@ export default function OpsDashboardPage() {
     [rows]
   );
   const slaTargetMap = useMemo(
-    () => new Map(rows.map((r) => [r.state, r.slaTargetDaily])),
+    () => new Map(rows.map((r) => [r.state, r.slaTargetSlots])),
     [rows]
   );
   const { data: weekData } = useWeekSlots(weekStart, activeStateSet);
@@ -593,9 +595,12 @@ export default function OpsDashboardPage() {
                       filtered.map((r) => ({
                         state: r.state,
                         is_active: r.isActive,
+                        weekly_visits: r.weeklyVisits ?? '',
                         available_slots: r.availableSlots ?? '',
+                        available_hours: r.availableHours != null ? round1(r.availableHours) : '',
                         slot_data_source: r.slotSource ?? 'no_data',
-                        sla_target_daily: r.slaTargetDaily ?? '',
+                        sla_target_slots: r.slaTargetSlots != null ? round1(r.slaTargetSlots) : '',
+                        sla_target_hours: r.slaTargetHours != null ? round1(r.slaTargetHours) : '',
                         coverage_pct: r.coverageRatio != null
                           ? `${(r.coverageRatio * 100).toFixed(0)}%` : '',
                         sla_pct: r.slaPct != null ? `${r.slaPct.toFixed(1)}%` : '',
@@ -650,8 +655,14 @@ export default function OpsDashboardPage() {
                     <thead>
                       <tr className="border-b bg-muted/50">
                         <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">State</th>
-                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Available Slots</th>
-                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">SLA Target</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">
+                          Available
+                          <div className="text-[10px] font-normal text-muted-foreground/70">slots / hours</div>
+                        </th>
+                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">
+                          SLA Target
+                          <div className="text-[10px] font-normal text-muted-foreground/70">slots / hours</div>
+                        </th>
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Coverage</th>
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">SLA %</th>
                         <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Status</th>
@@ -681,6 +692,11 @@ export default function OpsDashboardPage() {
                           <td className="px-4 py-2.5 text-right font-mono">
                             <div className="flex items-center justify-end gap-1.5">
                               {row.availableSlots ?? <span className="text-muted-foreground">—</span>}
+                              {row.availableHours != null && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  / {round1(row.availableHours)}h
+                                </span>
+                              )}
                               {row.slotSource === 'forecast' && (
                                 <span
                                   title="Homebase forecast — projected from scheduled shifts. Upload Metabase CSV to replace with actuals."
@@ -693,7 +709,14 @@ export default function OpsDashboardPage() {
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">
-                            {row.slaTargetDaily ?? '—'}
+                            {row.slaTargetSlots != null ? (
+                              <span title={`From ${row.weeklyVisits ?? '—'} weekly visits × ${slaBuffer} buffer`}>
+                                {round1(row.slaTargetSlots)}
+                                {row.slaTargetHours != null && (
+                                  <span className="text-[10px] ml-1">/ {round1(row.slaTargetHours)}h</span>
+                                )}
+                              </span>
+                            ) : '—'}
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono">
                             {row.coverageRatio !== null
@@ -722,7 +745,7 @@ export default function OpsDashboardPage() {
                                   state: row.state,
                                   status: row.weekStatus,
                                   slotsToday: row.availableSlots,
-                                  slaTarget: row.slaTargetDaily,
+                                  slaTarget: row.slaTargetSlots != null ? Math.round(row.slaTargetSlots) : null,
                                 })
                               }
                             >
