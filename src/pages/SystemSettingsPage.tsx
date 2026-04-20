@@ -1164,6 +1164,11 @@ export default function SystemSettingsPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {/* Capacity & SLA Tab */}
+            <TabsContent value="capacity" className="space-y-6">
+              <SlaBufferSettingCard />
+            </TabsContent>
           </Tabs>
         </div>
       </main>
