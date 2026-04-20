@@ -342,10 +342,12 @@ const ProviderDirectoryPage = () => {
         }
       }
 
-      // State filter - skip for now since actively_licensed_states was removed
+      // State filter — derived from provider_state_status
       if (stateFilter !== 'all') {
-        // TODO: derive from provider_state_status
-        return false;
+        const providerStates = providerStateMap?.get(p.id);
+        if (!providerStates || !providerStates.has(stateFilter)) {
+          return false;
+        }
       }
 
       // Profession filter
