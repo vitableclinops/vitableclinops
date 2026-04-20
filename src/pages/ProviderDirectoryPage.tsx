@@ -238,6 +238,27 @@ const ProviderDirectoryPage = () => {
     fetchProviders();
   }, [isAdmin]);
 
+  // Provider → set of licensed state abbreviations, derived from
+  // provider_state_status (the source of truth that replaced the old
+  // actively_licensed_states column on profiles).
+  const { data: providerStateMap } = useQuery({
+    queryKey: ['provider_directory_state_map'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('provider_state_status')
+        .select('provider_id, state_abbreviation');
+      if (error) throw error;
+      const map = new Map<string, Set<string>>();
+      for (const row of data ?? []) {
+        if (!row.state_abbreviation || !row.provider_id) continue;
+        if (!map.has(row.provider_id)) map.set(row.provider_id, new Set());
+        map.get(row.provider_id)!.add(row.state_abbreviation);
+      }
+      return map;
+    },
+    staleTime: 5 * 60_000,
+  });
+
   // Provider readiness data for management tab
   const { data: readinessData, isLoading: readinessLoading } = useProviderReadiness();
 
