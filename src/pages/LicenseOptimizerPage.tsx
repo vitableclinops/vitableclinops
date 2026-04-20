@@ -857,9 +857,7 @@ export default function LicenseOptimizerPage() {
                         ? ` ${kpis.wastedHours.toFixed(1)} provider hrs/day are wasted in over-licensed states.`
                         : '';
                       const topRec = recommendations[0];
-                      const recStr = topRec
-                        ? ` Top action: redirect ${topRec.provider} from ${topRec.state} to a deficit market (~${topRec.impact.toFixed(1)} hrs/day recovered).`
-                        : '';
+                      const recStr = topRec ? ` Top action: ${topRec.nextStep}.` : '';
                       return `As of ${today}: Network SLA is ${kpis.avgSla.toFixed(1)}% (${slaStatus}). ${kpis.deficitCount} state${kpis.deficitCount !== 1 ? 's' : ''} under-covered, ${kpis.surplusCount} with excess capacity.${wasteStr}${recStr}`;
                     })()}
                   </p>
@@ -880,8 +878,8 @@ export default function LicenseOptimizerPage() {
                       `Wasted Capacity: ${kpis.wastedHours.toFixed(1)} hrs/day`,
                       '',
                       'Top Recommendations:',
-                      ...recommendations.slice(0, 3).map((r, i) =>
-                        `${i + 1}. ${r.provider} · ${r.state}: ${r.rationale} (~${r.impact.toFixed(1)} hrs/day)`
+                      ...recommendations.slice(0, 5).map((r, i) =>
+                        `${i + 1}. [${r.kind.replace('_', ' ')}] ${r.state}${r.provider !== '—' ? ` · ${r.provider}` : ''} → ${r.nextStep}${r.impact ? ` (~${r.impact.toFixed(1)} hrs/day)` : ''}`
                       ),
                       ...(recommendations.length === 0 ? ['  None'] : []),
                     ].join('\n');
