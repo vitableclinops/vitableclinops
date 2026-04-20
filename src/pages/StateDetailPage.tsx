@@ -6,6 +6,7 @@ import { useParams, Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { RelatedLinksCard } from '@/components/navigation/RelatedLinksCard';
+import { DataFreshnessIndicator } from '@/components/DataFreshnessIndicator';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -322,6 +323,12 @@ export default function StateDetailPage() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Ops data freshness */}
+              <DataFreshnessIndicator
+                tables={['state_sla_attainment', 'state_leftover_slots']}
+                variant="footer"
+              />
 
               {/* Physician Capacity */}
               {ratioLimit != null && physicianCapacity.length > 0 && (

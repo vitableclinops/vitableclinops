@@ -289,7 +289,7 @@ export default function OpsDashboardPage() {
 
   const slaBuffer = useSlaBufferMultiplier();
   const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate, slaBuffer);
-  const { data: lastImportedAt } = useLastSlotImport();
+  // freshness now surfaced via <DataFreshnessIndicator /> in the header
 
   const weekStart = getMonday(selectedDate);
   const activeStateSet = useMemo(
