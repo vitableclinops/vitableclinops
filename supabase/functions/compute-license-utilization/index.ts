@@ -246,27 +246,56 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      const perState = hours / eligible.length;
+      // Reconcile scheduled hours against actual utilization (when available).
+      // utilPct of 70 means provider books ~70% of scheduled time → effective
+      // supply = scheduled * 0.70. Falls back to 100% (raw scheduled) if missing.
+      const utilPct = utilByProfile.get(profileId);
+      const effectiveHours = utilPct !== undefined && utilPct > 0
+        ? hours * (utilPct / 100)
+        : hours;
+
+      const perState = effectiveHours / eligible.length;
+      const scheduledPerState = hours / eligible.length;
 
       for (const state of eligible) {
         const unfilled = leftoverMap.get(`${state}|${date}`) ?? null;
         const slaPct = slaByState.get(state) ?? null;
+        // Find the Sunday of this date's week (forecast week_start convention).
+        // demand_forecast.week_start is typically the Monday of the ISO week,
+        // but our data shows YYYY-MM-DD aligned to the start; we match by
+        // finding the most recent forecast row at or before this date.
+        const forecastVisits = lookupWeeklyForecast(forecastMap, state, date);
 
         let estimatedDemandHours: number | null = null;
         let coverageRatio: number | null = null;
         let quadrant = 'UNKNOWN';
+        let demandSource: 'forecast' | 'leftover_sla' | 'sla_only' | 'none' = 'none';
 
-        if (unfilled !== null && slaPct !== null && slaPct > 0) {
+        // Tier A: demand_forecast (preferred)
+        if (forecastVisits !== null && forecastVisits >= 0) {
+          // weekly visits → daily visits → daily hours (1 visit = 1 slot = 1/SLOTS_PER_HOUR hr)
+          estimatedDemandHours = (forecastVisits / 7) / SLOTS_PER_HOUR;
+          coverageRatio = estimatedDemandHours > 0
+            ? perState / estimatedDemandHours
+            : (perState > 0 ? 999 : null);
+          demandSource = 'forecast';
+          quadrant = classifyQuadrant(slaPct ?? 100, unfilled ?? 0, p25, p75, coverageRatio);
+        }
+        // Tier B: leftover slots + SLA
+        else if (unfilled !== null && slaPct !== null && slaPct > 0) {
           const supplySlots = perState * SLOTS_PER_HOUR;
           const bookedSlots = Math.max(0, supplySlots - unfilled);
           const demandSlots = bookedSlots / (slaPct / 100);
           estimatedDemandHours = demandSlots / SLOTS_PER_HOUR;
           coverageRatio = estimatedDemandHours > 0 ? perState / estimatedDemandHours : null;
-
+          demandSource = 'leftover_sla';
           quadrant = classifyQuadrant(slaPct, unfilled, p25, p75, coverageRatio);
-        } else if (slaPct !== null) {
+        }
+        // Tier C: SLA-only heuristic
+        else if (slaPct !== null) {
           // No slot data but have SLA
           quadrant = slaPct >= SLA_HIGH_THRESHOLD ? 'BALANCED' : slaPct < SLA_LOW_THRESHOLD ? 'DEFICIT' : 'BALANCED';
+          demandSource = 'sla_only';
         }
 
         // Wasted: provider's hours going to a state that's SURPLUS (coverage >> 2x)
@@ -278,7 +307,7 @@ Deno.serve(async (req: Request) => {
           state_abbreviation: state,
           provider_hours_total: Math.round(hours * 100) / 100,
           active_license_count: eligible.length,
-          allocated_hours: Math.round(perState * 100) / 100,
+          allocated_hours: Math.round(scheduledPerState * 100) / 100,
           unfilled_slots: unfilled,
           sla_pct: slaPct,
           estimated_demand_hours: estimatedDemandHours !== null
