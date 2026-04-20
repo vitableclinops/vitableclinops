@@ -55,6 +55,17 @@ export function useComplianceAtRiskDays() {
   return (config?.value?.value as number) ?? 30;
 }
 
+/**
+ * SLA buffer multiplier — applied to expected daily demand to set the
+ * daily SLA target for slots/hours. 1.5 = 50% headroom for no-shows,
+ * peak hours, and urgent visits. Configurable in System Settings.
+ */
+export function useSlaBufferMultiplier() {
+  const { data } = useSystemConfig('sla_buffer_multiplier');
+  const config = data as SystemConfigEntry | undefined;
+  return (config?.value?.value as number) ?? 1.5;
+}
+
 export function useUpdateSystemConfig() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
