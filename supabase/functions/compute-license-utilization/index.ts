@@ -282,6 +282,7 @@ Deno.serve(async (req: Request) => {
       for (const state of eligible) {
         const unfilled = leftoverMap.get(`${state}|${date}`) ?? null;
         const slaPct = slaByState.get(state) ?? null;
+        const pct = statePercentiles.get(state) ?? { p25: 0, p75: 0 };
         // Find the Sunday of this date's week (forecast week_start convention).
         // demand_forecast.week_start is typically the Monday of the ISO week,
         // but our data shows YYYY-MM-DD aligned to the start; we match by
@@ -301,7 +302,7 @@ Deno.serve(async (req: Request) => {
             ? perState / estimatedDemandHours
             : (perState > 0 ? 999 : null);
           demandSource = 'forecast';
-          quadrant = classifyQuadrant(slaPct ?? 100, unfilled ?? 0, p25, p75, coverageRatio);
+          quadrant = classifyQuadrant(slaPct ?? 100, unfilled ?? 0, pct.p25, pct.p75, coverageRatio);
         }
         // Tier B: leftover slots + SLA
         else if (unfilled !== null && slaPct !== null && slaPct > 0) {
@@ -311,7 +312,7 @@ Deno.serve(async (req: Request) => {
           estimatedDemandHours = demandSlots / SLOTS_PER_HOUR;
           coverageRatio = estimatedDemandHours > 0 ? perState / estimatedDemandHours : null;
           demandSource = 'leftover_sla';
-          quadrant = classifyQuadrant(slaPct, unfilled, p25, p75, coverageRatio);
+          quadrant = classifyQuadrant(slaPct, unfilled, pct.p25, pct.p75, coverageRatio);
         }
         // Tier C: SLA-only heuristic
         else if (slaPct !== null) {
