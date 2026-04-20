@@ -358,18 +358,20 @@ async function handleLeftoverSlots(rows: Row[], supabase: SupabaseClient): Promi
 
     records.push({
       state_abbreviation: abbr,
-      date_actual: date,
-      available_slots: slots,
-      window_type: 'forecast',
-      imported_at: new Date().toISOString(),
+      slot_date: date,
+      unfilled_slots: slots,
+      window_type: 'historical',
+      imported_at: nowIso,
+      source: 'metabase_sync',
+      synced_at: nowIso,
     });
   }
 
   if (records.length === 0) return { inserted: 0, errors };
 
   const { error } = await supabase
-    .from('leftover_slots')
-    .upsert(records, { onConflict: 'state_abbreviation,date_actual' });
+    .from('state_leftover_slots')
+    .upsert(records, { onConflict: 'state_abbreviation,slot_date,window_type' });
   if (error) throw new Error(error.message);
 
   return { inserted: records.length, errors };
