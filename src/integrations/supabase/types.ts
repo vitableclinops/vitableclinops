@@ -3734,7 +3734,9 @@ export type Database = {
           id: string
           imported_at: string
           slot_date: string
+          source: string | null
           state_abbreviation: string
+          synced_at: string | null
           unfilled_slots: number
           window_type: string | null
         }
@@ -3743,7 +3745,9 @@ export type Database = {
           id?: string
           imported_at?: string
           slot_date: string
+          source?: string | null
           state_abbreviation: string
+          synced_at?: string | null
           unfilled_slots?: number
           window_type?: string | null
         }
@@ -3752,7 +3756,9 @@ export type Database = {
           id?: string
           imported_at?: string
           slot_date?: string
+          source?: string | null
           state_abbreviation?: string
+          synced_at?: string | null
           unfilled_slots?: number
           window_type?: string | null
         }
@@ -3826,7 +3832,9 @@ export type Database = {
           id: string
           imported_at: string
           sla_pct: number
+          source: string | null
           state_abbreviation: string
+          synced_at: string | null
           window_end: string | null
           window_label: string | null
           window_start: string | null
@@ -3836,7 +3844,9 @@ export type Database = {
           id?: string
           imported_at?: string
           sla_pct?: number
+          source?: string | null
           state_abbreviation: string
+          synced_at?: string | null
           window_end?: string | null
           window_label?: string | null
           window_start?: string | null
@@ -3846,7 +3856,9 @@ export type Database = {
           id?: string
           imported_at?: string
           sla_pct?: number
+          source?: string | null
           state_abbreviation?: string
+          synced_at?: string | null
           window_end?: string | null
           window_label?: string | null
           window_start?: string | null
@@ -3948,6 +3960,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sync_runs: {
+        Row: {
+          created_at: string
+          details: Json | null
+          duration_ms: number | null
+          error_message: string | null
+          finished_at: string | null
+          function_name: string
+          id: string
+          rows_failed: number | null
+          rows_processed: number | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          duration_ms?: number | null
+          error_message?: string | null
+          finished_at?: string | null
+          function_name: string
+          id?: string
+          rows_failed?: number | null
+          rows_processed?: number | null
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          duration_ms?: number | null
+          error_message?: string | null
+          finished_at?: string | null
+          function_name?: string
+          id?: string
+          rows_failed?: number | null
+          rows_processed?: number | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: []
       }
       system_config: {
         Row: {
