@@ -113,13 +113,6 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  // Best-effort: keep the vault copy of SYNC_SECRET in sync with the env value
-  // so the pg_cron schedule can authenticate. Failures here are non-fatal.
-  if (syncSecret) {
-    supabase.rpc('sync_vault_metabase_secret', { p_value: syncSecret })
-      .then(({ error }) => { if (error) console.warn('vault sync failed:', error.message); });
-  }
-
   // ── Open a sync_runs row up front so failures are visible even if the
   //    function crashes before completing.
   const startedAt = Date.now();
