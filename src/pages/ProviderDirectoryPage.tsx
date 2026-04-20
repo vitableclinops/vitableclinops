@@ -430,7 +430,7 @@ const ProviderDirectoryPage = () => {
     });
 
     return filtered;
-  }, [providers, publicProviders, isAdmin, activeTab, searchQuery, stateFilter, professionFilter, statusFilter, employmentTypeFilter, agencyFilter, sortColumn, sortDirection]);
+  }, [providers, publicProviders, isAdmin, activeTab, searchQuery, stateFilter, professionFilter, statusFilter, employmentTypeFilter, agencyFilter, sortColumn, sortDirection, providerStateMap]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
