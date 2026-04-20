@@ -4300,19 +4300,28 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          imported_at: string | null
           overall_pct: number | null
+          source: string | null
+          synced_at: string | null
           util_date: string
         }
         Insert: {
           created_at?: string
           id?: string
+          imported_at?: string | null
           overall_pct?: number | null
+          source?: string | null
+          synced_at?: string | null
           util_date: string
         }
         Update: {
           created_at?: string
           id?: string
+          imported_at?: string | null
           overall_pct?: number | null
+          source?: string | null
+          synced_at?: string | null
           util_date?: string
         }
         Relationships: []
