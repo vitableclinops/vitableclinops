@@ -85,6 +85,10 @@ export default function DemandForecastPage() {
     : roles.includes('pod_lead') ? 'pod_lead' : 'provider';
 
   const { data: rows = [], isLoading, refetch, isRefetching } = useDemandForecast();
+  const slaBuffer = useSlaBufferMultiplier();
+  const hoursNeeded = (visits: number) => round1(weeklyHoursNeeded(visits));
+  const slaTargetDaily = (visits: number) =>
+    `${round1(slaTargetSlots(visits, slaBuffer))} / ${round1(slaTargetHours(visits, slaBuffer))}h`;
   const [uploading, setUploading] = useState(false);
   const [filterState, setFilterState] = useState('');
   const [selectedWeek, setSelectedWeek] = useState<string>('all');
