@@ -22,6 +22,7 @@ import {
   Activity, Target, Download, CalendarDays, Plus, Info, ChevronDown, Zap,
 } from 'lucide-react';
 import { QuickTaskDialog, QuickTaskTarget } from '@/components/admin/QuickTaskDialog';
+import { DataFreshnessIndicator } from '@/components/DataFreshnessIndicator';
 import { useProviderCoverage } from '@/hooks/useProviderCoverage';
 import { ProviderCoverageTable } from '@/components/ops/ProviderCoverageTable';
 import { useSlaBufferMultiplier } from '@/hooks/useSystemConfig';
@@ -288,7 +289,7 @@ export default function OpsDashboardPage() {
 
   const slaBuffer = useSlaBufferMultiplier();
   const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate, slaBuffer);
-  const { data: lastImportedAt } = useLastSlotImport();
+  // freshness now surfaced via <DataFreshnessIndicator /> in the header
 
   const weekStart = getMonday(selectedDate);
   const activeStateSet = useMemo(
@@ -414,15 +415,16 @@ export default function OpsDashboardPage() {
               <h1 className="text-2xl font-bold">Ops Dashboard</h1>
               <p className="text-sm text-muted-foreground mt-1">
                 Daily state-level coverage and SLA status
-                {lastImportedAt && (
-                  <span className="ml-2 text-xs">
-                    · Metabase data imported {new Date(lastImportedAt).toLocaleString()}
-                  </span>
-                )}
                 <span className="ml-2 text-xs inline-flex items-center gap-1">
                   · <span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-medium"><Zap className="h-2.5 w-2.5" />HB</span> = Homebase forecast
                 </span>
               </p>
+              <div className="mt-2">
+                <DataFreshnessIndicator
+                  tables={['state_sla_attainment', 'state_leftover_slots']}
+                  variant="inline"
+                />
+              </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <Input

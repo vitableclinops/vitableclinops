@@ -238,6 +238,27 @@ const ProviderDirectoryPage = () => {
     fetchProviders();
   }, [isAdmin]);
 
+  // Provider → set of licensed state abbreviations, derived from
+  // provider_state_status (the source of truth that replaced the old
+  // actively_licensed_states column on profiles).
+  const { data: providerStateMap } = useQuery({
+    queryKey: ['provider_directory_state_map'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('provider_state_status')
+        .select('provider_id, state_abbreviation');
+      if (error) throw error;
+      const map = new Map<string, Set<string>>();
+      for (const row of data ?? []) {
+        if (!row.state_abbreviation || !row.provider_id) continue;
+        if (!map.has(row.provider_id)) map.set(row.provider_id, new Set());
+        map.get(row.provider_id)!.add(row.state_abbreviation);
+      }
+      return map;
+    },
+    staleTime: 5 * 60_000,
+  });
+
   // Provider readiness data for management tab
   const { data: readinessData, isLoading: readinessLoading } = useProviderReadiness();
 
@@ -285,8 +306,14 @@ const ProviderDirectoryPage = () => {
     const states = new Set<string>();
     const professions = new Set<string>();
 
+    // Pull state list from provider_state_status — the new source of truth.
+    if (providerStateMap) {
+      for (const stateSet of providerStateMap.values()) {
+        for (const s of stateSet) states.add(s);
+      }
+    }
+
     data.forEach(p => {
-      // States are no longer available from profile fields - skip state extraction for now
       const prof = p.profession || p.credentials;
       if (prof) professions.add(prof);
     });
@@ -295,7 +322,7 @@ const ProviderDirectoryPage = () => {
       availableStates: Array.from(states).sort(),
       availableProfessions: Array.from(professions).sort(),
     };
-  }, [providers, publicProviders, isAdmin]);
+  }, [providers, publicProviders, isAdmin, providerStateMap]);
 
   // Filter and sort providers for directory view
   const filteredProviders = useMemo(() => {
@@ -315,10 +342,12 @@ const ProviderDirectoryPage = () => {
         }
       }
 
-      // State filter - skip for now since actively_licensed_states was removed
+      // State filter — derived from provider_state_status
       if (stateFilter !== 'all') {
-        // TODO: derive from provider_state_status
-        return false;
+        const providerStates = providerStateMap?.get(p.id);
+        if (!providerStates || !providerStates.has(stateFilter)) {
+          return false;
+        }
       }
 
       // Profession filter
@@ -401,7 +430,7 @@ const ProviderDirectoryPage = () => {
     });
 
     return filtered;
-  }, [providers, publicProviders, isAdmin, activeTab, searchQuery, stateFilter, professionFilter, statusFilter, employmentTypeFilter, agencyFilter, sortColumn, sortDirection]);
+  }, [providers, publicProviders, isAdmin, activeTab, searchQuery, stateFilter, professionFilter, statusFilter, employmentTypeFilter, agencyFilter, sortColumn, sortDirection, providerStateMap]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
