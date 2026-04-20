@@ -82,7 +82,8 @@ Deno.serve(async (req: Request) => {
   }
 
   // Determine channel: body override > env var > default
-  let channel = Deno.env.get('SLACK_OPS_ALERTS_CHANNEL_ID') || '#ops-alerts';
+  // Channel: body override > env var > hardcoded default
+  let channel = Deno.env.get('SLACK_OPS_ALERTS_CHANNEL_ID') || 'C08A03ET7C3'; // #appointment-availability-update
   try {
     const body = await req.json().catch(() => ({}));
     if (body?.channel) channel = body.channel;
@@ -108,22 +109,37 @@ Deno.serve(async (req: Request) => {
   }
   const text = `*Vitable Ops — Sync Health Alert*\n\n${sections.join('\n\n')}`;
 
-  // Post to Slack via connector gateway
-  const slackRes = await fetch(`${GATEWAY_URL}/chat.postMessage`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${lovableKey}`,
-      'X-Connection-Api-Key': slackKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      channel,
-      text,
-      mrkdwn: true,
-    }),
-  });
+  // Post to Slack via connector gateway (auto-join if needed)
+  const postToSlack = async (ch: string, txt: string) => {
+    const res = await fetch(`${GATEWAY_URL}/chat.postMessage`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableKey}`,
+        'X-Connection-Api-Key': slackKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ channel: ch, text: txt, mrkdwn: true }),
+    });
+    const data = await res.json();
+    return { res, data };
+  };
 
-  const slackData = await slackRes.json();
+  let { res: slackRes, data: slackData } = await postToSlack(channel, text);
+
+  // If not_in_channel, try to join first then retry
+  if (slackData?.error === 'not_in_channel') {
+    await fetch(`${GATEWAY_URL}/conversations.join`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableKey}`,
+        'X-Connection-Api-Key': slackKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ channel }),
+    });
+    ({ res: slackRes, data: slackData } = await postToSlack(channel, text));
+  }
+
   if (!slackRes.ok || !slackData.ok) {
     return new Response(JSON.stringify({
       error: `Slack post failed [${slackRes.status}]: ${slackData.error ?? JSON.stringify(slackData)}`,
