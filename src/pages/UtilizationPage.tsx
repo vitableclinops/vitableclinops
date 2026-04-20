@@ -86,9 +86,10 @@ function useProviderUtilizationSyncStatus() {
         .order('synced_at', { ascending: false, nullsFirst: false })
         .limit(1)
         .maybeSingle();
+      const row = data as { source?: string | null; synced_at?: string | null } | null;
       return {
-        source: (data?.source as SyncStatus['source']) ?? null,
-        syncedAt: data?.synced_at ?? null,
+        source: (row?.source as SyncStatus['source']) ?? null,
+        syncedAt: row?.synced_at ?? null,
       };
     },
     staleTime: 5 * 60_000,
