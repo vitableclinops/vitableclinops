@@ -132,6 +132,38 @@ Deno.serve(async (req: Request) => {
     const p25 = percentile(allSlotValues, 25);
     const p75 = percentile(allSlotValues, 75);
 
+    // ── Load demand_forecast (weekly projected_visits per state) ──────────────
+    // Preferred demand signal. Stored as weekly projected_visits keyed by
+    // (state, week_start). We convert to daily demand hours below.
+    const { data: forecastRows } = await supabase
+      .from('demand_forecast')
+      .select('state_abbreviation, week_start, projected_visits')
+      .gte('week_start', windowStart)
+      .lte('week_start', windowEnd);
+
+    // key = "state|week_start" → projected_visits (weekly)
+    const forecastMap = new Map<string, number>();
+    for (const row of (forecastRows ?? [])) {
+      forecastMap.set(`${row.state_abbreviation}|${row.week_start}`, Number(row.projected_visits));
+    }
+
+    // ── Load provider_utilization actuals ─────────────────────────────────────
+    // Per-provider avg_utilization_pct over a recent window. Used to scale
+    // scheduled hours → effective (booked) hours so wasted-flag reflects reality.
+    const { data: utilRows } = await supabase
+      .from('provider_utilization')
+      .select('profile_id, avg_utilization_pct, window_end')
+      .not('profile_id', 'is', null)
+      .order('window_end', { ascending: false });
+
+    // Keep most-recent window per profile
+    const utilByProfile = new Map<string, number>();
+    for (const row of (utilRows ?? [])) {
+      if (!utilByProfile.has(row.profile_id)) {
+        utilByProfile.set(row.profile_id, Number(row.avg_utilization_pct));
+      }
+    }
+
     // ── Load provider active licenses ─────────────────────────────────────────
     const { data: licenseRows } = await supabase
       .from('provider_licenses')
