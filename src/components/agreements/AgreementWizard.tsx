@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -9,6 +9,7 @@ import { AgreementDetailsStep } from './wizard/AgreementDetailsStep';
 import { ReviewStep } from './wizard/ReviewStep';
 import { useAgreementWorkflow } from '@/hooks/useAgreementWorkflow';
 import { supabase } from '@/integrations/supabase/client';
+import { useFormPersist } from '@/hooks/useFormPersist';
 import { useStateCompliance } from '@/hooks/useStateCompliance';
 import { usePhysicianCapacity } from '@/hooks/usePhysicianCapacity';
 import { toast } from 'sonner';
@@ -63,7 +64,8 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { createAgreementWithTasks } = useAgreementWorkflow();
   const { getStateCompliance } = useStateCompliance();
-  const [formData, setFormData] = useState<AgreementFormData>({
+
+  const DEFAULT_FORM: AgreementFormData = {
     selectedState: null,
     physicianId: null,
     physicianName: '',
@@ -76,7 +78,24 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
     chartReviewRequired: false,
     chartReviewFrequency: '',
     providerMessage: '',
-  });
+  };
+
+  const [formData, setFormData] = useState<AgreementFormData>(DEFAULT_FORM);
+
+  // Persist wizard state across session expiry + re-login
+  type PersistedWizard = { step: number; form: Omit<AgreementFormData, 'startDate'> & { startDate?: string } };
+  const restoreWizard = useCallback((saved: PersistedWizard) => {
+    setCurrentStep(saved.step);
+    setFormData({
+      ...saved.form,
+      startDate: saved.form.startDate ? new Date(saved.form.startDate) : undefined,
+    });
+  }, []);
+  const persistValue: PersistedWizard = {
+    step: currentStep,
+    form: { ...formData, startDate: formData.startDate?.toISOString() },
+  };
+  const { clearSaved } = useFormPersist('agreement-wizard', persistValue, restoreWizard);
 
   // Check physician capacity
   const stateCompliance = formData.selectedState ? 
@@ -176,25 +195,13 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
           });
       }
 
+      clearSaved();
       onOpenChange(false);
       onSuccess?.();
-      
+
       // Reset form
       setCurrentStep(0);
-      setFormData({
-        selectedState: null,
-        physicianId: null,
-        physicianName: '',
-        physicianEmail: '',
-        physicianNpi: '',
-        providers: [],
-        startDate: undefined,
-        renewalCadence: 'annual',
-        meetingCadence: 'monthly',
-        chartReviewRequired: false,
-        chartReviewFrequency: '',
-        providerMessage: '',
-      });
+      setFormData(DEFAULT_FORM);
     } catch (error) {
       console.error('Error creating agreement:', error);
       toast.error('Failed to create agreement', {

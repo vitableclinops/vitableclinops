@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { cn, downloadCSV } from '@/lib/utils';
+import { cn, downloadCSV, formatDisplayDate } from '@/lib/utils';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import {
   RefreshCw,
@@ -868,7 +868,7 @@ export default function LicenseOptimizerPage() {
   };
 
   const lastSyncTime = lastSync?.finished_at
-    ? new Date(lastSync.finished_at).toLocaleString()
+    ? formatDisplayDate(lastSync.finished_at, 'datetime')
     : 'Never';
 
   // ── Render ──────────────────────────────────────────────────────────────────

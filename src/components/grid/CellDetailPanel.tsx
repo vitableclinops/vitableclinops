@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+import { cn, formatDisplayDate } from '@/lib/utils';
 import type { GridCell, GridProvider, GridState, CredentialingRequirement, CellStatus } from '@/types/grid';
 
 interface CellDetailPanelProps {
@@ -92,7 +92,7 @@ export function CellDetailPanel({ cell, provider, state, onClose }: CellDetailPa
               {state.name} • {provider.credentials || provider.providerType}
             </p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+          <Button variant="ghost" size="icon" aria-label="Close panel" title="Close panel" onClick={onClose} className="h-8 w-8">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -142,7 +142,7 @@ export function CellDetailPanel({ cell, provider, state, onClose }: CellDetailPa
           )}
           {cell.licensure.expirationDate && (
             <p className="text-sm text-muted-foreground">
-              Expires: {new Date(cell.licensure.expirationDate).toLocaleDateString()}
+              Expires: {formatDisplayDate(cell.licensure.expirationDate)}
               {cell.licensure.daysUntilExpiry !== undefined && (
                 <span className={cn(
                   'ml-2',

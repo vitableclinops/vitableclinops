@@ -48,7 +48,7 @@ import {
   TableIcon,
   GraduationCap
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatDisplayDate } from '@/lib/utils';
 import type { State, DemandTag, Task, Provider } from '@/types';
 import { toast } from 'sonner';
 
@@ -658,7 +658,7 @@ const StateCompliancePage = () => {
                               {provider?.firstName} {provider?.lastName}
                               {task.dueDate && (
                                 <span className={cn(isOverdue && 'text-destructive')}>
-                                  {' '}• Due {new Date(task.dueDate).toLocaleDateString()}
+                                  {' '}• Due {formatDisplayDate(task.dueDate)}
                                 </span>
                               )}
                             </p>

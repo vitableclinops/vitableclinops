@@ -819,7 +819,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
                     <Archive className="h-3.5 w-3.5 mr-1" />
                     Archive
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedTaskIds(new Set())}>
+                  <Button variant="ghost" size="icon" aria-label="Clear selected tasks" title="Clear selected tasks" className="h-7 w-7" onClick={() => setSelectedTaskIds(new Set())}>
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </div>

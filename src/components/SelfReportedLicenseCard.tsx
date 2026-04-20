@@ -10,7 +10,7 @@ import {
   ExternalLink,
   ChevronRight
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatDisplayDate } from '@/lib/utils';
 import type { SelfReportedLicense } from '@/types';
 import { states, providers } from '@/data/mockData';
 
@@ -65,8 +65,8 @@ export function SelfReportedLicenseCard({
             </div>
             
             <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-              <span>Expires: {new Date(license.expirationDate).toLocaleDateString()}</span>
-              <span>Submitted: {new Date(license.submittedAt).toLocaleDateString()}</span>
+              <span>Expires: {formatDisplayDate(license.expirationDate)}</span>
+              <span>Submitted: {formatDisplayDate(license.submittedAt)}</span>
             </div>
           </div>
           
@@ -116,7 +116,7 @@ export function SelfReportedLicenseCard({
         {/* Verification info */}
         {license.verificationStatus === 'verified' && license.verifiedAt && (
           <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
-            Verified on {new Date(license.verifiedAt).toLocaleDateString()}
+            Verified on {formatDisplayDate(license.verifiedAt)}
           </div>
         )}
         

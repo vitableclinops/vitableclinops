@@ -148,7 +148,7 @@ export function TaskAssignmentSelect({
       onValueChange={handleAssign}
       disabled={loading}
     >
-      <SelectTrigger className="h-7 w-[140px] text-xs">
+      <SelectTrigger className="h-7 min-w-[120px] w-[140px] text-xs">
         <SelectValue placeholder={
           <span className="flex items-center gap-1 text-muted-foreground">
             <UserPlus className="h-3 w-3" />

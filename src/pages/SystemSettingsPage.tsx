@@ -24,6 +24,7 @@ import { SyncHealthCard } from '@/components/admin/SyncHealthCard';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CsvPreviewDialog } from '@/components/CsvPreviewDialog';
 import Papa from 'papaparse';
+import { formatDisplayDate } from '@/lib/utils';
 import type { Tables, Enums } from '@/integrations/supabase/types';
 
 type Profile = Tables<'profiles'>;
@@ -1023,7 +1024,7 @@ export default function SystemSettingsPage() {
                         {latestRun.status === 'error' && <XCircle className="h-4 w-4 text-destructive" />}
                         <span className="font-medium capitalize">{latestRun.status}</span>
                         <span className="text-sm text-muted-foreground ml-auto">
-                          {new Date(latestRun.started_at).toLocaleString()}
+                          {formatDisplayDate(latestRun.started_at, 'datetime')}
                         </span>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
@@ -1065,7 +1066,7 @@ export default function SystemSettingsPage() {
                           <div key={run.id} className="flex items-center gap-3 text-sm px-1 py-1">
                             <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                             <span className="text-muted-foreground w-36 shrink-0">
-                              {new Date(run.started_at).toLocaleString()}
+                              {formatDisplayDate(run.started_at, 'datetime')}
                             </span>
                             <Badge
                               variant={run.status === 'success' ? 'default' : run.status === 'error' ? 'destructive' : 'secondary'}
@@ -1150,7 +1151,7 @@ export default function SystemSettingsPage() {
                           <TableCell className="font-medium">{m.homebase_name}</TableCell>
                           <TableCell>{m.profiles?.full_name ?? m.profiles?.email ?? m.profile_id}</TableCell>
                           <TableCell className="text-muted-foreground text-sm">
-                            {new Date(m.created_at).toLocaleDateString()}
+                            {formatDisplayDate(m.created_at)}
                           </TableCell>
                           <TableCell>
                             <ConfirmDialog

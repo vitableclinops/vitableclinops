@@ -139,7 +139,7 @@ export function CompletedTransfersTab() {
             {transfers.length} transfer{transfers.length !== 1 ? 's' : ''} archived
           </p>
         </div>
-        <div className="relative w-[280px]">
+        <div className="relative w-full max-w-[280px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search transfers..."

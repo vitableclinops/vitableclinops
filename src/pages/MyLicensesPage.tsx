@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { EditLicenseDialog } from '@/components/provider/EditLicenseDialog';
 import { MapPin, Edit, AlertTriangle, CheckCircle2, Loader2, Plus, Clock } from 'lucide-react';
+import { formatDisplayDate } from '@/lib/utils';
 
 export default function MyLicensesPage() {
   const { profile, roles } = useAuth();
@@ -133,7 +134,7 @@ export default function MyLicensesPage() {
                               <span className="text-amber-600 font-medium">No license number</span>
                             )}
                             {license.expiration_date ? (
-                              <span>Exp: {new Date(license.expiration_date).toLocaleDateString()}</span>
+                              <span>Exp: {formatDisplayDate(license.expiration_date)}</span>
                             ) : (
                               <span className="text-amber-600 font-medium">No expiration date</span>
                             )}
@@ -177,7 +178,7 @@ export default function MyLicensesPage() {
                           <p className="font-medium">{app.state_abbreviation}</p>
                           <p className="text-sm text-muted-foreground">
                             {app.application_submitted_date
-                              ? `Submitted ${new Date(app.application_submitted_date).toLocaleDateString()}`
+                              ? `Submitted ${formatDisplayDate(app.application_submitted_date)}`
                               : 'Application pending'}
                           </p>
                         </div>

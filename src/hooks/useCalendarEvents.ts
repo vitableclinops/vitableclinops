@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatDisplayDate } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -320,7 +321,7 @@ export function useGenerateAttestationTasks() {
           .from('agreement_tasks')
           .insert({
             title: `Review Provider All-Hands + Attest`,
-            description: `Please review the recording and newsletter from the Provider All-Hands on ${new Date(event.starts_at).toLocaleDateString()}, then attest completion.`,
+            description: `Please review the recording and newsletter from the Provider All-Hands on ${formatDisplayDate(event.starts_at)}, then attest completion.`,
             category: 'all_hands_attestation',
             status: 'pending',
             priority: 'medium',

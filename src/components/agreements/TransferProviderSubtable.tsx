@@ -303,7 +303,7 @@ export function TransferProviderSubtable({
                     {isAdmin && (
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7">
+                          <Button variant="ghost" size="icon" aria-label="Provider actions" title="Provider actions" className="h-7 w-7">
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </PopoverTrigger>

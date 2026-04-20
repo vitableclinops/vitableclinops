@@ -3,7 +3,9 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { useEffect } from "react";
+import { toast } from "sonner";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import AuthPage from "./pages/AuthPage";
@@ -55,6 +57,19 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+function SessionExpiredWatcher() {
+  const { sessionExpired, clearSessionExpired } = useAuth();
+  useEffect(() => {
+    if (!sessionExpired) return;
+    toast.warning('Session expired', {
+      description: 'Your session has ended. Please sign in again. Any in-progress form data will be restored.',
+      duration: 8000,
+    });
+    clearSessionExpired();
+  }, [sessionExpired, clearSessionExpired]);
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
@@ -62,6 +77,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <SessionExpiredWatcher />
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/" element={

@@ -8,7 +8,7 @@ import {
   Clock,
   ExternalLink
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatDisplayDate } from '@/lib/utils';
 import type { Task, ComplianceStatus } from '@/types';
 
 interface ComplianceStatusCardProps {
@@ -102,7 +102,7 @@ export function ComplianceStatusCard({ status, tasks = [], className }: Complian
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Clock className="h-4 w-4" />
-              Next Due: {status.nextDueDate && new Date(status.nextDueDate).toLocaleDateString()}
+              Next Due: {status.nextDueDate && formatDisplayDate(status.nextDueDate)}
             </div>
             <div className="space-y-2">
               {upcomingTasks.slice(0, 2).map(task => (
@@ -112,7 +112,7 @@ export function ComplianceStatusCard({ status, tasks = [], className }: Complian
                 >
                   <span className="text-sm truncate flex-1">{task.title}</span>
                   <span className="text-xs text-muted-foreground ml-2">
-                    {task.dueDate && new Date(task.dueDate).toLocaleDateString()}
+                    {task.dueDate && formatDisplayDate(task.dueDate)}
                   </span>
                 </div>
               ))}

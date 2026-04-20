@@ -36,7 +36,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { cn } from '@/lib/utils';
+import { cn, formatDisplayDate } from '@/lib/utils';
 
 interface AgreementWithProviders {
   id: string;
@@ -652,7 +652,7 @@ export default function StateDetailPage() {
                               </Badge>
                               {license.expiration_date && (
                                 <span className="text-xs text-muted-foreground">
-                                  Exp: {new Date(license.expiration_date).toLocaleDateString()}
+                                  Exp: {formatDisplayDate(license.expiration_date)}
                                 </span>
                               )}
                             </div>

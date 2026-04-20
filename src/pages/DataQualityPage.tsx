@@ -11,7 +11,7 @@ import {
   CheckCircle2, AlertTriangle, XCircle, Clock, Users,
   Database, FileText, Zap,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatDisplayDate } from '@/lib/utils';
 
 // ── Data hooks ────────────────────────────────────────────────────────────────
 
@@ -280,7 +280,7 @@ export default function DataQualityPage() {
                         <p className="text-sm font-medium">Last Homebase Sync</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {lastSync?.finished_at
-                            ? new Date(lastSync.finished_at).toLocaleString()
+                            ? formatDisplayDate(lastSync.finished_at, 'datetime')
                             : 'Never synced'}
                         </p>
                         {lastSync && (

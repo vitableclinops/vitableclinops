@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn, downloadCSV } from '@/lib/utils';
+import { cn, downloadCSV, formatDisplayDate } from '@/lib/utils';
 import { Zap, RefreshCw, Save, Loader2, ChevronDown, ChevronRight, Download, Info } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -921,7 +921,7 @@ export default function DemandMatchingEnginePage() {
                                         : <span className="text-muted-foreground text-xs">none</span>}
                                     </td>
                                     <td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
-                                      {new Date(run.created_at).toLocaleDateString()}
+                                      {formatDisplayDate(run.created_at)}
                                     </td>
                                   </tr>
                                   {selectedRunId === run.id && runDetail && (

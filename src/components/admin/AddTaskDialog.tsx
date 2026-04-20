@@ -197,7 +197,7 @@ export function AddTaskDialog({ open, onClose, onSuccess }: AddTaskDialogProps) 
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving || !title.trim()}>
             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Create Task
+            Add Task
           </Button>
         </DialogFooter>
       </DialogContent>

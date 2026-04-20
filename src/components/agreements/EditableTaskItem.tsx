@@ -789,7 +789,7 @@ export function EditableTaskItem({
       {isAdmin && (
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
+            <Button variant="ghost" size="icon" aria-label="Task options" title="Task options" className="h-7 w-7 opacity-0 group-hover:opacity-100">
               <MoreVertical className="h-4 w-4" />
             </Button>
           </PopoverTrigger>

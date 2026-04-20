@@ -13,6 +13,8 @@ interface AuthContextType {
   roles: AppRole[];
   rolesHydrated: boolean;
   loading: boolean;
+  sessionExpired: boolean;
+  clearSessionExpired: () => void;
   signOut: () => Promise<void>;
   hasRole: (role: AppRole) => boolean;
   refreshProfile: () => Promise<void>;
@@ -27,8 +29,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [rolesHydrated, setRolesHydrated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const cancelledRef = useRef(false);
+  const signingOutRef = useRef(false);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -88,9 +92,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen first (covers OAuth redirects), but also proactively hydrate from getSession
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       try {
         setLoading(true);
+        // Detect involuntary sign-out (token expired) vs. explicit user sign-out
+        if (event === 'SIGNED_OUT' && !signingOutRef.current) {
+          setSessionExpired(true);
+        }
         applySession(nextSession);
       } finally {
         if (!cancelledRef.current) setLoading(false);
@@ -113,8 +121,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const clearSessionExpired = () => setSessionExpired(false);
+
   const signOut = async () => {
+    signingOutRef.current = true;
     await supabase.auth.signOut();
+    signingOutRef.current = false;
     setUser(null);
     setSession(null);
     setProfile(null);
@@ -132,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, session, profile, roles, rolesHydrated, loading, signOut, hasRole, refreshProfile }}
+      value={{ user, session, profile, roles, rolesHydrated, loading, sessionExpired, clearSessionExpired, signOut, hasRole, refreshProfile }}
     >
       {children}
     </AuthContext.Provider>

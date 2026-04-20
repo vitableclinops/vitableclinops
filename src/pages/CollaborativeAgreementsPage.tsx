@@ -58,7 +58,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
+import { cn, formatDisplayDate } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
@@ -1323,7 +1323,7 @@ const CollaborativeAgreementsPage = () => {
                                           </span>
                                         ) : provider.stateAgreements[0]?.startDate && (
                                           <span className="text-xs text-muted-foreground">
-                                            Since {new Date(provider.stateAgreements[0].startDate).toLocaleDateString()}
+                                            Since {formatDisplayDate(provider.stateAgreements[0].startDate)}
                                           </span>
                                         )}
                                       </div>

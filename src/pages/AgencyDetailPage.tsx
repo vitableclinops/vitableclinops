@@ -581,7 +581,7 @@ const AgencyDetailPage = () => {
                 <Button type="button" variant="outline" onClick={() => { setContactDialog(false); resetContactForm(); }}>Cancel</Button>
                 <Button type="submit" disabled={saving}>
                   {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  {editingContact ? 'Save' : 'Add Contact'}
+                  {editingContact ? 'Save Changes' : 'Add Contact'}
                 </Button>
               </DialogFooter>
             </form>
@@ -665,7 +665,7 @@ const AgencyDetailPage = () => {
             <Button variant="outline" onClick={() => setEditDialog(false)}>Cancel</Button>
             <Button onClick={handleSaveAgency} disabled={!agencyName || saving}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Save
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
