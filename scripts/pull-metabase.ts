@@ -148,6 +148,19 @@ const REPORTS: Report[] = [
       return chunkedCall("import-provider-appointments", mapped, 2000);
     },
   },
+  {
+    cardId: 2424,
+    name: "time-slot-utilization-booking-rate",
+    handle: async (rows) => {
+      const mapped = rows.map((r) => ({
+        date: col(r, "Date", "date", "Period", "period", "Day", "day"),
+        pct:  col(r, "Booking Rate", "booking_rate", "Utilization", "utilization",
+                     "Avg Booking Rate", "Average of Booking Rate",
+                     "Average of Utilization rate", "Rate", "rate", "%"),
+      })).filter((r) => r.date && r.pct);
+      return callFunction("import-utilization-daily", { rows: mapped });
+    },
+  },
 ];
 
 /**
