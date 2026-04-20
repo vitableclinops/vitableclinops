@@ -368,6 +368,37 @@ function percentile(sorted: number[], p: number): number {
   return sorted[Math.min(idx, sorted.length - 1)];
 }
 
+/**
+ * Find the projected_visits forecast for a given (state, date).
+ * Forecast rows are weekly, keyed by week_start. We pick the most recent
+ * week_start that is on or before the given date; if none, fall back to the
+ * earliest available week (so future dates still match the latest forecast).
+ */
+function lookupWeeklyForecast(
+  forecastMap: Map<string, number>,
+  state: string,
+  date: string,
+): number | null {
+  // Collect all week_starts for this state
+  const stateWeeks: { week: string; visits: number }[] = [];
+  for (const [key, visits] of forecastMap) {
+    const [s, week] = key.split('|');
+    if (s === state) stateWeeks.push({ week, visits });
+  }
+  if (stateWeeks.length === 0) return null;
+  stateWeeks.sort((a, b) => a.week.localeCompare(b.week));
+
+  // Most recent week_start <= date
+  let chosen: number | null = null;
+  for (const row of stateWeeks) {
+    if (row.week <= date) chosen = row.visits;
+    else break;
+  }
+  // Fallback: future date with no past forecast → use earliest
+  if (chosen === null) chosen = stateWeeks[0].visits;
+  return chosen;
+}
+
 function classifyQuadrant(
   slaPct: number,
   unfilled: number,
