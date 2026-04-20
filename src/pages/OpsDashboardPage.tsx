@@ -24,39 +24,38 @@ import {
 import { QuickTaskDialog, QuickTaskTarget } from '@/components/admin/QuickTaskDialog';
 import { useProviderCoverage } from '@/hooks/useProviderCoverage';
 import { ProviderCoverageTable } from '@/components/ops/ProviderCoverageTable';
+import { useSlaBufferMultiplier } from '@/hooks/useSystemConfig';
+import {
+  slaTargetSlots,
+  slaTargetHours,
+  slotsToHours,
+  coverageRatio as computeCoverageRatio,
+  computeWeekStatus as sharedComputeWeekStatus,
+  round1,
+  type WeekStatus as SharedWeekStatus,
+} from '@/lib/slaFormulas';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type WeekStatus = 'ok' | 'low' | 'critical' | 'zero' | 'no_data';
+type WeekStatus = SharedWeekStatus;
 type SlotSource = 'historical' | 'forecast' | null;
 
 interface StateOpsRow {
   state: string;
   isActive: boolean;
   availableSlots: number | null;
+  availableHours: number | null;
   hasSlotData: boolean;
   slotSource: SlotSource;
-  slaTargetDaily: number | null;
+  weeklyVisits: number | null;
+  slaTargetSlots: number | null;
+  slaTargetHours: number | null;
   slaPct: number | null;
   weekStatus: WeekStatus;
   coverageRatio: number | null;
 }
 
 // ── Business logic ─────────────────────────────────────────────────────────────
-
-/** SLA target: max(5, (weekly_demand / 5) × 1.5) */
-function slaTargetFromVisits(weeklyVisits: number): number {
-  return Math.max(5, (weeklyVisits / 5) * 1.5);
-}
-
-function computeWeekStatus(available: number | null, hasData: boolean, target: number | null): WeekStatus {
-  if (!hasData) return 'no_data';
-  if (available === null || available === 0) return 'zero';
-  const t = target ?? 10;   // default threshold when no forecast loaded
-  if (available >= t) return 'ok';
-  if (available >= t * 0.5) return 'low';
-  return 'critical';
-}
 
 function getMonday(dateStr: string): string {
   const d = parseLocalDate(dateStr);
