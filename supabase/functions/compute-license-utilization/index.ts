@@ -4,14 +4,16 @@
  * Algorithm (per day D):
  *
  * 1. Pull Homebase scheduled_hours per provider for each day in the window.
- * 2. For each provider, intersect their active licenses with active states.
- * 3. Even-split provider hours across those states → supply[state, day].
- * 4. From state_leftover_slots + state_sla_attainment, derive:
- *      supply_slots  = supply_hours * 2   (2 slots per hour)
- *      booked_slots  = supply_slots - unfilled_slots
- *      demand_slots  = booked_slots / (sla_pct / 100)
- *      demand_hours  = demand_slots / 2
- *      coverage_ratio = supply_hours / demand_hours
+ * 2. Reconcile each provider's scheduled hours against provider_utilization
+ *    actuals (avg_utilization_pct) so "effective supply" reflects real booked
+ *    time, not just shifts on the calendar.
+ * 3. For each provider, intersect their active licenses with active states.
+ * 4. Even-split effective provider hours across those states → supply[state, day].
+ * 5. Derive demand_hours per (state, day) using a 3-tier fallback:
+ *      a) demand_forecast.projected_visits (weekly → daily / SLOTS_PER_HOUR)  ← preferred
+ *      b) leftover_slots + SLA-derived demand                                  ← fallback
+ *      c) SLA-only heuristic                                                   ← last resort
+ *    coverage_ratio = supply_hours / demand_hours
  * 5. Classify each (state, day) into a quadrant:
  *      DEFICIT  – coverage_ratio < 1.0
  *      BALANCED – 1.0 ≤ coverage_ratio < 1.3
@@ -130,6 +132,38 @@ Deno.serve(async (req: Request) => {
     const p25 = percentile(allSlotValues, 25);
     const p75 = percentile(allSlotValues, 75);
 
+    // ── Load demand_forecast (weekly projected_visits per state) ──────────────
+    // Preferred demand signal. Stored as weekly projected_visits keyed by
+    // (state, week_start). We convert to daily demand hours below.
+    const { data: forecastRows } = await supabase
+      .from('demand_forecast')
+      .select('state_abbreviation, week_start, projected_visits')
+      .gte('week_start', windowStart)
+      .lte('week_start', windowEnd);
+
+    // key = "state|week_start" → projected_visits (weekly)
+    const forecastMap = new Map<string, number>();
+    for (const row of (forecastRows ?? [])) {
+      forecastMap.set(`${row.state_abbreviation}|${row.week_start}`, Number(row.projected_visits));
+    }
+
+    // ── Load provider_utilization actuals ─────────────────────────────────────
+    // Per-provider avg_utilization_pct over a recent window. Used to scale
+    // scheduled hours → effective (booked) hours so wasted-flag reflects reality.
+    const { data: utilRows } = await supabase
+      .from('provider_utilization')
+      .select('profile_id, avg_utilization_pct, window_end')
+      .not('profile_id', 'is', null)
+      .order('window_end', { ascending: false });
+
+    // Keep most-recent window per profile
+    const utilByProfile = new Map<string, number>();
+    for (const row of (utilRows ?? [])) {
+      if (!utilByProfile.has(row.profile_id)) {
+        utilByProfile.set(row.profile_id, Number(row.avg_utilization_pct));
+      }
+    }
+
     // ── Load provider active licenses ─────────────────────────────────────────
     const { data: licenseRows } = await supabase
       .from('provider_licenses')
@@ -212,27 +246,56 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      const perState = hours / eligible.length;
+      // Reconcile scheduled hours against actual utilization (when available).
+      // utilPct of 70 means provider books ~70% of scheduled time → effective
+      // supply = scheduled * 0.70. Falls back to 100% (raw scheduled) if missing.
+      const utilPct = utilByProfile.get(profileId);
+      const effectiveHours = utilPct !== undefined && utilPct > 0
+        ? hours * (utilPct / 100)
+        : hours;
+
+      const perState = effectiveHours / eligible.length;
+      const scheduledPerState = hours / eligible.length;
 
       for (const state of eligible) {
         const unfilled = leftoverMap.get(`${state}|${date}`) ?? null;
         const slaPct = slaByState.get(state) ?? null;
+        // Find the Sunday of this date's week (forecast week_start convention).
+        // demand_forecast.week_start is typically the Monday of the ISO week,
+        // but our data shows YYYY-MM-DD aligned to the start; we match by
+        // finding the most recent forecast row at or before this date.
+        const forecastVisits = lookupWeeklyForecast(forecastMap, state, date);
 
         let estimatedDemandHours: number | null = null;
         let coverageRatio: number | null = null;
         let quadrant = 'UNKNOWN';
+        let demandSource: 'forecast' | 'leftover_sla' | 'sla_only' | 'none' = 'none';
 
-        if (unfilled !== null && slaPct !== null && slaPct > 0) {
+        // Tier A: demand_forecast (preferred)
+        if (forecastVisits !== null && forecastVisits >= 0) {
+          // weekly visits → daily visits → daily hours (1 visit = 1 slot = 1/SLOTS_PER_HOUR hr)
+          estimatedDemandHours = (forecastVisits / 7) / SLOTS_PER_HOUR;
+          coverageRatio = estimatedDemandHours > 0
+            ? perState / estimatedDemandHours
+            : (perState > 0 ? 999 : null);
+          demandSource = 'forecast';
+          quadrant = classifyQuadrant(slaPct ?? 100, unfilled ?? 0, p25, p75, coverageRatio);
+        }
+        // Tier B: leftover slots + SLA
+        else if (unfilled !== null && slaPct !== null && slaPct > 0) {
           const supplySlots = perState * SLOTS_PER_HOUR;
           const bookedSlots = Math.max(0, supplySlots - unfilled);
           const demandSlots = bookedSlots / (slaPct / 100);
           estimatedDemandHours = demandSlots / SLOTS_PER_HOUR;
           coverageRatio = estimatedDemandHours > 0 ? perState / estimatedDemandHours : null;
-
+          demandSource = 'leftover_sla';
           quadrant = classifyQuadrant(slaPct, unfilled, p25, p75, coverageRatio);
-        } else if (slaPct !== null) {
+        }
+        // Tier C: SLA-only heuristic
+        else if (slaPct !== null) {
           // No slot data but have SLA
           quadrant = slaPct >= SLA_HIGH_THRESHOLD ? 'BALANCED' : slaPct < SLA_LOW_THRESHOLD ? 'DEFICIT' : 'BALANCED';
+          demandSource = 'sla_only';
         }
 
         // Wasted: provider's hours going to a state that's SURPLUS (coverage >> 2x)
@@ -244,7 +307,7 @@ Deno.serve(async (req: Request) => {
           state_abbreviation: state,
           provider_hours_total: Math.round(hours * 100) / 100,
           active_license_count: eligible.length,
-          allocated_hours: Math.round(perState * 100) / 100,
+          allocated_hours: Math.round(scheduledPerState * 100) / 100,
           unfilled_slots: unfilled,
           sla_pct: slaPct,
           estimated_demand_hours: estimatedDemandHours !== null
@@ -303,6 +366,37 @@ function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.floor((p / 100) * sorted.length);
   return sorted[Math.min(idx, sorted.length - 1)];
+}
+
+/**
+ * Find the projected_visits forecast for a given (state, date).
+ * Forecast rows are weekly, keyed by week_start. We pick the most recent
+ * week_start that is on or before the given date; if none, fall back to the
+ * earliest available week (so future dates still match the latest forecast).
+ */
+function lookupWeeklyForecast(
+  forecastMap: Map<string, number>,
+  state: string,
+  date: string,
+): number | null {
+  // Collect all week_starts for this state
+  const stateWeeks: { week: string; visits: number }[] = [];
+  for (const [key, visits] of forecastMap) {
+    const [s, week] = key.split('|');
+    if (s === state) stateWeeks.push({ week, visits });
+  }
+  if (stateWeeks.length === 0) return null;
+  stateWeeks.sort((a, b) => a.week.localeCompare(b.week));
+
+  // Most recent week_start <= date
+  let chosen: number | null = null;
+  for (const row of stateWeeks) {
+    if (row.week <= date) chosen = row.visits;
+    else break;
+  }
+  // Fallback: future date with no past forecast → use earliest
+  if (chosen === null) chosen = stateWeeks[0].visits;
+  return chosen;
 }
 
 function classifyQuadrant(
