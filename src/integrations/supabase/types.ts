@@ -3372,6 +3372,8 @@ export type Database = {
           match_confidence: string | null
           profile_id: string | null
           provider_name: string
+          source: string | null
+          synced_at: string | null
           total_timeslots: number
           window_end: string
           window_start: string
@@ -3384,6 +3386,8 @@ export type Database = {
           match_confidence?: string | null
           profile_id?: string | null
           provider_name: string
+          source?: string | null
+          synced_at?: string | null
           total_timeslots: number
           window_end: string
           window_start: string
@@ -3396,6 +3400,8 @@ export type Database = {
           match_confidence?: string | null
           profile_id?: string | null
           provider_name?: string
+          source?: string | null
+          synced_at?: string | null
           total_timeslots?: number
           window_end?: string
           window_start?: string
