@@ -43,7 +43,9 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Insert a sync run record
+  // Open both run records up front: the legacy homebase-specific one for the
+  // existing UI, and the generic sync_runs row used by the unified health widget.
+  const startedAt = Date.now();
   const { data: runRow, error: runErr } = await supabase
     .from('homebase_sync_runs')
     .insert({ status: 'running' })
@@ -56,6 +58,29 @@ Deno.serve(async (req: Request) => {
     });
   }
   const runId: string = runRow.id;
+
+  const { data: genericRunRow } = await supabase
+    .from('sync_runs')
+    .insert({ function_name: 'sync-homebase', status: 'running' })
+    .select('id')
+    .single();
+  const genericRunId: string | null = (genericRunRow?.id as string) ?? null;
+
+  const finalizeGenericRun = async (
+    status: 'success' | 'partial' | 'error',
+    extras: { rows_processed?: number; rows_failed?: number; error_message?: string; details?: unknown } = {},
+  ) => {
+    if (!genericRunId) return;
+    await supabase.from('sync_runs').update({
+      status,
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedAt,
+      rows_processed: extras.rows_processed ?? 0,
+      rows_failed: extras.rows_failed ?? 0,
+      error_message: extras.error_message ?? null,
+      details: extras.details ?? {},
+    }).eq('id', genericRunId);
+  };
 
   const counters = {
     locations_synced: 0,
@@ -224,6 +249,17 @@ Deno.serve(async (req: Request) => {
       unmatched_sample: unmatchedSample,
     }).eq('id', runId);
 
+    // Surface unmatched ratio so the alerter can flag >10% unmatched
+    const unmatchedRatio = counters.employees_synced > 0
+      ? counters.employees_unmatched / counters.employees_synced
+      : 0;
+    const partial = unmatchedRatio > 0.10;
+    await finalizeGenericRun(partial ? 'partial' : 'success', {
+      rows_processed: counters.employees_synced + counters.shifts_synced + counters.locations_synced,
+      details: { ...counters, unmatched_ratio: Math.round(unmatchedRatio * 100) / 100 },
+      error_message: partial ? `High unmatched ratio: ${(unmatchedRatio * 100).toFixed(1)}% (>10% threshold)` : undefined,
+    });
+
     return new Response(JSON.stringify({ ok: true, runId, ...counters }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -237,6 +273,8 @@ Deno.serve(async (req: Request) => {
       ...counters,
       unmatched_sample: unmatchedSample,
     }).eq('id', runId);
+
+    await finalizeGenericRun('error', { error_message: message, details: counters });
 
     return new Response(JSON.stringify({ error: message, runId }), {
       status: 500,
