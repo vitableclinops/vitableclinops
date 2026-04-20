@@ -1337,7 +1337,9 @@ export type Database = {
           id: string
           imported_at: string
           projected_visits: number
+          source: string | null
           state_abbreviation: string
+          synced_at: string | null
           updated_at: string
           week_start: string
         }
@@ -1346,7 +1348,9 @@ export type Database = {
           id?: string
           imported_at?: string
           projected_visits?: number
+          source?: string | null
           state_abbreviation: string
+          synced_at?: string | null
           updated_at?: string
           week_start: string
         }
@@ -1355,7 +1359,9 @@ export type Database = {
           id?: string
           imported_at?: string
           projected_visits?: number
+          source?: string | null
           state_abbreviation?: string
+          synced_at?: string | null
           updated_at?: string
           week_start?: string
         }
