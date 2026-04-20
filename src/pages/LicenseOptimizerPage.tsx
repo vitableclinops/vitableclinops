@@ -281,20 +281,56 @@ export default function LicenseOptimizerPage() {
     [...new Set(filtered.map(s => s.snapshot_date))].sort().slice(-14),
     [filtered]);
 
-  // Heatmap: state → date → dominant quadrant + avg coverage
+  // Heatmap: state → date → coverage ratio + dominant quadrant.
+  //
+  // CORRECTNESS: Coverage ratio is non-linear, so averaging per-provider ratios
+  // is wrong (e.g. provider A=0.5 + provider B=2.0 averaged = 1.25 "balanced",
+  // but the state is genuinely simultaneously deficit and surplus on a per-
+  // provider basis). Aggregate supply (allocated_hours) and demand
+  // (estimated_demand_hours) separately per (state, date), then compute one
+  // ratio. Quadrant is chosen by hour-weighted majority across the day's
+  // provider snapshots so a single low-hour provider can't dominate.
   const heatmapData = useMemo(() => {
-    const map = new Map<string, Map<string, { ratio: number | null; quadrant: Quadrant }>>();
+    type Bucket = {
+      supply: number;
+      demand: number;
+      hasDemand: boolean;
+      quadrantHours: Record<string, number>;
+    };
+    const buckets = new Map<string, Map<string, Bucket>>();
+
     for (const s of filtered) {
-      if (!map.has(s.state_abbreviation)) map.set(s.state_abbreviation, new Map());
-      const dateMap = map.get(s.state_abbreviation)!;
-      const existing = dateMap.get(s.snapshot_date);
-      if (!existing) {
-        dateMap.set(s.snapshot_date, { ratio: s.coverage_ratio, quadrant: s.quadrant });
-      } else {
-        // Average coverage ratios from multiple providers
-        const avgRatio = (existing.ratio ?? 0) + (s.coverage_ratio ?? 0);
-        dateMap.set(s.snapshot_date, { ratio: avgRatio / 2, quadrant: s.quadrant });
+      if (!buckets.has(s.state_abbreviation)) buckets.set(s.state_abbreviation, new Map());
+      const dateMap = buckets.get(s.state_abbreviation)!;
+      let bucket = dateMap.get(s.snapshot_date);
+      if (!bucket) {
+        bucket = { supply: 0, demand: 0, hasDemand: false, quadrantHours: {} };
+        dateMap.set(s.snapshot_date, bucket);
       }
+      const supply = s.allocated_hours ?? 0;
+      bucket.supply += supply;
+      if (s.estimated_demand_hours !== null && s.estimated_demand_hours !== undefined) {
+        bucket.demand += s.estimated_demand_hours;
+        bucket.hasDemand = true;
+      }
+      // Weight quadrant vote by allocated hours (fall back to 1 so non-shift
+      // snapshots still contribute something).
+      const w = supply > 0 ? supply : 1;
+      bucket.quadrantHours[s.quadrant] = (bucket.quadrantHours[s.quadrant] ?? 0) + w;
+    }
+
+    const map = new Map<string, Map<string, { ratio: number | null; quadrant: Quadrant }>>();
+    for (const [state, dateMap] of buckets) {
+      const out = new Map<string, { ratio: number | null; quadrant: Quadrant }>();
+      for (const [date, b] of dateMap) {
+        const ratio = b.hasDemand && b.demand > 0
+          ? b.supply / b.demand
+          : (b.hasDemand ? null : null);
+        const quadrant = (Object.entries(b.quadrantHours)
+          .sort((a, x) => x[1] - a[1])[0]?.[0] ?? 'UNKNOWN') as Quadrant;
+        out.set(date, { ratio, quadrant });
+      }
+      map.set(state, out);
     }
     return map;
   }, [filtered]);
