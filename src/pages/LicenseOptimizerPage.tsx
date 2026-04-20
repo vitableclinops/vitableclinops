@@ -144,6 +144,32 @@ function useStateActivation() {
   });
 }
 
+/**
+ * All inactive provider licenses with provider names.
+ * Used to power "Activate existing license" recommendations.
+ */
+function useInactiveLicenses() {
+  return useQuery({
+    queryKey: ['inactive_provider_licenses'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('provider_licenses')
+        .select('profile_id, state_abbreviation, status')
+        .in('status', ['inactive', 'pending']);
+      if (error) throw error;
+      // profile_id → Set<state>
+      const byProvider = new Map<string, Set<string>>();
+      for (const row of (data ?? [])) {
+        if (!row.profile_id || !row.state_abbreviation) continue;
+        if (!byProvider.has(row.profile_id)) byProvider.set(row.profile_id, new Set());
+        byProvider.get(row.profile_id)!.add(row.state_abbreviation);
+      }
+      return byProvider;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function providerDisplayName(snapshot: Snapshot): string {
