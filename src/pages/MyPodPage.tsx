@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { StatusChip } from '@/components/StatusChip';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
@@ -65,17 +66,17 @@ export default function MyPodPage() {
 
   const getStatusBadge = (member: any) => {
     if (!member.onboarding_completed) {
-      return <Badge variant="secondary">Onboarding</Badge>;
+      return <StatusChip tone="pending" label="Onboarding" />;
     }
     switch (member.activation_status) {
       case 'active':
-        return <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-200">Active</Badge>;
+        return <StatusChip tone="active" />;
       case 'pending_agreements':
-        return <Badge variant="outline" className="text-amber-600 border-amber-200">Pending Agreements</Badge>;
+        return <StatusChip tone="warning" label="Pending Agreements" />;
       case 'pending_review':
-        return <Badge variant="outline" className="text-blue-600 border-blue-200">Pending Review</Badge>;
+        return <StatusChip tone="info" label="Pending Review" />;
       default:
-        return <Badge variant="secondary">{member.activation_status || 'Pending'}</Badge>;
+        return <StatusChip tone="inactive" label={member.activation_status || 'Pending'} />;
     }
   };
 

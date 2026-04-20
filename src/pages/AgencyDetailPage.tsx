@@ -27,6 +27,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { StatusChip } from '@/components/StatusChip';
 import { Separator } from '@/components/ui/separator';
 
 // ── Contact form schema ───────────────────────────────────────────────────────
@@ -370,9 +371,11 @@ const AgencyDetailPage = () => {
                           <TableRow key={p.id}>
                             <TableCell className="font-medium">{p.full_name || 'Unknown'}</TableCell>
                             <TableCell>
-                              <Badge variant="outline" className="gap-1 bg-orange-500/10 text-orange-600 border-orange-500/30">
-                                <Building2 className="h-3 w-3" />Agency-Supplied
-                              </Badge>
+                              <StatusChip
+                                tone="info"
+                                icon={<Building2 className="h-3 w-3" />}
+                                label="Agency-Supplied"
+                              />
                             </TableCell>
                             <TableCell className="font-mono text-sm">{p.npi_number || '—'}</TableCell>
                             <TableCell className="max-w-[200px] truncate text-sm">—</TableCell>

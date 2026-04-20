@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { StatusChip, toneForStatus } from '@/components/StatusChip';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -40,19 +40,6 @@ export default function MyLicensesPage() {
     fetchData();
   }, [profile?.id]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
-      case 'verified':
-        return 'bg-emerald-500/10 text-emerald-600 border-emerald-200';
-      case 'reported':
-        return 'bg-blue-500/10 text-blue-600 border-blue-200';
-      case 'expired':
-        return 'bg-destructive/10 text-destructive border-destructive/20';
-      default:
-        return '';
-    }
-  };
 
   const isIncomplete = (license: any) => {
     return !license.license_number || !license.expiration_date;
@@ -133,9 +120,10 @@ export default function MyLicensesPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <p className="font-medium">{license.state_abbreviation}</p>
-                            <Badge variant="outline" className={getStatusColor(license.status)}>
-                              {license.status || 'Reported'}
-                            </Badge>
+                            <StatusChip
+                              tone={toneForStatus(license.status)}
+                              label={license.status || 'Reported'}
+                            />
                           </div>
                           <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
                             <span>{license.license_type || 'APRN'}</span>
@@ -194,7 +182,7 @@ export default function MyLicensesPage() {
                           </p>
                         </div>
                       </div>
-                      <Badge variant="outline" className="text-blue-600 border-blue-200">Pending</Badge>
+                      <StatusChip tone="pending" label="Pending" />
                     </div>
                   ))}
                 </div>

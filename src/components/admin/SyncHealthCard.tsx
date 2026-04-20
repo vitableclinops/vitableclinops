@@ -3,9 +3,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { AlertTriangle, CheckCircle2, Clock, RefreshCw, XCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
+import { StatusChip, toneForStatus } from '@/components/StatusChip';
 
 type SyncRun = {
   id: string;
@@ -20,11 +19,11 @@ type SyncRun = {
   last_alerted_at: string | null;
 };
 
-const STATUS_BADGE: Record<SyncRun['status'], { label: string; cls: string; Icon: typeof CheckCircle2 }> = {
-  success: { label: 'success', cls: 'bg-green-500/10 text-green-700 border-green-500/30 dark:text-green-400', Icon: CheckCircle2 },
-  partial: { label: 'partial',  cls: 'bg-yellow-500/10 text-yellow-700 border-yellow-500/30 dark:text-yellow-400', Icon: AlertTriangle },
-  error:   { label: 'error',    cls: 'bg-red-500/10 text-red-700 border-red-500/30 dark:text-red-400', Icon: XCircle },
-  running: { label: 'running',  cls: 'bg-blue-500/10 text-blue-700 border-blue-500/30 dark:text-blue-400', Icon: Clock },
+const STATUS_ICON: Record<SyncRun['status'], typeof CheckCircle2> = {
+  success: CheckCircle2,
+  partial: AlertTriangle,
+  error: XCircle,
+  running: Clock,
 };
 
 /**
@@ -69,12 +68,14 @@ export function SyncHealthCard() {
         {latestPerFn.size > 0 && (
           <div className="flex flex-wrap gap-2">
             {Array.from(latestPerFn.values()).map((r) => {
-              const meta = STATUS_BADGE[r.status];
+              const Icon = STATUS_ICON[r.status];
               return (
-                <Badge key={r.function_name} variant="outline" className={cn('gap-1.5', meta.cls)}>
-                  <meta.Icon className="h-3 w-3" />
-                  <span className="font-mono text-[11px]">{r.function_name}</span>
-                </Badge>
+                <StatusChip
+                  key={r.function_name}
+                  tone={toneForStatus(r.status)}
+                  icon={<Icon className="h-3 w-3" />}
+                  label={<span className="font-mono text-[11px]">{r.function_name}</span>}
+                />
               );
             })}
           </div>
@@ -103,15 +104,16 @@ export function SyncHealthCard() {
                 </td></tr>
               )}
               {runs.map((r) => {
-                const meta = STATUS_BADGE[r.status];
+                const Icon = STATUS_ICON[r.status];
                 return (
                   <tr key={r.id} className="border-t hover:bg-muted/30">
                     <td className="px-3 py-2 font-mono text-xs">{r.function_name}</td>
                     <td className="px-3 py-2">
-                      <Badge variant="outline" className={cn('gap-1', meta.cls)}>
-                        <meta.Icon className="h-3 w-3" />
-                        {meta.label}
-                      </Badge>
+                      <StatusChip
+                        tone={toneForStatus(r.status)}
+                        icon={<Icon className="h-3 w-3" />}
+                        label={r.status}
+                      />
                     </td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
                       {formatDistanceToNow(new Date(r.started_at), { addSuffix: true })}

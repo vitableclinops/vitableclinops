@@ -73,8 +73,8 @@ export function StatusChip({ tone, label, icon, className }: StatusChipProps) {
 export function toneForStatus(status: string | null | undefined): StatusTone {
   const s = (status ?? "").toLowerCase();
   if (["active", "approved", "completed", "healthy", "ok", "success", "ready", "verified"].includes(s)) return "active";
-  if (["pending", "in_progress", "in-progress", "in progress", "draft", "processing", "queued", "review"].includes(s)) return "pending";
-  if (["warning", "expiring", "degraded", "low", "attention"].includes(s)) return "warning";
+  if (["pending", "in_progress", "in-progress", "in progress", "draft", "processing", "queued", "review", "running"].includes(s)) return "pending";
+  if (["warning", "expiring", "degraded", "low", "attention", "partial"].includes(s)) return "warning";
   if (["error", "failed", "expired", "critical", "blocked", "rejected", "denied", "zero"].includes(s)) return "error";
   if (["info", "forecast", "external", "externally_managed", "externally-managed"].includes(s)) return "info";
   return "inactive";
