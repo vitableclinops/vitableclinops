@@ -306,8 +306,14 @@ const ProviderDirectoryPage = () => {
     const states = new Set<string>();
     const professions = new Set<string>();
 
+    // Pull state list from provider_state_status — the new source of truth.
+    if (providerStateMap) {
+      for (const stateSet of providerStateMap.values()) {
+        for (const s of stateSet) states.add(s);
+      }
+    }
+
     data.forEach(p => {
-      // States are no longer available from profile fields - skip state extraction for now
       const prof = p.profession || p.credentials;
       if (prof) professions.add(prof);
     });
@@ -316,7 +322,7 @@ const ProviderDirectoryPage = () => {
       availableStates: Array.from(states).sort(),
       availableProfessions: Array.from(professions).sort(),
     };
-  }, [providers, publicProviders, isAdmin]);
+  }, [providers, publicProviders, isAdmin, providerStateMap]);
 
   // Filter and sort providers for directory view
   const filteredProviders = useMemo(() => {
