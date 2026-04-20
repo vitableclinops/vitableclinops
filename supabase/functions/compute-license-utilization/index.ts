@@ -4,14 +4,16 @@
  * Algorithm (per day D):
  *
  * 1. Pull Homebase scheduled_hours per provider for each day in the window.
- * 2. For each provider, intersect their active licenses with active states.
- * 3. Even-split provider hours across those states → supply[state, day].
- * 4. From state_leftover_slots + state_sla_attainment, derive:
- *      supply_slots  = supply_hours * 2   (2 slots per hour)
- *      booked_slots  = supply_slots - unfilled_slots
- *      demand_slots  = booked_slots / (sla_pct / 100)
- *      demand_hours  = demand_slots / 2
- *      coverage_ratio = supply_hours / demand_hours
+ * 2. Reconcile each provider's scheduled hours against provider_utilization
+ *    actuals (avg_utilization_pct) so "effective supply" reflects real booked
+ *    time, not just shifts on the calendar.
+ * 3. For each provider, intersect their active licenses with active states.
+ * 4. Even-split effective provider hours across those states → supply[state, day].
+ * 5. Derive demand_hours per (state, day) using a 3-tier fallback:
+ *      a) demand_forecast.projected_visits (weekly → daily / SLOTS_PER_HOUR)  ← preferred
+ *      b) leftover_slots + SLA-derived demand                                  ← fallback
+ *      c) SLA-only heuristic                                                   ← last resort
+ *    coverage_ratio = supply_hours / demand_hours
  * 5. Classify each (state, day) into a quadrant:
  *      DEFICIT  – coverage_ratio < 1.0
  *      BALANCED – 1.0 ≤ coverage_ratio < 1.3
