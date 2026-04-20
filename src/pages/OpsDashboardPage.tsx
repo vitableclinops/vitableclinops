@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { cn, downloadCSV, formatLocalDate, parseLocalDate } from '@/lib/utils';
+import { slaTargetDailyExact } from '@/lib/metrics';
 import {
   RefreshCw, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
   Activity, Target, Download, CalendarDays, Plus, Info, ChevronDown, Zap,
@@ -43,11 +44,6 @@ interface StateOpsRow {
 }
 
 // ── Business logic ─────────────────────────────────────────────────────────────
-
-/** SLA target: max(5, (weekly_demand / 5) × 1.5) */
-function slaTargetFromVisits(weeklyVisits: number): number {
-  return Math.max(5, (weeklyVisits / 5) * 1.5);
-}
 
 function computeWeekStatus(available: number | null, hasData: boolean, target: number | null): WeekStatus {
   if (!hasData) return 'no_data';
@@ -125,7 +121,7 @@ function useOpsData(date: string) {
         const available = slotEntry?.slots ?? null;
         const slotSource = slotEntry?.source ?? null;
         const visits = forecastByState.get(state) ?? null;
-        const slaTarget = visits !== null ? slaTargetFromVisits(visits) : null;
+        const slaTarget = visits !== null ? slaTargetDailyExact(visits) : null;
         const slaPct = slaByState.get(state) ?? null;
         const coverageRatio =
           slaTarget !== null && available !== null ? available / slaTarget : null;

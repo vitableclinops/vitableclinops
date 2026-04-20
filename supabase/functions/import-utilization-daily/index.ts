@@ -51,10 +51,13 @@ Deno.serve(async (req: Request) => {
     if (isNaN(pct)) { errors.push(`Non-numeric %: "${row.pct}" for ${row.date}`); continue; }
     const normalizedPct = pct <= 1 ? pct * 100 : pct;
 
+    const nowIso = new Date().toISOString();
     records.push({
       util_date: dateStr,
       overall_pct: Math.round(normalizedPct * 100) / 100,
-      imported_at: new Date().toISOString(),
+      imported_at: nowIso,
+      source: 'csv_manual',
+      synced_at: nowIso,
     });
   }
 

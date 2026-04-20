@@ -3206,6 +3206,8 @@ export type Database = {
           match_confidence: string | null
           profile_id: string | null
           provider_name: string
+          source: string | null
+          synced_at: string | null
           total_timeslots: number
           window_end: string
           window_start: string
@@ -3218,6 +3220,8 @@ export type Database = {
           match_confidence?: string | null
           profile_id?: string | null
           provider_name: string
+          source?: string | null
+          synced_at?: string | null
           total_timeslots: number
           window_end: string
           window_start: string
@@ -3230,6 +3234,8 @@ export type Database = {
           match_confidence?: string | null
           profile_id?: string | null
           provider_name?: string
+          source?: string | null
+          synced_at?: string | null
           total_timeslots?: number
           window_end?: string
           window_start?: string
@@ -4069,18 +4075,24 @@ export type Database = {
           created_at: string
           id: string
           overall_pct: number | null
+          source: string | null
+          synced_at: string | null
           util_date: string
         }
         Insert: {
           created_at?: string
           id?: string
           overall_pct?: number | null
+          source?: string | null
+          synced_at?: string | null
           util_date: string
         }
         Update: {
           created_at?: string
           id?: string
           overall_pct?: number | null
+          source?: string | null
+          synced_at?: string | null
           util_date?: string
         }
         Relationships: []

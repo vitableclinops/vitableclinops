@@ -67,6 +67,45 @@ function useUtilizationDaily() {
   });
 }
 
+type SyncStatus = {
+  source: 'metabase_sync' | 'csv_manual' | null;
+  syncedAt: string | null;
+};
+
+/**
+ * Freshest row across provider_utilization: tells ops whether the data on
+ * screen came from the nightly Metabase sync or a manual CSV upload, and when.
+ */
+function useProviderUtilizationSyncStatus() {
+  return useQuery({
+    queryKey: ['provider_utilization_sync_status'],
+    queryFn: async (): Promise<SyncStatus> => {
+      const { data } = await supabase
+        .from('provider_utilization')
+        .select('source, synced_at')
+        .order('synced_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      return {
+        source: (data?.source as SyncStatus['source']) ?? null,
+        syncedAt: data?.synced_at ?? null,
+      };
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return 'never';
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diffMs / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  return `${days}d ago`;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function UtilizationPage() {
@@ -78,6 +117,7 @@ export default function UtilizationPage() {
     data: providers = [], isLoading: loadingProviders, refetch, isRefetching,
   } = useProviderUtilization();
   const { data: daily = [] } = useUtilizationDaily();
+  const { data: syncStatus } = useProviderUtilizationSyncStatus();
 
   const [filterProvider, setFilterProvider] = useState('');
   const [tierFilter, setTierFilter] = useState<Tier | 'all'>('all');
@@ -143,8 +183,18 @@ export default function UtilizationPage() {
             <div>
               <h1 className="text-2xl font-bold">Utilization</h1>
               <p className="text-sm text-muted-foreground mt-1">
-                Provider utilization snapshots · import via License Optimizer
+                Provider utilization snapshots · auto-synced nightly from Metabase
               </p>
+              {syncStatus && syncStatus.syncedAt && (
+                <div className="mt-2 flex items-center gap-2">
+                  <Badge variant={syncStatus.source === 'metabase_sync' ? 'secondary' : 'outline'}>
+                    {syncStatus.source === 'metabase_sync' ? 'Metabase sync' : 'Manual CSV'}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    last updated {formatRelative(syncStatus.syncedAt)}
+                  </span>
+                </div>
+              )}
             </div>
             <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isRefetching}>
               <RefreshCw className={cn('h-4 w-4', isRefetching && 'animate-spin')} />

@@ -102,6 +102,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const nowIso = new Date().toISOString();
     records.push({
       provider_name: row.provider,
       profile_id: profileId,
@@ -110,7 +111,9 @@ Deno.serve(async (req: Request) => {
       window_end,
       total_timeslots: Math.round(totalSlots),
       avg_utilization_pct: Math.round(normalizedPct * 100) / 100,
-      imported_at: new Date().toISOString(),
+      imported_at: nowIso,
+      source: 'csv_manual',
+      synced_at: nowIso,
     });
   }
 

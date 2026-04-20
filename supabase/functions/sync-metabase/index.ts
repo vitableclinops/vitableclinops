@@ -74,6 +74,10 @@ const REPORTS: Array<{ name: string; handler: Handler }> = [
     name: 'Utilization Rate by Provider (5-week)',
     handler: handleProviderUtilization,
   },
+  {
+    name: 'time-slot-utilization-booking-rate',
+    handler: handleUtilizationDaily,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -379,13 +383,16 @@ async function handleProviderUtilization(rows: Row[], supabase: SupabaseClient):
 
     const totalTimeslots = slotsRaw ? parseInt(slotsRaw.replace(/[^0-9]/g, ''), 10) : null;
 
+    const nowIso = new Date().toISOString();
     records.push({
-      provider_name_raw: providerName,
+      provider_name: providerName,
       avg_utilization_pct: utilization,
       total_timeslots: isNaN(totalTimeslots ?? NaN) ? null : totalTimeslots,
       window_start: windowStart,
       window_end: windowEnd,
-      imported_at: new Date().toISOString(),
+      imported_at: nowIso,
+      source: 'metabase_sync',
+      synced_at: nowIso,
     });
   }
 
@@ -394,7 +401,52 @@ async function handleProviderUtilization(rows: Row[], supabase: SupabaseClient):
   // Upsert into provider_utilization by name + window
   const { error } = await supabase
     .from('provider_utilization')
-    .upsert(records, { onConflict: 'provider_name_raw,window_start' });
+    .upsert(records, { onConflict: 'provider_name,window_start' });
+  if (error) throw new Error(error.message);
+
+  return { inserted: records.length, errors };
+}
+
+async function handleUtilizationDaily(rows: Row[], supabase: SupabaseClient): Promise<ImportResult> {
+  const records = [];
+  const errors: string[] = [];
+
+  for (const row of rows) {
+    const dateRaw = col(row, 'Date', 'date', 'Period', 'period', 'day', 'Day');
+    const pctRaw = col(
+      row,
+      'Booking Rate',
+      'booking_rate',
+      'Utilization',
+      'utilization',
+      'Avg Booking Rate',
+      'avg_booking_rate',
+      '%',
+      'Rate',
+      'rate',
+    );
+
+    const date = parseDate(dateRaw);
+    if (!date) { errors.push(`Unparseable date: "${dateRaw}"`); continue; }
+
+    const pct = parsePct(pctRaw);
+    if (pct === null) { errors.push(`Unparseable rate: "${pctRaw}" for ${dateRaw}`); continue; }
+
+    const nowIso = new Date().toISOString();
+    records.push({
+      util_date: date,
+      overall_pct: pct,
+      imported_at: nowIso,
+      source: 'metabase_sync',
+      synced_at: nowIso,
+    });
+  }
+
+  if (records.length === 0) return { inserted: 0, errors };
+
+  const { error } = await supabase
+    .from('utilization_daily')
+    .upsert(records, { onConflict: 'util_date' });
   if (error) throw new Error(error.message);
 
   return { inserted: records.length, errors };
