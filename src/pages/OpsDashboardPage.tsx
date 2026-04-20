@@ -286,7 +286,8 @@ export default function OpsDashboardPage() {
   const [showGuide, setShowGuide] = useState(false);
   const [viewMode, setViewMode] = useState<'by_state' | 'by_provider'>('by_state');
 
-  const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate);
+  const slaBuffer = useSlaBufferMultiplier();
+  const { data: rows = [], isLoading, refetch, isRefetching } = useOpsData(selectedDate, slaBuffer);
   const { data: lastImportedAt } = useLastSlotImport();
 
   const weekStart = getMonday(selectedDate);
@@ -295,7 +296,7 @@ export default function OpsDashboardPage() {
     [rows]
   );
   const slaTargetMap = useMemo(
-    () => new Map(rows.map((r) => [r.state, r.slaTargetDaily])),
+    () => new Map(rows.map((r) => [r.state, r.slaTargetSlots])),
     [rows]
   );
   const { data: weekData } = useWeekSlots(weekStart, activeStateSet);
@@ -594,9 +595,12 @@ export default function OpsDashboardPage() {
                       filtered.map((r) => ({
                         state: r.state,
                         is_active: r.isActive,
+                        weekly_visits: r.weeklyVisits ?? '',
                         available_slots: r.availableSlots ?? '',
+                        available_hours: r.availableHours != null ? round1(r.availableHours) : '',
                         slot_data_source: r.slotSource ?? 'no_data',
-                        sla_target_daily: r.slaTargetDaily ?? '',
+                        sla_target_slots: r.slaTargetSlots != null ? round1(r.slaTargetSlots) : '',
+                        sla_target_hours: r.slaTargetHours != null ? round1(r.slaTargetHours) : '',
                         coverage_pct: r.coverageRatio != null
                           ? `${(r.coverageRatio * 100).toFixed(0)}%` : '',
                         sla_pct: r.slaPct != null ? `${r.slaPct.toFixed(1)}%` : '',
@@ -651,8 +655,14 @@ export default function OpsDashboardPage() {
                     <thead>
                       <tr className="border-b bg-muted/50">
                         <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">State</th>
-                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Available Slots</th>
-                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">SLA Target</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">
+                          Available
+                          <div className="text-[10px] font-normal text-muted-foreground/70">slots / hours</div>
+                        </th>
+                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">
+                          SLA Target
+                          <div className="text-[10px] font-normal text-muted-foreground/70">slots / hours</div>
+                        </th>
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Coverage</th>
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">SLA %</th>
                         <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Status</th>
@@ -682,6 +692,11 @@ export default function OpsDashboardPage() {
                           <td className="px-4 py-2.5 text-right font-mono">
                             <div className="flex items-center justify-end gap-1.5">
                               {row.availableSlots ?? <span className="text-muted-foreground">—</span>}
+                              {row.availableHours != null && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  / {round1(row.availableHours)}h
+                                </span>
+                              )}
                               {row.slotSource === 'forecast' && (
                                 <span
                                   title="Homebase forecast — projected from scheduled shifts. Upload Metabase CSV to replace with actuals."
@@ -694,7 +709,14 @@ export default function OpsDashboardPage() {
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">
-                            {row.slaTargetDaily ?? '—'}
+                            {row.slaTargetSlots != null ? (
+                              <span title={`From ${row.weeklyVisits ?? '—'} weekly visits × ${slaBuffer} buffer`}>
+                                {round1(row.slaTargetSlots)}
+                                {row.slaTargetHours != null && (
+                                  <span className="text-[10px] ml-1">/ {round1(row.slaTargetHours)}h</span>
+                                )}
+                              </span>
+                            ) : '—'}
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono">
                             {row.coverageRatio !== null
@@ -723,7 +745,7 @@ export default function OpsDashboardPage() {
                                   state: row.state,
                                   status: row.weekStatus,
                                   slotsToday: row.availableSlots,
-                                  slaTarget: row.slaTargetDaily,
+                                  slaTarget: row.slaTargetSlots != null ? Math.round(row.slaTargetSlots) : null,
                                 })
                               }
                             >
