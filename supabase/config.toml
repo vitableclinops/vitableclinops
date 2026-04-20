@@ -41,3 +41,9 @@ verify_jwt = false
 
 [functions.compute-availability-slots]
 verify_jwt = false
+
+[functions.seed-vault-secrets]
+verify_jwt = false
+
+[functions.alert-sync-failures]
+verify_jwt = false

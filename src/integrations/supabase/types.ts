@@ -1337,7 +1337,9 @@ export type Database = {
           id: string
           imported_at: string
           projected_visits: number
+          source: string | null
           state_abbreviation: string
+          synced_at: string | null
           updated_at: string
           week_start: string
         }
@@ -1346,7 +1348,9 @@ export type Database = {
           id?: string
           imported_at?: string
           projected_visits?: number
+          source?: string | null
           state_abbreviation: string
+          synced_at?: string | null
           updated_at?: string
           week_start: string
         }
@@ -1355,7 +1359,9 @@ export type Database = {
           id?: string
           imported_at?: string
           projected_visits?: number
+          source?: string | null
           state_abbreviation?: string
+          synced_at?: string | null
           updated_at?: string
           week_start?: string
         }
@@ -4774,6 +4780,14 @@ export type Database = {
       is_agreement_participant: {
         Args: { _agreement_id: string; _user_id: string }
         Returns: boolean
+      }
+      sync_vault_metabase_secret: {
+        Args: { p_value: string }
+        Returns: undefined
+      }
+      upsert_vault_secret: {
+        Args: { p_description?: string; p_name: string; p_value: string }
+        Returns: undefined
       }
     }
     Enums: {
