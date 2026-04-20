@@ -461,7 +461,7 @@ async function handleProviderUtilization(rows: Row[], supabase: SupabaseClient):
 
   for (const row of rows) {
     const providerName = col(
-      row, 'Provider', 'provider', 'Provider Full Name', 'Provider Name', 'Name', 'name',
+      row, 'Provider Full Name', 'Provider', 'provider', 'Provider Name', 'provider_full_name', 'Name', 'name',
     );
     const utilRaw = col(
       row,
