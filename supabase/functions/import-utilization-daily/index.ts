@@ -55,7 +55,6 @@ Deno.serve(async (req: Request) => {
     records.push({
       util_date: dateStr,
       overall_pct: Math.round(normalizedPct * 100) / 100,
-      imported_at: nowIso,
       source: 'csv_manual',
       synced_at: nowIso,
     });
