@@ -1,5 +1,8 @@
 import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useAgencies, Agency } from '@/hooks/useAgencies';
@@ -15,7 +18,47 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Separator } from '@/components/ui/separator';
+
+// ── Contact form schema ───────────────────────────────────────────────────────
+const contactSchema = z.object({
+  contact_name: z.string().trim().min(1, 'Contact name is required'),
+  role_title: z.string().default(''),
+  email: z
+    .string()
+    .trim()
+    .optional()
+    .default('')
+    .refine((v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), {
+      message: 'Enter a valid email address',
+    }),
+  phone: z
+    .string()
+    .default('')
+    .refine((v) => !v || v.replace(/\D/g, '').length >= 10, {
+      message: 'Phone must have at least 10 digits',
+    }),
+  preferred_contact_method: z.string().default('email'),
+  notes: z.string().default(''),
+});
+type ContactFormValues = z.infer<typeof contactSchema>;
+const CONTACT_DEFAULTS: ContactFormValues = {
+  contact_name: '',
+  role_title: '',
+  email: '',
+  phone: '',
+  preferred_contact_method: 'email',
+  notes: '',
+};
 import {
   Building2, ArrowLeft, Plus, Edit, Trash2, Loader2, Users, FileText,
   Phone, Mail, Download, Upload, UserCircle, AlertTriangle,
@@ -38,13 +81,13 @@ const AgencyDetailPage = () => {
   // Contact dialog
   const [contactDialog, setContactDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<AgencyContact | null>(null);
-  const [cName, setCName] = useState('');
-  const [cRole, setCRole] = useState('');
-  const [cEmail, setCEmail] = useState('');
-  const [cPhone, setCPhone] = useState('');
-  const [cMethod, setCMethod] = useState('email');
-  const [cNotes, setCNotes] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const contactForm = useForm<ContactFormValues>({
+    resolver: zodResolver(contactSchema),
+    defaultValues: CONTACT_DEFAULTS,
+    mode: 'onBlur',
+  });
 
   // Document dialog
   const [docDialog, setDocDialog] = useState(false);
@@ -100,32 +143,33 @@ const AgencyDetailPage = () => {
   };
 
   const resetContactForm = () => {
-    setCName(''); setCRole(''); setCEmail(''); setCPhone(''); setCMethod('email'); setCNotes('');
+    contactForm.reset(CONTACT_DEFAULTS);
     setEditingContact(null);
   };
 
   const openEditContact = (c: AgencyContact) => {
     setEditingContact(c);
-    setCName(c.contact_name);
-    setCRole(c.role_title || '');
-    setCEmail(c.email || '');
-    setCPhone(c.phone || '');
-    setCMethod(c.preferred_contact_method || 'email');
-    setCNotes(c.notes || '');
+    contactForm.reset({
+      contact_name: c.contact_name,
+      role_title: c.role_title || '',
+      email: c.email || '',
+      phone: c.phone || '',
+      preferred_contact_method: c.preferred_contact_method || 'email',
+      notes: c.notes || '',
+    });
     setContactDialog(true);
   };
 
-  const handleSaveContact = async () => {
-    if (!cName) return;
+  const handleSaveContact = contactForm.handleSubmit(async (data) => {
     setSaving(true);
     try {
       const payload = {
-        contact_name: cName,
-        role_title: cRole || null,
-        email: cEmail || null,
-        phone: cPhone || null,
-        preferred_contact_method: cMethod,
-        notes: cNotes || null,
+        contact_name: data.contact_name,
+        role_title: data.role_title || null,
+        email: data.email || null,
+        phone: data.phone || null,
+        preferred_contact_method: data.preferred_contact_method,
+        notes: data.notes || null,
       };
       if (editingContact) {
         await updateContact(editingContact.id, payload);
@@ -136,7 +180,7 @@ const AgencyDetailPage = () => {
       resetContactForm();
     } catch { /* handled */ }
     setSaving(false);
-  };
+  });
 
   const handleUploadDoc = async () => {
     if (!docFile || !docName) return;
@@ -261,8 +305,18 @@ const AgencyDetailPage = () => {
                                 {c.role_title && <p className="text-sm text-muted-foreground">{c.role_title}</p>}
                               </div>
                               <div className="flex gap-1">
-                                <Button size="icon" variant="ghost" onClick={() => openEditContact(c)}><Edit className="h-3.5 w-3.5" /></Button>
-                                <Button size="icon" variant="ghost" onClick={() => deleteContact(c.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
+                                <Button size="icon" variant="ghost" aria-label="Edit contact" title="Edit contact" onClick={() => openEditContact(c)}><Edit className="h-3.5 w-3.5" /></Button>
+                                <ConfirmDialog
+                                  title="Delete this contact?"
+                                  description={<>This will permanently remove <strong>{c.contact_name}</strong> from this agency. This can't be undone.</>}
+                                  confirmLabel="Delete contact"
+                                  onConfirm={() => deleteContact(c.id)}
+                                  trigger={
+                                    <Button size="icon" variant="ghost" aria-label="Delete contact" title="Delete contact">
+                                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                    </Button>
+                                  }
+                                />
                               </div>
                             </div>
                             {c.email && <div className="flex items-center gap-2 text-sm"><Mail className="h-3.5 w-3.5 text-muted-foreground" />{c.email}</div>}
@@ -334,9 +388,17 @@ const AgencyDetailPage = () => {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Button size="icon" variant="ghost" onClick={() => handleUnlinkProvider(p.id)} title="Unlink from agency">
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
+                              <ConfirmDialog
+                                title="Unlink this provider?"
+                                description={<>This will detach <strong>{p.full_name || 'this provider'}</strong> from the agency. The provider record is kept; only the agency link is removed.</>}
+                                confirmLabel="Unlink"
+                                onConfirm={() => handleUnlinkProvider(p.id)}
+                                trigger={
+                                  <Button size="icon" variant="ghost" aria-label="Unlink from agency" title="Unlink from agency">
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                }
+                              />
                             </TableCell>
                           </TableRow>
                         ))}
@@ -390,8 +452,18 @@ const AgencyDetailPage = () => {
                             <TableCell className="text-sm text-muted-foreground">{doc.uploaded_by_name || '—'}</TableCell>
                             <TableCell>
                               <div className="flex gap-1">
-                                <Button size="icon" variant="ghost" onClick={() => handleDownload(doc)}><Download className="h-4 w-4" /></Button>
-                                <Button size="icon" variant="ghost" onClick={() => deleteDocument(doc)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                <Button size="icon" variant="ghost" aria-label="Download document" title="Download" onClick={() => handleDownload(doc)}><Download className="h-4 w-4" /></Button>
+                                <ConfirmDialog
+                                  title="Delete this document?"
+                                  description={<>This will permanently remove <strong>{doc.document_name}</strong> (and the uploaded file). This can't be undone.</>}
+                                  confirmLabel="Delete document"
+                                  onConfirm={() => deleteDocument(doc)}
+                                  trigger={
+                                    <Button size="icon" variant="ghost" aria-label="Delete document" title="Delete">
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  }
+                                />
                               </div>
                             </TableCell>
                           </TableRow>
@@ -412,49 +484,105 @@ const AgencyDetailPage = () => {
           <DialogHeader>
             <DialogTitle>{editingContact ? 'Edit Contact' : 'Add Contact'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Contact Name *</Label>
-              <Input value={cName} onChange={e => setCName(e.target.value)} placeholder="Full name" />
-            </div>
-            <div>
-              <Label>Role / Title</Label>
-              <Input value={cRole} onChange={e => setCRole(e.target.value)} placeholder="e.g. Account Manager" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Email</Label>
-                <Input type="email" value={cEmail} onChange={e => setCEmail(e.target.value)} />
+          <Form {...contactForm}>
+            <form onSubmit={handleSaveContact} className="space-y-4">
+              <FormField
+                control={contactForm.control}
+                name="contact_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Contact Name *</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Full name" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={contactForm.control}
+                name="role_title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Role / Title</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Account Manager" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={contactForm.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={contactForm.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
-              <div>
-                <Label>Phone</Label>
-                <Input value={cPhone} onChange={e => setCPhone(e.target.value)} />
-              </div>
-            </div>
-            <div>
-              <Label>Preferred Contact Method</Label>
-              <Select value={cMethod} onValueChange={setCMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="email">Email</SelectItem>
-                  <SelectItem value="phone">Phone</SelectItem>
-                  <SelectItem value="text">Text</SelectItem>
-                  <SelectItem value="slack">Slack</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Notes</Label>
-              <Textarea value={cNotes} onChange={e => setCNotes(e.target.value)} placeholder="e.g. Best for urgent issues" />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setContactDialog(false); resetContactForm(); }}>Cancel</Button>
-            <Button onClick={handleSaveContact} disabled={!cName || saving}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {editingContact ? 'Save' : 'Add Contact'}
-            </Button>
-          </DialogFooter>
+              <FormField
+                control={contactForm.control}
+                name="preferred_contact_method"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Preferred Contact Method</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="email">Email</SelectItem>
+                        <SelectItem value="phone">Phone</SelectItem>
+                        <SelectItem value="text">Text</SelectItem>
+                        <SelectItem value="slack">Slack</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={contactForm.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="e.g. Best for urgent issues" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => { setContactDialog(false); resetContactForm(); }}>Cancel</Button>
+                <Button type="submit" disabled={saving}>
+                  {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  {editingContact ? 'Save' : 'Add Contact'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
 

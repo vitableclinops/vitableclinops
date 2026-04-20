@@ -368,9 +368,11 @@ const StateCompliancePage = () => {
                                   </div>
                                 </div>
                               </div>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Edit state compliance"
+                                title="Edit"
                                 className="opacity-0 group-hover:opacity-100 transition-opacity"
                                 onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
                               >

@@ -288,9 +288,11 @@ const ProfileSettingsPage = () => {
         <div className="p-8">
           {/* Header */}
           <div className="flex items-center gap-4 mb-8">
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
+              aria-label="Go back"
+              title="Go back"
               onClick={() => navigate(-1)}
             >
               <ArrowLeft className="h-5 w-5" />

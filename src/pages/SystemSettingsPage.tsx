@@ -21,6 +21,8 @@ import { useToast } from '@/hooks/use-toast';
 import { ConflictResolutionDialog } from '@/components/import/ConflictResolutionDialog';
 import { CreateAccountDialog } from '@/components/admin/CreateAccountDialog';
 import { SyncHealthCard } from '@/components/admin/SyncHealthCard';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CsvPreviewDialog } from '@/components/CsvPreviewDialog';
 import Papa from 'papaparse';
 import type { Tables, Enums } from '@/integrations/supabase/types';
 
@@ -124,15 +126,19 @@ export default function SystemSettingsPage() {
 
   // ========== SLA / Slots import state ==========
   const [slaFile, setSlaFile] = useState<File | null>(null);
+  const [slaRows, setSlaRows] = useState<Array<{ state: string; sla: string | number }>>([]);
   const [slaWindowLabel, setSlaWindowLabel] = useState<'feb2026_current' | 'past_2_weeks'>('past_2_weeks');
   const [slaLoading, setSlaLoading] = useState(false);
   const [slaResult, setSlaResult] = useState<{ inserted: number; errors: string[] } | null>(null);
+  const [showSlaPreview, setShowSlaPreview] = useState(false);
   const slaInputRef = useRef<HTMLInputElement>(null);
 
   const [slotsFile, setSlotsFile] = useState<File | null>(null);
+  const [slotsRows, setSlotsRows] = useState<Array<{ state: string; date: string; slots: number }>>([]);
   const [slotsWindowType, setSlotsWindowType] = useState<'historical' | 'forecast'>('historical');
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsResult, setSlotsResult] = useState<{ inserted: number; errors: string[] } | null>(null);
+  const [showSlotsPreview, setShowSlotsPreview] = useState(false);
   const slotsInputRef = useRef<HTMLInputElement>(null);
 
   // ========== Homebase Tab State ==========
@@ -300,62 +306,86 @@ export default function SystemSettingsPage() {
   );
 
   // ========== SLA Import ==========
-  const handleSlaImport = async () => {
-    if (!slaFile) return;
-    setSlaLoading(true);
+  const handleSlaFileSelect = (file: File | null) => {
+    setSlaFile(file);
     setSlaResult(null);
-    Papa.parse(slaFile, {
+    setSlaRows([]);
+    if (!file) return;
+    Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: async (results) => {
-        try {
-          const rows = (results.data as any[]).map((r) => ({
-            state: r['State'] ?? r['state'] ?? '',
-            sla: r['SLA Attainment Rate'] ?? r['SLA'] ?? r['sla'] ?? '',
-          })).filter((r) => r.state);
-          const { data, error } = await supabase.functions.invoke('import-sla-attainment', {
-            body: { rows, window_label: slaWindowLabel },
-          });
-          if (error) throw error;
-          setSlaResult({ inserted: data?.inserted ?? rows.length, errors: data?.errors ?? [] });
-          toast({ title: 'SLA import complete', description: `${data?.inserted ?? rows.length} rows inserted` });
-        } catch (e: any) {
-          toast({ title: 'SLA import failed', description: e.message, variant: 'destructive' });
-        } finally {
-          setSlaLoading(false);
-        }
+      complete: (results) => {
+        const parsed = (results.data as any[]).map((r) => ({
+          state: r['State'] ?? r['state'] ?? '',
+          sla: r['SLA Attainment Rate'] ?? r['SLA'] ?? r['sla'] ?? '',
+        })).filter((r) => r.state);
+        setSlaRows(parsed);
+      },
+      error: (err) => {
+        toast({ title: 'Parse error', description: err.message, variant: 'destructive' });
       },
     });
   };
 
+  const handleSlaImport = async () => {
+    if (slaRows.length === 0) return;
+    setSlaLoading(true);
+    setSlaResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('import-sla-attainment', {
+        body: { rows: slaRows, window_label: slaWindowLabel },
+      });
+      if (error) throw error;
+      setSlaResult({ inserted: data?.inserted ?? slaRows.length, errors: data?.errors ?? [] });
+      toast({ title: 'SLA import complete', description: `${data?.inserted ?? slaRows.length} rows inserted` });
+      setShowSlaPreview(false);
+    } catch (e: any) {
+      toast({ title: 'SLA import failed', description: e.message, variant: 'destructive' });
+    } finally {
+      setSlaLoading(false);
+    }
+  };
+
   // ========== Slots Import ==========
-  const handleSlotsImport = async () => {
-    if (!slotsFile) return;
-    setSlotsLoading(true);
+  const handleSlotsFileSelect = (file: File | null) => {
+    setSlotsFile(file);
     setSlotsResult(null);
-    Papa.parse(slotsFile, {
+    setSlotsRows([]);
+    if (!file) return;
+    Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: async (results) => {
-        try {
-          const rows = (results.data as any[]).map((r) => ({
-            state: r['State'] ?? r['state'] ?? '',
-            date: r['Day'] ?? r['Date'] ?? r['date'] ?? '',
-            slots: Number(r['Sum of same_next_day_available_slots'] ?? r['slots'] ?? r['Slots'] ?? 0),
-          })).filter((r) => r.state && r.date);
-          const { data, error } = await supabase.functions.invoke('import-leftover-slots', {
-            body: { rows, window_type: slotsWindowType },
-          });
-          if (error) throw error;
-          setSlotsResult({ inserted: data?.inserted ?? rows.length, errors: data?.errors ?? [] });
-          toast({ title: 'Slots import complete', description: `${data?.inserted ?? rows.length} rows inserted` });
-        } catch (e: any) {
-          toast({ title: 'Slots import failed', description: e.message, variant: 'destructive' });
-        } finally {
-          setSlotsLoading(false);
-        }
+      complete: (results) => {
+        const parsed = (results.data as any[]).map((r) => ({
+          state: r['State'] ?? r['state'] ?? '',
+          date: r['Day'] ?? r['Date'] ?? r['date'] ?? '',
+          slots: Number(r['Sum of same_next_day_available_slots'] ?? r['slots'] ?? r['Slots'] ?? 0),
+        })).filter((r) => r.state && r.date);
+        setSlotsRows(parsed);
+      },
+      error: (err) => {
+        toast({ title: 'Parse error', description: err.message, variant: 'destructive' });
       },
     });
+  };
+
+  const handleSlotsImport = async () => {
+    if (slotsRows.length === 0) return;
+    setSlotsLoading(true);
+    setSlotsResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('import-leftover-slots', {
+        body: { rows: slotsRows, window_type: slotsWindowType },
+      });
+      if (error) throw error;
+      setSlotsResult({ inserted: data?.inserted ?? slotsRows.length, errors: data?.errors ?? [] });
+      toast({ title: 'Slots import complete', description: `${data?.inserted ?? slotsRows.length} rows inserted` });
+      setShowSlotsPreview(false);
+    } catch (e: any) {
+      toast({ title: 'Slots import failed', description: e.message, variant: 'destructive' });
+    } finally {
+      setSlotsLoading(false);
+    }
   };
 
   // ========== Import Logic ==========
@@ -815,16 +845,17 @@ export default function SystemSettingsPage() {
                       </div>
 
                       <input ref={slaInputRef} type="file" accept=".csv" className="hidden"
-                        onChange={(e) => { setSlaFile(e.target.files?.[0] ?? null); setSlaResult(null); }} />
+                        onChange={(e) => handleSlaFileSelect(e.target.files?.[0] ?? null)} />
 
                       {slaFile ? (
                         <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
                           <div>
                             <p className="font-medium">{slaFile.name}</p>
+                            <p className="text-sm text-muted-foreground">{slaRows.length} rows parsed</p>
                           </div>
                           <div className="flex gap-2">
                             <Badge variant="secondary"><CheckCircle2 className="h-3 w-3 mr-1" />Ready</Badge>
-                            <Button variant="ghost" size="sm" onClick={() => { setSlaFile(null); setSlaResult(null); }}>Remove</Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleSlaFileSelect(null)}>Remove</Button>
                           </div>
                         </div>
                       ) : (
@@ -837,10 +868,29 @@ export default function SystemSettingsPage() {
                       )}
 
                       {slaFile && !slaResult && (
-                        <Button onClick={handleSlaImport} disabled={slaLoading} className="w-full">
-                          {slaLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : 'Import SLA Data'}
+                        <Button onClick={() => setShowSlaPreview(true)} disabled={slaLoading || slaRows.length === 0} className="w-full">
+                          {slaLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : 'Preview & Import SLA Data'}
                         </Button>
                       )}
+
+                      <CsvPreviewDialog
+                        open={showSlaPreview}
+                        onOpenChange={setShowSlaPreview}
+                        title="Confirm SLA import"
+                        description="Review the first few rows before writing to the database."
+                        rows={slaRows}
+                        columns={[
+                          { key: 'state', label: 'State' },
+                          { key: 'sla', label: 'SLA Attainment Rate' },
+                        ]}
+                        meta={[
+                          { label: 'Window', value: slaWindowLabel === 'past_2_weeks' ? 'Past 2 Weeks' : 'Feb 2026 → Current' },
+                          { label: 'File', value: slaFile?.name ?? '—' },
+                        ]}
+                        onConfirm={handleSlaImport}
+                        isPending={slaLoading}
+                        confirmLabel={`Import ${slaRows.length} rows`}
+                      />
 
                       {slaResult && (
                         <Alert variant={slaResult.errors.length > 0 ? 'destructive' : 'default'}>
@@ -882,16 +932,17 @@ export default function SystemSettingsPage() {
                       </div>
 
                       <input ref={slotsInputRef} type="file" accept=".csv" className="hidden"
-                        onChange={(e) => { setSlotsFile(e.target.files?.[0] ?? null); setSlotsResult(null); }} />
+                        onChange={(e) => handleSlotsFileSelect(e.target.files?.[0] ?? null)} />
 
                       {slotsFile ? (
                         <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
                           <div>
                             <p className="font-medium">{slotsFile.name}</p>
+                            <p className="text-sm text-muted-foreground">{slotsRows.length} rows parsed</p>
                           </div>
                           <div className="flex gap-2">
                             <Badge variant="secondary"><CheckCircle2 className="h-3 w-3 mr-1" />Ready</Badge>
-                            <Button variant="ghost" size="sm" onClick={() => { setSlotsFile(null); setSlotsResult(null); }}>Remove</Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleSlotsFileSelect(null)}>Remove</Button>
                           </div>
                         </div>
                       ) : (
@@ -904,10 +955,30 @@ export default function SystemSettingsPage() {
                       )}
 
                       {slotsFile && !slotsResult && (
-                        <Button onClick={handleSlotsImport} disabled={slotsLoading} className="w-full">
-                          {slotsLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : 'Import Slot Data'}
+                        <Button onClick={() => setShowSlotsPreview(true)} disabled={slotsLoading || slotsRows.length === 0} className="w-full">
+                          {slotsLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : 'Preview & Import Slot Data'}
                         </Button>
                       )}
+
+                      <CsvPreviewDialog
+                        open={showSlotsPreview}
+                        onOpenChange={setShowSlotsPreview}
+                        title="Confirm Slots import"
+                        description="Review the first few rows before writing to the database."
+                        rows={slotsRows}
+                        columns={[
+                          { key: 'state', label: 'State' },
+                          { key: 'date', label: 'Day' },
+                          { key: 'slots', label: 'Slots' },
+                        ]}
+                        meta={[
+                          { label: 'Window', value: slotsWindowType === 'historical' ? 'Historical' : 'Forecast' },
+                          { label: 'File', value: slotsFile?.name ?? '—' },
+                        ]}
+                        onConfirm={handleSlotsImport}
+                        isPending={slotsLoading}
+                        confirmLabel={`Import ${slotsRows.length} rows`}
+                      />
 
                       {slotsResult && (
                         <Alert variant={slotsResult.errors.length > 0 ? 'destructive' : 'default'}>
@@ -1082,14 +1153,23 @@ export default function SystemSettingsPage() {
                             {new Date(m.created_at).toLocaleDateString()}
                           </TableCell>
                           <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => deleteMappingMutation.mutate(m.id)}
-                              disabled={deleteMappingMutation.isPending}
-                            >
-                              <XCircle className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                            </Button>
+                            <ConfirmDialog
+                              title="Delete this name mapping?"
+                              description={<>This removes the mapping from Homebase name <strong>{m.homebase_name}</strong> to profile <strong>{m.profiles?.full_name ?? m.profiles?.email ?? m.profile_id}</strong>. The next Homebase sync will try to auto-match the name again (and may fail if the match is ambiguous).</>}
+                              confirmLabel="Delete mapping"
+                              onConfirm={() => deleteMappingMutation.mutate(m.id)}
+                              trigger={
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  aria-label="Delete name mapping"
+                                  title="Delete mapping"
+                                  disabled={deleteMappingMutation.isPending}
+                                >
+                                  <XCircle className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                                </Button>
+                              }
+                            />
                           </TableCell>
                         </TableRow>
                       ))}

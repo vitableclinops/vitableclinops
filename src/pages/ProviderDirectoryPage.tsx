@@ -602,6 +602,9 @@ const ProviderDirectoryPage = () => {
                     <Button
                       variant={viewMode === 'table' ? 'secondary' : 'ghost'}
                       size="icon"
+                      aria-label="Table view"
+                      aria-pressed={viewMode === 'table'}
+                      title="Table view"
                       onClick={() => setViewMode('table')}
                     >
                       <List className="h-4 w-4" />
@@ -609,6 +612,9 @@ const ProviderDirectoryPage = () => {
                     <Button
                       variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
                       size="icon"
+                      aria-label="Grid view"
+                      aria-pressed={viewMode === 'grid'}
+                      title="Grid view"
                       onClick={() => setViewMode('grid')}
                     >
                       <Grid3X3 className="h-4 w-4" />
@@ -839,6 +845,8 @@ const ProviderDirectoryPage = () => {
                                         <Button
                                           size="icon"
                                           variant="ghost"
+                                          aria-label="Save changes"
+                                          title="Save"
                                           className="h-6 w-6"
                                           onClick={() => upsertOpsInfo.mutate({
                                             profileId: p.id,
@@ -853,6 +861,8 @@ const ProviderDirectoryPage = () => {
                                         <Button
                                           size="icon"
                                           variant="ghost"
+                                          aria-label="Cancel editing"
+                                          title="Cancel"
                                           className="h-6 w-6"
                                           onClick={() => setEditingOpsId(null)}
                                         >
@@ -863,6 +873,8 @@ const ProviderDirectoryPage = () => {
                                       <Button
                                         size="icon"
                                         variant="ghost"
+                                        aria-label="Edit ops info"
+                                        title="Edit ops info"
                                         className="h-6 w-6 opacity-0 group-hover:opacity-100"
                                         onClick={() => {
                                           setEditingOpsId(p.id);
@@ -914,6 +926,9 @@ const ProviderDirectoryPage = () => {
                   <Button
                     variant={viewMode === 'table' ? 'secondary' : 'ghost'}
                     size="icon"
+                    aria-label="Table view"
+                    aria-pressed={viewMode === 'table'}
+                    title="Table view"
                     onClick={() => setViewMode('table')}
                   >
                     <List className="h-4 w-4" />
@@ -921,6 +936,9 @@ const ProviderDirectoryPage = () => {
                   <Button
                     variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
                     size="icon"
+                    aria-label="Grid view"
+                    aria-pressed={viewMode === 'grid'}
+                    title="Grid view"
                     onClick={() => setViewMode('grid')}
                   >
                     <Grid3X3 className="h-4 w-4" />
