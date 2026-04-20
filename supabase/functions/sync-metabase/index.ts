@@ -303,6 +303,7 @@ async function handleSlaByState(rows: Row[], supabase: SupabaseClient): Promise<
   const records = [];
   const errors: string[] = [];
   const today = new Date().toISOString().slice(0, 10);
+  const nowIso = new Date().toISOString();
 
   for (const row of rows) {
     const stateName = col(row, 'State', 'state');
@@ -320,7 +321,9 @@ async function handleSlaByState(rows: Row[], supabase: SupabaseClient): Promise<
       window_start: today,
       window_end: today,
       sla_pct: sla,
-      imported_at: new Date().toISOString(),
+      imported_at: nowIso,
+      source: 'metabase_sync',
+      synced_at: nowIso,
     });
   }
 
@@ -337,6 +340,7 @@ async function handleSlaByState(rows: Row[], supabase: SupabaseClient): Promise<
 async function handleLeftoverSlots(rows: Row[], supabase: SupabaseClient): Promise<ImportResult> {
   const records = [];
   const errors: string[] = [];
+  const nowIso = new Date().toISOString();
 
   for (const row of rows) {
     const stateName = col(row, 'State', 'state');
