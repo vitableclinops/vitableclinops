@@ -98,9 +98,36 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
+  // ── Open a sync_runs row up front so failures are visible even if the
+  //    function crashes before completing.
+  const startedAt = Date.now();
+  const { data: runRow } = await supabase
+    .from('sync_runs')
+    .insert({ function_name: 'sync-metabase', status: 'running' })
+    .select('id')
+    .single();
+  const runId: string | null = (runRow?.id as string) ?? null;
+
+  const finalizeRun = async (
+    status: 'success' | 'partial' | 'error',
+    extras: { rows_processed?: number; rows_failed?: number; error_message?: string; details?: unknown } = {},
+  ) => {
+    if (!runId) return;
+    await supabase.from('sync_runs').update({
+      status,
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedAt,
+      rows_processed: extras.rows_processed ?? 0,
+      rows_failed: extras.rows_failed ?? 0,
+      error_message: extras.error_message ?? null,
+      details: extras.details ?? {},
+    }).eq('id', runId);
+  };
+
   const username = Deno.env.get('METABASE_USERNAME');
   const password = Deno.env.get('METABASE_PASSWORD');
   if (!username || !password) {
+    await finalizeRun('error', { error_message: 'METABASE_USERNAME and METABASE_PASSWORD secrets are required' });
     return json({ error: 'METABASE_USERNAME and METABASE_PASSWORD secrets are required' }, 500);
   }
 
@@ -109,11 +136,15 @@ Deno.serve(async (req: Request) => {
   try {
     token = await getMetabaseToken(username, password);
   } catch (err) {
+    await finalizeRun('error', { error_message: `Metabase auth failed: ${err}` });
     return json({ error: `Metabase auth failed: ${err}` }, 502);
   }
 
   const today = new Date().toISOString().slice(0, 10);
   const results: Record<string, unknown> = {};
+  let totalProcessed = 0;
+  let totalFailed = 0;
+  let reportFailures = 0;
 
   for (const report of REPORTS) {
     try {
@@ -121,6 +152,7 @@ Deno.serve(async (req: Request) => {
       const cardId = await findCardId(token, report.name);
       if (!cardId) {
         results[report.name] = { skipped: true, reason: 'Card not found in Metabase' };
+        reportFailures++;
         continue;
       }
 
@@ -136,14 +168,29 @@ Deno.serve(async (req: Request) => {
 
       // Run handler
       const result = await report.handler(rows, supabase);
+      totalProcessed += result.inserted;
+      totalFailed += result.errors.length;
       results[report.name] = { ok: true, cardId, rowCount: rows.length, ...result };
 
     } catch (err) {
+      reportFailures++;
       results[report.name] = { ok: false, error: String(err) };
     }
   }
 
-  return json({ ok: true, date: today, results });
+  const status: 'success' | 'partial' | 'error' =
+    reportFailures === REPORTS.length ? 'error'
+    : reportFailures > 0 ? 'partial'
+    : 'success';
+
+  await finalizeRun(status, {
+    rows_processed: totalProcessed,
+    rows_failed: totalFailed,
+    error_message: reportFailures > 0 ? `${reportFailures}/${REPORTS.length} reports failed` : undefined,
+    details: results,
+  });
+
+  return json({ ok: status !== 'error', date: today, status, results });
 });
 
 // ---------------------------------------------------------------------------
