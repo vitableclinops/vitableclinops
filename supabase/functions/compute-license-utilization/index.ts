@@ -271,6 +271,14 @@ Deno.serve(async (req: Request) => {
     // ── Build recommendations ─────────────────────────────────────────────────
     const recommendations = buildRecommendations(snapshots as any[], licenseMap, activeStates, hoursMap);
 
+    await finalizeRun('success', {
+      rows_processed: snapshotsWritten,
+      details: {
+        window: { start: windowStart, end: windowEnd },
+        recommendations_count: recommendations.length,
+      },
+    });
+
     return new Response(JSON.stringify({
       ok: true,
       window: { start: windowStart, end: windowEnd },
@@ -282,6 +290,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await finalizeRun('error', { error_message: message });
     return new Response(JSON.stringify({ error: message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
