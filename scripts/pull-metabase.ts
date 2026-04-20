@@ -45,6 +45,7 @@ const SUPABASE_ANON_KEY =
 
 const METABASE_USERNAME = process.env.METABASE_USERNAME ?? "";
 const METABASE_PASSWORD = process.env.METABASE_PASSWORD ?? "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 // ---------------------------------------------------------------------------
 // Report definitions: name → handler
@@ -158,6 +159,11 @@ const REPORTS: Report[] = [
                      "Avg Booking Rate", "Average of Booking Rate",
                      "Average of Utilization rate", "Rate", "rate", "%"),
       })).filter((r) => r.date && r.pct);
+      // Write directly via REST if service role key is available (bypasses edge function
+      // deployment delays). Falls back to edge function if key is not set.
+      if (SUPABASE_SERVICE_ROLE_KEY) {
+        return upsertUtilizationDaily(mapped);
+      }
       return callFunction("import-utilization-daily", { rows: mapped });
     },
   },
@@ -310,6 +316,46 @@ function col(row: Row, ...candidates: string[]): string {
     if (key !== undefined) return (row[key] ?? "").trim();
   }
   return "";
+}
+
+// ---------------------------------------------------------------------------
+// Direct Supabase upserts (used when SUPABASE_SERVICE_ROLE_KEY is available,
+// bypassing edge functions that may not be redeployed yet)
+// ---------------------------------------------------------------------------
+
+async function upsertUtilizationDaily(
+  rows: { date: string; pct: string }[]
+): Promise<{ inserted: number; errors: string[] }> {
+  const errors: string[] = [];
+  const records = [];
+
+  for (const row of rows) {
+    const pctStr = String(row.pct).replace("%", "").trim();
+    const pct = parseFloat(pctStr);
+    if (isNaN(pct)) { errors.push(`Non-numeric pct: "${row.pct}" for ${row.date}`); continue; }
+    const normalizedPct = pct <= 1 ? Math.round(pct * 10000) / 100 : Math.round(pct * 100) / 100;
+    records.push({ util_date: row.date, overall_pct: normalizedPct });
+  }
+
+  if (records.length === 0) return { inserted: 0, errors };
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/utilization_daily`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "apikey": SUPABASE_SERVICE_ROLE_KEY,
+      "Prefer": "resolution=merge-duplicates",
+    },
+    body: JSON.stringify(records),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Direct upsert failed (${res.status}): ${text}`);
+  }
+
+  return { inserted: records.length, errors };
 }
 
 // ---------------------------------------------------------------------------
