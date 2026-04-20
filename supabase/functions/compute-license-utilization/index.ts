@@ -109,28 +109,50 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ── Load leftover slot data (historical only) ─────────────────────────────
+    // ── Load leftover slot data (historical preferred, forecast fallback) ────
     // Leftover visits = unfilled slots from the EMR/Metabase export.
     // These are used to infer actual demand (booked = supply - leftover).
-    // Forecast slots (from Homebase hours) represent total capacity, not
-    // leftover visits, so they would break the demand formula here.
+    //
+    // FALLBACK: If a (state, date) has no historical row (e.g. tomorrow, or
+    // before today's Metabase ingest lands), use the forecast row instead so
+    // the snapshot for that day isn't silently omitted. This mirrors what
+    // OpsDashboard does when rendering coverage live.
     const { data: leftoverRows } = await supabase
       .from('state_leftover_slots')
-      .select('state_abbreviation, slot_date, unfilled_slots')
-      .eq('window_type', 'historical')
+      .select('state_abbreviation, slot_date, unfilled_slots, window_type')
       .gte('slot_date', windowStart)
       .lte('slot_date', windowEnd);
 
-    // key = "state|date"
+    // key = "state|date" → unfilled slots, preferring historical over forecast.
     const leftoverMap = new Map<string, number>();
+    const leftoverSourceMap = new Map<string, 'historical' | 'forecast'>();
     for (const row of (leftoverRows ?? [])) {
-      leftoverMap.set(`${row.state_abbreviation}|${row.slot_date}`, Number(row.unfilled_slots));
+      const key = `${row.state_abbreviation}|${row.slot_date}`;
+      const isHistorical = row.window_type === 'historical';
+      const existing = leftoverSourceMap.get(key);
+      // Take historical if we don't have anything yet, or always overwrite
+      // forecast with historical. Never downgrade historical → forecast.
+      if (!existing || (isHistorical && existing === 'forecast')) {
+        leftoverMap.set(key, Number(row.unfilled_slots));
+        leftoverSourceMap.set(key, isHistorical ? 'historical' : 'forecast');
+      }
     }
 
-    // Compute percentile thresholds for leftover slots (for quadrant classification)
-    const allSlotValues = [...leftoverMap.values()].sort((a, b) => a - b);
-    const p25 = percentile(allSlotValues, 25);
-    const p75 = percentile(allSlotValues, 75);
+    // Per-state percentile thresholds for ANOMALY classification.
+    // CORRECTNESS: Computing p25/p75 globally lets one outlier state (e.g.
+    // CA having a 10× normal data day) shift the threshold for every other
+    // state, masking real anomalies. Partition by state instead.
+    const stateSlotValues = new Map<string, number[]>();
+    for (const [key, val] of leftoverMap) {
+      const [state] = key.split('|');
+      if (!stateSlotValues.has(state)) stateSlotValues.set(state, []);
+      stateSlotValues.get(state)!.push(val);
+    }
+    const statePercentiles = new Map<string, { p25: number; p75: number }>();
+    for (const [state, values] of stateSlotValues) {
+      const sorted = [...values].sort((a, b) => a - b);
+      statePercentiles.set(state, { p25: percentile(sorted, 25), p75: percentile(sorted, 75) });
+    }
 
     // ── Load demand_forecast (weekly projected_visits per state) ──────────────
     // Preferred demand signal. Stored as weekly projected_visits keyed by
