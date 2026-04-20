@@ -52,6 +52,7 @@ const METABASE_PASSWORD = process.env.METABASE_PASSWORD ?? "";
 type Row = Record<string, string>;
 
 interface Report {
+  cardId?: number;
   name: string;
   handle: (rows: Row[]) => Promise<{ inserted: number; errors: string[] }>;
 }
@@ -74,7 +75,8 @@ const REPORTS: Report[] = [
     },
   },
   {
-    name: "Sum of same_next_day_available_slots by state and date_actual: Day",
+    cardId: 2431,
+    name: "Same & Next Day Available Slots By State and Day (Next 7 days)",
     handle: async (rows) => {
       const mapped = rows.map((r) => ({
         state: col(r, "State", "state"),
@@ -90,11 +92,18 @@ const REPORTS: Report[] = [
   {
     name: "Weekly demand forecast + active members by state",
     handle: async (rows) => {
+      // Card 2957 returns: State | Weekly Demand | Active Members Count...
+      // No week column — use current week's Monday as week_start.
+      const now = new Date();
+      const dow = now.getUTCDay(); // 0=Sun
+      const daysToMonday = (dow + 6) % 7;
+      const monday = new Date(now.getTime() - daysToMonday * 864e5);
+      const defaultWeekStart = monday.toISOString().slice(0, 10);
       const mapped = rows.map((r) => ({
         state: col(r, "State", "state"),
-        week_start: col(r, "Week", "week_start", "date", "Period"),
-        visits: col(r, "Visits", "visits", "projected_visits", "Count", "Active Members", "members"),
-      })).filter((r) => r.state && r.week_start);
+        week_start: col(r, "Week", "week_start", "Week Start", "date_actual", "date_actual: Week", "date", "Period", "Day") || defaultWeekStart,
+        visits: col(r, "Weekly Demand", "Visits", "visits", "projected_visits", "Forecasted Visits", "Forecast", "Count", "Active Members", "members", "Sum"),
+      })).filter((r) => r.state && r.week_start && r.visits);
       return callFunction("import-demand-forecast", { rows: mapped });
     },
   },
@@ -105,30 +114,66 @@ const REPORTS: Report[] = [
       const window_end = now.toISOString().slice(0, 10);
       const window_start = new Date(now.getTime() - 35 * 864e5).toISOString().slice(0, 10);
       const mapped = rows.map((r) => ({
-        provider: col(r, "Provider", "provider", "Name"),
-        avg_utilization: col(r, "Avg Time Slot Utilization", "Utilization Rate", "utilization"),
-        total_timeslots: col(r, "Total Timeslots", "total_timeslots", "timeslots"),
+        provider: col(r, "Provider", "provider", "Provider Full Name", "Name", "Provider Name"),
+        avg_utilization: col(r, "Average of Utilization rate", "Average of Utilization Rate", "Avg Time Slot Utilization", "Average of Time Slot Utilization", "Utilization Rate", "utilization", "Avg Utilization"),
+        total_timeslots: col(r, "Sum of Distinct values of Time Slot ID", "Total Timeslots", "Sum of Total Timeslots", "total_timeslots", "timeslots", "Timeslots"),
       })).filter((r) => r.provider);
       return callFunction("import-provider-utilization", { rows: mapped, window_start, window_end });
     },
   },
   {
-    name: "Average of SLA Attainment Rate",
+    cardId: 2931,
+    name: "SD/ND SLA Attainment Rate - MTD",
     handle: async (rows) => callFunction("import-sla-aggregate", { rows }),
   },
   {
     name: "rpt_telemedicine_availability_by_state_per_day",
-    handle: async (rows) => callFunction("import-telemedicine-availability", { rows }),
+    // 49k+ rows — chunk to avoid edge function memory limits
+    handle: async (rows) => chunkedCall("import-telemedicine-availability", rows, 2000),
   },
   {
+    cardId: 2940,
     name: "PCP State Coverage",
     handle: async (rows) => callFunction("import-pcp-coverage", { rows }),
   },
   {
     name: "Provider Appointment Count",
-    handle: async (rows) => callFunction("import-provider-appointments", { rows }),
+    // 5k+ rows + may use "Provider Full Name" column — pre-normalize and chunk
+    handle: async (rows) => {
+      const mapped = rows.map((r) => ({
+        provider: col(r, "Provider Full Name", "Provider", "provider", "Name"),
+        count:    col(r, "Booked Appointment Count", "Completed Appointment Count", "Provider Appointment Count", "Count", "count"),
+        date:     col(r, "Date", "date", "day"),
+      })).filter((r) => r.provider);
+      return chunkedCall("import-provider-appointments", mapped, 2000);
+    },
   },
 ];
+
+/**
+ * Calls an import function in batches of `chunkSize` rows so we don't blow past
+ * the edge function memory/CPU limits on multi-thousand-row reports.
+ */
+async function chunkedCall(
+  name: string,
+  rows: unknown[],
+  chunkSize: number
+): Promise<{ inserted: number; errors: string[] }> {
+  let totalInserted = 0;
+  const allErrors: string[] = [];
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const batch = rows.slice(i, i + chunkSize);
+    try {
+      const { inserted, errors } = await callFunction(name, { rows: batch });
+      totalInserted += inserted;
+      allErrors.push(...errors);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      allErrors.push(`Chunk ${i}-${i + batch.length}: ${msg}`);
+    }
+  }
+  return { inserted: totalInserted, errors: allErrors };
+}
 
 // ---------------------------------------------------------------------------
 // Metabase helpers
@@ -143,14 +188,39 @@ async function getMetabaseToken(): Promise<string> {
   return ((await res.json()) as { id: string }).id;
 }
 
-async function findCardId(token: string, name: string): Promise<number | null> {
+async function findCardId(
+  token: string,
+  name: string
+): Promise<{ id: number | null; candidates: { id: number; name: string }[] }> {
   const res = await fetch(
     `${METABASE_URL}/api/search?q=${encodeURIComponent(name)}&models=card`,
     { headers: { "X-Metabase-Session": token } }
   );
-  if (!res.ok) return null;
+  if (!res.ok) return { id: null, candidates: [] };
   const body = (await res.json()) as { data: { id: number; name: string }[] };
-  return body.data?.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())?.id ?? null;
+  const candidates = body.data ?? [];
+
+  const target = name.trim().toLowerCase();
+
+  // 1) Exact match (case-insensitive)
+  const exact = candidates.find((c) => c.name.trim().toLowerCase() === target);
+  if (exact) return { id: exact.id, candidates };
+
+  // 2) Normalized match: collapse whitespace + strip punctuation
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const tNorm = norm(name);
+  const normMatch = candidates.find((c) => norm(c.name) === tNorm);
+  if (normMatch) return { id: normMatch.id, candidates };
+
+  // 3) Substring match (target words all appear in candidate)
+  const targetWords = tNorm.split(" ").filter((w) => w.length > 2);
+  const substr = candidates.find((c) => {
+    const cn = norm(c.name);
+    return targetWords.every((w) => cn.includes(w));
+  });
+  if (substr) return { id: substr.id, candidates };
+
+  return { id: null, candidates };
 }
 
 async function downloadCSVText(token: string, cardId: number): Promise<string> {
@@ -251,9 +321,27 @@ async function main() {
     process.stdout.write(`• ${report.name}\n`);
 
     try {
-      const cardId = await findCardId(token, report.name);
+      let cardId = report.cardId ?? null;
+      let candidates: { id: number; name: string }[] = [];
+
       if (!cardId) {
-        console.log("    ⚠️  Card not found in Metabase — skipping");
+        const result = await findCardId(token, report.name);
+        cardId = result.id;
+        candidates = result.candidates;
+      }
+
+      if (!cardId) {
+        console.log(`    ✗ Card not found: "${report.name}"`);
+        if (candidates.length > 0) {
+          console.log(`      Closest matches in Metabase search results:`);
+          candidates.slice(0, 5).forEach((c) =>
+            console.log(`        • [${c.id}] ${c.name}`)
+          );
+        } else {
+          console.log(`      (no candidates returned by Metabase search)`);
+        }
+        overallErrors.push(`${report.name}: card not found in Metabase`);
+        console.log();
         continue;
       }
 
@@ -261,10 +349,25 @@ async function main() {
       const rows = parseCSV(csvText);
       console.log(`    Downloaded ${rows.length} rows (card ${cardId})`);
 
+      if (rows.length === 0) {
+        console.log(`    ⚠️  Card returned 0 rows — check Metabase query`);
+        overallErrors.push(`${report.name}: card returned 0 rows`);
+        console.log();
+        continue;
+      }
+
       const { inserted, errors } = await report.handle(rows);
-      if (inserted > 0) console.log(`    ✓ Inserted/updated ${inserted} records`);
+      if (inserted > 0) {
+        console.log(`    ✓ Inserted/updated ${inserted} records`);
+      } else {
+        console.log(`    ⚠️  0 records inserted (all rows rejected)`);
+        console.log(`      CSV columns: ${Object.keys(rows[0] ?? {}).join(" | ")}`);
+        console.log(`      First row sample: ${JSON.stringify(rows[0] ?? {}).slice(0, 300)}`);
+        overallErrors.push(`${report.name}: 0 of ${rows.length} rows inserted`);
+      }
       if (errors.length > 0) {
-        errors.forEach((e) => console.log(`    ⚠️  ${e}`));
+        errors.slice(0, 10).forEach((e) => console.log(`    ⚠️  ${e}`));
+        if (errors.length > 10) console.log(`    ⚠️  ...and ${errors.length - 10} more errors`);
         overallErrors.push(...errors.map((e) => `${report.name}: ${e}`));
       }
     } catch (err) {
@@ -276,11 +379,13 @@ async function main() {
     console.log();
   }
 
+  console.log("=== Summary ===");
   if (overallErrors.length > 0) {
-    console.error(`Finished with ${overallErrors.length} error(s).`);
+    console.error(`❌ Finished with ${overallErrors.length} error(s):`);
+    overallErrors.forEach((e) => console.error(`   - ${e}`));
     process.exit(1);
   } else {
-    console.log("All reports processed successfully.");
+    console.log("✅ All reports processed successfully.");
   }
 }
 

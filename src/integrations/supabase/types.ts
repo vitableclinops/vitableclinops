@@ -1283,10 +1283,59 @@ export type Database = {
         }
         Relationships: []
       }
+      coverage_bridge_snapshots: {
+        Row: {
+          computed_at: string
+          confidence: string
+          coverage_ratio: number | null
+          demand_hours: number
+          demand_slots: number
+          gap_slots: number
+          id: string
+          snapshot_date: string
+          source_notes: string | null
+          state_abbreviation: string
+          status: string
+          supply_hours: number
+          supply_slots: number
+        }
+        Insert: {
+          computed_at?: string
+          confidence?: string
+          coverage_ratio?: number | null
+          demand_hours?: number
+          demand_slots?: number
+          gap_slots?: number
+          id?: string
+          snapshot_date: string
+          source_notes?: string | null
+          state_abbreviation: string
+          status?: string
+          supply_hours?: number
+          supply_slots?: number
+        }
+        Update: {
+          computed_at?: string
+          confidence?: string
+          coverage_ratio?: number | null
+          demand_hours?: number
+          demand_slots?: number
+          gap_slots?: number
+          id?: string
+          snapshot_date?: string
+          source_notes?: string | null
+          state_abbreviation?: string
+          status?: string
+          supply_hours?: number
+          supply_slots?: number
+        }
+        Relationships: []
+      }
       demand_forecast: {
         Row: {
           created_at: string
           id: string
+          imported_at: string
           projected_visits: number
           state_abbreviation: string
           updated_at: string
@@ -1295,6 +1344,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          imported_at?: string
           projected_visits?: number
           state_abbreviation: string
           updated_at?: string
@@ -1303,6 +1353,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          imported_at?: string
           projected_visits?: number
           state_abbreviation?: string
           updated_at?: string
@@ -2509,6 +2560,33 @@ export type Database = {
           },
         ]
       }
+      pcp_state_coverage: {
+        Row: {
+          coverage_pct: number | null
+          id: string
+          imported_at: string
+          pcp_count: number | null
+          report_date: string
+          state_abbreviation: string
+        }
+        Insert: {
+          coverage_pct?: number | null
+          id?: string
+          imported_at?: string
+          pcp_count?: number | null
+          report_date: string
+          state_abbreviation: string
+        }
+        Update: {
+          coverage_pct?: number | null
+          id?: string
+          imported_at?: string
+          pcp_count?: number | null
+          report_date?: string
+          state_abbreviation?: string
+        }
+        Relationships: []
+      }
       pods: {
         Row: {
           created_at: string
@@ -2780,6 +2858,94 @@ export type Database = {
           {
             foreignKeyName: "profiles_pod_lead_id_fkey"
             columns: ["pod_lead_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      provider_appointment_count: {
+        Row: {
+          appointment_count: number
+          id: string
+          imported_at: string
+          provider_name_raw: string
+          report_date: string
+        }
+        Insert: {
+          appointment_count?: number
+          id?: string
+          imported_at?: string
+          provider_name_raw: string
+          report_date: string
+        }
+        Update: {
+          appointment_count?: number
+          id?: string
+          imported_at?: string
+          provider_name_raw?: string
+          report_date?: string
+        }
+        Relationships: []
+      }
+      provider_cost_rates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          employment_type: string | null
+          hourly_rate: number
+          id: string
+          notes: string | null
+          profile_id: string | null
+          provider_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          employment_type?: string | null
+          hourly_rate: number
+          id?: string
+          notes?: string | null
+          profile_id?: string | null
+          provider_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          employment_type?: string | null
+          hourly_rate?: number
+          id?: string
+          notes?: string | null
+          profile_id?: string | null
+          provider_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_cost_rates_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_cost_rates_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_cost_rates_profile_id_fkey"
+            columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "provider_directory_public"
             referencedColumns: ["id"]
@@ -3421,6 +3587,27 @@ export type Database = {
         }
         Relationships: []
       }
+      sla_attainment_aggregate: {
+        Row: {
+          avg_sla_pct: number
+          id: string
+          imported_at: string
+          report_date: string
+        }
+        Insert: {
+          avg_sla_pct: number
+          id?: string
+          imported_at?: string
+          report_date: string
+        }
+        Update: {
+          avg_sla_pct?: number
+          id?: string
+          imported_at?: string
+          report_date?: string
+        }
+        Relationships: []
+      }
       state_activation: {
         Row: {
           created_at: string
@@ -3545,6 +3732,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          imported_at: string
           slot_date: string
           state_abbreviation: string
           unfilled_slots: number
@@ -3553,6 +3741,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          imported_at?: string
           slot_date: string
           state_abbreviation: string
           unfilled_slots?: number
@@ -3561,6 +3750,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          imported_at?: string
           slot_date?: string
           state_abbreviation?: string
           unfilled_slots?: number
@@ -3634,23 +3824,32 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          imported_at: string
           sla_pct: number
           state_abbreviation: string
+          window_end: string | null
           window_label: string | null
+          window_start: string | null
         }
         Insert: {
           created_at?: string
           id?: string
+          imported_at?: string
           sla_pct?: number
           state_abbreviation: string
+          window_end?: string | null
           window_label?: string | null
+          window_start?: string | null
         }
         Update: {
           created_at?: string
           id?: string
+          imported_at?: string
           sla_pct?: number
           state_abbreviation?: string
+          window_end?: string | null
           window_label?: string | null
+          window_start?: string | null
         }
         Relationships: []
       }
@@ -3869,6 +4068,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      telemedicine_availability: {
+        Row: {
+          availability_pct: number | null
+          available_count: number | null
+          id: string
+          imported_at: string
+          report_date: string
+          state_abbreviation: string
+        }
+        Insert: {
+          availability_pct?: number | null
+          available_count?: number | null
+          id?: string
+          imported_at?: string
+          report_date: string
+          state_abbreviation: string
+        }
+        Update: {
+          availability_pct?: number | null
+          available_count?: number | null
+          id?: string
+          imported_at?: string
+          report_date?: string
+          state_abbreviation?: string
+        }
+        Relationships: []
       }
       transfer_activity_log: {
         Row: {
@@ -4094,6 +4320,42 @@ export type Database = {
           source?: string | null
           synced_at?: string | null
           util_date?: string
+        }
+        Relationships: []
+      }
+      visit_cost_snapshots: {
+        Row: {
+          computed_at: string
+          cost_per_hour: number | null
+          cost_per_visit: number | null
+          id: string
+          snapshot_date: string
+          state_abbreviation: string
+          total_cost: number
+          total_hours: number
+          total_visits: number
+        }
+        Insert: {
+          computed_at?: string
+          cost_per_hour?: number | null
+          cost_per_visit?: number | null
+          id?: string
+          snapshot_date: string
+          state_abbreviation: string
+          total_cost?: number
+          total_hours?: number
+          total_visits?: number
+        }
+        Update: {
+          computed_at?: string
+          cost_per_hour?: number | null
+          cost_per_visit?: number | null
+          id?: string
+          snapshot_date?: string
+          state_abbreviation?: string
+          total_cost?: number
+          total_hours?: number
+          total_visits?: number
         }
         Relationships: []
       }
