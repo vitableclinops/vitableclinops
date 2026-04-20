@@ -296,8 +296,12 @@ function splitCSVLine(line: string): string[] {
 // ---------------------------------------------------------------------------
 
 function col(row: Row, ...candidates: string[]): string {
+  // Normalize key: lowercase, collapse internal whitespace, strip BOM/zero-width chars
+  const norm = (s: string) =>
+    s.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
   for (const c of candidates) {
-    const key = Object.keys(row).find((k) => k.trim().toLowerCase() === c.toLowerCase());
+    const target = norm(c);
+    const key = Object.keys(row).find((k) => norm(k) === target);
     if (key && row[key] !== undefined) return row[key].trim();
   }
   return '';
