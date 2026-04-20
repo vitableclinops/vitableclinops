@@ -441,6 +441,8 @@ async function handleDemandForecast(rows: Row[], supabase: SupabaseClient): Prom
       week_start: weekStart,
       projected_visits: visits,
       imported_at: new Date().toISOString(),
+      source: 'metabase_sync',
+      synced_at: new Date().toISOString(),
     });
   }
 
