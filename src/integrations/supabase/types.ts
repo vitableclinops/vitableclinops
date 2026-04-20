@@ -2382,6 +2382,36 @@ export type Database = {
           },
         ]
       }
+      metabase_raw_exports: {
+        Row: {
+          created_at: string
+          id: string
+          pulled_at: string
+          pulled_date: string
+          report_key: string
+          row_count: number
+          rows: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          pulled_at?: string
+          pulled_date: string
+          report_key: string
+          row_count?: number
+          rows: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          pulled_at?: string
+          pulled_date?: string
+          report_key?: string
+          row_count?: number
+          rows?: Json
+        }
+        Relationships: []
+      }
       milestone_audit_log: {
         Row: {
           action: string
