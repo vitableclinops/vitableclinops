@@ -16,23 +16,18 @@ import {
 import { Upload, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Download, Info, ChevronDown } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn, downloadCSV } from '@/lib/utils';
+import { useSlaBufferMultiplier } from '@/hooks/useSystemConfig';
+import {
+  slaTargetSlots,
+  slaTargetHours,
+  weeklyHoursNeeded,
+  round1,
+} from '@/lib/slaFormulas';
 
 const LINE_COLORS = [
   '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6',
   '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
 ];
-
-// ── Business logic ─────────────────────────────────────────────────────────────
-
-/** Hours needed = visits × 0.5h × 1.5 buffer */
-function hoursNeeded(visits: number) {
-  return Math.round(visits * 0.75 * 10) / 10;
-}
-
-/** Daily SLA target = max(5, (weekly_visits / 5) × 1.5) */
-function slaTargetDaily(visits: number) {
-  return Math.round(Math.max(5, (visits / 5) * 1.5));
-}
 
 // ── Data hook ─────────────────────────────────────────────────────────────────
 
