@@ -82,7 +82,8 @@ Deno.serve(async (req: Request) => {
   }
 
   // Determine channel: body override > env var > default
-  let channel = Deno.env.get('SLACK_OPS_ALERTS_CHANNEL_ID') || '#ops-alerts';
+  // Channel: body override > env var > hardcoded default
+  let channel = Deno.env.get('SLACK_OPS_ALERTS_CHANNEL_ID') || 'C08A03ET7C3'; // #appointment-availability-update
   try {
     const body = await req.json().catch(() => ({}));
     if (body?.channel) channel = body.channel;
