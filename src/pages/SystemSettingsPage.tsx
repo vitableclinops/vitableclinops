@@ -20,6 +20,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ConflictResolutionDialog } from '@/components/import/ConflictResolutionDialog';
 import { CreateAccountDialog } from '@/components/admin/CreateAccountDialog';
+import { SyncHealthCard } from '@/components/admin/SyncHealthCard';
 import Papa from 'papaparse';
 import type { Tables, Enums } from '@/integrations/supabase/types';
 
@@ -926,6 +927,9 @@ export default function SystemSettingsPage() {
 
             {/* Homebase Tab */}
             <TabsContent value="homebase" className="space-y-6">
+
+              {/* Unified sync health across ALL nightly jobs */}
+              <SyncHealthCard />
 
               {/* Sync status card */}
               <Card>

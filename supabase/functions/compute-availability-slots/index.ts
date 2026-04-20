@@ -50,6 +50,30 @@ Deno.serve(async (req: Request) => {
     if (body.days_ahead != null) daysAhead = Math.min(30, Math.max(1, Number(body.days_ahead)));
   } catch { /* ignore */ }
 
+  // Open sync_runs telemetry row up front
+  const startedAt = Date.now();
+  const { data: runRow } = await supabase
+    .from('sync_runs')
+    .insert({ function_name: 'compute-availability-slots', status: 'running' })
+    .select('id')
+    .single();
+  const runId: string | null = (runRow?.id as string) ?? null;
+
+  const finalizeRun = async (
+    status: 'success' | 'partial' | 'error',
+    extras: { rows_processed?: number; error_message?: string; details?: unknown } = {},
+  ) => {
+    if (!runId) return;
+    await supabase.from('sync_runs').update({
+      status,
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedAt,
+      rows_processed: extras.rows_processed ?? 0,
+      error_message: extras.error_message ?? null,
+      details: extras.details ?? {},
+    }).eq('id', runId);
+  };
+
   try {
     const today = new Date();
     const pastDate   = new Date(today); pastDate.setDate(today.getDate() - daysBack);
@@ -180,6 +204,17 @@ Deno.serve(async (req: Request) => {
       rowsWritten += batch.length;
     }
 
+    await finalizeRun('success', {
+      rows_processed: rowsWritten,
+      details: {
+        window:              { start: windowStart, end: windowEnd },
+        shifts_processed:    shiftsProcessed,
+        shifts_unmatched:    shiftsUnmatched,
+        active_states:       activeStates.size,
+        rows_skipped_historical: skippedHistorical.length,
+      },
+    });
+
     return new Response(JSON.stringify({
       ok:                  true,
       window:              { start: windowStart, end: windowEnd },
@@ -194,6 +229,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await finalizeRun('error', { error_message: message });
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

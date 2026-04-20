@@ -55,6 +55,28 @@ Deno.serve(async (req: Request) => {
     if (body.window_days) windowDays = Math.min(90, Math.max(1, Number(body.window_days)));
   } catch { /* ignore */ }
 
+  const startedAt = Date.now();
+  const { data: runRow } = await supabase
+    .from('sync_runs')
+    .insert({ function_name: 'compute-license-utilization', status: 'running' })
+    .select('id')
+    .single();
+  const runId: string | null = (runRow?.id as string) ?? null;
+  const finalizeRun = async (
+    status: 'success' | 'partial' | 'error',
+    extras: { rows_processed?: number; error_message?: string; details?: unknown } = {},
+  ) => {
+    if (!runId) return;
+    await supabase.from('sync_runs').update({
+      status,
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedAt,
+      rows_processed: extras.rows_processed ?? 0,
+      error_message: extras.error_message ?? null,
+      details: extras.details ?? {},
+    }).eq('id', runId);
+  };
+
   try {
     // ── Date window ───────────────────────────────────────────────────────────
     const today = new Date();
@@ -249,6 +271,14 @@ Deno.serve(async (req: Request) => {
     // ── Build recommendations ─────────────────────────────────────────────────
     const recommendations = buildRecommendations(snapshots as any[], licenseMap, activeStates, hoursMap);
 
+    await finalizeRun('success', {
+      rows_processed: snapshotsWritten,
+      details: {
+        window: { start: windowStart, end: windowEnd },
+        recommendations_count: recommendations.length,
+      },
+    });
+
     return new Response(JSON.stringify({
       ok: true,
       window: { start: windowStart, end: windowEnd },
@@ -260,6 +290,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await finalizeRun('error', { error_message: message });
     return new Response(JSON.stringify({ error: message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
