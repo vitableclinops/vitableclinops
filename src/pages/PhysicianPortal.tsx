@@ -142,7 +142,7 @@ const PhysicianPortal = () => {
                 {getInitials(profile?.full_name || 'MD')}
               </AvatarFallback>
             </Avatar>
-            <Button variant="ghost" size="icon" onClick={handleSignOut}>
+            <Button variant="ghost" size="icon" aria-label="Sign out" title="Sign out" onClick={handleSignOut}>
               <LogOut className="h-5 w-5" />
             </Button>
           </div>

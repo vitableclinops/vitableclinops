@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
@@ -10,28 +13,77 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormDescription,
+} from '@/components/ui/form';
 import { toast } from '@/hooks/use-toast';
 import { ArrowLeft, Loader2, UserPlus, Copy, Eye, EyeOff } from 'lucide-react';
 import { PROVIDER_TYPE_CONFIG, type ProviderType } from '@/types';
 import { StateSelectionStep } from '@/components/onboarding/StateSelectionStep';
 import { getCollabRequirementType } from '@/constants/stateRestrictions';
 
-interface ProviderFormData {
-  fullName: string;
-  email: string;
-  npiNumber: string;
-  providerType: ProviderType | '';
-  employmentType: 'w2' | '1099' | 'agency' | '';
-  agencyId: string;
-  primarySpecialty: string;
-  minPatientAge: string;
-  bio: string;
-  phoneNumber: string;
-  selectedStates: string[];
-  createAccount: boolean;
-}
+// ── Schema ────────────────────────────────────────────────────────────────────
+
+const PROVIDER_TYPES = Object.keys(PROVIDER_TYPE_CONFIG) as [ProviderType, ...ProviderType[]];
+
+const providerSchema = z
+  .object({
+    fullName: z.string().trim().min(1, 'Full name is required'),
+    email: z.string().trim().email('Enter a valid email address'),
+    npiNumber: z.string().trim().optional().default(''),
+    providerType: z.enum(PROVIDER_TYPES, {
+      errorMap: () => ({ message: 'Select a provider type' }),
+    }),
+    employmentType: z.enum(['w2', '1099', 'agency', '']).default(''),
+    agencyId: z.string().default(''),
+    primarySpecialty: z.string().default(''),
+    minPatientAge: z.string().default(''),
+    bio: z.string().default(''),
+    phoneNumber: z.string().default(''),
+    selectedStates: z.array(z.string()).default([]),
+    createAccount: z.boolean().default(false),
+  })
+  .superRefine((val, ctx) => {
+    const config = PROVIDER_TYPE_CONFIG[val.providerType];
+    if (config?.requiresNPI && val.npiNumber && !/^\d{10}$/.test(val.npiNumber)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['npiNumber'],
+        message: 'NPI must be exactly 10 digits',
+      });
+    }
+    if (val.phoneNumber && val.phoneNumber.replace(/\D/g, '').length < 10) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['phoneNumber'],
+        message: 'Phone must have at least 10 digits',
+      });
+    }
+  });
+
+type ProviderFormValues = z.infer<typeof providerSchema>;
+
+const defaultValues: ProviderFormValues = {
+  fullName: '',
+  email: '',
+  npiNumber: '',
+  providerType: '' as ProviderType,
+  employmentType: '',
+  agencyId: '',
+  primarySpecialty: '',
+  minPatientAge: '',
+  bio: '',
+  phoneNumber: '',
+  selectedStates: [],
+  createAccount: false,
+};
 
 export default function AdminAddProviderPage() {
   const navigate = useNavigate();
@@ -40,53 +92,41 @@ export default function AdminAddProviderPage() {
   const userName = profile?.full_name || profile?.email || 'Admin';
   const userEmail = profile?.email || '';
 
-  const [formData, setFormData] = useState<ProviderFormData>({
-    fullName: '',
-    email: '',
-    npiNumber: '',
-    providerType: '',
-    employmentType: '',
-    agencyId: '',
-    primarySpecialty: '',
-    minPatientAge: '',
-    bio: '',
-    phoneNumber: '',
-    selectedStates: [],
-    createAccount: false,
+  const form = useForm<ProviderFormValues>({
+    resolver: zodResolver(providerSchema),
+    defaultValues,
+    mode: 'onBlur',
   });
+
+  const values = form.watch();
 
   const [step, setStep] = useState<'details' | 'states' | 'review'>('details');
   const [createdResult, setCreatedResult] = useState<{ profileId: string; tempPassword?: string } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  const update = (updates: Partial<ProviderFormData>) => {
-    setFormData(prev => ({ ...prev, ...updates }));
-  };
-
-  const requiresLicensure = formData.providerType
-    ? PROVIDER_TYPE_CONFIG[formData.providerType as ProviderType]?.requiresLicensure
+  const requiresLicensure = values.providerType
+    ? PROVIDER_TYPE_CONFIG[values.providerType as ProviderType]?.requiresLicensure
     : false;
 
-  const requiresNPI = formData.providerType
-    ? PROVIDER_TYPE_CONFIG[formData.providerType as ProviderType]?.requiresNPI
+  const requiresNPI = values.providerType
+    ? PROVIDER_TYPE_CONFIG[values.providerType as ProviderType]?.requiresNPI
     : false;
 
   const createProviderMutation = useMutation({
-    mutationFn: async () => {
-      const nameParts = formData.fullName.trim().split(' ');
+    mutationFn: async (data: ProviderFormValues) => {
+      const nameParts = data.fullName.trim().split(' ');
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
       let userId: string | null = null;
       let tempPassword: string | undefined;
 
-      // Optionally create an auth account
-      if (formData.createAccount) {
+      if (data.createAccount) {
         const { data: result, error } = await supabase.functions.invoke('admin-create-user', {
           body: {
-            email: formData.email,
-            password: undefined, // let the function generate one
-            fullName: formData.fullName,
+            email: data.email,
+            password: undefined,
+            fullName: data.fullName,
             roles: ['provider'],
           },
         });
@@ -98,33 +138,30 @@ export default function AdminAddProviderPage() {
         tempPassword = result.password;
       }
 
-      // Determine activation status
       let activationStatus = 'pending_onboarding';
-      if (formData.selectedStates.length > 0) {
-        const hasCollabStates = formData.selectedStates.some(
+      if (data.selectedStates.length > 0) {
+        const hasCollabStates = data.selectedStates.some(
           s => getCollabRequirementType(s) === 'always'
         );
         activationStatus = hasCollabStates ? 'pending_agreements' : 'pending_review';
       }
 
-      // Create the profile row
       const { data: newProfile, error: profileError } = await supabase
         .from('profiles')
         .insert({
-          email: formData.email,
-          full_name: formData.fullName,
+          email: data.email,
+          full_name: data.fullName,
           first_name: firstName,
           last_name: lastName,
-          npi_number: formData.npiNumber || null,
-          profession: formData.providerType || null,
-          primary_specialty: formData.primarySpecialty || null,
-          min_patient_age: formData.minPatientAge || null,
-          bio: formData.bio || null,
-          phone_number: formData.phoneNumber || null,
-          employment_type: formData.employmentType || null,
-          agency_id: formData.employmentType === 'agency' ? formData.agencyId || null : null,
+          npi_number: data.npiNumber || null,
+          profession: data.providerType || null,
+          primary_specialty: data.primarySpecialty || null,
+          min_patient_age: data.minPatientAge || null,
+          bio: data.bio || null,
+          phone_number: data.phoneNumber || null,
+          employment_type: data.employmentType || null,
+          agency_id: data.employmentType === 'agency' ? data.agencyId || null : null,
           employment_status: 'active',
-          // actively_licensed_states removed — derived from provider_state_status
           activation_status: activationStatus,
           user_id: userId,
           onboarding_completed: false,
@@ -134,11 +171,10 @@ export default function AdminAddProviderPage() {
 
       if (profileError) throw profileError;
 
-      // Create provider_licenses for selected states
-      if (formData.selectedStates.length > 0) {
-        const licenseRows = formData.selectedStates.map(stateAbbr => ({
+      if (data.selectedStates.length > 0) {
+        const licenseRows = data.selectedStates.map(stateAbbr => ({
           profile_id: newProfile.id,
-          provider_email: formData.email,
+          provider_email: data.email,
           state_abbreviation: stateAbbr,
           license_type: 'APRN',
           status: 'pending_verification',
@@ -148,10 +184,9 @@ export default function AdminAddProviderPage() {
         await supabase.from('provider_licenses').insert(licenseRows);
       }
 
-      // Create admin task for follow-up
       await supabase.from('agreement_tasks').insert({
         provider_id: newProfile.id,
-        title: `Complete intake for ${formData.fullName}`,
+        title: `Complete intake for ${data.fullName}`,
         description: `A new provider profile was created by admin. Review and complete any remaining onboarding steps.`,
         category: 'compliance',
         status: 'pending',
@@ -167,7 +202,7 @@ export default function AdminAddProviderPage() {
       setCreatedResult(data);
       toast({
         title: 'Provider Added',
-        description: `${formData.fullName} has been added to the system.`,
+        description: `${values.fullName} has been added to the system.`,
       });
     },
     onError: (error: Error) => {
@@ -186,13 +221,21 @@ export default function AdminAddProviderPage() {
     }
   };
 
-  const canProceedFromDetails = () => {
-    return formData.fullName.trim() !== '' && formData.email.trim() !== '' && formData.providerType !== '';
+  const handleNextFromDetails = async () => {
+    const valid = await form.trigger([
+      'fullName',
+      'email',
+      'providerType',
+      'npiNumber',
+      'phoneNumber',
+    ]);
+    if (!valid) return;
+    setStep(requiresLicensure ? 'states' : 'review');
   };
 
-  const handleSubmit = () => {
-    createProviderMutation.mutate();
-  };
+  const onSubmit = form.handleSubmit((data) => {
+    createProviderMutation.mutate(data);
+  });
 
   // Success state
   if (createdResult) {
@@ -208,13 +251,13 @@ export default function AdminAddProviderPage() {
                   Provider Added Successfully
                 </CardTitle>
                 <CardDescription>
-                  {formData.fullName} has been added to the provider directory.
+                  {values.fullName} has been added to the provider directory.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label>Email</Label>
-                  <div className="text-sm font-medium">{formData.email}</div>
+                  <div className="text-sm font-medium">{values.email}</div>
                 </div>
 
                 {createdResult.tempPassword && (
@@ -227,10 +270,10 @@ export default function AdminAddProviderPage() {
                         readOnly
                         className="font-mono"
                       />
-                      <Button variant="outline" size="icon" onClick={() => setShowPassword(!showPassword)}>
+                      <Button variant="outline" size="icon" aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(!showPassword)}>
                         {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
-                      <Button variant="outline" size="icon" onClick={handleCopyPassword}>
+                      <Button variant="outline" size="icon" aria-label="Copy password to clipboard" title="Copy password" onClick={handleCopyPassword}>
                         <Copy className="h-4 w-4" />
                       </Button>
                     </div>
@@ -240,10 +283,10 @@ export default function AdminAddProviderPage() {
                   </div>
                 )}
 
-                {formData.selectedStates.length > 0 && (
+                {values.selectedStates.length > 0 && (
                   <div className="space-y-2">
                     <Label>Licensed States</Label>
-                    <div className="text-sm">{formData.selectedStates.join(', ')}</div>
+                    <div className="text-sm">{values.selectedStates.join(', ')}</div>
                   </div>
                 )}
 
@@ -253,12 +296,7 @@ export default function AdminAddProviderPage() {
                   </Button>
                   <Button onClick={() => {
                     setCreatedResult(null);
-                    setFormData({
-                      fullName: '', email: '', npiNumber: '', providerType: '',
-                      employmentType: '', agencyId: '', primarySpecialty: '',
-                      minPatientAge: '', bio: '', phoneNumber: '',
-                      selectedStates: [], createAccount: false,
-                    });
+                    form.reset(defaultValues);
                     setStep('details');
                   }}>
                     Add Another Provider
@@ -279,7 +317,7 @@ export default function AdminAddProviderPage() {
         <div className="p-4 md:p-6 lg:p-8 max-w-3xl mx-auto">
           {/* Header */}
           <div className="flex items-center gap-3 mb-6">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/providers')}>
+            <Button variant="ghost" size="icon" aria-label="Back to providers" title="Back to providers" onClick={() => navigate('/providers')}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
@@ -313,239 +351,292 @@ export default function AdminAddProviderPage() {
             })}
           </div>
 
-          {/* Step: Details */}
-          {step === 'details' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Provider Information</CardTitle>
-                <CardDescription>Enter the provider's details. This creates their profile in the system.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="fullName">Full Name *</Label>
-                    <Input
-                      id="fullName"
-                      placeholder="Jane Smith"
-                      value={formData.fullName}
-                      onChange={e => update({ fullName: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email Address *</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="jane.smith@company.com"
-                      value={formData.email}
-                      onChange={e => update({ email: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="providerType">Provider Type *</Label>
-                    <Select value={formData.providerType} onValueChange={v => update({ providerType: v as ProviderType })}>
-                      <SelectTrigger id="providerType">
-                        <SelectValue placeholder="Select provider type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(PROVIDER_TYPE_CONFIG).map(([key, config]) => (
-                          <SelectItem key={key} value={key}>{config.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="employmentType">Employment Type</Label>
-                    <Select value={formData.employmentType} onValueChange={v => update({ employmentType: v as any })}>
-                      <SelectTrigger id="employmentType">
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="w2">W-2 Employee</SelectItem>
-                        <SelectItem value="1099">1099 Contractor</SelectItem>
-                        <SelectItem value="agency">Agency</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {requiresNPI && (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="npiNumber">NPI Number</Label>
-                      <Input
-                        id="npiNumber"
-                        placeholder="1234567890"
-                        value={formData.npiNumber}
-                        onChange={e => update({ npiNumber: e.target.value })}
-                        maxLength={10}
+          <Form {...form}>
+            <form onSubmit={onSubmit}>
+              {/* Step: Details */}
+              {step === 'details' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Provider Information</CardTitle>
+                    <CardDescription>Enter the provider's details. This creates their profile in the system.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="fullName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Full Name *</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Jane Smith" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email Address *</FormLabel>
+                            <FormControl>
+                              <Input type="email" placeholder="jane.smith@company.com" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="primarySpecialty">Primary Specialty</Label>
-                      <Input
-                        id="primarySpecialty"
-                        placeholder="e.g. Psychiatry"
-                        value={formData.primarySpecialty}
-                        onChange={e => update({ primarySpecialty: e.target.value })}
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="providerType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Provider Type *</FormLabel>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select provider type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {Object.entries(PROVIDER_TYPE_CONFIG).map(([key, config]) => (
+                                  <SelectItem key={key} value={key}>{config.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="employmentType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Employment Type</FormLabel>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="w2">W-2 Employee</SelectItem>
+                                <SelectItem value="1099">1099 Contractor</SelectItem>
+                                <SelectItem value="agency">Agency</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
                     </div>
-                  </div>
-                )}
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <Input
-                      id="phone"
-                      placeholder="(555) 123-4567"
-                      value={formData.phoneNumber}
-                      onChange={e => update({ phoneNumber: e.target.value })}
+                    {requiresNPI && (
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <FormField
+                          control={form.control}
+                          name="npiNumber"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>NPI Number</FormLabel>
+                              <FormControl>
+                                <Input placeholder="1234567890" maxLength={10} {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="primarySpecialty"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Primary Specialty</FormLabel>
+                              <FormControl>
+                                <Input placeholder="e.g. Psychiatry" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="phoneNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Phone Number</FormLabel>
+                            <FormControl>
+                              <Input placeholder="(555) 123-4567" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="minPatientAge"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Minimum Patient Age</FormLabel>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="1.5">1.5+ years</SelectItem>
+                                <SelectItem value="13">13+ years</SelectItem>
+                                <SelectItem value="17">17+ years</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="bio"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Bio</FormLabel>
+                          <FormControl>
+                            <Textarea placeholder="Professional background and specialties..." rows={3} {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="minAge">Minimum Patient Age</Label>
-                    <Select value={formData.minPatientAge} onValueChange={v => update({ minPatientAge: v })}>
-                      <SelectTrigger id="minAge">
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1.5">1.5+ years</SelectItem>
-                        <SelectItem value="13">13+ years</SelectItem>
-                        <SelectItem value="17">17+ years</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="bio">Bio</Label>
-                  <Textarea
-                    id="bio"
-                    placeholder="Professional background and specialties..."
-                    value={formData.bio}
-                    onChange={e => update({ bio: e.target.value })}
-                    rows={3}
-                  />
-                </div>
-
-                <div className="border-t pt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="createAccount" className="font-medium">Create Login Account</Label>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Create an authentication account so this provider can log in. A temporary password will be generated.
-                      </p>
+                    <div className="border-t pt-4">
+                      <FormField
+                        control={form.control}
+                        name="createAccount"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between">
+                            <div>
+                              <FormLabel className="font-medium">Create Login Account</FormLabel>
+                              <FormDescription className="text-xs mt-1">
+                                Create an authentication account so this provider can log in. A temporary password will be generated.
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
                     </div>
-                    <Switch
-                      id="createAccount"
-                      checked={formData.createAccount}
-                      onCheckedChange={v => update({ createAccount: v })}
+
+                    <div className="flex justify-end gap-3 pt-4">
+                      <Button type="button" variant="outline" onClick={() => navigate('/providers')}>Cancel</Button>
+                      <Button type="button" onClick={handleNextFromDetails}>
+                        {requiresLicensure ? 'Next: Select States' : 'Next: Review'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Step: States */}
+              {step === 'states' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Licensed States</CardTitle>
+                    <CardDescription>Select the states where {values.fullName || 'this provider'} is or will be licensed.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <StateSelectionStep
+                      selectedStates={values.selectedStates}
+                      onUpdate={states => form.setValue('selectedStates', states, { shouldDirty: true })}
+                      providerType={values.providerType as ProviderType || null}
+                      showPendingOption={false}
                     />
-                  </div>
-                </div>
 
-                <div className="flex justify-end gap-3 pt-4">
-                  <Button variant="outline" onClick={() => navigate('/providers')}>Cancel</Button>
-                  {requiresLicensure ? (
-                    <Button onClick={() => setStep('states')} disabled={!canProceedFromDetails()}>
-                      Next: Select States
-                    </Button>
-                  ) : (
-                    <Button onClick={() => setStep('review')} disabled={!canProceedFromDetails()}>
-                      Next: Review
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Step: States */}
-          {step === 'states' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Licensed States</CardTitle>
-                <CardDescription>Select the states where {formData.fullName || 'this provider'} is or will be licensed.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <StateSelectionStep
-                  selectedStates={formData.selectedStates}
-                  onUpdate={states => update({ selectedStates: states })}
-                  providerType={formData.providerType as ProviderType || null}
-                  showPendingOption={false}
-                />
-
-                <div className="flex justify-between pt-4">
-                  <Button variant="outline" onClick={() => setStep('details')}>Back</Button>
-                  <Button onClick={() => setStep('review')}>
-                    Next: Review
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Step: Review */}
-          {step === 'review' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Review & Submit</CardTitle>
-                <CardDescription>Confirm the provider details before creating the profile.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label className="text-muted-foreground text-xs">Full Name</Label>
-                    <p className="font-medium">{formData.fullName}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground text-xs">Email</Label>
-                    <p className="font-medium">{formData.email}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground text-xs">Provider Type</Label>
-                    <p className="font-medium">
-                      {formData.providerType ? PROVIDER_TYPE_CONFIG[formData.providerType as ProviderType]?.label : '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground text-xs">Employment Type</Label>
-                    <p className="font-medium">{formData.employmentType || '—'}</p>
-                  </div>
-                  {formData.npiNumber && (
-                    <div>
-                      <Label className="text-muted-foreground text-xs">NPI</Label>
-                      <p className="font-medium">{formData.npiNumber}</p>
+                    <div className="flex justify-between pt-4">
+                      <Button type="button" variant="outline" onClick={() => setStep('details')}>Back</Button>
+                      <Button type="button" onClick={() => setStep('review')}>
+                        Next: Review
+                      </Button>
                     </div>
-                  )}
-                  {formData.selectedStates.length > 0 && (
-                    <div className="md:col-span-2">
-                      <Label className="text-muted-foreground text-xs">States</Label>
-                      <p className="font-medium">{formData.selectedStates.join(', ')}</p>
-                    </div>
-                  )}
-                  <div>
-                    <Label className="text-muted-foreground text-xs">Login Account</Label>
-                    <p className="font-medium">{formData.createAccount ? 'Will be created' : 'Not creating (profile only)'}</p>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
+              )}
 
-                <div className="flex justify-between pt-4 border-t">
-                  <Button variant="outline" onClick={() => setStep(requiresLicensure ? 'states' : 'details')}>
-                    Back
-                  </Button>
-                  <Button onClick={handleSubmit} disabled={createProviderMutation.isPending}>
-                    {createProviderMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    Create Provider
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+              {/* Step: Review */}
+              {step === 'review' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Review & Submit</CardTitle>
+                    <CardDescription>Confirm the provider details before creating the profile.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Full Name</Label>
+                        <p className="font-medium">{values.fullName}</p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Email</Label>
+                        <p className="font-medium">{values.email}</p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Provider Type</Label>
+                        <p className="font-medium">
+                          {values.providerType ? PROVIDER_TYPE_CONFIG[values.providerType as ProviderType]?.label : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Employment Type</Label>
+                        <p className="font-medium">{values.employmentType || '—'}</p>
+                      </div>
+                      {values.npiNumber && (
+                        <div>
+                          <Label className="text-muted-foreground text-xs">NPI</Label>
+                          <p className="font-medium">{values.npiNumber}</p>
+                        </div>
+                      )}
+                      {values.selectedStates.length > 0 && (
+                        <div className="md:col-span-2">
+                          <Label className="text-muted-foreground text-xs">States</Label>
+                          <p className="font-medium">{values.selectedStates.join(', ')}</p>
+                        </div>
+                      )}
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Login Account</Label>
+                        <p className="font-medium">{values.createAccount ? 'Will be created' : 'Not creating (profile only)'}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between pt-4 border-t">
+                      <Button type="button" variant="outline" onClick={() => setStep(requiresLicensure ? 'states' : 'details')}>
+                        Back
+                      </Button>
+                      <Button type="submit" disabled={createProviderMutation.isPending}>
+                        {createProviderMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        Create Provider
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </form>
+          </Form>
         </div>
       </main>
     </div>

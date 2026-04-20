@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { cn, downloadCSV } from '@/lib/utils';
+import { InfoTooltip } from '@/components/InfoTooltip';
 import {
   RefreshCw,
   TrendingUp,
@@ -207,10 +208,11 @@ function coverageTooltip(ratio: number | null): string {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function KpiCard({
-  title, value, sub, icon: Icon, color,
+  title, value, sub, icon: Icon, color, tooltip,
 }: {
   title: string; value: string; sub?: string;
   icon: React.ComponentType<{ className?: string }>; color: string;
+  tooltip?: React.ReactNode;
 }) {
   return (
     <Card>
@@ -219,7 +221,10 @@ function KpiCard({
           <Icon className="h-5 w-5 text-white" />
         </div>
         <div>
-          <p className="text-sm text-muted-foreground">{title}</p>
+          <p className="text-sm text-muted-foreground inline-flex items-center gap-1">
+            {title}
+            {tooltip && <InfoTooltip label={`About: ${title}`}>{tooltip}</InfoTooltip>}
+          </p>
           <p className="text-2xl font-bold">{value}</p>
           {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
         </div>
@@ -855,6 +860,7 @@ export default function LicenseOptimizerPage() {
               sub="coverage < 100%"
               icon={TrendingDown}
               color="bg-red-500"
+              tooltip="States where available provider-hours fall short of expected demand. Drives recommendations to add licenses or add providers."
             />
             <KpiCard
               title="Surplus states"
@@ -862,6 +868,7 @@ export default function LicenseOptimizerPage() {
               sub="coverage ≥ 130%"
               icon={TrendingUp}
               color="bg-blue-500"
+              tooltip="States where we have ≥ 30% more provider-hours than expected demand. Candidates for scaling back licenses or re-routing capacity."
             />
             <KpiCard
               title="Wasted hrs/day"
@@ -869,6 +876,7 @@ export default function LicenseOptimizerPage() {
               sub="into surplus/inactive states"
               icon={AlertTriangle}
               color="bg-amber-500"
+              tooltip="Provider hours/day going into states that don't need them (surplus states or inactive states). Reclaiming these is the optimizer's main lever."
             />
             <KpiCard
               title="Avg SLA attainment"
@@ -876,6 +884,7 @@ export default function LicenseOptimizerPage() {
               sub="target ≥ 95%"
               icon={BarChart3}
               color={kpis.avgSla >= 95 ? 'bg-emerald-500' : kpis.avgSla >= 85 ? 'bg-amber-500' : 'bg-red-500'}
+              tooltip="Network-wide average of the % of requested appointments we actually delivered, weighted across active states."
             />
           </div>
 

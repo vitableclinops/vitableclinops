@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { QuickTaskDialog, QuickTaskTarget } from '@/components/admin/QuickTaskDialog';
 import { DataFreshnessIndicator } from '@/components/DataFreshnessIndicator';
+import { InfoTooltip } from '@/components/InfoTooltip';
 import { useProviderCoverage } from '@/hooks/useProviderCoverage';
 import { ProviderCoverageTable } from '@/components/ops/ProviderCoverageTable';
 import { useSlaBufferMultiplier } from '@/hooks/useSystemConfig';
@@ -658,16 +659,47 @@ export default function OpsDashboardPage() {
                       <tr className="border-b bg-muted/50">
                         <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">State</th>
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">
-                          Available
+                          <span className="inline-flex items-center gap-1 justify-end">
+                            Available
+                            <InfoTooltip label="What is Available?">
+                              Appointment slots providers have open on this date (1 scheduled hour = 2 slots). Historical rows come from Metabase CSV; forecasted rows are derived from Homebase shifts.
+                            </InfoTooltip>
+                          </span>
                           <div className="text-[10px] font-normal text-muted-foreground/70">slots / hours</div>
                         </th>
                         <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">
-                          SLA Target
+                          <span className="inline-flex items-center gap-1 justify-end">
+                            SLA Target
+                            <InfoTooltip label="What is the SLA target?">
+                              Daily slot target we need to meet service-level commitments. Formula: <code className="bg-muted px-1 rounded">max(5, weekly_visits / 5 × 1.5)</code>. Below target → LOW / CRITICAL in the Status column.
+                            </InfoTooltip>
+                          </span>
                           <div className="text-[10px] font-normal text-muted-foreground/70">slots / hours</div>
                         </th>
-                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Coverage</th>
-                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">SLA %</th>
-                        <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Status</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">
+                          <span className="inline-flex items-center gap-1 justify-end">
+                            Coverage
+                            <InfoTooltip label="What is Coverage?">
+                              Available ÷ SLA target, as a percentage. 100% means we're exactly at target; ≥ 100% means we have headroom; below means we're short.
+                            </InfoTooltip>
+                          </span>
+                        </th>
+                        <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">
+                          <span className="inline-flex items-center gap-1 justify-end">
+                            SLA %
+                            <InfoTooltip label="What is SLA %?">
+                              Service Level Agreement attainment: % of requested appointments we actually delivered. Uploaded weekly from the SLA attainment CSV. Green ≥ 80%, yellow 60–79%, red {'<'} 60%.
+                            </InfoTooltip>
+                          </span>
+                        </th>
+                        <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">
+                          <span className="inline-flex items-center gap-1 justify-center">
+                            Status
+                            <InfoTooltip label="Status legend">
+                              OK: available ≥ SLA target · LOW: 50–99% of target · CRITICAL: {'<'} 50% · ZERO: no slots at all · NO DATA: CSV not yet uploaded for this date.
+                            </InfoTooltip>
+                          </span>
+                        </th>
                         <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Action</th>
                         {isAdmin && (
                           <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">Active</th>

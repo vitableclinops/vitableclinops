@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
@@ -11,6 +12,25 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps) {
   const { user, profile, roles, rolesHydrated, loading } = useAuth();
   const location = useLocation();
+  const { toast } = useToast();
+
+  const missingRole =
+    !!user &&
+    rolesHydrated &&
+    !!requiredRoles?.length &&
+    !requiredRoles.some((role) => roles.includes(role));
+
+  // Surface an explanation before redirecting — otherwise role-gated links just
+  // silently bounce to "/" and users think the link is broken.
+  useEffect(() => {
+    if (missingRole) {
+      toast({
+        title: "You don't have access to that page",
+        description: `This page requires the ${requiredRoles!.join(' or ')} role. Contact an admin if you believe this is a mistake.`,
+        variant: 'destructive',
+      });
+    }
+  }, [missingRole, requiredRoles, toast]);
 
   // Always wait for the auth session. If the route is role-gated, also wait
   // for roles to hydrate (but auth itself should never be blocked by role fetches).
@@ -26,11 +46,8 @@ export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps)
     return <Navigate to="/auth" state={{ from: location }} replace />;
   }
 
-  if (requiredRoles && requiredRoles.length > 0) {
-    const hasRequiredRole = requiredRoles.some((role) => roles.includes(role));
-    if (!hasRequiredRole) {
-      return <Navigate to="/" replace />;
-    }
+  if (missingRole) {
+    return <Navigate to="/" replace />;
   }
 
   // First-login onboarding enforcement for providers

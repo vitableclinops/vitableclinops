@@ -16,6 +16,7 @@ import {
 import { Upload, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Download, Info, ChevronDown } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn, downloadCSV } from '@/lib/utils';
+import { CsvPreviewDialog } from '@/components/CsvPreviewDialog';
 import { useSlaBufferMultiplier } from '@/hooks/useSystemConfig';
 import {
   slaTargetSlots,
@@ -94,42 +95,70 @@ export default function DemandForecastPage() {
   const [selectedWeek, setSelectedWeek] = useState<string>('all');
   const [showGuide, setShowGuide] = useState(false);
 
-  // ── CSV import ──────────────────────────────────────────────────────────────
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── CSV import (parse → preview → confirm → invoke) ─────────────────────────
+  type PendingForecast = {
+    fileName: string;
+    rows: Array<{ state: string; week_start: string; visits: string }>;
+  };
+  const [pendingImports, setPendingImports] = useState<PendingForecast[]>([]);
+  const [showImportPreview, setShowImportPreview] = useState(false);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
     if (!files.length) return;
-    setUploading(true);
 
     try {
+      const parsed: PendingForecast[] = [];
       for (const file of files) {
         const raw = await file.text();
         const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         const dataRows = parseCSV(text);
 
-        const importRows = dataRows.map((r, i) => ({
-          state:      colVal(r, 'state')               ?? Object.values(r)[0] ?? '',
-          week_start: colVal(r, 'week', 'date', 'period') ?? Object.values(r)[1] ?? '',
+        const importRows = dataRows.map((r) => ({
+          state:      colVal(r, 'state')                       ?? Object.values(r)[0] ?? '',
+          week_start: colVal(r, 'week', 'date', 'period')      ?? Object.values(r)[1] ?? '',
           visits:     colVal(r, 'visit', 'demand', 'projected', 'forecast') ?? Object.values(r)[2] ?? '0',
         })).filter((r) => r.state && r.week_start);
 
+        parsed.push({ fileName: file.name, rows: importRows });
+      }
+      setPendingImports(parsed);
+      setShowImportPreview(true);
+    } catch (err: any) {
+      toast({ title: 'Parse failed', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const handleImportConfirm = async () => {
+    if (pendingImports.length === 0) return;
+    setUploading(true);
+    try {
+      for (const { fileName, rows } of pendingImports) {
         const { data: result, error } = await supabase.functions.invoke(
           'import-demand-forecast',
-          { body: { rows: importRows } }
+          { body: { rows } }
         );
         if (error) throw error;
         toast({
-          title: `${file.name}`,
+          title: fileName,
           description: `${result.inserted ?? '?'} rows imported${result.errors?.length ? `, ${result.errors.length} skipped` : ''}`,
         });
       }
       queryClient.invalidateQueries({ queryKey: ['demand_forecast'] });
+      setShowImportPreview(false);
+      setPendingImports([]);
     } catch (err: any) {
       toast({ title: 'Import failed', description: err.message, variant: 'destructive' });
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   };
+
+  const pendingRowsFlat = useMemo(
+    () => pendingImports.flatMap((p) => p.rows),
+    [pendingImports]
+  );
 
   // ── Derived data ────────────────────────────────────────────────────────────
 
@@ -247,7 +276,7 @@ export default function DemandForecastPage() {
                   accept=".csv,.tsv,.txt"
                   multiple
                   className="hidden"
-                  onChange={handleImport}
+                  onChange={handleFileSelect}
                   disabled={uploading}
                 />
                 <Button variant="outline" size="sm" asChild disabled={uploading}>
@@ -261,6 +290,29 @@ export default function DemandForecastPage() {
               </label>
             </div>
           </div>
+
+          <CsvPreviewDialog
+            open={showImportPreview}
+            onOpenChange={(open) => {
+              setShowImportPreview(open);
+              if (!open) setPendingImports([]);
+            }}
+            title="Confirm demand forecast import"
+            description="These rows will be inserted into demand_forecast. Existing rows for the same state + week are overwritten."
+            rows={pendingRowsFlat}
+            columns={[
+              { key: 'state', label: 'State' },
+              { key: 'week_start', label: 'Week start' },
+              { key: 'visits', label: 'Projected visits' },
+            ]}
+            meta={[
+              { label: 'Files', value: pendingImports.map((p) => p.fileName).join(', ') || '—' },
+              { label: 'Rows', value: pendingRowsFlat.length.toLocaleString() },
+            ]}
+            onConfirm={handleImportConfirm}
+            isPending={uploading}
+            confirmLabel={`Import ${pendingRowsFlat.length} rows`}
+          />
 
           {/* How to use guide */}
           <Collapsible open={showGuide} onOpenChange={setShowGuide}>
@@ -462,10 +514,22 @@ export default function DemandForecastPage() {
             </CardHeader>
             <CardContent className="p-0">
               {isLoading ? (
-                <div className="p-8 text-center text-muted-foreground">Loading…</div>
+                <div className="p-4 space-y-2" aria-label="Loading forecast data">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="flex gap-4">
+                      <div className="h-5 w-12 bg-muted rounded animate-pulse" />
+                      <div className="h-5 flex-1 bg-muted rounded animate-pulse" />
+                      <div className="h-5 w-20 bg-muted rounded animate-pulse" />
+                      <div className="h-5 w-20 bg-muted rounded animate-pulse" />
+                    </div>
+                  ))}
+                </div>
               ) : filtered.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">
-                  No forecast data. Import a Metabase CSV with columns: State, Week, Visits.
+                <div className="p-8 text-center text-muted-foreground space-y-2">
+                  <p className="font-medium">No forecast data yet.</p>
+                  <p className="text-sm">
+                    Import a Metabase CSV with columns <code className="text-xs bg-muted px-1 rounded">State, Week, Visits</code> using the button above, or wait for the next nightly sync.
+                  </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">

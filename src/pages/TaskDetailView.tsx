@@ -218,7 +218,7 @@ const TaskDetailView = () => {
                           <Badge variant="secondary" className="capitalize">
                             {evidence.type}
                           </Badge>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label="Open evidence in new tab" title="Open">
                             <ExternalLink className="h-4 w-4" />
                           </Button>
                         </div>
