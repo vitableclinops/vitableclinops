@@ -4781,6 +4781,10 @@ export type Database = {
         Args: { _agreement_id: string; _user_id: string }
         Returns: boolean
       }
+      sync_vault_metabase_secret: {
+        Args: { p_value: string }
+        Returns: undefined
+      }
     }
     Enums: {
       agreement_task_category:
