@@ -4785,6 +4785,10 @@ export type Database = {
         Args: { p_value: string }
         Returns: undefined
       }
+      upsert_vault_secret: {
+        Args: { p_description?: string; p_name: string; p_value: string }
+        Returns: undefined
+      }
     }
     Enums: {
       agreement_task_category:
