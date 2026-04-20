@@ -5,6 +5,12 @@
  * DEMAND (forecast slots + leftover-derived booked slots) per state per day,
  * and writes coverage_bridge_snapshots.
  *
+ * Demand uses the same 3-tier fallback as compute-license-utilization so the
+ * Executive Briefing and License Optimizer agree:
+ *   Tier A: demand_forecast.projected_visits  (preferred — weekly → daily)
+ *   Tier B: leftover_slots + SLA-derived booked demand
+ *   Tier C: SLA-only heuristic (assume demand ≈ supply)
+ *
  * Status:
  *   DEFICIT  – coverage_ratio < 1.0
  *   BALANCED – 1.0 ≤ ratio < 1.3
@@ -115,10 +121,23 @@ Deno.serve(async (req: Request) => {
 
     const leftoverMap = new Map<string, { unfilled: number; type: string }>();
     for (const r of (leftoverRows ?? [])) {
-      leftoverMap.set(`${r.state_abbreviation}|${r.slot_date}`, {
-        unfilled: Number(r.unfilled_slots),
-        type: r.window_type,
-      });
+      const key = `${r.state_abbreviation}|${r.slot_date}`;
+      const isHistorical = r.window_type === 'historical';
+      const existing = leftoverMap.get(key);
+      // Prefer historical over forecast; never downgrade.
+      if (!existing || (isHistorical && existing.type !== 'historical')) {
+        leftoverMap.set(key, { unfilled: Number(r.unfilled_slots), type: r.window_type });
+      }
+    }
+
+    // Tier A demand input: weekly demand_forecast (projected_visits per state).
+    const { data: forecastRows } = await supabase
+      .from('demand_forecast')
+      .select('state_abbreviation, week_start, projected_visits')
+      .gte('week_start', windowStart).lte('week_start', windowEnd);
+    const forecastMap = new Map<string, number>();
+    for (const r of (forecastRows ?? [])) {
+      forecastMap.set(`${r.state_abbreviation}|${r.week_start}`, Number(r.projected_visits));
     }
 
     // SLA
@@ -134,7 +153,21 @@ Deno.serve(async (req: Request) => {
 
     // Build snapshots
     const snapshots: any[] = [];
+    // Iterate every (state, date) we have any signal for: supply, leftover,
+    // OR a forecast (expanded to each day in the window for that state).
     const allKeys = new Set<string>([...supplyMap.keys(), ...leftoverMap.keys()]);
+    // Expand forecast into per-day keys for active states so forecast-only
+    // (no supply, no leftover) state-days still get a snapshot row.
+    const forecastStates = new Set<string>();
+    for (const k of forecastMap.keys()) forecastStates.add(k.split('|')[0]);
+    if (forecastStates.size > 0) {
+      for (let d = new Date(windowStart); d <= new Date(windowEnd); d.setDate(d.getDate() + 1)) {
+        const date = d.toISOString().slice(0, 10);
+        for (const state of forecastStates) {
+          if (activeStates.has(state)) allKeys.add(`${state}|${date}`);
+        }
+      }
+    }
     for (const key of allKeys) {
       const [state, date] = key.split('|');
       if (!activeStates.has(state)) continue;
@@ -142,12 +175,20 @@ Deno.serve(async (req: Request) => {
       const supplySlots = Math.round(supplyHours * SLOTS_PER_HOUR);
       const leftover = leftoverMap.get(key);
       const sla = slaByState.get(state) ?? null;
+      const forecastVisits = lookupWeeklyForecast(forecastMap, state, date);
 
       let demandSlots = 0;
       let confidence: 'low' | 'medium' | 'high' = 'low';
       let notes = '';
 
-      if (leftover && sla && sla > 0) {
+      // Tier A: demand_forecast (preferred) — weekly visits → daily slots.
+      if (forecastVisits !== null && forecastVisits >= 0) {
+        demandSlots = Math.round(forecastVisits / 7);
+        confidence = 'high';
+        notes = `from demand_forecast (${forecastVisits.toFixed(0)} weekly visits)`;
+      }
+      // Tier B: leftover slots + SLA-derived booked demand.
+      else if (leftover && sla && sla > 0) {
         const booked = Math.max(0, supplySlots - leftover.unfilled);
         demandSlots = Math.round(booked / (sla / 100));
         confidence = leftover.type === 'historical' ? 'high' : 'medium';
@@ -157,7 +198,9 @@ Deno.serve(async (req: Request) => {
         demandSlots = booked;
         confidence = 'medium';
         notes = `from ${leftover.type} slots (no SLA)`;
-      } else {
+      }
+      // Tier C: SLA-only heuristic.
+      else {
         demandSlots = supplySlots;
         confidence = 'low';
         notes = 'fallback: assumed demand = supply';
@@ -214,3 +257,30 @@ Deno.serve(async (req: Request) => {
     });
   }
 });
+
+/**
+ * Find the projected_visits forecast for a given (state, date).
+ * Forecast rows are weekly, keyed by week_start. Pick the most recent
+ * week_start on or before the date; fall back to the earliest if none.
+ * Mirrors the helper in compute-license-utilization.
+ */
+function lookupWeeklyForecast(
+  forecastMap: Map<string, number>,
+  state: string,
+  date: string,
+): number | null {
+  const stateWeeks: { week: string; visits: number }[] = [];
+  for (const [key, visits] of forecastMap) {
+    const [s, week] = key.split('|');
+    if (s === state) stateWeeks.push({ week, visits });
+  }
+  if (stateWeeks.length === 0) return null;
+  stateWeeks.sort((a, b) => a.week.localeCompare(b.week));
+  let chosen: number | null = null;
+  for (const row of stateWeeks) {
+    if (row.week <= date) chosen = row.visits;
+    else break;
+  }
+  if (chosen === null) chosen = stateWeeks[0].visits;
+  return chosen;
+}
