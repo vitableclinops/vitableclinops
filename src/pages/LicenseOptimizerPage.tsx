@@ -1013,33 +1013,51 @@ export default function LicenseOptimizerPage() {
               <CardHeader>
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <Zap className="h-4 w-4 text-primary" />
-                  Optimization recommendations
+                  Recommended next actions
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {recommendations.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No recommendations available.</p>
                 ) : (
-                  <div className="space-y-2">
-                    {recommendations.map((r, i) => (
-                      <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg border bg-card text-sm">
-                        <Badge
-                          variant={r.type === 'ACTIVATE' ? 'secondary' : 'outline'}
-                          className="shrink-0 mt-0.5 text-xs"
-                        >
-                          {r.type === 'ACTIVATE'
-                            ? <><CheckCircle2 className="h-3 w-3 mr-1" />Activate</>
-                            : <><XCircle className="h-3 w-3 mr-1" />Deactivate</>}
-                        </Badge>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{r.provider} · {r.state}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{r.rationale}</p>
+                  <div className="space-y-2.5">
+                    {recommendations.map((r, i) => {
+                      const meta: Record<typeof r.kind, { label: string; Icon: typeof CheckCircle2; variant: 'secondary' | 'outline' | 'default' | 'destructive' }> = {
+                        ACTIVATE:      { label: 'Activate license',  Icon: CheckCircle2, variant: 'secondary' },
+                        APPLY_LICENSE: { label: 'Apply for license', Icon: PlusCircle,   variant: 'default' },
+                        REDUCE:        { label: 'Reduce footprint',  Icon: XCircle,      variant: 'outline' },
+                        ANOMALY:       { label: 'Investigate',       Icon: Search,       variant: 'destructive' },
+                      };
+                      const { label, Icon, variant } = meta[r.kind];
+                      return (
+                        <div key={i} className="flex flex-col gap-1.5 p-3 rounded-lg border bg-card text-sm">
+                          <div className="flex items-start gap-2.5">
+                            <Badge variant={variant} className="shrink-0 mt-0.5 text-xs">
+                              <Icon className="h-3 w-3 mr-1" />{label}
+                            </Badge>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium">
+                                {r.state}
+                                {r.provider !== '—' && <span className="text-muted-foreground"> · {r.provider}</span>}
+                              </p>
+                            </div>
+                            {r.impact > 0 && (
+                              <span className="text-xs font-semibold text-primary shrink-0">
+                                {r.impact.toFixed(1)} hrs/day
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground pl-1">{r.rationale}</p>
+                          <div className="flex items-center gap-1.5 pl-1 pt-0.5 text-xs">
+                            <ArrowRight className="h-3 w-3 text-primary shrink-0" />
+                            <span className="font-medium text-foreground">{r.nextStep}</span>
+                            {r.metric && (
+                              <span className="text-muted-foreground ml-auto shrink-0">{r.metric}</span>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-xs font-semibold text-primary shrink-0">
-                          {r.impact.toFixed(1)} hrs
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
