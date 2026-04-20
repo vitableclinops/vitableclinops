@@ -928,6 +928,9 @@ export default function SystemSettingsPage() {
             {/* Homebase Tab */}
             <TabsContent value="homebase" className="space-y-6">
 
+              {/* Unified sync health across ALL nightly jobs */}
+              <SyncHealthCard />
+
               {/* Sync status card */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
