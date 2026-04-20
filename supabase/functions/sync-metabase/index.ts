@@ -95,7 +95,16 @@ Deno.serve(async (req: Request) => {
 
   // Verify sync secret
   const syncSecret = Deno.env.get('SYNC_SECRET');
-  if (syncSecret && req.headers.get('x-sync-secret') !== syncSecret) {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const authHeader = req.headers.get('authorization') ?? '';
+  const bearer = authHeader.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice(7)
+    : '';
+
+  const hasValidSecret = !!syncSecret && req.headers.get('x-sync-secret') === syncSecret;
+  const hasValidServiceJwt = !!serviceRoleKey && bearer === serviceRoleKey;
+
+  if (!hasValidSecret && !hasValidServiceJwt) {
     return json({ error: 'Unauthorized' }, 401);
   }
 
