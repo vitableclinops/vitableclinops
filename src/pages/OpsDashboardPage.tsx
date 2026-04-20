@@ -67,15 +67,14 @@ function getMonday(dateStr: string): string {
 
 // ── Data hook ─────────────────────────────────────────────────────────────────
 
-function useOpsData(date: string) {
+function useOpsData(date: string, buffer: number) {
   return useQuery({
-    queryKey: ['ops_dashboard', date],
+    queryKey: ['ops_dashboard', date, buffer],
     queryFn: async (): Promise<StateOpsRow[]> => {
       const weekStart = getMonday(date);
 
       const [activationsRes, slotsRes, slaRes, forecastRes] = await Promise.all([
         supabase.from('state_activation').select('state_abbreviation, is_active'),
-        // Query both historical (Metabase) and forecast (Homebase-derived); prefer historical
         supabase
           .from('state_leftover_slots')
           .select('state_abbreviation, unfilled_slots, window_type')
@@ -93,7 +92,6 @@ function useOpsData(date: string) {
 
       const activations = activationsRes.data ?? [];
 
-      // Prefer historical (Metabase) over forecast (Homebase) for same state/date
       const slotsByState = new Map<string, { slots: number; source: SlotSource }>();
       for (const r of slotsRes.data ?? []) {
         const existing = slotsByState.get(r.state_abbreviation);
@@ -105,7 +103,6 @@ function useOpsData(date: string) {
         }
       }
 
-      // Use most-recent SLA attainment per state (ordered by created_at desc)
       const slaByState = new Map<string, number>();
       for (const r of slaRes.data ?? []) {
         if (!slaByState.has(r.state_abbreviation)) {
@@ -124,20 +121,25 @@ function useOpsData(date: string) {
         const available = slotEntry?.slots ?? null;
         const slotSource = slotEntry?.source ?? null;
         const visits = forecastByState.get(state) ?? null;
-        const slaTarget = visits !== null ? slaTargetFromVisits(visits) : null;
+        const targetSlots = visits !== null ? slaTargetSlots(visits, buffer) : null;
+        const targetHours = visits !== null ? slaTargetHours(visits, buffer) : null;
         const slaPct = slaByState.get(state) ?? null;
-        const coverageRatio =
-          slaTarget !== null && available !== null ? available / slaTarget : null;
+        const ratio = targetSlots !== null && available !== null
+          ? computeCoverageRatio(available, targetSlots)
+          : null;
         return {
           state,
           isActive: a.is_active,
           availableSlots: available,
+          availableHours: available !== null ? slotsToHours(available) : null,
           hasSlotData,
           slotSource,
-          slaTargetDaily: slaTarget !== null ? Math.round(slaTarget) : null,
+          weeklyVisits: visits,
+          slaTargetSlots: targetSlots,
+          slaTargetHours: targetHours,
           slaPct,
-          weekStatus: computeWeekStatus(available, hasSlotData, slaTarget),
-          coverageRatio,
+          weekStatus: sharedComputeWeekStatus(available, hasSlotData, targetSlots),
+          coverageRatio: ratio,
         };
       });
     },
