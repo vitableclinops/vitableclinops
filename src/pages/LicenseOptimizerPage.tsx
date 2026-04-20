@@ -321,45 +321,203 @@ export default function LicenseOptimizerPage() {
     return [...map.values()].sort((a, b) => b.hours - a.hours).slice(0, 10);
   }, [filtered]);
 
-  // Recommendations from DEFICIT/SURPLUS patterns
-  const recommendations = useMemo(() => {
-    const deficitStates = new Set(filtered.filter(s => s.quadrant === 'DEFICIT').map(s => s.state_abbreviation));
-    const surplusStates = new Set(filtered.filter(s => s.quadrant === 'SURPLUS').map(s => s.state_abbreviation));
+  // ── Smarter recommendations ────────────────────────────────────────────────
+  // Produces 4 typed action items, each with a concrete next step:
+  //   1. ACTIVATE     — provider has inactive license in DEFICIT state → activate it
+  //   2. APPLY_LICENSE — DEFICIT state with no surplus provider holds inactive license → apply for new
+  //   3. REDUCE       — provider holds 4+ surplus-state licenses → drop the lowest-demand one
+  //   4. ANOMALY      — low SLA but high unfilled slots → likely data-quality or routing bug
+  // Sorted by impact_hours/day, NP-prohibited states are filtered out for NP recos.
+  type RecKind = 'ACTIVATE' | 'APPLY_LICENSE' | 'REDUCE' | 'ANOMALY';
+  interface Rec {
+    kind: RecKind;
+    provider: string;          // e.g. provider name OR "—" for state-level recos
+    profile_id?: string;
+    state: string;
+    impact: number;            // hrs/day routed or freed
+    rationale: string;         // why this matters
+    nextStep: string;          // concrete CTA
+    metric?: string;           // optional secondary metric (e.g. "SLA 72%")
+  }
 
-    // Group by provider: which states they cover, their avg allocated hours in surplus states
-    const providerInfo = new Map<string, { name: string; surplusHours: number; surplusStates: string[] }>();
+  const recommendations = useMemo<Rec[]>(() => {
+    if (filtered.length === 0) return [];
+
+    // Aggregate quadrant by state (majority across days)
+    const stateQuadrantCounts = new Map<string, Record<string, number>>();
+    const stateAvgDemand = new Map<string, { sum: number; n: number }>();
+    const stateAvgSla = new Map<string, { sum: number; n: number }>();
+    const stateAvgUnfilled = new Map<string, { sum: number; n: number }>();
     for (const s of filtered) {
-      if (!providerInfo.has(s.profile_id)) {
-        providerInfo.set(s.profile_id, { name: providerDisplayName(s), surplusHours: 0, surplusStates: [] });
+      const st = s.state_abbreviation;
+      if (!stateQuadrantCounts.has(st)) stateQuadrantCounts.set(st, {});
+      const counts = stateQuadrantCounts.get(st)!;
+      counts[s.quadrant] = (counts[s.quadrant] ?? 0) + 1;
+
+      if (s.estimated_demand_hours != null) {
+        const cur = stateAvgDemand.get(st) ?? { sum: 0, n: 0 };
+        stateAvgDemand.set(st, { sum: cur.sum + s.estimated_demand_hours, n: cur.n + 1 });
       }
-      const info = providerInfo.get(s.profile_id)!;
-      if (s.quadrant === 'SURPLUS' && s.allocated_hours) {
-        info.surplusHours += s.allocated_hours;
-        if (!info.surplusStates.includes(s.state_abbreviation)) {
-          info.surplusStates.push(s.state_abbreviation);
-        }
+      if (s.sla_pct != null) {
+        const cur = stateAvgSla.get(st) ?? { sum: 0, n: 0 };
+        stateAvgSla.set(st, { sum: cur.sum + s.sla_pct, n: cur.n + 1 });
+      }
+      if (s.unfilled_slots != null) {
+        const cur = stateAvgUnfilled.get(st) ?? { sum: 0, n: 0 };
+        stateAvgUnfilled.set(st, { sum: cur.sum + s.unfilled_slots, n: cur.n + 1 });
+      }
+    }
+    const stateQuadrant = new Map<string, Quadrant>();
+    for (const [st, counts] of stateQuadrantCounts) {
+      const dom = (Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'BALANCED') as Quadrant;
+      stateQuadrant.set(st, dom);
+    }
+    const avg = (m: Map<string, { sum: number; n: number }>, k: string) => {
+      const v = m.get(k);
+      return v && v.n ? v.sum / v.n : null;
+    };
+
+    const deficitStates = [...stateQuadrant.entries()]
+      .filter(([, q]) => q === 'DEFICIT')
+      .sort((a, b) => (avg(stateAvgDemand, b[0]) ?? 0) - (avg(stateAvgDemand, a[0]) ?? 0))
+      .map(([s]) => s);
+
+    // Per-provider footprint: avg daily allocated hours per state
+    const providerStateHours = new Map<string, Map<string, { hours: number; days: number; quadrant: Quadrant }>>();
+    const providerNames = new Map<string, string>();
+    for (const s of filtered) {
+      if (!providerStateHours.has(s.profile_id)) providerStateHours.set(s.profile_id, new Map());
+      providerNames.set(s.profile_id, providerDisplayName(s));
+      const stMap = providerStateHours.get(s.profile_id)!;
+      const cur = stMap.get(s.state_abbreviation) ?? { hours: 0, days: 0, quadrant: s.quadrant };
+      stMap.set(s.state_abbreviation, {
+        hours: cur.hours + (s.allocated_hours ?? 0),
+        days: cur.days + 1,
+        quadrant: s.quadrant,
+      });
+    }
+
+    const recs: Rec[] = [];
+
+    // 1️⃣ ACTIVATE — provider has inactive license in a DEFICIT state
+    for (const [profileId, inactiveStates] of inactiveLicenses) {
+      const name = providerNames.get(profileId);
+      if (!name) continue; // provider not in current snapshot window
+      const stMap = providerStateHours.get(profileId)!;
+      const activeCount = [...stMap.keys()].filter(s => activeStates.has(s)).length || 1;
+      const totalHours = [...stMap.values()].reduce((sum, v) => sum + (v.hours / Math.max(v.days, 1)), 0);
+
+      for (const defState of deficitStates) {
+        if (!inactiveStates.has(defState)) continue;
+        // Skip NP-prohibited states (we can't infer role here, but these are universally MD-only)
+        if (isNPProhibitedState(defState)) continue;
+        const newCount = activeCount + 1;
+        const impact = totalHours / newCount;
+        const demandHrs = avg(stateAvgDemand, defState);
+        recs.push({
+          kind: 'ACTIVATE',
+          provider: name,
+          profile_id: profileId,
+          state: defState,
+          impact,
+          rationale: `${name} holds an inactive ${defState} license. Activating it routes ~${impact.toFixed(1)} hrs/day to a deficit market${demandHrs ? ` (avg demand ${demandHrs.toFixed(1)} hrs/day)` : ''}.`,
+          nextStep: `Open ${name}'s licensure record → mark ${defState} license active`,
+          metric: demandHrs ? `${demandHrs.toFixed(1)} hrs/day demand` : undefined,
+        });
       }
     }
 
-    const recs: { type: 'ACTIVATE' | 'DEACTIVATE'; provider: string; state: string; impact: number; rationale: string }[] = [];
-    for (const [, info] of providerInfo) {
-      if (info.surplusHours > 0 && info.surplusStates.length > 0) {
-        for (const surplusState of info.surplusStates) {
-          if (deficitStates.size > 0) {
-            recs.push({
-              type: 'DEACTIVATE',
-              provider: info.name,
-              state: surplusState,
-              impact: Math.round(info.surplusHours * 10) / 10,
-              rationale: `Hours in ${surplusState} (SURPLUS) could be redistributed to ${[...deficitStates].slice(0, 3).join(', ')}`,
-            });
-          }
+    // 2️⃣ APPLY_LICENSE — top deficit state with no provider holding ANY (active OR inactive) license
+    //     Suggest the 3 highest-bandwidth providers currently in surplus states as candidates.
+    const stateHasAnyProviderLicensed = (st: string): boolean => {
+      for (const stMap of providerStateHours.values()) {
+        if (stMap.has(st)) return true;
+      }
+      for (const inactiveSet of inactiveLicenses.values()) {
+        if (inactiveSet.has(st)) return true;
+      }
+      return false;
+    };
+
+    for (const defState of deficitStates.slice(0, 5)) {
+      if (isNPProhibitedState(defState)) continue;
+      if (stateHasAnyProviderLicensed(defState)) continue; // already covered above by ACTIVATE
+      const demandHrs = avg(stateAvgDemand, defState) ?? 0;
+      // Find candidates: providers with at least one SURPLUS state who could be relicensed
+      const candidates: { name: string; surplusHrs: number }[] = [];
+      for (const [pid, stMap] of providerStateHours) {
+        let surplusHrs = 0;
+        for (const [st, v] of stMap) {
+          if (v.quadrant === 'SURPLUS') surplusHrs += v.hours / Math.max(v.days, 1);
+        }
+        if (surplusHrs > 0.5) {
+          candidates.push({ name: providerNames.get(pid) ?? '—', surplusHrs });
         }
       }
+      candidates.sort((a, b) => b.surplusHrs - a.surplusHrs);
+      const top3 = candidates.slice(0, 3).map(c => c.name).join(', ') || 'any provider with surplus capacity';
+      recs.push({
+        kind: 'APPLY_LICENSE',
+        provider: '—',
+        state: defState,
+        impact: demandHrs,
+        rationale: `${defState} is in DEFICIT and no Vitable provider holds a license here.${demandHrs ? ` Avg demand ${demandHrs.toFixed(1)} hrs/day is unmet.` : ''}`,
+        nextStep: `Submit a new ${defState} license application for: ${top3}`,
+        metric: demandHrs ? `${demandHrs.toFixed(1)} hrs/day demand` : undefined,
+      });
     }
 
-    return recs.sort((a, b) => b.impact - a.impact).slice(0, 15);
-  }, [filtered]);
+    // 3️⃣ REDUCE — provider holds 4+ active surplus-state licenses → drop the lowest-demand
+    for (const [profileId, stMap] of providerStateHours) {
+      const surplusEntries = [...stMap.entries()]
+        .filter(([, v]) => v.quadrant === 'SURPLUS')
+        .map(([st, v]) => ({
+          state: st,
+          hoursPerDay: v.hours / Math.max(v.days, 1),
+          demandHrs: avg(stateAvgDemand, st) ?? 0,
+        }));
+      if (surplusEntries.length < 4) continue;
+      // Drop the surplus state with the LOWEST demand (safest to release)
+      surplusEntries.sort((a, b) => a.demandHrs - b.demandHrs);
+      const drop = surplusEntries[0];
+      const name = providerNames.get(profileId) ?? '—';
+      const activeCount = [...stMap.keys()].filter(s => activeStates.has(s)).length;
+      const freed = drop.hoursPerDay;
+      recs.push({
+        kind: 'REDUCE',
+        provider: name,
+        profile_id: profileId,
+        state: drop.state,
+        impact: freed,
+        rationale: `${name} is licensed in ${activeCount} states, ${surplusEntries.length} of which are SURPLUS. Dropping ${drop.state} (lowest demand at ${drop.demandHrs.toFixed(1)} hrs/day) reduces renewal/CPA overhead with no coverage impact.`,
+        nextStep: `Schedule ${drop.state} license non-renewal for ${name}`,
+        metric: `Frees ${freed.toFixed(1)} hrs/day for redistribution`,
+      });
+    }
+
+    // 4️⃣ ANOMALY — state with low SLA AND high unfilled slots simultaneously (data quality flag)
+    for (const [st, q] of stateQuadrant) {
+      if (q !== 'ANOMALY') continue;
+      const sla = avg(stateAvgSla, st);
+      const unfilled = avg(stateAvgUnfilled, st);
+      if (sla === null || unfilled === null) continue;
+      recs.push({
+        kind: 'ANOMALY',
+        provider: '—',
+        state: st,
+        impact: 0, // not directly actionable in hours
+        rationale: `${st} shows SLA ${sla.toFixed(0)}% with ${unfilled.toFixed(0)} unfilled slots/day — patients can't book despite open capacity. Likely a routing/availability mismatch, not a license issue.`,
+        nextStep: `Audit ${st} routing rules and provider availability windows in Homebase`,
+        metric: `SLA ${sla.toFixed(0)}% · ${unfilled.toFixed(0)} unfilled`,
+      });
+    }
+
+    // Sort: ACTIVATE first (highest impact wins), then APPLY, then REDUCE, then ANOMALY
+    const order: Record<RecKind, number> = { ACTIVATE: 0, APPLY_LICENSE: 1, REDUCE: 2, ANOMALY: 3 };
+    return recs
+      .sort((a, b) => order[a.kind] - order[b.kind] || b.impact - a.impact)
+      .slice(0, 20);
+  }, [filtered, inactiveLicenses, activeStates]);
 
   // ── Trigger sync ────────────────────────────────────────────────────────────
   const syncMutation = useMutation({
