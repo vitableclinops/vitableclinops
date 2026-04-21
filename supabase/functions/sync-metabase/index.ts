@@ -89,7 +89,7 @@ const REPORTS: Array<{ name: string; cardId?: number; handler: Handler }> = [
     // Daily per-provider utilization, used for same-day activation candidates.
     // Expected columns (any of the aliases below work): Provider Full Name,
     // Date, Booked Timeslots, Total Timeslots, Utilization Rate.
-    // Once the card is created in Metabase, pin its ID here to skip fuzzy search.
+    cardId: 3295,
     name: 'Daily Provider Utilization',
     handler: handleProviderUtilizationDaily,
   },
@@ -589,6 +589,7 @@ async function handleProviderUtilizationDaily(rows: Row[], supabase: SupabaseCli
     const dateRaw = col(row, 'Date', 'date', 'Day', 'day', 'util_date', 'date_actual', 'date_actual: Day');
     const utilRaw = col(
       row, 'Utilization Rate', 'utilization', 'Utilization', 'booking_rate', 'Booking Rate', 'Avg Utilization',
+      'Average of Utilization rate', 'Average of Utilization Rate', 'Avg Utilization Rate',
     );
     const bookedRaw = col(
       row, 'Booked Timeslots', 'booked_timeslots', 'Booked', 'booked', 'Appointments', 'Bookings',
