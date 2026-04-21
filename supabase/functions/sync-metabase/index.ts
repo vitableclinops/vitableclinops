@@ -89,7 +89,7 @@ const REPORTS: Array<{ name: string; cardId?: number; handler: Handler }> = [
     // Daily per-provider utilization, used for same-day activation candidates.
     // Expected columns (any of the aliases below work): Provider Full Name,
     // Date, Booked Timeslots, Total Timeslots, Utilization Rate.
-    // Once the card is created in Metabase, pin its ID here to skip fuzzy search.
+    cardId: 3295,
     name: 'Daily Provider Utilization',
     handler: handleProviderUtilizationDaily,
   },
