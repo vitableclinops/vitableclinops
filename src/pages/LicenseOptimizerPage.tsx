@@ -34,6 +34,7 @@ import {
   ArrowRight,
   PlusCircle,
   Search,
+  UserCheck,
 } from 'lucide-react';
 import { isNPProhibitedState } from '@/constants/stateRestrictions';
 
@@ -55,6 +56,28 @@ interface Snapshot {
   quadrant: Quadrant;
   wasted_flag: boolean;
   profiles?: { full_name: string | null; first_name: string | null; last_name: string | null };
+}
+
+interface ActivationCandidate {
+  profile_id: string;
+  provider_name: string;
+  state: string;
+  utilization_pct: number;
+  data_source: 'daily' | 'five_week_avg';
+  readiness_status: string | null;
+  ehr_activation_status: string | null;
+  score: number;
+  unfilled_slots: number;
+}
+
+interface ActivationCandidateResponse {
+  target_date: string;
+  utilization_threshold: number;
+  data_source: 'daily' | 'five_week_avg' | 'mixed';
+  deficit_state_count?: number;
+  candidate_count?: number;
+  deficit_states: Array<{ state: string; unfilled_slots: number; candidates: ActivationCandidate[] }>;
+  note?: string;
 }
 
 // ── Data hooks ────────────────────────────────────────────────────────────────
@@ -676,6 +699,39 @@ export default function LicenseOptimizerPage() {
     },
   });
 
+  // ── Same-day activation candidates ─────────────────────────────────────────
+  const [utilThreshold, setUtilThreshold] = useState(70);
+  const [candidateResult, setCandidateResult] = useState<ActivationCandidateResponse | null>(null);
+
+  const candidatesMutation = useMutation({
+    mutationFn: async (): Promise<ActivationCandidateResponse> => {
+      const body: Record<string, unknown> = {
+        target_date: new Date().toISOString().slice(0, 10),
+        utilization_threshold: utilThreshold,
+        limit: 10,
+      };
+      if (filterState) body.state = filterState.toUpperCase();
+      const { data, error } = await supabase.functions.invoke('suggest-activation-candidates', {
+        method: 'POST',
+        body,
+      });
+      if (error) throw error;
+      return data as ActivationCandidateResponse;
+    },
+    onSuccess: (result) => {
+      setCandidateResult(result);
+      const count = result.deficit_states.reduce((sum, s) => sum + s.candidates.length, 0);
+      toast({
+        title: count === 0 ? 'No candidates found' : `${count} candidate${count === 1 ? '' : 's'} found`,
+        description: result.note
+          ?? `Source: ${result.data_source === 'daily' ? 'today\'s utilization' : result.data_source === 'five_week_avg' ? '5-week average' : 'mixed (daily + 5-week)'}`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Candidate search failed', description: err.message, variant: 'destructive' });
+    },
+  });
+
   // ── Smart CSV upload — auto-detects file type from headers ─────────────────
   const [uploadStatuses, setUploadStatuses] = useState<{ name: string; status: 'uploading' | 'done' | 'error'; msg: string }[]>([]);
 
@@ -1188,6 +1244,167 @@ export default function LicenseOptimizerPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Same-day activation candidates */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-primary" />
+                Same-day activation candidates
+                {candidateResult && (
+                  <Badge
+                    variant={candidateResult.data_source === 'daily' ? 'default' : 'secondary'}
+                    className="ml-1 text-[10px]"
+                    title={
+                      candidateResult.data_source === 'daily'
+                        ? 'Using today\'s per-provider utilization from Metabase'
+                        : candidateResult.data_source === 'five_week_avg'
+                        ? 'Using 5-week rolling average (no daily data available)'
+                        : 'Mixed — daily where available, 5-week fallback otherwise'
+                    }
+                  >
+                    {candidateResult.data_source === 'daily' ? 'Live today'
+                      : candidateResult.data_source === 'five_week_avg' ? '5-week avg'
+                      : 'Mixed'}
+                  </Badge>
+                )}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Finds providers licensed in deficit states but not yet activated there, with utilization at or below your threshold.
+                {filterState && <span className="ml-1">Limited to <span className="font-semibold">{filterState.toUpperCase()}</span>.</span>}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-foreground">Max utilization (%)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={utilThreshold}
+                    onChange={(e) => setUtilThreshold(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                    className="w-24"
+                  />
+                </div>
+                <Button
+                  onClick={() => candidatesMutation.mutate()}
+                  disabled={candidatesMutation.isPending}
+                  className="gap-1.5"
+                >
+                  {candidatesMutation.isPending
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <UserCheck className="h-4 w-4" />}
+                  Find candidates
+                </Button>
+                {candidateResult && (
+                  <span className="text-xs text-muted-foreground">
+                    Computed for {candidateResult.target_date} · threshold {candidateResult.utilization_threshold}%
+                    {candidateResult.deficit_state_count != null && ` · ${candidateResult.deficit_state_count} deficit state${candidateResult.deficit_state_count === 1 ? '' : 's'}`}
+                  </span>
+                )}
+              </div>
+
+              {candidateResult === null ? (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    Click <strong>Find candidates</strong> to rank providers with low utilization who hold unused licenses in today's deficit states.
+                    Filter by state above to narrow the search.
+                  </AlertDescription>
+                </Alert>
+              ) : candidateResult.deficit_states.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {candidateResult.note ?? 'No deficit states detected for today.'}
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {candidateResult.deficit_states.map((stateGroup) => (
+                    <div key={stateGroup.state} className="border rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="destructive">{stateGroup.state}</Badge>
+                          <span className="text-sm text-muted-foreground">
+                            {stateGroup.unfilled_slots > 0
+                              ? `${stateGroup.unfilled_slots} unfilled slot${stateGroup.unfilled_slots === 1 ? '' : 's'}`
+                              : 'No slot data for today'}
+                          </span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {stateGroup.candidates.length} candidate{stateGroup.candidates.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      {stateGroup.candidates.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          No licensed-but-inactive providers at or below {candidateResult.utilization_threshold}% utilization.
+                        </p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-left text-muted-foreground">
+                                <th className="pb-1 pr-3 font-normal">Provider</th>
+                                <th className="pb-1 pr-3 font-normal">Util</th>
+                                <th className="pb-1 pr-3 font-normal">Source</th>
+                                <th className="pb-1 pr-3 font-normal">Activation</th>
+                                <th className="pb-1 pr-3 font-normal">Readiness</th>
+                                <th className="pb-1 pr-3 font-normal text-right">Score</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {stateGroup.candidates.map((c) => (
+                                <tr key={`${c.profile_id}-${c.state}`} className="border-t">
+                                  <td className="py-1.5 pr-3 font-medium">{c.provider_name}</td>
+                                  <td className="py-1.5 pr-3">{c.utilization_pct.toFixed(1)}%</td>
+                                  <td className="py-1.5 pr-3">
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {c.data_source === 'daily' ? 'today' : '5-wk avg'}
+                                    </Badge>
+                                  </td>
+                                  <td className="py-1.5 pr-3">{c.ehr_activation_status ?? '—'}</td>
+                                  <td className="py-1.5 pr-3">{c.readiness_status ?? '—'}</td>
+                                  <td className="py-1.5 pr-3 text-right font-semibold">{c.score.toFixed(1)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {candidateResult && candidateResult.deficit_states.some((s) => s.candidates.length > 0) && (
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => {
+                      const rows = candidateResult.deficit_states.flatMap((sg) =>
+                        sg.candidates.map((c) => ({
+                          state: sg.state,
+                          unfilled_slots: sg.unfilled_slots,
+                          provider: c.provider_name,
+                          utilization_pct: c.utilization_pct,
+                          data_source: c.data_source,
+                          ehr_activation_status: c.ehr_activation_status ?? '',
+                          readiness_status: c.readiness_status ?? '',
+                          score: c.score,
+                        }))
+                      );
+                      downloadCSV(rows, `activation-candidates-${candidateResult.target_date}.csv`);
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* State detail table */}
           <Card>

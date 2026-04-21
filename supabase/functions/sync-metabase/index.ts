@@ -16,6 +16,7 @@
  *   Sum of same_next_day_available_slots ...  → leftover_slots
  *   Weekly demand forecast + active members   → demand_forecast
  *   Utilization Rate by Provider (5-week)     → provider_utilization
+ *   Daily Provider Utilization                → provider_utilization_daily (per-provider-per-day, powers same-day activation candidates)
  *   rpt_telemedicine_availability_by_state..  → metabase_raw_exports (storage)
  *   Average of SLA Attainment Rate            → metabase_raw_exports (storage)
  *   PCP State Coverage                        → metabase_raw_exports (storage)
@@ -83,6 +84,14 @@ const REPORTS: Array<{ name: string; cardId?: number; handler: Handler }> = [
     cardId: 2424,
     name: 'time-slot-utilization-booking-rate',
     handler: handleUtilizationDaily,
+  },
+  {
+    // Daily per-provider utilization, used for same-day activation candidates.
+    // Expected columns (any of the aliases below work): Provider Full Name,
+    // Date, Booked Timeslots, Total Timeslots, Utilization Rate.
+    // Once the card is created in Metabase, pin its ID here to skip fuzzy search.
+    name: 'Daily Provider Utilization',
+    handler: handleProviderUtilizationDaily,
   },
 ];
 
@@ -562,6 +571,67 @@ async function handleUtilizationDaily(rows: Row[], supabase: SupabaseClient): Pr
   const { error } = await supabase
     .from('utilization_daily')
     .upsert(records, { onConflict: 'util_date' });
+  if (error) throw new Error(error.message);
+
+  return { inserted: records.length, errors };
+}
+
+async function handleProviderUtilizationDaily(rows: Row[], supabase: SupabaseClient): Promise<ImportResult> {
+  const records = [];
+  const errors: string[] = [];
+  const today = new Date().toISOString().slice(0, 10);
+  const nowIso = new Date().toISOString();
+
+  for (const row of rows) {
+    const providerName = col(
+      row, 'Provider Full Name', 'Provider', 'provider', 'Provider Name', 'provider_full_name', 'Name', 'name',
+    );
+    const dateRaw = col(row, 'Date', 'date', 'Day', 'day', 'util_date', 'date_actual', 'date_actual: Day');
+    const utilRaw = col(
+      row, 'Utilization Rate', 'utilization', 'Utilization', 'booking_rate', 'Booking Rate', 'Avg Utilization',
+    );
+    const bookedRaw = col(
+      row, 'Booked Timeslots', 'booked_timeslots', 'Booked', 'booked', 'Appointments', 'Bookings',
+    );
+    const totalRaw = col(
+      row, 'Total Timeslots', 'total_timeslots', 'Timeslots', 'timeslots', 'Available Timeslots',
+      'Sum of Distinct values of Time Slot ID',
+    );
+
+    if (!providerName) { errors.push(`Row missing provider name: ${JSON.stringify(row)}`); continue; }
+
+    // Prefer an explicit date; if absent (card shows "today"), default to today.
+    const utilDate = parseDate(dateRaw) ?? today;
+
+    const booked = bookedRaw ? parseInt(bookedRaw.replace(/[^0-9]/g, ''), 10) : null;
+    const total = totalRaw ? parseInt(totalRaw.replace(/[^0-9]/g, ''), 10) : null;
+
+    let utilizationPct = parsePct(utilRaw);
+    if (utilizationPct === null && booked !== null && total && total > 0) {
+      utilizationPct = Math.round((booked / total) * 10000) / 100;
+    }
+    if (utilizationPct === null) {
+      errors.push(`Unparseable utilization for ${providerName} on ${utilDate}`);
+      continue;
+    }
+
+    records.push({
+      provider_name: providerName,
+      util_date: utilDate,
+      booked_timeslots: isNaN(booked ?? NaN) ? null : booked,
+      total_timeslots: isNaN(total ?? NaN) ? null : total,
+      utilization_pct: utilizationPct,
+      imported_at: nowIso,
+      source: 'metabase_sync',
+      synced_at: nowIso,
+    });
+  }
+
+  if (records.length === 0) return { inserted: 0, errors };
+
+  const { error } = await supabase
+    .from('provider_utilization_daily')
+    .upsert(records, { onConflict: 'provider_name,util_date' });
   if (error) throw new Error(error.message);
 
   return { inserted: records.length, errors };
