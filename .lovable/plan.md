@@ -1,125 +1,79 @@
 
 
-## Targeted Outreach + Reallocation Recommendations
+## Threaded Action Plan: Surgical Reallocation Recommendations
 
-Turn the daily ops Slack post into an action engine: identify which specific providers to ping for under-supplied states, surface license-reallocation moves, and (optionally) email those providers directly.
+Extend the daily ops Slack post with **threaded replies** that propose concrete activation / deactivation moves to close coverage gaps, plus a math check on whether those moves are sufficient.
 
----
+### What you'll see in Slack
 
-### 1. New Slack section: "Recommended actions"
+**Main post (unchanged)**: Daily coverage summary + suggested providers to ping.
 
-Append two blocks to the existing daily ops post (`send-ops-dashboard-slack`):
-
-**A. Fill the gap — outreach candidates**
-For each CRITICAL / ZERO state, find providers who:
-- Hold an `active` license in that state, AND
-- Have low utilization OR surplus in another state today (from `license_optimization_snapshots`)
-
-Output:
+**Reply #1 — "Actions to improve availability"**, posted in the same thread:
 ```
-🔴 PA — needs ~12 hrs (3 slots vs target 15)
-   → Ping: Jane Doe (active PA license, 4hr surplus in NY today)
-            Mark Smith (active PA license, BALANCED in OH)
-   [Send outreach emails]
-```
+🛠 Suggested reallocation moves
 
-**B. Reallocate — license moves**
-Cross-reference SURPLUS states with DEFICIT states:
-- Providers with 4+ surplus licenses → flag for non-renewal in surplus state
-- DEFICIT states with no licensed providers → recommend new applications, suggest 1–2 candidates from SURPLUS markets
+🔴 DE — gap 12.0h
+   ✅ Activate: Mandy Roe (license active, ready, +6h capacity once live)
+   ✅ Activate: Tom Lee (license active, ready, +4h capacity)
+   = projected +10h → still 2.0h short
 
-Output:
-```
-♻️ Reallocation moves
-   • Drop: Jane Doe — CA license (6th surplus license, low utilization)
-   • Apply: 2 NPs in OH → MI (DEFICIT, 0 active licensees)
+🟡 OH (SURPLUS state)
+   ➖ Deactivate: Kelsie Smith (12h allocated, 3h demand, frees 9h to redistribute)
+
+📊 Net effect across critical/zero states
+   Total gap before: 38.5h
+   Total recoverable: 28.0h
+   Result: ✅ 3 of 5 states resolved · ⚠️ 2 still short (DE -2h, NJ -8h)
 ```
 
-Each line links to the relevant provider/state page.
+**Reply #2 — "Next actions" (only posted if gaps remain)**:
+```
+📞 Gaps still open after reallocation — providers to contact directly
 
----
+🔴 DE (still -2h)
+   → Sarah Chen (working today 9a–5p CT, 4h surplus in NY)
+   → Marcus Kim (BALANCED in TX, 2 appts today)
 
-### 2. One-click outreach (optional button)
-
-Add an interactive Slack button `[Send outreach emails]` per state that triggers a new edge function `send-coverage-outreach`:
-
-- Pulls candidate providers (same logic as above)
-- Sends a templated email via the existing `send-notification-email` function with subject *"Extra availability needed in {state} this week"* and body explaining the gap, target hours, and a CTA to open shifts in Homebase
-- Logs each send to a new `coverage_outreach_log` table (provider_id, state, sent_at, gap_hours, sent_by) so we don't spam the same provider twice within 7 days
-
-Cooldown: skip any provider already emailed for that state in the last 7 days.
-
----
-
-### 3. Recommendation engine (shared logic)
-
-New edge function `compute-coverage-recommendations` (called by both the Slack post and the outreach button):
-
-Inputs: today's `license_optimization_snapshots`, `provider_licenses`, `profiles` (email + name), `state_leftover_slots`, SLA buffer from `system_config`.
-
-Outputs per state:
-```ts
-{
-  state, gap_hours, status,
-  outreach_candidates: [{ profile_id, name, email, current_state_status, surplus_hours }],
-  drop_recommendations: [{ profile_id, state, reason }],
-  apply_recommendations: [{ state, candidate_profile_ids, rationale }]
-}
+🔴 NJ (still -8h)
+   → Lin Park (working today, SURPLUS in PA)
+   → Dr. Patel (MD, BALANCED in MD)
 ```
 
-Ranking rules:
-- Outreach candidates ranked by: (1) currently SURPLUS in another state, (2) BALANCED, (3) lowest utilization
-- Cap at top 3 candidates per state in Slack to keep the post readable
-- Skip NP-prohibited states (existing `isNPProhibitedState` constant)
+### How it decides moves
 
-This same engine powers a new **"Recommended Actions"** card on `/admin/ops` and `/admin/license-optimizer` — single source of truth across Slack, dashboards, and email.
+For each `zero / critical / low` state, the engine produces three candidate move types:
 
----
+1. **Activate**: provider has `provider_licenses.status='active'` + `provider_state_status.readiness_status='ready'` + `ehr_activation_status` in `('inactive','deactivated','activation_requested')`. Estimated capacity gain = their typical weekly hours / 5 (cap at gap size). Filters out NPs in the 8 MD-only states.
 
-### 4. Schema additions
+2. **Deactivate**: provider in a `SURPLUS` state today (`license_optimization_snapshots.quadrant='SURPLUS'`) with `slack = allocated_hours - estimated_demand_hours >= 3h`. These free up redistributable hours but don't directly fill the gap state — surfaced as context for "where to pull from."
 
-```sql
--- Track outreach to enforce 7-day cooldown and audit history
-create table coverage_outreach_log (
-  id uuid primary key default gen_random_uuid(),
-  profile_id uuid references profiles(id),
-  state_abbreviation text not null,
-  gap_hours numeric,
-  sent_at timestamptz default now(),
-  sent_by uuid references profiles(id),
-  channel text default 'email', -- 'email' | 'slack'
-  email_message_id text
-);
-create index on coverage_outreach_log (profile_id, state_abbreviation, sent_at desc);
-```
+3. **Ping** (already-active providers to contact today): the existing `outreach_candidates` logic, filtered to those `working_today` or with `current_state_status='SURPLUS'`.
 
----
+**The math check** sums the projected capacity gain from activations against the total gap. If `recoverable >= gap`, marks state ✅ resolved. Otherwise computes residual gap, which drives Reply #2.
 
-### Technical details
+### Files to change
 
-**Files to add/edit:**
-- `supabase/functions/compute-coverage-recommendations/index.ts` — new shared engine
-- `supabase/functions/send-coverage-outreach/index.ts` — new; reads recs, sends emails, logs to `coverage_outreach_log`
-- `supabase/functions/send-ops-dashboard-slack/index.ts` — call recs engine, append two new Slack blocks, add `actions` block with state-scoped outreach buttons
-- `supabase/functions/send-notification-email/index.ts` — add new `coverage_outreach` email type
-- `src/pages/OpsDashboardPage.tsx` + `LicenseOptimizerPage.tsx` — new "Recommended Actions" card consuming the engine
-- New migration: `coverage_outreach_log` table + RLS (admins manage, service role full access)
+- `supabase/functions/compute-coverage-recommendations/index.ts`
+  - Add `activation_recommendations[]`, `deactivation_recommendations[]`, `projected_gain_hours`, `residual_gap_hours` per state
+  - New query: `provider_state_status` filtered to `readiness_status='ready'` and inactive `ehr_activation_status`, joined with active licenses
+  - New query: snapshots where `quadrant='SURPLUS'` for deactivation candidates
+  - Per-provider capacity estimate from `utilization_daily` average over last 14 days (or fallback default of 6h/day)
 
-**Slack interactivity caveat:** Slack interactive buttons require a public webhook endpoint to receive button clicks. Two options:
-1. **Simple (recommended for MVP):** Buttons link to `/admin/ops?action=outreach&state=PA` — opens the dashboard with a pre-filled confirmation modal. No Slack webhook setup needed.
-2. **Full interactive:** Add a `slack-interactivity-handler` edge function and configure it as the request URL in the Slack app. Heavier setup.
+- `supabase/functions/send-ops-dashboard-slack/index.ts`
+  - After main `chat.postMessage` succeeds, capture `data.ts` (already done)
+  - Build "Reply #1" blocks from new recommendation fields → second `chat.postMessage` with `thread_ts: data.ts`
+  - Compute residual gaps; if any > 0, build "Reply #2" blocks → third `chat.postMessage` with same `thread_ts`
+  - Skip threaded replies entirely if no actionable moves exist (keeps the post clean on calm days)
 
-I recommend option 1 for now — keeps it within the existing connector and gives admins a chance to review before sending.
+### Configuration
 
-**Cooldown enforcement** lives in `send-coverage-outreach` (query `coverage_outreach_log` for last 7 days before sending).
+- Capacity-gain estimate per activation: capped at min(provider's avg daily hours, state gap remaining) — prevents over-counting when one provider could "fill" multiple states
+- Deactivation threshold: SURPLUS slack ≥ 3h (avoids noise from minor surpluses)
+- Reply #2 only triggers when residual gap > 2h (rounding tolerance)
 
-**Currently 69 active providers with email** — sufficient pool for outreach.
+No new tables or schema changes. No migrations.
 
----
+### Open question
 
-### Questions before I build
-
-1. **Outreach send mode** — should the daily Slack post auto-trigger emails to candidate providers, or should it only *suggest* candidates and require an admin to click "Send" from the dashboard? (Recommendation: suggest-only, admin confirms.)
-2. **Email-from identity** — send from a generic `ops@vitable…` or from the admin who clicked the button?
-3. **Reallocation aggressiveness** — flag a license for "drop" after how many surplus states? Default 4, but you may want stricter (3) or looser (5).
+When proposing **activations**, should the bot also auto-create an EHR activation task assigned to the compliance admin, or just suggest in Slack and require an admin to click through to the activation queue? Default in this plan: **suggest only**, no task creation — matches the existing "ping" pattern where admins confirm before action.
 
