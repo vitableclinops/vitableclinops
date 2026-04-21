@@ -3526,6 +3526,48 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_utilization_daily: {
+        Row: {
+          booked_timeslots: number | null
+          created_at: string
+          id: string
+          imported_at: string
+          provider_name: string
+          source: string | null
+          synced_at: string | null
+          total_timeslots: number | null
+          updated_at: string
+          util_date: string
+          utilization_pct: number | null
+        }
+        Insert: {
+          booked_timeslots?: number | null
+          created_at?: string
+          id?: string
+          imported_at?: string
+          provider_name: string
+          source?: string | null
+          synced_at?: string | null
+          total_timeslots?: number | null
+          updated_at?: string
+          util_date: string
+          utilization_pct?: number | null
+        }
+        Update: {
+          booked_timeslots?: number | null
+          created_at?: string
+          id?: string
+          imported_at?: string
+          provider_name?: string
+          source?: string | null
+          synced_at?: string | null
+          total_timeslots?: number | null
+          updated_at?: string
+          util_date?: string
+          utilization_pct?: number | null
+        }
+        Relationships: []
+      }
       reimbursement_requests: {
         Row: {
           admin_hours_spent: number | null
