@@ -339,3 +339,15 @@ async function getLatestSnapshotDate(supabase: any, fallback: string): Promise<s
     .maybeSingle();
   return data?.snapshot_date ?? fallback;
 }
+
+function formatShiftWindow(startIso: string, endIso: string): string {
+  try {
+    const fmt = (iso: string) => new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    }).format(new Date(iso));
+    return `${fmt(startIso)} – ${fmt(endIso)} CT`;
+  } catch {
+    return '';
+  }
+}
