@@ -130,6 +130,19 @@ Deno.serve(async (req: Request) => {
       licenseMap.get(lic.profile_id)!.add(lic.state_abbreviation);
     }
 
+    // Load profession per profile so NPs can be excluded from MD-only states
+    const profileIds = [...licenseMap.keys()];
+    const professionByProfile = new Map<string, string | null>();
+    if (profileIds.length > 0) {
+      const { data: profRows } = await supabase
+        .from('profiles')
+        .select('id, profession')
+        .in('id', profileIds);
+      for (const p of (profRows ?? [])) {
+        professionByProfile.set(p.id, p.profession ?? null);
+      }
+    }
+
     // ── 4. Load Homebase shifts in window ─────────────────────────────────────
     // Include both published and unpublished scheduled shifts for capacity planning.
     const { data: shiftRows } = await supabase
