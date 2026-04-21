@@ -1376,7 +1376,7 @@ export default function LicenseOptimizerPage() {
                             </thead>
                             <tbody>
                               {stateGroup.candidates.map((c) => (
-                                <tr key={`${c.profile_id}-${c.state}`} className="border-t">
+                                <tr key={`${stateGroup.state}-${c.profile_id}-${c.state}`} className="border-t">
                                   <td className="py-1.5 pr-3 font-medium">{c.provider_name}</td>
                                   <td className="py-1.5 pr-3">{c.utilization_pct.toFixed(1)}%</td>
                                   <td className="py-1.5 pr-3">
