@@ -1187,15 +1187,15 @@ export default function LicenseOptimizerPage() {
                 variant="outline"
                 size="sm"
                 className="gap-1.5"
-                disabled={filtered.length === 0}
+                disabled={stateDetailRows.length === 0}
                 onClick={() =>
                   downloadCSV(
-                    filtered.map((s) => ({
+                    stateDetailRows.map((s) => ({
                       state: s.state_abbreviation,
                       date: s.snapshot_date,
-                      provider: s.profiles?.full_name ?? '',
-                      supply_hrs: s.allocated_hours ?? '',
-                      demand_hrs: s.estimated_demand_hours ?? '',
+                      providers: s.provider_count,
+                      supply_hrs: s.allocated_hours.toFixed(2),
+                      demand_hrs: s.estimated_demand_hours != null ? s.estimated_demand_hours.toFixed(2) : '',
                       coverage_pct: s.coverage_ratio != null
                         ? `${(s.coverage_ratio * 100).toFixed(0)}%` : '',
                       sla_pct: s.sla_pct != null ? `${s.sla_pct.toFixed(1)}%` : '',
@@ -1207,7 +1207,7 @@ export default function LicenseOptimizerPage() {
                 }
               >
                 <Download className="h-3.5 w-3.5" />
-                Export ({filtered.length})
+                Export ({stateDetailRows.length})
               </Button>
             </CardHeader>
             <CardContent className="overflow-x-auto">
