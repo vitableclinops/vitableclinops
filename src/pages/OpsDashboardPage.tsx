@@ -26,6 +26,7 @@ import { DataFreshnessIndicator } from '@/components/DataFreshnessIndicator';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import { useProviderCoverage } from '@/hooks/useProviderCoverage';
 import { ProviderCoverageTable } from '@/components/ops/ProviderCoverageTable';
+import { CoverageRecommendationsCard } from '@/components/ops/CoverageRecommendationsCard';
 import { useSlaBufferMultiplier } from '@/hooks/useSystemConfig';
 import {
   slaTargetSlots,
@@ -550,6 +551,8 @@ export default function OpsDashboardPage() {
             <KpiCard title="Zero"          value={kpis.zero}     icon={XCircle}       color="bg-destructive" />
             <KpiCard title="No Data"       value={kpis.noData}   icon={MinusCircle}   color="bg-muted-foreground" />
           </div>
+
+          {isAdmin && <CoverageRecommendationsCard />}
 
           {/* Filter row */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

@@ -1331,6 +1331,88 @@ export type Database = {
         }
         Relationships: []
       }
+      coverage_outreach_log: {
+        Row: {
+          channel: string
+          created_at: string
+          email_message_id: string | null
+          gap_hours: number | null
+          id: string
+          notes: string | null
+          profile_id: string | null
+          sent_at: string
+          sent_by: string | null
+          state_abbreviation: string
+        }
+        Insert: {
+          channel?: string
+          created_at?: string
+          email_message_id?: string | null
+          gap_hours?: number | null
+          id?: string
+          notes?: string | null
+          profile_id?: string | null
+          sent_at?: string
+          sent_by?: string | null
+          state_abbreviation: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          email_message_id?: string | null
+          gap_hours?: number | null
+          id?: string
+          notes?: string | null
+          profile_id?: string | null
+          sent_at?: string
+          sent_by?: string | null
+          state_abbreviation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coverage_outreach_log_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coverage_outreach_log_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coverage_outreach_log_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coverage_outreach_log_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coverage_outreach_log_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coverage_outreach_log_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       demand_forecast: {
         Row: {
           created_at: string
