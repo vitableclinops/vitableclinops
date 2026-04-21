@@ -13,7 +13,9 @@ import {
   ArrowRight,
   MapPin,
   ClipboardList,
-  Users
+  Users,
+  Stethoscope,
+  UsersRound
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { cn } from '@/lib/utils';
@@ -47,6 +49,30 @@ const roles: {
       'Review and verify submissions',
       'Approve reimbursements',
       'Configure state requirements',
+    ],
+  },
+  {
+    id: 'pod_lead',
+    title: 'Pod Lead',
+    description: 'Oversee compliance and activation for the providers in your pod.',
+    icon: UsersRound,
+    features: [
+      'Monitor pod compliance status',
+      'Track team activation readiness',
+      'Review pod meetings & attestations',
+      'Support providers in your pod',
+    ],
+  },
+  {
+    id: 'physician',
+    title: 'Collaborating Physician',
+    description: 'Manage supervision, agreements, and chart reviews for your NPs.',
+    icon: Stethoscope,
+    features: [
+      'Review collaborative agreements',
+      'Schedule supervision meetings',
+      'Track chart review obligations',
+      'Manage supervised providers',
     ],
   },
 ];
@@ -95,6 +121,10 @@ const Index = () => {
       navigate('/provider');
     } else if (selectedRole === 'admin') {
       navigate('/admin');
+    } else if (selectedRole === 'pod_lead') {
+      navigate('/admin');
+    } else if (selectedRole === 'physician') {
+      navigate('/physician');
     }
   };
 
@@ -116,7 +146,7 @@ const Index = () => {
         </div>
 
         {/* Role cards */}
-        <div className="grid gap-4 md:grid-cols-2 max-w-2xl mx-auto mb-8">
+        <div className="grid gap-4 md:grid-cols-2 max-w-3xl mx-auto mb-8">
           {roles.map(role => {
             const Icon = role.icon;
             const isSelected = selectedRole === role.id;
