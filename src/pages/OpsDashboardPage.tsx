@@ -552,6 +552,8 @@ export default function OpsDashboardPage() {
             <KpiCard title="No Data"       value={kpis.noData}   icon={MinusCircle}   color="bg-muted-foreground" />
           </div>
 
+          {isAdmin && <CoverageRecommendationsCard />}
+
           {/* Filter row */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'by_state' | 'by_provider')}>
