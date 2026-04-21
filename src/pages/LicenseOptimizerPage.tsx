@@ -62,7 +62,7 @@ interface Snapshot {
 function useSnapshots(view: 'historical' | 'forward') {
   const today = new Date().toISOString().slice(0, 10);
   return useQuery({
-    queryKey: ['license_optimizer_snapshots', view],
+    queryKey: ['license_optimizer_snapshots', view, today],
     queryFn: async (): Promise<Snapshot[]> => {
       const query = supabase
         .from('license_optimization_snapshots')
