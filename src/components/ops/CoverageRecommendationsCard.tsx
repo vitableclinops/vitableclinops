@@ -149,10 +149,30 @@ export function CoverageRecommendationsCard() {
                 <ul className="text-xs space-y-1 ml-1">
                   {s.outreach_candidates.map(c => (
                     <li key={c.profile_id} className="flex items-center gap-2 flex-wrap">
+                      {c.working_today ? (
+                        <Clock className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      ) : (
+                        <CalendarOff className="h-3 w-3 text-muted-foreground shrink-0" />
+                      )}
                       <span className="font-medium">{c.name}</span>
                       <span className="text-muted-foreground">{c.email}</span>
-                      {c.current_state_status === 'SURPLUS' && (
+                      {c.working_today && c.shift_window && (
                         <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-emerald-500 text-emerald-700 dark:text-emerald-400">
+                          On shift {c.shift_window}
+                        </Badge>
+                      )}
+                      {!c.working_today && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5 text-muted-foreground">
+                          Not on shift today
+                        </Badge>
+                      )}
+                      {typeof c.appointments_today === 'number' && c.appointments_today > 0 && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                          {c.appointments_today} appt(s) today
+                        </Badge>
+                      )}
+                      {c.current_state_status === 'SURPLUS' && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5">
                           {c.surplus_hours.toFixed(1)}h surplus in {c.current_state}
                         </Badge>
                       )}
