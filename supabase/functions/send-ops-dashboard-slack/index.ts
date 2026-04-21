@@ -222,6 +222,82 @@ Deno.serve(async (req) => {
     const projectId = Deno.env.get('SUPABASE_URL')?.match(/https:\/\/([^.]+)\./)?.[1] ?? '';
     const dashboardUrl = 'https://vitableclinops.lovable.app/admin/ops';
 
+    // Fetch recommendations from the engine
+    let recs: any = null;
+    try {
+      const recsRes = await supabase.functions.invoke('compute-coverage-recommendations', {
+        body: { date: today, candidates_per_state: 3 },
+      });
+      if (!recsRes.error) recs = recsRes.data;
+    } catch (e) {
+      console.warn('Recs engine call failed, continuing without recommendations:', e);
+    }
+
+    // Build "Recommended actions" Slack blocks
+    const recommendationBlocks: any[] = [];
+    if (recs?.state_recommendations?.length) {
+      const order: Record<string, number> = { zero: 0, critical: 1, low: 2 };
+      const actionable = (recs.state_recommendations as any[])
+        .filter(s => ['zero', 'critical', 'low'].includes(s.status))
+        .filter(s => s.outreach_candidates.length > 0 || s.apply_recommendation)
+        .sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9))
+        .slice(0, 6);
+
+      if (actionable.length > 0) {
+        const lines: string[] = [];
+        for (const s of actionable) {
+          const emoji = s.status === 'zero' ? '🔴' : s.status === 'critical' ? '🟠' : '🟡';
+          const gapStr = `~${s.gap_hours.toFixed(1)}h (${s.available_slots ?? 0} slots vs target ${s.target_slots ?? '—'})`;
+          lines.push(`${emoji} *${s.state}* — needs ${gapStr}`);
+          const sendable = s.outreach_candidates.filter((c: any) => !c.on_cooldown).slice(0, 3);
+          if (sendable.length > 0) {
+            const ping = sendable.map((c: any) => {
+              const ctx = c.current_state_status === 'SURPLUS'
+                ? `${c.surplus_hours.toFixed(1)}h surplus in ${c.current_state}`
+                : c.current_state_status === 'BALANCED'
+                ? `BALANCED in ${c.current_state}`
+                : 'low utilization';
+              return `${c.name} (${ctx})`;
+            }).join(', ');
+            lines.push(`   → Ping: ${ping}`);
+          }
+          if (s.apply_recommendation) {
+            lines.push(`   ♻️ License recommendation: ${s.apply_recommendation.rationale}`);
+          }
+        }
+        recommendationBlocks.push({ type: 'divider' });
+        recommendationBlocks.push({
+          type: 'section',
+          text: { type: 'mrkdwn', text: `*🎯 Recommended actions — fill the gap*\n${lines.join('\n')}` },
+        });
+      }
+
+      if (recs.drop_recommendations?.length > 0) {
+        const dropLines = recs.drop_recommendations.slice(0, 5).map((d: any) =>
+          `• *Drop ${d.state}:* ${d.provider_name} — ${d.reason}`
+        );
+        recommendationBlocks.push({
+          type: 'section',
+          text: { type: 'mrkdwn', text: `*♻️ Reallocate — license drop candidates*\n${dropLines.join('\n')}` },
+        });
+      }
+
+      // Action buttons per state — link to dashboard with state pre-selected
+      const actionableWithCandidates = actionable.filter(
+        (s: any) => s.outreach_candidates.some((c: any) => !c.on_cooldown)
+      ).slice(0, 5);
+      if (actionableWithCandidates.length > 0) {
+        recommendationBlocks.push({
+          type: 'actions',
+          elements: actionableWithCandidates.map((s: any) => ({
+            type: 'button',
+            text: { type: 'plain_text', text: `📧 Outreach: ${s.state}` },
+            url: `${dashboardUrl}?action=outreach&state=${s.state}`,
+          })),
+        });
+      }
+    }
+
     const messageBlocks = [
       {
         type: 'header',
@@ -239,6 +315,7 @@ Deno.serve(async (req) => {
           text: `*States needing attention*\n${attentionLines.join('\n')}${attentionOverflow}${noDataLine}`,
         },
       },
+      ...recommendationBlocks,
       {
         type: 'context',
         elements: [
