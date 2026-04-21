@@ -42,6 +42,9 @@ interface OutreachCandidate {
   rank_score: number;                  // lower = better
   on_cooldown: boolean;
   last_contacted_at: string | null;
+  working_today: boolean;              // has a Homebase shift covering today
+  shift_window: string | null;         // e.g. "9:00 AM – 5:00 PM CT"
+  appointments_today: number | null;   // booked appointments today (best-effort name match)
 }
 
 interface StateRec {
