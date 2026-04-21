@@ -95,6 +95,11 @@ export function NotificationQueue({ agreementId, className }: NotificationQueueP
       meeting_scheduled: 'Meeting Scheduled',
       termination_initiated: 'Termination Notice',
       termination_complete: 'Termination Complete',
+      agreement_activated: 'Agreement Activated',
+      agreement_invalidated: 'Agreement Invalidated',
+      agreement_renewal_warning: 'Renewal Warning',
+      agreement_terminated: 'Agreement Terminated',
+      transfer_initiated: 'Transfer Initiated',
     };
     return labels[type];
   };

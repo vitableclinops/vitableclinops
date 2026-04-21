@@ -59,6 +59,19 @@ Deno.serve(async (req) => {
         },
       });
 
+      // Notify all parties of expiration
+      try {
+        await supabase.functions.invoke('notify-agreement-event', {
+          body: {
+            agreementId: agreement.id,
+            eventType: 'agreement_invalidated',
+            reason: `Agreement end date (${agreement.end_date}) has passed`,
+          },
+        });
+      } catch (e) {
+        console.error('Failed to send expiration email:', e);
+      }
+
       results.invalidated++;
     }
 
@@ -124,6 +137,19 @@ Deno.serve(async (req) => {
               new_status: "invalid",
             },
           });
+
+          // Notify all parties of invalidation
+          try {
+            await supabase.functions.invoke('notify-agreement-event', {
+              body: {
+                agreementId: agreement.id,
+                eventType: 'agreement_invalidated',
+                reason: `Provider ${ap.provider_name} license expired or invalid in ${agreement.state_abbreviation}`,
+              },
+            });
+          } catch (e) {
+            console.error('Failed to send invalidation email:', e);
+          }
 
           results.invalidated++;
           break; // Already invalidated this agreement

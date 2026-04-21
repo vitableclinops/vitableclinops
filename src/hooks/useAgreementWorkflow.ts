@@ -190,6 +190,21 @@ export const useAgreementWorkflow = () => {
       changes: { new_status: targetStatus },
     });
 
+    // Fire lifecycle notification emails (best-effort, non-blocking)
+    try {
+      if (targetStatus === 'active') {
+        await supabase.functions.invoke('notify-agreement-event', {
+          body: { agreementId, eventType: 'agreement_activated' },
+        });
+      } else if (targetStatus === 'terminated' || targetStatus === 'cancelled') {
+        await supabase.functions.invoke('notify-agreement-event', {
+          body: { agreementId, eventType: 'agreement_terminated' },
+        });
+      }
+    } catch (notifyErr) {
+      console.error('Failed to send lifecycle email:', notifyErr);
+    }
+
     return true;
   }, [checkTasksComplete, toast]);
 

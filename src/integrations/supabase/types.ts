@@ -4992,6 +4992,11 @@ export type Database = {
         | "meeting_scheduled"
         | "termination_initiated"
         | "termination_complete"
+        | "agreement_activated"
+        | "agreement_invalidated"
+        | "agreement_renewal_warning"
+        | "agreement_terminated"
+        | "transfer_initiated"
       readiness_status: "not_ready" | "ready" | "at_risk" | "blocked"
     }
     CompositeTypes: {
@@ -5205,6 +5210,11 @@ export const Constants = {
         "meeting_scheduled",
         "termination_initiated",
         "termination_complete",
+        "agreement_activated",
+        "agreement_invalidated",
+        "agreement_renewal_warning",
+        "agreement_terminated",
+        "transfer_initiated",
       ],
       readiness_status: ["not_ready", "ready", "at_risk", "blocked"],
     },
