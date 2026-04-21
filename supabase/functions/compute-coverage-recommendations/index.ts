@@ -59,7 +59,32 @@ interface StateRec {
   available_slots: number | null;
   target_slots: number | null;
   outreach_candidates: OutreachCandidate[];
+  activation_recommendations: ActivationRec[];
+  deactivation_recommendations: DeactivationRec[];
+  projected_gain_hours: number;
+  residual_gap_hours: number;
 }
+
+interface ActivationRec {
+  profile_id: string;
+  name: string;
+  email: string;
+  capacity_gain_hours: number; // expected additional hours/day if activated
+  ehr_activation_status: string;
+  readiness_status: string;
+}
+
+interface DeactivationRec {
+  profile_id: string;
+  name: string;
+  state: string;        // surplus state we recommend pulling them OUT of
+  allocated_hours: number;
+  estimated_demand_hours: number;
+  slack_hours: number;  // freed if deactivated
+}
+
+const DEFAULT_DAILY_CAPACITY_HOURS = 6; // fallback when no util data
+const DEACTIVATION_SLACK_THRESHOLD = 3; // hours
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
