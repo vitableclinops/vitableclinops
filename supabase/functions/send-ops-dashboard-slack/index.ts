@@ -327,8 +327,151 @@ Deno.serve(async (req) => {
       throw new Error(`Slack API error: ${JSON.stringify(data)}`);
     }
 
+    // ---- Threaded reply #1: Suggested reallocation moves ----
+    // ---- Threaded reply #2: Residual gaps → providers to contact ----
+    let reply1Ts: string | null = null;
+    let reply2Ts: string | null = null;
+    try {
+      if (recs?.state_recommendations?.length) {
+        const needyStates = (recs.state_recommendations as any[])
+          .filter(s => ['zero', 'critical', 'low'].includes(s.status))
+          .sort((a, b) => {
+            const o: Record<string, number> = { zero: 0, critical: 1, low: 2 };
+            return (o[a.status] ?? 9) - (o[b.status] ?? 9);
+          });
+
+        const statesWithActivations = needyStates.filter(s => (s.activation_recommendations?.length ?? 0) > 0);
+        const deactivations = (recs.deactivation_recommendations ?? []) as any[];
+
+        if (statesWithActivations.length > 0 || deactivations.length > 0) {
+          const lines: string[] = ['*🛠 Suggested reallocation moves*', ''];
+
+          for (const s of statesWithActivations) {
+            const emoji = s.status === 'zero' ? '🔴' : s.status === 'critical' ? '🟠' : '🟡';
+            lines.push(`${emoji} *${s.state}* — gap ${s.gap_hours.toFixed(1)}h`);
+            for (const a of s.activation_recommendations) {
+              lines.push(`   ✅ Activate: ${a.name} (license active, ready, +${a.capacity_gain_hours.toFixed(1)}h capacity once live)`);
+            }
+            const projected = s.projected_gain_hours ?? 0;
+            const residual = s.residual_gap_hours ?? 0;
+            if (residual <= 2) {
+              lines.push(`   = projected +${projected.toFixed(1)}h → ✅ gap resolved`);
+            } else {
+              lines.push(`   = projected +${projected.toFixed(1)}h → still ${residual.toFixed(1)}h short`);
+            }
+            lines.push('');
+          }
+
+          if (deactivations.length > 0) {
+            lines.push('*Surplus states — candidates to pull from*');
+            for (const d of deactivations.slice(0, 6)) {
+              lines.push(`🟢 *${d.state}* — ➖ ${d.name} (${d.allocated_hours.toFixed(1)}h allocated, ${d.estimated_demand_hours.toFixed(1)}h demand, frees ${d.slack_hours.toFixed(1)}h to redistribute)`);
+            }
+            lines.push('');
+          }
+
+          // Net effect summary
+          const totalGap = needyStates.reduce((acc, s) => acc + (s.gap_hours ?? 0), 0);
+          const totalGain = needyStates.reduce((acc, s) => acc + (s.projected_gain_hours ?? 0), 0);
+          const resolved = needyStates.filter(s => (s.residual_gap_hours ?? 0) <= 2).length;
+          const unresolved = needyStates.filter(s => (s.residual_gap_hours ?? 0) > 2);
+          lines.push('*📊 Net effect across needy states*');
+          lines.push(`   Total gap before: ${totalGap.toFixed(1)}h`);
+          lines.push(`   Total recoverable via activations: ${totalGain.toFixed(1)}h`);
+          if (unresolved.length === 0) {
+            lines.push(`   Result: ✅ ${resolved} of ${needyStates.length} states resolved`);
+          } else {
+            const shortStr = unresolved.map(s => `${s.state} -${(s.residual_gap_hours).toFixed(1)}h`).join(', ');
+            lines.push(`   Result: ✅ ${resolved} of ${needyStates.length} resolved · ⚠️ ${unresolved.length} still short (${shortStr})`);
+          }
+
+          const reply1 = await fetch(`${GATEWAY_URL}/chat.postMessage`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+              'X-Connection-Api-Key': SLACK_API_KEY,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              channel: OPS_CHANNEL_ID,
+              thread_ts: data.ts,
+              text: 'Suggested reallocation moves',
+              blocks: [{ type: 'section', text: { type: 'mrkdwn', text: lines.join('\n') } }],
+              username: 'Ops Coverage Bot 📊',
+              icon_emoji: ':bar_chart:',
+              unfurl_links: false,
+            }),
+          });
+          const r1 = await reply1.json();
+          if (r1.ok) reply1Ts = r1.ts;
+          else console.warn('Reply #1 failed:', r1);
+
+          // ---- Reply #2: residual gaps → who to contact ----
+          const stillShort = needyStates.filter(s => (s.residual_gap_hours ?? s.gap_hours) > 2);
+          if (stillShort.length > 0) {
+            const r2lines: string[] = ['*📞 Gaps still open after reallocation — providers to contact directly*', ''];
+            let hasAny = false;
+            for (const s of stillShort) {
+              const sendable = (s.outreach_candidates ?? []).filter((c: any) => !c.on_cooldown).slice(0, 3);
+              if (sendable.length === 0) continue;
+              hasAny = true;
+              const emoji = s.status === 'zero' ? '🔴' : s.status === 'critical' ? '🟠' : '🟡';
+              const residual = s.residual_gap_hours ?? s.gap_hours;
+              r2lines.push(`${emoji} *${s.state}* (still -${residual.toFixed(1)}h)`);
+              for (const c of sendable) {
+                const ctxParts: string[] = [];
+                if (c.working_today && c.shift_window) ctxParts.push(`working today ${c.shift_window}`);
+                else if (c.working_today) ctxParts.push('working today');
+                if (c.current_state_status === 'SURPLUS') {
+                  ctxParts.push(`${c.surplus_hours.toFixed(1)}h surplus in ${c.current_state}`);
+                } else if (c.current_state_status === 'BALANCED') {
+                  ctxParts.push(`BALANCED in ${c.current_state}`);
+                }
+                if (typeof c.appointments_today === 'number') ctxParts.push(`${c.appointments_today} appts today`);
+                const ctx = ctxParts.length ? ` (${ctxParts.join(', ')})` : '';
+                r2lines.push(`   → ${c.name}${ctx}`);
+              }
+              r2lines.push('');
+            }
+
+            if (hasAny) {
+              const reply2 = await fetch(`${GATEWAY_URL}/chat.postMessage`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                  'X-Connection-Api-Key': SLACK_API_KEY,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  channel: OPS_CHANNEL_ID,
+                  thread_ts: data.ts,
+                  text: 'Providers to contact directly',
+                  blocks: [{ type: 'section', text: { type: 'mrkdwn', text: r2lines.join('\n') } }],
+                  username: 'Ops Coverage Bot 📊',
+                  icon_emoji: ':bar_chart:',
+                  unfurl_links: false,
+                }),
+              });
+              const r2 = await reply2.json();
+              if (r2.ok) reply2Ts = r2.ts;
+              else console.warn('Reply #2 failed:', r2);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Threaded replies failed (main post still sent):', e);
+    }
+
     return new Response(
-      JSON.stringify({ success: true, counts, attention_count: attention.length, message_ts: data.ts }),
+      JSON.stringify({
+        success: true,
+        counts,
+        attention_count: attention.length,
+        message_ts: data.ts,
+        reply1_ts: reply1Ts,
+        reply2_ts: reply2Ts,
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
