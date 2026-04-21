@@ -341,6 +341,76 @@ export default function LicenseOptimizerPage() {
   }, [filtered]);
 
   // KPIs
+  // State-level detail rows: aggregate per (state, date) so "Supply hrs" reflects
+  // the entire state's daily capacity (sum across providers), not a single
+  // provider's even-split slice. Coverage is recomputed from totals; SLA and
+  // quadrant come from the per-state values (identical across providers in a
+  // given day, but we take the hour-weighted majority quadrant for safety).
+  type StateDetailRow = {
+    state_abbreviation: string;
+    snapshot_date: string;
+    allocated_hours: number;
+    estimated_demand_hours: number | null;
+    coverage_ratio: number | null;
+    sla_pct: number | null;
+    quadrant: Quadrant;
+    wasted_flag: boolean;
+    provider_count: number;
+  };
+  const stateDetailRows = useMemo<StateDetailRow[]>(() => {
+    type Bucket = {
+      supply: number;
+      demand: number;
+      hasDemand: boolean;
+      slaSum: number;
+      slaCount: number;
+      quadrantHours: Record<string, number>;
+      wasted: boolean;
+      providers: Set<string>;
+    };
+    const buckets = new Map<string, Bucket>();
+    for (const s of filtered) {
+      const key = `${s.state_abbreviation}|${s.snapshot_date}`;
+      let b = buckets.get(key);
+      if (!b) {
+        b = { supply: 0, demand: 0, hasDemand: false, slaSum: 0, slaCount: 0, quadrantHours: {}, wasted: false, providers: new Set() };
+        buckets.set(key, b);
+      }
+      const supply = s.allocated_hours ?? 0;
+      b.supply += supply;
+      if (s.estimated_demand_hours != null) {
+        b.demand += s.estimated_demand_hours;
+        b.hasDemand = true;
+      }
+      if (s.sla_pct != null) { b.slaSum += s.sla_pct; b.slaCount += 1; }
+      const w = supply > 0 ? supply : 1;
+      b.quadrantHours[s.quadrant] = (b.quadrantHours[s.quadrant] ?? 0) + w;
+      if (s.wasted_flag) b.wasted = true;
+      b.providers.add(s.profile_id);
+    }
+    const rows: StateDetailRow[] = [];
+    for (const [key, b] of buckets) {
+      const [state, date] = key.split('|');
+      const quadrant = (Object.entries(b.quadrantHours).sort((a, x) => x[1] - a[1])[0]?.[0] ?? 'UNKNOWN') as Quadrant;
+      const ratio = b.hasDemand && b.demand > 0 ? b.supply / b.demand : null;
+      rows.push({
+        state_abbreviation: state,
+        snapshot_date: date,
+        allocated_hours: b.supply,
+        estimated_demand_hours: b.hasDemand ? b.demand : null,
+        coverage_ratio: ratio,
+        sla_pct: b.slaCount > 0 ? b.slaSum / b.slaCount : null,
+        quadrant,
+        wasted_flag: b.wasted,
+        provider_count: b.providers.size,
+      });
+    }
+    return rows.sort((a, b) =>
+      a.snapshot_date.localeCompare(b.snapshot_date) ||
+      a.state_abbreviation.localeCompare(b.state_abbreviation),
+    );
+  }, [filtered]);
+
   const kpis = useMemo(() => {
     const deficitCount = [...new Set(filtered.filter(s => s.quadrant === 'DEFICIT').map(s => s.state_abbreviation))].length;
     const surplusCount = [...new Set(filtered.filter(s => s.quadrant === 'SURPLUS').map(s => s.state_abbreviation))].length;
@@ -1117,15 +1187,15 @@ export default function LicenseOptimizerPage() {
                 variant="outline"
                 size="sm"
                 className="gap-1.5"
-                disabled={filtered.length === 0}
+                disabled={stateDetailRows.length === 0}
                 onClick={() =>
                   downloadCSV(
-                    filtered.map((s) => ({
+                    stateDetailRows.map((s) => ({
                       state: s.state_abbreviation,
                       date: s.snapshot_date,
-                      provider: s.profiles?.full_name ?? '',
-                      supply_hrs: s.allocated_hours ?? '',
-                      demand_hrs: s.estimated_demand_hours ?? '',
+                      providers: s.provider_count,
+                      supply_hrs: s.allocated_hours.toFixed(2),
+                      demand_hrs: s.estimated_demand_hours != null ? s.estimated_demand_hours.toFixed(2) : '',
                       coverage_pct: s.coverage_ratio != null
                         ? `${(s.coverage_ratio * 100).toFixed(0)}%` : '',
                       sla_pct: s.sla_pct != null ? `${s.sla_pct.toFixed(1)}%` : '',
@@ -1137,7 +1207,7 @@ export default function LicenseOptimizerPage() {
                 }
               >
                 <Download className="h-3.5 w-3.5" />
-                Export ({filtered.length})
+                Export ({stateDetailRows.length})
               </Button>
             </CardHeader>
             <CardContent className="overflow-x-auto">
@@ -1149,6 +1219,7 @@ export default function LicenseOptimizerPage() {
                     <tr className="border-b text-muted-foreground text-xs">
                       <th className="text-left py-2 pr-4">State</th>
                       <th className="text-left py-2 pr-4">Date</th>
+                      <th className="text-right py-2 pr-4">Providers</th>
                       <th className="text-right py-2 pr-4">Supply hrs</th>
                       <th className="text-right py-2 pr-4">Demand hrs</th>
                       <th className="text-right py-2 pr-4">Coverage</th>
@@ -1157,11 +1228,12 @@ export default function LicenseOptimizerPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.slice(0, 100).map((s, i) => (
+                    {stateDetailRows.slice(0, 100).map((s, i) => (
                       <tr key={i} className={cn('border-b last:border-0', s.wasted_flag && 'bg-amber-50/40')}>
                         <td className="py-2 pr-4 font-medium">{s.state_abbreviation}</td>
                         <td className="py-2 pr-4 text-muted-foreground">{s.snapshot_date}</td>
-                        <td className="py-2 pr-4 text-right">{s.allocated_hours?.toFixed(1) ?? '—'}</td>
+                        <td className="py-2 pr-4 text-right text-muted-foreground">{s.provider_count}</td>
+                        <td className="py-2 pr-4 text-right">{s.allocated_hours.toFixed(1)}</td>
                         <td className="py-2 pr-4 text-right">{s.estimated_demand_hours?.toFixed(1) ?? '—'}</td>
                         <td className="py-2 pr-4 text-right">
                           {s.coverage_ratio !== null
@@ -1183,10 +1255,10 @@ export default function LicenseOptimizerPage() {
                         </td>
                       </tr>
                     ))}
-                    {filtered.length > 100 && (
+                    {stateDetailRows.length > 100 && (
                       <tr>
-                        <td colSpan={7} className="py-2 text-xs text-muted-foreground text-center">
-                          Showing 100 of {filtered.length} rows. Use filters to narrow results.
+                        <td colSpan={8} className="py-2 text-xs text-muted-foreground text-center">
+                          Showing 100 of {stateDetailRows.length} rows. Use filters to narrow results.
                         </td>
                       </tr>
                     )}
