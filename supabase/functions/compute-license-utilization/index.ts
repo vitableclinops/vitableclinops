@@ -259,9 +259,12 @@ Deno.serve(async (req: Request) => {
       const [profileId, date] = key.split('|');
       const licenses = licenseMap.get(profileId);
       if (!licenses) continue;
+      const profession = professionByProfile.get(profileId) ?? null;
 
       // States this provider is actively licensed in AND which are operationally active
-      const eligible = [...licenses.active].filter(s => activeStates.has(s));
+      const eligible = [...licenses.active]
+        .filter(s => activeStates.has(s))
+        .filter(s => canPracticeInState(profession, s));
       if (eligible.length === 0) continue;
 
       const perState = hours / eligible.length;
@@ -283,8 +286,11 @@ Deno.serve(async (req: Request) => {
       const [profileId, date] = key.split('|');
       const licenses = licenseMap.get(profileId);
       if (!licenses) continue;
+      const profession = professionByProfile.get(profileId) ?? null;
 
-      const eligible = [...licenses.active].filter(s => activeStates.has(s));
+      const eligible = [...licenses.active]
+        .filter(s => activeStates.has(s))
+        .filter(s => canPracticeInState(profession, s));
       if (eligible.length === 0) {
         // All provider hours going to zero-active states → fully wasted
         // We'll record one row with state='NONE' to represent this
