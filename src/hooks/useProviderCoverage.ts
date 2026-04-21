@@ -1,5 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { isNPProhibitedState } from '@/constants/stateRestrictions';
+
+const PHYSICIAN_PROFESSIONS = new Set(['MD', 'DO']);
+function canPracticeInState(profession: string | null | undefined, state: string): boolean {
+  if (!isNPProhibitedState(state)) return true;
+  return profession ? PHYSICIAN_PROFESSIONS.has(profession.toUpperCase()) : false;
+}
 
 export interface ProviderStateAllocation {
   state: string;
@@ -75,14 +82,16 @@ export function useProviderCoverage(date: string) {
 
       // 4. Fetch actual names from profiles for matched providers
       const profileIds = [...profileHours.keys()];
-      let nameMap = new Map<string, string>();
+      const nameMap = new Map<string, string>();
+      const professionMap = new Map<string, string | null>();
       if (profileIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, full_name')
+          .select('id, full_name, profession')
           .in('id', profileIds);
         for (const p of profiles ?? []) {
           if (p.full_name) nameMap.set(p.id, p.full_name);
+          professionMap.set(p.id, p.profession ?? null);
         }
       }
 
@@ -90,7 +99,11 @@ export function useProviderCoverage(date: string) {
       const rows: ProviderCoverageRow[] = [];
       for (const [profileId, info] of profileHours) {
         const providerLicenses = licenseMap.get(profileId) ?? new Set();
-        const eligibleStates = [...providerLicenses].filter((s) => activeStates.has(s)).sort();
+        const profession = professionMap.get(profileId) ?? null;
+        const eligibleStates = [...providerLicenses]
+          .filter((s) => activeStates.has(s))
+          .filter((s) => canPracticeInState(profession, s))
+          .sort();
         const stateCount = eligibleStates.length || 1;
         const hoursPerState = info.totalHours / stateCount;
         const slotsPerState = hoursPerState * 2;

@@ -34,6 +34,15 @@ const corsHeaders = {
 
 const SLOTS_PER_HOUR = 2; // 30-min appointment slots (20 min visit + 10 min charting)
 
+// MD-only states — NPs and other non-physician roles cannot legally see patients
+// here even when they hold an active license. Excluded from supply allocation.
+const NP_PROHIBITED_STATES = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA']);
+const PHYSICIAN_PROFESSIONS = new Set(['MD', 'DO']);
+function canPracticeInState(profession: string | null | undefined, state: string): boolean {
+  if (!NP_PROHIBITED_STATES.has(state)) return true;
+  return profession ? PHYSICIAN_PROFESSIONS.has(profession.toUpperCase()) : false;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -121,6 +130,19 @@ Deno.serve(async (req: Request) => {
       licenseMap.get(lic.profile_id)!.add(lic.state_abbreviation);
     }
 
+    // Load profession per profile so NPs can be excluded from MD-only states
+    const profileIds = [...licenseMap.keys()];
+    const professionByProfile = new Map<string, string | null>();
+    if (profileIds.length > 0) {
+      const { data: profRows } = await supabase
+        .from('profiles')
+        .select('id, profession')
+        .in('id', profileIds);
+      for (const p of (profRows ?? [])) {
+        professionByProfile.set(p.id, p.profession ?? null);
+      }
+    }
+
     // ── 4. Load Homebase shifts in window ─────────────────────────────────────
     // Include both published and unpublished scheduled shifts for capacity planning.
     const { data: shiftRows } = await supabase
@@ -158,9 +180,12 @@ Deno.serve(async (req: Request) => {
       const [profileId, date] = key.split('|');
       const licenses = licenseMap.get(profileId);
       if (!licenses) continue;
+      const profession = professionByProfile.get(profileId) ?? null;
 
       // States where provider is both actively licensed AND operationally active
-      const eligible = [...licenses].filter(s => activeStates.has(s));
+      const eligible = [...licenses]
+        .filter(s => activeStates.has(s))
+        .filter(s => canPracticeInState(profession, s));
       if (eligible.length === 0) continue;
 
       const hoursPerState = hours / eligible.length;

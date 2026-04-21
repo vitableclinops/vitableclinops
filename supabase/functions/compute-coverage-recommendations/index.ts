@@ -7,6 +7,11 @@ const corsHeaders = {
 
 // NP-prohibited states (mirrors src/constants/stateRestrictions.ts)
 const NP_PROHIBITED_STATES = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA']);
+const PHYSICIAN_PROFESSIONS = new Set(['MD', 'DO']);
+function canPracticeInState(profession: string | null | undefined, state: string): boolean {
+  if (!NP_PROHIBITED_STATES.has(state)) return true;
+  return profession ? PHYSICIAN_PROFESSIONS.has(profession.toUpperCase()) : false;
+}
 
 const SLOTS_PER_HOUR = 4;
 const DEFAULT_SLA_BUFFER = 1.2;
@@ -238,6 +243,9 @@ Deno.serve(async (req) => {
         for (const profileId of licensedProviders) {
           const profile = profileById.get(profileId);
           if (!profile || !profile.email) continue;
+          // MD-only state: skip NPs and other non-physician roles even if
+          // they hold an active license — they cannot legally see patients here.
+          if (!canPracticeInState(profile.profession, state)) continue;
 
           // Find their best surplus elsewhere
           let bestSurplusState: string | null = null;

@@ -43,6 +43,16 @@ const SLA_HIGH_THRESHOLD = 95;
 const COVERAGE_SURPLUS_THRESHOLD = 1.3;
 const COVERAGE_DEFICIT_THRESHOLD = 1.0;
 
+// MD-only states: only physicians (MD/DO) may practice here.
+// NPs (and other non-physician roles) holding licenses in these states must NOT
+// have shift hours allocated here, even when "actively licensed".
+const NP_PROHIBITED_STATES = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA']);
+const PHYSICIAN_PROFESSIONS = new Set(['MD', 'DO']);
+function canPracticeInState(profession: string | null | undefined, state: string): boolean {
+  if (!NP_PROHIBITED_STATES.has(state)) return true;
+  return profession ? PHYSICIAN_PROFESSIONS.has(profession.toUpperCase()) : false;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -206,6 +216,19 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── Load provider professions (to enforce MD-only state rules) ────────────
+    const profileIds = [...licenseMap.keys()];
+    const professionByProfile = new Map<string, string | null>();
+    if (profileIds.length > 0) {
+      const { data: profRows } = await supabase
+        .from('profiles')
+        .select('id, profession')
+        .in('id', profileIds);
+      for (const p of (profRows ?? [])) {
+        professionByProfile.set(p.id, p.profession ?? null);
+      }
+    }
+
     // ── Load Homebase shifts in window ────────────────────────────────────────
     const { data: shiftRows } = await supabase
       .from('homebase_shifts')
@@ -236,9 +259,12 @@ Deno.serve(async (req: Request) => {
       const [profileId, date] = key.split('|');
       const licenses = licenseMap.get(profileId);
       if (!licenses) continue;
+      const profession = professionByProfile.get(profileId) ?? null;
 
       // States this provider is actively licensed in AND which are operationally active
-      const eligible = [...licenses.active].filter(s => activeStates.has(s));
+      const eligible = [...licenses.active]
+        .filter(s => activeStates.has(s))
+        .filter(s => canPracticeInState(profession, s));
       if (eligible.length === 0) continue;
 
       const perState = hours / eligible.length;
@@ -260,8 +286,11 @@ Deno.serve(async (req: Request) => {
       const [profileId, date] = key.split('|');
       const licenses = licenseMap.get(profileId);
       if (!licenses) continue;
+      const profession = professionByProfile.get(profileId) ?? null;
 
-      const eligible = [...licenses.active].filter(s => activeStates.has(s));
+      const eligible = [...licenses.active]
+        .filter(s => activeStates.has(s))
+        .filter(s => canPracticeInState(profession, s));
       if (eligible.length === 0) {
         // All provider hours going to zero-active states → fully wasted
         // We'll record one row with state='NONE' to represent this
