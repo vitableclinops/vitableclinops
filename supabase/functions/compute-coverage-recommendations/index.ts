@@ -42,6 +42,9 @@ interface OutreachCandidate {
   rank_score: number;                  // lower = better
   on_cooldown: boolean;
   last_contacted_at: string | null;
+  working_today: boolean;              // has a Homebase shift covering today
+  shift_window: string | null;         // e.g. "9:00 AM – 5:00 PM CT"
+  appointments_today: number | null;   // booked appointments today (best-effort name match)
 }
 
 interface StateRec {
@@ -81,7 +84,11 @@ Deno.serve(async (req) => {
     }
 
     // Pull base data in parallel
-    const [activationsRes, slotsRes, forecastRes, snapshotsRes, licensesRes, profilesRes, cooldownRes] = await Promise.all([
+    // Compute today's UTC bounds for shift overlap (Homebase stores TZ-aware timestamps)
+    const todayStartUtc = new Date(`${today}T00:00:00-06:00`).toISOString(); // CT-ish lower bound
+    const todayEndUtc = new Date(`${today}T23:59:59-06:00`).toISOString();
+
+    const [activationsRes, slotsRes, forecastRes, snapshotsRes, licensesRes, profilesRes, cooldownRes, shiftsRes, apptsRes] = await Promise.all([
       supabase.from('state_activation').select('state_abbreviation, is_active'),
       supabase.from('state_leftover_slots')
         .select('state_abbreviation, unfilled_slots, window_type')
@@ -99,6 +106,13 @@ Deno.serve(async (req) => {
       supabase.from('coverage_outreach_log')
         .select('profile_id, state_abbreviation, sent_at')
         .gte('sent_at', new Date(Date.now() - COOLDOWN_DAYS * 24 * 60 * 60 * 1000).toISOString()),
+      supabase.from('homebase_shifts')
+        .select('homebase_employee_id, start_at, end_at, scheduled, published')
+        .gte('start_at', todayStartUtc)
+        .lte('start_at', todayEndUtc),
+      supabase.from('provider_appointment_count')
+        .select('provider_name_raw, appointment_count')
+        .eq('report_date', today),
     ]);
 
     const activations = activationsRes.data ?? [];
@@ -106,6 +120,40 @@ Deno.serve(async (req) => {
     const licenses = licensesRes.data ?? [];
     const snapshots = snapshotsRes.data ?? [];
     const cooldown = cooldownRes.data ?? [];
+    const shifts = shiftsRes.data ?? [];
+    const appts = apptsRes.data ?? [];
+
+    // Need homebase_employees → profile_id linkage to map shifts to providers
+    const homebaseEmployeeIds = Array.from(
+      new Set(shifts.map(s => s.homebase_employee_id).filter(Boolean) as string[])
+    );
+    let workingTodayByProfile = new Map<string, { start: string; end: string }>();
+    if (homebaseEmployeeIds.length > 0) {
+      const { data: employees } = await supabase
+        .from('homebase_employees')
+        .select('id, profile_id')
+        .in('id', homebaseEmployeeIds);
+      const profileByEmpId = new Map((employees ?? []).map(e => [e.id, e.profile_id]));
+      for (const sh of shifts) {
+        if (!sh.homebase_employee_id || !sh.start_at || !sh.end_at) continue;
+        if (sh.scheduled === false) continue;
+        const pid = profileByEmpId.get(sh.homebase_employee_id);
+        if (!pid) continue;
+        // Keep the earliest-starting shift per profile
+        const existing = workingTodayByProfile.get(pid);
+        if (!existing || sh.start_at < existing.start) {
+          workingTodayByProfile.set(pid, { start: sh.start_at, end: sh.end_at });
+        }
+      }
+    }
+
+    // Best-effort appointment count by normalized name
+    const apptsByNormalizedName = new Map<string, number>();
+    const norm = (n: string) => n.toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
+    for (const a of appts) {
+      if (!a.provider_name_raw) continue;
+      apptsByNormalizedName.set(norm(a.provider_name_raw), Number(a.appointment_count ?? 0));
+    }
 
     // Index
     const profileById = new Map(profiles.map(p => [p.id, p]));
@@ -220,6 +268,9 @@ Deno.serve(async (req) => {
           const cooldownKey = `${profileId}|${state}`;
           const lastSent = cooldownByKey.get(cooldownKey) ?? null;
 
+          const shift = workingTodayByProfile.get(profileId) ?? null;
+          const apptCount = profile.full_name ? apptsByNormalizedName.get(norm(profile.full_name)) ?? null : null;
+
           candidates.push({
             profile_id: profileId,
             name: profile.full_name ?? 'Unknown',
@@ -230,10 +281,17 @@ Deno.serve(async (req) => {
             rank_score: rankScore,
             on_cooldown: lastSent !== null,
             last_contacted_at: lastSent,
+            working_today: shift !== null,
+            shift_window: shift ? formatShiftWindow(shift.start, shift.end) : null,
+            appointments_today: apptCount,
           });
         }
 
-        candidates.sort((a, b) => a.rank_score - b.rank_score);
+        // Working-today providers ranked first, then by rank_score
+        candidates.sort((a, b) => {
+          if (a.working_today !== b.working_today) return a.working_today ? -1 : 1;
+          return a.rank_score - b.rank_score;
+        });
       }
 
       if (needsHelp || candidates.length > 0) {
@@ -280,4 +338,16 @@ async function getLatestSnapshotDate(supabase: any, fallback: string): Promise<s
     .limit(1)
     .maybeSingle();
   return data?.snapshot_date ?? fallback;
+}
+
+function formatShiftWindow(startIso: string, endIso: string): string {
+  try {
+    const fmt = (iso: string) => new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    }).format(new Date(iso));
+    return `${fmt(startIso)} – ${fmt(endIso)} CT`;
+  } catch {
+    return '';
+  }
 }

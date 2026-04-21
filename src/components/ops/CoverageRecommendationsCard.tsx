@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { Sparkles, Copy } from 'lucide-react';
+import { Sparkles, Copy, Clock, CalendarOff } from 'lucide-react';
 
 interface OutreachCandidate {
   profile_id: string;
@@ -14,6 +14,9 @@ interface OutreachCandidate {
   current_state: string | null;
   current_state_status: string | null;
   surplus_hours: number;
+  working_today?: boolean;
+  shift_window?: string | null;
+  appointments_today?: number | null;
 }
 
 interface StateRec {
@@ -62,12 +65,17 @@ export function CoverageRecommendationsCard() {
   });
 
   const copyEmails = async (state: string, candidates: OutreachCandidate[]) => {
-    const emails = candidates.map(c => c.email).join(', ');
+    // Only copy emails of providers actually working today
+    const working = candidates.filter(c => c.working_today);
+    const pool = working.length > 0 ? working : candidates;
+    const emails = pool.map(c => c.email).join(', ');
     try {
       await navigator.clipboard.writeText(emails);
       toast({
-        title: `Copied ${candidates.length} email(s) for ${state}`,
-        description: 'Paste into your email client or Slack DM.',
+        title: `Copied ${pool.length} email(s) for ${state}`,
+        description: working.length > 0
+          ? 'Working today only. Paste into Slack DM or email.'
+          : 'No one is on shift today — copied all licensed providers as fallback.',
       });
     } catch {
       toast({ title: 'Copy failed', description: emails, variant: 'destructive' });
@@ -141,10 +149,30 @@ export function CoverageRecommendationsCard() {
                 <ul className="text-xs space-y-1 ml-1">
                   {s.outreach_candidates.map(c => (
                     <li key={c.profile_id} className="flex items-center gap-2 flex-wrap">
+                      {c.working_today ? (
+                        <Clock className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      ) : (
+                        <CalendarOff className="h-3 w-3 text-muted-foreground shrink-0" />
+                      )}
                       <span className="font-medium">{c.name}</span>
                       <span className="text-muted-foreground">{c.email}</span>
-                      {c.current_state_status === 'SURPLUS' && (
+                      {c.working_today && c.shift_window && (
                         <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-emerald-500 text-emerald-700 dark:text-emerald-400">
+                          On shift {c.shift_window}
+                        </Badge>
+                      )}
+                      {!c.working_today && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5 text-muted-foreground">
+                          Not on shift today
+                        </Badge>
+                      )}
+                      {typeof c.appointments_today === 'number' && c.appointments_today > 0 && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                          {c.appointments_today} appt(s) today
+                        </Badge>
+                      )}
+                      {c.current_state_status === 'SURPLUS' && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5">
                           {c.surplus_hours.toFixed(1)}h surplus in {c.current_state}
                         </Badge>
                       )}
