@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { Sparkles, Copy, Clock, CalendarOff } from 'lucide-react';
+import { Sparkles, Copy, Clock, CalendarOff, ArrowRight } from 'lucide-react';
 
 interface OutreachCandidate {
   profile_id: string;
@@ -47,6 +47,30 @@ function statusBadge(status: StateRec['status']) {
   };
   const m = map[status];
   return <Badge className={`${m.cls} hover:${m.cls}`}>{m.label}</Badge>;
+}
+
+/**
+ * Protocol guidance per status — surfaces the operational SOP inline so
+ * ops doesn't need to consult a separate playbook to know how to act.
+ * Tuned for same-day ops decisions (Coverage Hub is a live "today" view).
+ */
+function recommendedAction(s: StateRec): string {
+  const working = s.outreach_candidates.filter((c) => c.working_today).length;
+  const fallback = s.outreach_candidates.length - working;
+  switch (s.status) {
+    case 'zero':
+      return working > 0
+        ? `URGENT — DM the ${working} provider(s) on shift now and ask them to flip to ${s.state}. Block ~${s.gap_hours.toFixed(1)}h of their schedule.`
+        : `URGENT — no licensed provider on shift today. Page on-call admin and consider rerouting bookings; queue a license application if this recurs 3+ days.`;
+    case 'critical':
+      return working > 0
+        ? `Reach out to ${working} on-shift provider(s) within the hour. Cover ~${s.gap_hours.toFixed(1)}h gap; if persistent for 3+ days, escalate to License Optimizer.`
+        : `Cover via shift swap or overtime offer to ${fallback} licensed provider(s) off today. Log in outreach for the activation pipeline.`;
+    case 'low':
+      return `Monitor — capacity is within 50–99% of target. Pre-empt by pinging ${Math.min(2, working || fallback)} provider(s) before lunch if backlog grows.`;
+    default:
+      return '';
+  }
 }
 
 export function CoverageRecommendationsCard() {
@@ -145,6 +169,10 @@ export function CoverageRecommendationsCard() {
                     <Copy className="h-3 w-3" />
                     Copy emails
                   </Button>
+                </div>
+                <div className="flex items-start gap-1.5 text-xs bg-muted/40 rounded-md px-2 py-1.5">
+                  <ArrowRight className="h-3 w-3 mt-0.5 text-primary shrink-0" />
+                  <span className="text-foreground"><span className="font-semibold">Recommended:</span> {recommendedAction(s)}</span>
                 </div>
                 <ul className="text-xs space-y-1 ml-1">
                   {s.outreach_candidates.map(c => (
