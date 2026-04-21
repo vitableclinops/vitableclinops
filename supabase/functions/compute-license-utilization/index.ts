@@ -216,6 +216,19 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── Load provider professions (to enforce MD-only state rules) ────────────
+    const profileIds = [...licenseMap.keys()];
+    const professionByProfile = new Map<string, string | null>();
+    if (profileIds.length > 0) {
+      const { data: profRows } = await supabase
+        .from('profiles')
+        .select('id, profession')
+        .in('id', profileIds);
+      for (const p of (profRows ?? [])) {
+        professionByProfile.set(p.id, p.profession ?? null);
+      }
+    }
+
     // ── Load Homebase shifts in window ────────────────────────────────────────
     const { data: shiftRows } = await supabase
       .from('homebase_shifts')
