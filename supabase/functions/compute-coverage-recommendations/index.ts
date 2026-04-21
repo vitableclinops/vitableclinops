@@ -243,6 +243,9 @@ Deno.serve(async (req) => {
         for (const profileId of licensedProviders) {
           const profile = profileById.get(profileId);
           if (!profile || !profile.email) continue;
+          // MD-only state: skip NPs and other non-physician roles even if
+          // they hold an active license — they cannot legally see patients here.
+          if (!canPracticeInState(profile.profession, state)) continue;
 
           // Find their best surplus elsewhere
           let bestSurplusState: string | null = null;
