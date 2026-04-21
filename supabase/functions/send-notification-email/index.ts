@@ -13,7 +13,12 @@ type EmailType =
   | 'workflow_initiated'
   | 'task_overdue'
   | 'status_changed'
-  | 'meeting_reminder';
+  | 'meeting_reminder'
+  | 'agreement_activated'
+  | 'agreement_invalidated'
+  | 'agreement_renewal_warning'
+  | 'agreement_terminated'
+  | 'transfer_initiated';
 
 interface EmailRequest {
   type: EmailType;
@@ -161,6 +166,138 @@ const getEmailContent = (type: EmailType, data: Record<string, any>, recipientNa
               ${data.attendees ? `<p><strong>Attendees:</strong> ${data.attendees}</p>` : ''}
               ${data.notes ? `<p><strong>Notes:</strong> ${data.notes}</p>` : ''}
               <a href="${data.actionUrl || '#'}" class="button" style="background: #10b981;">View Meeting Details</a>
+            </div>
+            <div class="footer">
+              <p>This is an automated message from the Credentialing Platform.</p>
+            </div>
+          </div>
+        `
+      };
+
+    case 'agreement_activated':
+      return {
+        subject: `✅ Collaborative Agreement Active: ${data.stateName}`,
+        html: `
+          ${baseStyles}
+          <div class="container">
+            <div class="header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+              <h1 style="margin: 0;">✅ Agreement Now Active</h1>
+            </div>
+            <div class="content">
+              <p>Hi ${recipientName},</p>
+              <p>The collaborative practice agreement for <strong>${data.stateName}</strong> is now <span class="badge badge-success">ACTIVE</span>.</p>
+              ${data.physicianName ? `<p><strong>Collaborating Physician:</strong> ${data.physicianName}</p>` : ''}
+              ${data.providerName ? `<p><strong>Provider:</strong> ${data.providerName}</p>` : ''}
+              ${data.effectiveDate ? `<p><strong>Effective Date:</strong> ${new Date(data.effectiveDate).toLocaleDateString()}</p>` : ''}
+              ${data.renewalDate ? `<p><strong>Next Renewal:</strong> ${new Date(data.renewalDate).toLocaleDateString()}</p>` : ''}
+              ${data.meetingCadence ? `<p><strong>Meeting Cadence:</strong> ${data.meetingCadence}</p>` : ''}
+              <p>You may now begin practicing under this agreement in ${data.stateName}.</p>
+              <a href="${data.actionUrl || '#'}" class="button" style="background: #10b981;">View Agreement</a>
+            </div>
+            <div class="footer">
+              <p>This is an automated message from the Credentialing Platform.</p>
+            </div>
+          </div>
+        `
+      };
+
+    case 'agreement_invalidated':
+      return {
+        subject: `🚨 ACTION REQUIRED: Agreement Invalidated - ${data.stateName}`,
+        html: `
+          ${baseStyles}
+          <div class="container">
+            <div class="header" style="background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);">
+              <h1 style="margin: 0;">🚨 Agreement Invalidated</h1>
+            </div>
+            <div class="content">
+              <p>Hi ${recipientName},</p>
+              <p>The collaborative practice agreement for <strong>${data.stateName}</strong> has been automatically marked <span class="badge badge-warning">INVALID</span>.</p>
+              ${data.reason ? `<p><strong>Reason:</strong> ${data.reason}</p>` : ''}
+              ${data.physicianName ? `<p><strong>Physician:</strong> ${data.physicianName}</p>` : ''}
+              ${data.providerName ? `<p><strong>Provider:</strong> ${data.providerName}</p>` : ''}
+              <p style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 12px; margin: 16px 0;">
+                <strong>Practice in ${data.stateName} must pause</strong> until this is resolved. Please contact Clinical Operations immediately.
+              </p>
+              <a href="${data.actionUrl || '#'}" class="button" style="background: #dc2626;">Review Agreement</a>
+            </div>
+            <div class="footer">
+              <p>This is an automated message from the Credentialing Platform.</p>
+            </div>
+          </div>
+        `
+      };
+
+    case 'agreement_renewal_warning':
+      const urgencyColor = data.daysUntilRenewal <= 7 ? '#dc2626' : data.daysUntilRenewal <= 30 ? '#f97316' : '#6366f1';
+      return {
+        subject: `🔔 Agreement Renewal in ${data.daysUntilRenewal} days - ${data.stateName}`,
+        html: `
+          ${baseStyles}
+          <div class="container">
+            <div class="header" style="background: linear-gradient(135deg, ${urgencyColor} 0%, ${urgencyColor}dd 100%);">
+              <h1 style="margin: 0;">🔔 Renewal Reminder</h1>
+            </div>
+            <div class="content">
+              <p>Hi ${recipientName},</p>
+              <p>The collaborative agreement for <strong>${data.stateName}</strong> is due for renewal in <strong>${data.daysUntilRenewal} days</strong>.</p>
+              <p><strong>Renewal Date:</strong> ${new Date(data.renewalDate).toLocaleDateString()}</p>
+              ${data.physicianName ? `<p><strong>Physician:</strong> ${data.physicianName}</p>` : ''}
+              ${data.providerName ? `<p><strong>Provider:</strong> ${data.providerName}</p>` : ''}
+              <p>Please coordinate with Clinical Operations to begin the renewal process and avoid any lapse in coverage.</p>
+              <a href="${data.actionUrl || '#'}" class="button" style="background: ${urgencyColor};">View Agreement</a>
+            </div>
+            <div class="footer">
+              <p>This is an automated message from the Credentialing Platform.</p>
+            </div>
+          </div>
+        `
+      };
+
+    case 'agreement_terminated':
+      return {
+        subject: `📄 Agreement Terminated: ${data.stateName}`,
+        html: `
+          ${baseStyles}
+          <div class="container">
+            <div class="header" style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);">
+              <h1 style="margin: 0;">📄 Agreement Terminated</h1>
+            </div>
+            <div class="content">
+              <p>Hi ${recipientName},</p>
+              <p>The collaborative agreement for <strong>${data.stateName}</strong> has been terminated.</p>
+              ${data.physicianName ? `<p><strong>Physician:</strong> ${data.physicianName}</p>` : ''}
+              ${data.providerName ? `<p><strong>Provider:</strong> ${data.providerName}</p>` : ''}
+              ${data.terminatedAt ? `<p><strong>Termination Date:</strong> ${new Date(data.terminatedAt).toLocaleDateString()}</p>` : ''}
+              ${data.reason ? `<p><strong>Reason:</strong> ${data.reason}</p>` : ''}
+              <p>If a replacement agreement is being put in place, you will receive a separate notification once it is active.</p>
+              <a href="${data.actionUrl || '#'}" class="button">View Details</a>
+            </div>
+            <div class="footer">
+              <p>This is an automated message from the Credentialing Platform.</p>
+            </div>
+          </div>
+        `
+      };
+
+    case 'transfer_initiated':
+      return {
+        subject: `🔄 Supervising Physician Change - ${data.stateName}`,
+        html: `
+          ${baseStyles}
+          <div class="container">
+            <div class="header" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);">
+              <h1 style="margin: 0;">🔄 Physician Change Initiated</h1>
+            </div>
+            <div class="content">
+              <p>Hi ${recipientName},</p>
+              <p>A change in collaborating physician has been initiated for <strong>${data.stateName}</strong>.</p>
+              ${data.sourcePhysicianName ? `<p><strong>Outgoing Physician:</strong> ${data.sourcePhysicianName}</p>` : ''}
+              <p><strong>New Physician:</strong> ${data.targetPhysicianName}</p>
+              ${data.effectiveDate ? `<p><strong>Effective Date:</strong> ${new Date(data.effectiveDate).toLocaleDateString()}</p>` : ''}
+              ${data.providerMessage ? `<blockquote style="border-left: 4px solid #6366f1; padding: 8px 16px; background: #eef2ff; margin: 16px 0;">${data.providerMessage}</blockquote>` : ''}
+              <p>You will receive a confirmation email once the new agreement is active. No action is needed from you at this time unless contacted by Clinical Operations.</p>
+              <a href="${data.actionUrl || '#'}" class="button">View Transfer</a>
             </div>
             <div class="footer">
               <p>This is an automated message from the Credentialing Platform.</p>
