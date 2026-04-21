@@ -1219,6 +1219,7 @@ export default function LicenseOptimizerPage() {
                     <tr className="border-b text-muted-foreground text-xs">
                       <th className="text-left py-2 pr-4">State</th>
                       <th className="text-left py-2 pr-4">Date</th>
+                      <th className="text-right py-2 pr-4">Providers</th>
                       <th className="text-right py-2 pr-4">Supply hrs</th>
                       <th className="text-right py-2 pr-4">Demand hrs</th>
                       <th className="text-right py-2 pr-4">Coverage</th>
@@ -1227,11 +1228,12 @@ export default function LicenseOptimizerPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.slice(0, 100).map((s, i) => (
+                    {stateDetailRows.slice(0, 100).map((s, i) => (
                       <tr key={i} className={cn('border-b last:border-0', s.wasted_flag && 'bg-amber-50/40')}>
                         <td className="py-2 pr-4 font-medium">{s.state_abbreviation}</td>
                         <td className="py-2 pr-4 text-muted-foreground">{s.snapshot_date}</td>
-                        <td className="py-2 pr-4 text-right">{s.allocated_hours?.toFixed(1) ?? '—'}</td>
+                        <td className="py-2 pr-4 text-right text-muted-foreground">{s.provider_count}</td>
+                        <td className="py-2 pr-4 text-right">{s.allocated_hours.toFixed(1)}</td>
                         <td className="py-2 pr-4 text-right">{s.estimated_demand_hours?.toFixed(1) ?? '—'}</td>
                         <td className="py-2 pr-4 text-right">
                           {s.coverage_ratio !== null
@@ -1253,10 +1255,10 @@ export default function LicenseOptimizerPage() {
                         </td>
                       </tr>
                     ))}
-                    {filtered.length > 100 && (
+                    {stateDetailRows.length > 100 && (
                       <tr>
-                        <td colSpan={7} className="py-2 text-xs text-muted-foreground text-center">
-                          Showing 100 of {filtered.length} rows. Use filters to narrow results.
+                        <td colSpan={8} className="py-2 text-xs text-muted-foreground text-center">
+                          Showing 100 of {stateDetailRows.length} rows. Use filters to narrow results.
                         </td>
                       </tr>
                     )}
