@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.alert-sync-failures]
 verify_jwt = false
+
+[functions.send-ops-dashboard-slack]
+verify_jwt = false
