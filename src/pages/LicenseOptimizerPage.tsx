@@ -67,7 +67,7 @@ function useSnapshots(view: 'historical' | 'forward') {
       const query = supabase
         .from('license_optimization_snapshots')
         .select('*')
-        .order('snapshot_date', { ascending: true })
+        .order('snapshot_date', { ascending: false })
         .limit(2000);
 
       if (view === 'historical') {
