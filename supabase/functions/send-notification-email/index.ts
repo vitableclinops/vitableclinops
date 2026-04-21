@@ -13,8 +13,7 @@ type EmailType =
   | 'workflow_initiated'
   | 'task_overdue'
   | 'status_changed'
-  | 'meeting_reminder'
-  | 'coverage_outreach';
+  | 'meeting_reminder';
 
 interface EmailRequest {
   type: EmailType;
