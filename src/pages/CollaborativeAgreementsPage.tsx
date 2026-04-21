@@ -26,7 +26,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
 import { useScheduledMeetings } from '@/hooks/useScheduledMeetings';
-import { supervisionMeetings } from '@/data/mockData';
 import { 
   Users,
   FileText,
@@ -1349,7 +1348,26 @@ const CollaborativeAgreementsPage = () => {
 
             {/* Calendar Tab */}
             <TabsContent value="calendar">
-              <SupervisionCalendar meetings={supervisionMeetings} />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-primary" />
+                    Supervision Calendar
+                  </CardTitle>
+                  <CardDescription>
+                    All supervision meetings, all-hands, and chart reviews live in
+                    the unified calendar.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button asChild>
+                    <Link to="/admin/calendar">
+                      Open Calendar
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* Notifications Tab */}
