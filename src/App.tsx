@@ -50,6 +50,7 @@ import TelemedicineAvailabilityPage from "./pages/TelemedicineAvailabilityPage";
 import PCPCoveragePage from "./pages/PCPCoveragePage";
 import ProviderAppointmentsPage from "./pages/ProviderAppointmentsPage";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
+import UsabilityGuidePage from "./pages/UsabilityGuidePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -282,6 +283,11 @@ const App = () => (
             <Route path="/admin/executive-briefing" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <ExecutiveBriefingPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/guide" element={
+              <ProtectedRoute>
+                <UsabilityGuidePage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
