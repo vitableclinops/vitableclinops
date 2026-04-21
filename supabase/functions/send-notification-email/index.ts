@@ -169,42 +169,6 @@ const getEmailContent = (type: EmailType, data: Record<string, any>, recipientNa
         `
       };
 
-    case 'coverage_outreach': {
-      const stateAbbr = data.stateAbbreviation ?? '';
-      const gapHours = typeof data.gapHours === 'number' ? data.gapHours.toFixed(1) : data.gapHours;
-      const surplusLine = data.currentState && data.surplusHours > 0
-        ? `<p style="margin: 8px 0;">We see you currently have <strong>~${Number(data.surplusHours).toFixed(1)} hours</strong> of slack capacity in <strong>${data.currentState}</strong> today, so picking up a shift in <strong>${stateAbbr}</strong> wouldn't impact your other coverage.</p>`
-        : '';
-      return {
-        subject: `Extra availability needed in ${stateAbbr} this week`,
-        html: `
-          ${baseStyles}
-          <div class="container">
-            <div class="header" style="background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);">
-              <h1 style="margin: 0;">⚡ Coverage gap in ${stateAbbr}</h1>
-            </div>
-            <div class="content">
-              <p>Hi ${recipientName},</p>
-              <p>We're short on availability in <strong>${stateAbbr}</strong> this week and you're licensed there — would you be open to picking up a few extra shifts?</p>
-              <div style="background: #fef3c7; padding: 16px; border-radius: 8px; margin: 16px 0;">
-                <p style="margin: 0;"><strong>Estimated gap:</strong> ~${gapHours} hours of patient demand uncovered today.</p>
-                ${data.targetSlots && data.availableSlots !== undefined ? `<p style="margin: 8px 0 0;"><strong>Today:</strong> ${data.availableSlots} slot(s) available vs. target of ${data.targetSlots}.</p>` : ''}
-              </div>
-              ${surplusLine}
-              ${data.customMessage ? `<p><em>${data.customMessage}</em></p>` : ''}
-              <p>Even one extra shift this week would meaningfully improve patient access. Open Homebase to add availability:</p>
-              <a href="${data.actionUrl || 'https://app.joinhomebase.com/'}" class="button" style="background: #ef4444;">Open Homebase →</a>
-              <p style="margin-top: 24px; font-size: 13px; color: #6b7280;">Questions? Reply to this email or ping the ops team in Slack.</p>
-            </div>
-            <div class="footer">
-              <p>This is an automated message from the Vitable Ops team based on today's coverage data.</p>
-              ${data.dashboardUrl ? `<p><a href="${data.dashboardUrl}" style="color: #6366f1;">View live coverage →</a></p>` : ''}
-            </div>
-          </div>
-        `,
-      };
-    }
-
     default:
       return {
         subject: 'Notification from Credentialing Platform',
