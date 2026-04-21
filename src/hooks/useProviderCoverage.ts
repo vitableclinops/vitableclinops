@@ -1,5 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { isNPProhibitedState } from '@/constants/stateRestrictions';
+
+const PHYSICIAN_PROFESSIONS = new Set(['MD', 'DO']);
+function canPracticeInState(profession: string | null | undefined, state: string): boolean {
+  if (!isNPProhibitedState(state)) return true;
+  return profession ? PHYSICIAN_PROFESSIONS.has(profession.toUpperCase()) : false;
+}
 
 export interface ProviderStateAllocation {
   state: string;

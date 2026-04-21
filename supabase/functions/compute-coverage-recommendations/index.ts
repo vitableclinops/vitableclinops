@@ -7,6 +7,11 @@ const corsHeaders = {
 
 // NP-prohibited states (mirrors src/constants/stateRestrictions.ts)
 const NP_PROHIBITED_STATES = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA']);
+const PHYSICIAN_PROFESSIONS = new Set(['MD', 'DO']);
+function canPracticeInState(profession: string | null | undefined, state: string): boolean {
+  if (!NP_PROHIBITED_STATES.has(state)) return true;
+  return profession ? PHYSICIAN_PROFESSIONS.has(profession.toUpperCase()) : false;
+}
 
 const SLOTS_PER_HOUR = 4;
 const DEFAULT_SLA_BUFFER = 1.2;

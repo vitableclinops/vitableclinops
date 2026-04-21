@@ -34,6 +34,15 @@ const corsHeaders = {
 
 const SLOTS_PER_HOUR = 2; // 30-min appointment slots (20 min visit + 10 min charting)
 
+// MD-only states — NPs and other non-physician roles cannot legally see patients
+// here even when they hold an active license. Excluded from supply allocation.
+const NP_PROHIBITED_STATES = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA']);
+const PHYSICIAN_PROFESSIONS = new Set(['MD', 'DO']);
+function canPracticeInState(profession: string | null | undefined, state: string): boolean {
+  if (!NP_PROHIBITED_STATES.has(state)) return true;
+  return profession ? PHYSICIAN_PROFESSIONS.has(profession.toUpperCase()) : false;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
