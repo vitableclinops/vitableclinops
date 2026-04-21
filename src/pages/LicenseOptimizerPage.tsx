@@ -702,11 +702,14 @@ export default function LicenseOptimizerPage() {
   // ── Same-day activation candidates ─────────────────────────────────────────
   const [utilThreshold, setUtilThreshold] = useState(70);
   const [candidateResult, setCandidateResult] = useState<ActivationCandidateResponse | null>(null);
+  const [candidateHorizon, setCandidateHorizon] = useState<'today' | 'tomorrow'>('today');
 
   const candidatesMutation = useMutation({
     mutationFn: async (): Promise<ActivationCandidateResponse> => {
+      const target = new Date();
+      if (candidateHorizon === 'tomorrow') target.setDate(target.getDate() + 1);
       const body: Record<string, unknown> = {
-        target_date: new Date().toISOString().slice(0, 10),
+        target_date: target.toISOString().slice(0, 10),
         utilization_threshold: utilThreshold,
         limit: 10,
       };
