@@ -64,7 +64,7 @@ export function AdminStatsGrid({ stats, loading, totalTasks, unassignedCount, bl
       <StatCard
         title="Completed"
         value={completedCount}
-        subtitle="Total tasks done"
+        subtitle="In current queue"
         icon={CheckCircle2}
         variant="success"
       />

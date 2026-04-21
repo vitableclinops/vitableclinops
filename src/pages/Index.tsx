@@ -56,6 +56,25 @@ const Index = () => {
   const { roles: userRoles } = useAuth();
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
 
+  // Live counts from the database (replaces previous mock data)
+  const { data: liveStats } = useQuery({
+    queryKey: ['index_live_stats'],
+    queryFn: async () => {
+      const [providersRes, statesRes, tasksRes] = await Promise.all([
+        supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('activation_status', 'active'),
+        supabase.from('state_compliance_requirements').select('state_abbreviation'),
+        supabase.from('agreement_tasks').select('id', { count: 'exact', head: true }).is('archived_at', null),
+      ]);
+      const states = new Set((statesRes.data ?? []).map((r: any) => r.state_abbreviation));
+      return {
+        activeProviders: providersRes.count ?? 0,
+        statesConfigured: states.size,
+        openTasks: tasksRes.count ?? 0,
+      };
+    },
+    staleTime: 5 * 60_000,
+  });
+
   // Auto-redirect if user already has roles assigned
   useEffect(() => {
     if (userRoles.length > 0) {
@@ -159,22 +178,22 @@ const Index = () => {
             <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
               <Users className="h-5 w-5" />
             </div>
-            <p className="text-3xl font-bold text-foreground">{providers.length}</p>
+            <p className="text-3xl font-bold text-foreground">{liveStats?.activeProviders ?? '—'}</p>
             <p className="text-sm text-muted-foreground">Active Providers</p>
           </div>
           <div>
             <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
               <MapPin className="h-5 w-5" />
             </div>
-            <p className="text-3xl font-bold text-foreground">{states.length}</p>
+            <p className="text-3xl font-bold text-foreground">{liveStats?.statesConfigured ?? '—'}</p>
             <p className="text-sm text-muted-foreground">States Configured</p>
           </div>
           <div>
             <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
               <ClipboardList className="h-5 w-5" />
             </div>
-            <p className="text-3xl font-bold text-foreground">{taskTemplates.length}</p>
-            <p className="text-sm text-muted-foreground">Task Templates</p>
+            <p className="text-3xl font-bold text-foreground">{liveStats?.openTasks ?? '—'}</p>
+            <p className="text-sm text-muted-foreground">Open Tasks</p>
           </div>
         </div>
       </div>
