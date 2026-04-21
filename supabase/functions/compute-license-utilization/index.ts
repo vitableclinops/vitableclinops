@@ -43,6 +43,16 @@ const SLA_HIGH_THRESHOLD = 95;
 const COVERAGE_SURPLUS_THRESHOLD = 1.3;
 const COVERAGE_DEFICIT_THRESHOLD = 1.0;
 
+// MD-only states: only physicians (MD/DO) may practice here.
+// NPs (and other non-physician roles) holding licenses in these states must NOT
+// have shift hours allocated here, even when "actively licensed".
+const NP_PROHIBITED_STATES = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA']);
+const PHYSICIAN_PROFESSIONS = new Set(['MD', 'DO']);
+function canPracticeInState(profession: string | null | undefined, state: string): boolean {
+  if (!NP_PROHIBITED_STATES.has(state)) return true;
+  return profession ? PHYSICIAN_PROFESSIONS.has(profession.toUpperCase()) : false;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
