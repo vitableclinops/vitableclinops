@@ -230,8 +230,15 @@ export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: App
               <div className="space-y-0.5">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const isActive = location.pathname === item.href || 
-                    (item.href !== '/' && location.pathname.startsWith(item.href.split('?')[0]));
+                  // Match exact path, or treat as a section prefix only for nested
+                  // routes (e.g. /admin/agreements/123 lights up /admin/agreements)
+                  // — but never let a parent like "/admin" claim every /admin/* route.
+                  const cleanHref = item.href.split('?')[0];
+                  const isActive =
+                    location.pathname === cleanHref ||
+                    (cleanHref !== '/' &&
+                      cleanHref !== '/admin' &&
+                      location.pathname.startsWith(cleanHref + '/'));
                   
                   return (
                     <NavLink
