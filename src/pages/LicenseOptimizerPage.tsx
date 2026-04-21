@@ -71,9 +71,19 @@ function useSnapshots(view: 'historical' | 'forward') {
         .limit(2000);
 
       if (view === 'historical') {
-        query.lte('snapshot_date', today);
+        // Recent past only — 7 days back is enough context
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        query
+          .lte('snapshot_date', today)
+          .gte('snapshot_date', weekAgo.toISOString().slice(0, 10));
       } else {
-        query.gte('snapshot_date', today);
+        // Today + next 7 days — only actionable reallocation window
+        const weekAhead = new Date();
+        weekAhead.setDate(weekAhead.getDate() + 7);
+        query
+          .gte('snapshot_date', today)
+          .lte('snapshot_date', weekAhead.toISOString().slice(0, 10));
       }
 
       const { data, error } = await query;
