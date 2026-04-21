@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
-import { SupervisionCalendar } from '@/components/SupervisionCalendar';
 import { StatCard } from '@/components/StatCard';
 import { AgreementWizard } from '@/components/agreements/AgreementWizard';
 import { TerminationDialog } from '@/components/agreements/TerminationDialog';
