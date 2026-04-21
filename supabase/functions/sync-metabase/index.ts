@@ -589,6 +589,7 @@ async function handleProviderUtilizationDaily(rows: Row[], supabase: SupabaseCli
     const dateRaw = col(row, 'Date', 'date', 'Day', 'day', 'util_date', 'date_actual', 'date_actual: Day');
     const utilRaw = col(
       row, 'Utilization Rate', 'utilization', 'Utilization', 'booking_rate', 'Booking Rate', 'Avg Utilization',
+      'Average of Utilization rate', 'Average of Utilization Rate', 'Avg Utilization Rate',
     );
     const bookedRaw = col(
       row, 'Booked Timeslots', 'booked_timeslots', 'Booked', 'booked', 'Appointments', 'Bookings',
