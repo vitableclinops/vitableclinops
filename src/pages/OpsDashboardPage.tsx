@@ -26,6 +26,7 @@ import { DataFreshnessIndicator } from '@/components/DataFreshnessIndicator';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import { useProviderCoverage } from '@/hooks/useProviderCoverage';
 import { ProviderCoverageTable } from '@/components/ops/ProviderCoverageTable';
+import { CoverageRecommendationsCard } from '@/components/ops/CoverageRecommendationsCard';
 import { useSlaBufferMultiplier } from '@/hooks/useSystemConfig';
 import {
   slaTargetSlots,
