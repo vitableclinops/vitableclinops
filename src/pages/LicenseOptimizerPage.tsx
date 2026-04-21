@@ -1273,12 +1273,31 @@ export default function LicenseOptimizerPage() {
                 )}
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Finds providers licensed in deficit states but not yet activated there, with utilization at or below your threshold.
+                Surfaces providers licensed in {candidateHorizon === 'today' ? "today's" : "tomorrow's"} deficit states but not yet activated there, with utilization at or below your threshold. Limited to a 2-day horizon — for longer-range planning use the Activation Queue.
                 {filterState && <span className="ml-1">Limited to <span className="font-semibold">{filterState.toUpperCase()}</span>.</span>}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-foreground">Horizon</label>
+                  <div className="inline-flex rounded-md border bg-background p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setCandidateHorizon('today')}
+                      className={`px-3 py-1 text-xs rounded-sm transition-colors ${candidateHorizon === 'today' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCandidateHorizon('tomorrow')}
+                      className={`px-3 py-1 text-xs rounded-sm transition-colors ${candidateHorizon === 'tomorrow' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      Tomorrow
+                    </button>
+                  </div>
+                </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-muted-foreground">Max utilization (%)</label>
                   <Input
