@@ -10,7 +10,6 @@ const NP_PROHIBITED_STATES = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 
 
 const SLOTS_PER_HOUR = 4;
 const DEFAULT_SLA_BUFFER = 1.2;
-const DROP_LICENSE_THRESHOLD = 4; // 4+ surplus states → flag for drop
 const COOLDOWN_DAYS = 7;
 
 function slotsToHours(slots: number) { return slots / SLOTS_PER_HOUR; }
@@ -45,21 +44,6 @@ interface OutreachCandidate {
   last_contacted_at: string | null;
 }
 
-interface DropRecommendation {
-  profile_id: string;
-  provider_name: string;
-  state: string;
-  surplus_state_count: number;
-  reason: string;
-}
-
-interface ApplyRecommendation {
-  state: string;
-  candidate_profile_ids: string[];
-  candidate_names: string[];
-  rationale: string;
-}
-
 interface StateRec {
   state: string;
   status: StateStatus;
@@ -67,7 +51,6 @@ interface StateRec {
   available_slots: number | null;
   target_slots: number | null;
   outreach_candidates: OutreachCandidate[];
-  apply_recommendation: ApplyRecommendation | null;
 }
 
 Deno.serve(async (req) => {
