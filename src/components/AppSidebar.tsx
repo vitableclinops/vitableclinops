@@ -47,6 +47,7 @@ import {
   Target,
   Wifi,
   CalendarCheck,
+  HelpCircle,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -130,9 +131,10 @@ const navGroups: NavGroup[] = [
   },
   {
     label: 'Resources',
-    roles: ['provider', 'admin'],
+    roles: ['provider', 'admin', 'pod_lead', 'physician'],
     items: [
       { label: 'Knowledge Base', icon: BookOpen, href: '/knowledge', roles: ['provider', 'admin'] },
+      { label: 'User Guide', icon: HelpCircle, href: '/guide', roles: ['provider', 'admin', 'pod_lead', 'physician'] },
       { label: 'Enhancements', icon: Lightbulb, href: '/admin/enhancements', roles: ['admin'] },
     ],
   },
