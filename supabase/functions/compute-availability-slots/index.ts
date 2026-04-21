@@ -180,9 +180,12 @@ Deno.serve(async (req: Request) => {
       const [profileId, date] = key.split('|');
       const licenses = licenseMap.get(profileId);
       if (!licenses) continue;
+      const profession = professionByProfile.get(profileId) ?? null;
 
       // States where provider is both actively licensed AND operationally active
-      const eligible = [...licenses].filter(s => activeStates.has(s));
+      const eligible = [...licenses]
+        .filter(s => activeStates.has(s))
+        .filter(s => canPracticeInState(profession, s));
       if (eligible.length === 0) continue;
 
       const hoursPerState = hours / eligible.length;
