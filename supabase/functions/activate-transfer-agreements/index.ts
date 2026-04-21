@@ -65,6 +65,18 @@ Deno.serve(async (req) => {
         description: `Agreement ${agreement.id} auto-activated on effective date ${transfer.effective_date}.`,
       });
 
+      // Fire activation emails to physician + providers
+      try {
+        await supabase.functions.invoke('notify-agreement-event', {
+          body: {
+            agreementId: agreement.id,
+            eventType: 'agreement_activated',
+          },
+        });
+      } catch (e) {
+        console.error('Failed to send activation email:', e);
+      }
+
       activatedCount++;
     }
 
