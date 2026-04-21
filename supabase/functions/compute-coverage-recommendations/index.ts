@@ -340,6 +340,45 @@ Deno.serve(async (req) => {
       }
 
       if (needsHelp || candidates.length > 0) {
+        // ---- Activation recommendations: ready providers not yet EHR-active ----
+        const activationRecs: ActivationRec[] = [];
+        if (needsHelp) {
+          const licensedProviders = licensesByState.get(state) ?? new Set();
+          let remainingGap = gapHours;
+          const candidatesForActivation: Array<{ profileId: string; capacity: number }> = [];
+          for (const profileId of licensedProviders) {
+            const profile = profileById.get(profileId);
+            if (!profile || !profile.email) continue;
+            if (!canPracticeInState(profile.profession, state)) continue;
+            const status = statusByKey.get(`${profileId}|${state}`);
+            if (!status) continue;
+            if (status.readiness !== 'ready') continue;
+            if (!['inactive', 'deactivated', 'activation_requested'].includes(status.ehr)) continue;
+            candidatesForActivation.push({ profileId, capacity: DEFAULT_DAILY_CAPACITY_HOURS });
+          }
+          // Sort largest-capacity first (all equal in default model, but stable for future util data)
+          candidatesForActivation.sort((a, b) => b.capacity - a.capacity);
+          for (const cand of candidatesForActivation) {
+            if (remainingGap <= 0) break;
+            const profile = profileById.get(cand.profileId)!;
+            const status = statusByKey.get(`${cand.profileId}|${state}`)!;
+            const gain = Math.min(cand.capacity, remainingGap);
+            activationRecs.push({
+              profile_id: cand.profileId,
+              name: profile.full_name ?? 'Unknown',
+              email: profile.email!,
+              capacity_gain_hours: gain,
+              ehr_activation_status: status.ehr,
+              readiness_status: status.readiness,
+            });
+            remainingGap -= gain;
+            if (activationRecs.length >= 5) break;
+          }
+        }
+
+        const projectedGain = activationRecs.reduce((acc, r) => acc + r.capacity_gain_hours, 0);
+        const residualGap = Math.max(0, gapHours - projectedGain);
+
         stateRecs.push({
           state,
           status,
@@ -347,9 +386,36 @@ Deno.serve(async (req) => {
           available_slots: available,
           target_slots: target !== null ? Math.round(target) : null,
           outreach_candidates: candidates.slice(0, candidatesPerState),
+          activation_recommendations: activationRecs,
+          deactivation_recommendations: [], // populated below in second pass
+          projected_gain_hours: projectedGain,
+          residual_gap_hours: residualGap,
         });
       }
     }
+
+    // ---- Deactivation recommendations: providers in SURPLUS states with slack ≥ threshold ----
+    // These are independent of any single needy state — surfaced as "where to pull from" context.
+    const deactivationRecs: DeactivationRec[] = [];
+    for (const [key, snap] of snapByProviderState.entries()) {
+      if (snap.quadrant !== 'SURPLUS') continue;
+      const slack = snap.allocated_hours - snap.estimated_demand_hours;
+      if (slack < DEACTIVATION_SLACK_THRESHOLD) continue;
+      const [profileId, st] = key.split('|');
+      const profile = profileById.get(profileId);
+      if (!profile) continue;
+      deactivationRecs.push({
+        profile_id: profileId,
+        name: profile.full_name ?? 'Unknown',
+        state: st,
+        allocated_hours: snap.allocated_hours,
+        estimated_demand_hours: snap.estimated_demand_hours,
+        slack_hours: slack,
+      });
+    }
+    // Sort by largest slack first, cap to top 10 globally
+    deactivationRecs.sort((a, b) => b.slack_hours - a.slack_hours);
+    const topDeactivations = deactivationRecs.slice(0, 10);
 
     return new Response(
       JSON.stringify({
