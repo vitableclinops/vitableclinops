@@ -118,7 +118,7 @@ Deno.serve(async (req) => {
     const todayStartUtc = new Date(`${today}T00:00:00-06:00`).toISOString(); // CT-ish lower bound
     const todayEndUtc = new Date(`${today}T23:59:59-06:00`).toISOString();
 
-    const [activationsRes, slotsRes, forecastRes, snapshotsRes, licensesRes, profilesRes, cooldownRes, shiftsRes, apptsRes] = await Promise.all([
+    const [activationsRes, slotsRes, forecastRes, snapshotsRes, licensesRes, profilesRes, cooldownRes, shiftsRes, apptsRes, statusRes] = await Promise.all([
       supabase.from('state_activation').select('state_abbreviation, is_active'),
       supabase.from('state_leftover_slots')
         .select('state_abbreviation, unfilled_slots, window_type')
@@ -143,6 +143,8 @@ Deno.serve(async (req) => {
       supabase.from('provider_appointment_count')
         .select('provider_name_raw, appointment_count')
         .eq('report_date', today),
+      supabase.from('provider_state_status')
+        .select('provider_id, state_abbreviation, readiness_status, ehr_activation_status'),
     ]);
 
     const activations = activationsRes.data ?? [];
@@ -152,6 +154,16 @@ Deno.serve(async (req) => {
     const cooldown = cooldownRes.data ?? [];
     const shifts = shiftsRes.data ?? [];
     const appts = apptsRes.data ?? [];
+    const statusRows = statusRes.data ?? [];
+
+    // Index provider_state_status by (provider, state)
+    const statusByKey = new Map<string, { readiness: string; ehr: string }>();
+    for (const r of statusRows) {
+      statusByKey.set(`${r.provider_id}|${r.state_abbreviation}`, {
+        readiness: String(r.readiness_status),
+        ehr: String(r.ehr_activation_status),
+      });
+    }
 
     // Need homebase_employees → profile_id linkage to map shifts to providers
     const homebaseEmployeeIds = Array.from(
