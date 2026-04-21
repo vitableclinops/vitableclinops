@@ -10,7 +10,6 @@ const NP_PROHIBITED_STATES = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 
 
 const SLOTS_PER_HOUR = 4;
 const DEFAULT_SLA_BUFFER = 1.2;
-const DROP_LICENSE_THRESHOLD = 4; // 4+ surplus states → flag for drop
 const COOLDOWN_DAYS = 7;
 
 function slotsToHours(slots: number) { return slots / SLOTS_PER_HOUR; }
@@ -45,21 +44,6 @@ interface OutreachCandidate {
   last_contacted_at: string | null;
 }
 
-interface DropRecommendation {
-  profile_id: string;
-  provider_name: string;
-  state: string;
-  surplus_state_count: number;
-  reason: string;
-}
-
-interface ApplyRecommendation {
-  state: string;
-  candidate_profile_ids: string[];
-  candidate_names: string[];
-  rationale: string;
-}
-
 interface StateRec {
   state: string;
   status: StateStatus;
@@ -67,7 +51,6 @@ interface StateRec {
   available_slots: number | null;
   target_slots: number | null;
   outreach_candidates: OutreachCandidate[];
-  apply_recommendation: ApplyRecommendation | null;
 }
 
 Deno.serve(async (req) => {
@@ -200,7 +183,6 @@ Deno.serve(async (req) => {
       const gapHours = slotsToHours(gapSlots);
 
       const candidates: OutreachCandidate[] = [];
-      let applyRec: ApplyRecommendation | null = null;
 
       if (needsHelp) {
         const licensedProviders = licensesByState.get(state) ?? new Set();
@@ -252,35 +234,6 @@ Deno.serve(async (req) => {
         }
 
         candidates.sort((a, b) => a.rank_score - b.rank_score);
-
-        // Apply recommendation: deficit state with no licensees
-        if (licensedProviders.size === 0 && !NP_PROHIBITED_STATES.has(state)) {
-          // Find providers with surplus quadrants in other states (not yet licensed here)
-          const surplusProviders: { profile_id: string; name: string; surplus: number }[] = [];
-          for (const [key, snap] of snapByProviderState.entries()) {
-            if (snap.quadrant !== 'SURPLUS') continue;
-            const profileId = key.split('|')[0];
-            const profile = profileById.get(profileId);
-            if (!profile) continue;
-            const slack = snap.allocated_hours - snap.estimated_demand_hours;
-            const existing = surplusProviders.find(p => p.profile_id === profileId);
-            if (!existing) {
-              surplusProviders.push({ profile_id: profileId, name: profile.full_name ?? 'Unknown', surplus: slack });
-            } else if (slack > existing.surplus) {
-              existing.surplus = slack;
-            }
-          }
-          surplusProviders.sort((a, b) => b.surplus - a.surplus);
-          const top = surplusProviders.slice(0, 2);
-          if (top.length > 0) {
-            applyRec = {
-              state,
-              candidate_profile_ids: top.map(p => p.profile_id),
-              candidate_names: top.map(p => p.name),
-              rationale: `${state} has 0 active licensees; suggest licensure for ${top.length} provider(s) with surplus elsewhere.`,
-            };
-          }
-        }
       }
 
       if (needsHelp || candidates.length > 0) {
@@ -291,40 +244,9 @@ Deno.serve(async (req) => {
           available_slots: available,
           target_slots: target !== null ? Math.round(target) : null,
           outreach_candidates: candidates.slice(0, candidatesPerState),
-          apply_recommendation: applyRec,
         });
       }
     }
-
-    // Drop recommendations: providers in 4+ SURPLUS states, low utilization
-    const surplusStatesByProvider = new Map<string, { state: string; slack: number; sla: number | null }[]>();
-    for (const [key, snap] of snapByProviderState.entries()) {
-      if (snap.quadrant !== 'SURPLUS') continue;
-      const [profileId, state] = key.split('|');
-      const slack = snap.allocated_hours - snap.estimated_demand_hours;
-      if (!surplusStatesByProvider.has(profileId)) surplusStatesByProvider.set(profileId, []);
-      surplusStatesByProvider.get(profileId)!.push({ state, slack, sla: snap.sla_pct });
-    }
-
-    const dropRecs: DropRecommendation[] = [];
-    for (const [profileId, surplusStates] of surplusStatesByProvider.entries()) {
-      if (surplusStates.length < DROP_LICENSE_THRESHOLD) continue;
-      const profile = profileById.get(profileId);
-      if (!profile) continue;
-      // Pick the surplus state with HIGHEST slack (most "wasted") to drop
-      surplusStates.sort((a, b) => b.slack - a.slack);
-      const drop = surplusStates[0];
-      dropRecs.push({
-        profile_id: profileId,
-        provider_name: profile.full_name ?? 'Unknown',
-        state: drop.state,
-        surplus_state_count: surplusStates.length,
-        reason: `Licensed in ${surplusStates.length} surplus states; ${drop.state} has ${drop.slack.toFixed(1)}h unused capacity${drop.sla !== null ? ` (SLA ${drop.sla.toFixed(0)}%)` : ''}.`,
-      });
-    }
-    // Cap drop recs at 5 to keep recommendations focused
-    dropRecs.sort((a, b) => b.surplus_state_count - a.surplus_state_count);
-    const topDropRecs = dropRecs.slice(0, 5);
 
     return new Response(
       JSON.stringify({
@@ -332,7 +254,6 @@ Deno.serve(async (req) => {
         snapshot_date: today,
         sla_buffer: buffer,
         state_recommendations: stateRecs,
-        drop_recommendations: topDropRecs,
         meta: {
           total_active_states: activations.filter(a => a.is_active).length,
           states_needing_attention: stateRecs.filter(s => s.status !== 'ok' && s.status !== 'no_data').length,

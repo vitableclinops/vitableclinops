@@ -261,39 +261,11 @@ Deno.serve(async (req) => {
             }).join(', ');
             lines.push(`   → Ping: ${ping}`);
           }
-          if (s.apply_recommendation) {
-            lines.push(`   ♻️ License recommendation: ${s.apply_recommendation.rationale}`);
-          }
         }
         recommendationBlocks.push({ type: 'divider' });
         recommendationBlocks.push({
           type: 'section',
-          text: { type: 'mrkdwn', text: `*🎯 Recommended actions — fill the gap*\n${lines.join('\n')}` },
-        });
-      }
-
-      if (recs.drop_recommendations?.length > 0) {
-        const dropLines = recs.drop_recommendations.slice(0, 5).map((d: any) =>
-          `• *Drop ${d.state}:* ${d.provider_name} — ${d.reason}`
-        );
-        recommendationBlocks.push({
-          type: 'section',
-          text: { type: 'mrkdwn', text: `*♻️ Reallocate — license drop candidates*\n${dropLines.join('\n')}` },
-        });
-      }
-
-      // Action buttons per state — link to dashboard with state pre-selected
-      const actionableWithCandidates = actionable.filter(
-        (s: any) => s.outreach_candidates.some((c: any) => !c.on_cooldown)
-      ).slice(0, 5);
-      if (actionableWithCandidates.length > 0) {
-        recommendationBlocks.push({
-          type: 'actions',
-          elements: actionableWithCandidates.map((s: any) => ({
-            type: 'button',
-            text: { type: 'plain_text', text: `📧 Outreach: ${s.state}` },
-            url: `${dashboardUrl}?action=outreach&state=${s.state}`,
-          })),
+          text: { type: 'mrkdwn', text: `*🎯 Suggested providers to ping today*\n${lines.join('\n')}\n\n_Suggestions only — review and contact via your usual channel (Slack DM, text, etc.)._` },
         });
       }
     }
