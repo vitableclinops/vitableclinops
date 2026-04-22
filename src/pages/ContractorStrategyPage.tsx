@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { StatusChip } from '@/components/StatusChip';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
@@ -199,11 +200,11 @@ function useActiveStates() {
 
 function DocStatusBadge({ status }: { status: string }) {
   switch (status) {
-    case 'verified':   return <Badge className="bg-emerald-500 text-white text-xs">Verified</Badge>;
-    case 'submitted':  return <Badge className="bg-blue-500 text-white text-xs">Submitted</Badge>;
-    case 'rejected':   return <Badge variant="destructive" className="text-xs">Rejected</Badge>;
-    case 'expired':    return <Badge className="bg-orange-500 text-white text-xs">Expired</Badge>;
-    default:           return <Badge variant="outline" className="text-xs text-muted-foreground">Pending</Badge>;
+    case 'verified':   return <StatusChip tone="active"   label="Verified" />;
+    case 'submitted':  return <StatusChip tone="info"     label="Submitted" />;
+    case 'rejected':   return <StatusChip tone="error"    label="Rejected" />;
+    case 'expired':    return <StatusChip tone="warning"  label="Expired" />;
+    default:           return <StatusChip tone="inactive" label="Pending" />;
   }
 }
 

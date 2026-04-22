@@ -1,7 +1,21 @@
-// Slack Interactivity webhook — handles button clicks and modal submissions
-// from the daily ops dashboard thread. Uses a SEPARATE custom Slack app
-// (with its own bot token + signing secret) for inbound, while outbound
-// posts continue to use the Lovable Slack connector.
+// Slack Interactivity webhook: handles the "DM providers" button from the
+// daily Ops Coverage digest. Sends a templated DM to each candidate provider
+// about a specific state's coverage gap, logs the send, and updates the
+// original message with a "Sent by @user" footer.
+//
+// Slack Request URL: https://<project>.supabase.co/functions/v1/handle-slack-interaction
+//
+// Required env vars / secrets:
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY            — standard
+//   LOVABLE_API_KEY, SLACK_API_KEY                     — existing gateway creds
+//   SLACK_SIGNING_SECRET                               — from Slack app "Basic Information"
+//
+// Notes:
+//   - verify_jwt must be false for this function (Slack hits it unauthenticated).
+//   - Slack requires a 200 response within 3 seconds. We ACK immediately and
+//     do the DM work inline; all work fits comfortably in that window for ≤5
+//     providers per click. If it ever slows down, move the send loop into
+//     EdgeRuntime.waitUntil().
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -10,311 +24,271 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-slack-signature, x-slack-request-timestamp',
 };
 
-const SLACK_API = 'https://slack.com/api';
+const GATEWAY_URL = 'https://connector-gateway.lovable.dev/slack/api';
+const JOTFORM_URL = 'https://form.jotform.com/252224341308043';
 
-// ---- Slack signature verification ----
+function buildMessage(dateLabel: string): string {
+  return [
+    'Hi there,',
+    '',
+    'We’re reaching out because you indicated interest in being considered for additional availability. ' +
+      `We’re specifically looking for more coverage on *${dateLabel}*.`,
+    '',
+    `If you’re able to provide extra hours, please resubmit the Jotform <${JOTFORM_URL}|here> as soon as possible.`,
+    '',
+    'Thank you for your continued flexibility and support.',
+    '',
+    'Warmly,',
+    'Vitable Provider Team',
+    'providersupport@vitablehealth.com',
+  ].join('\n');
+}
+
+function formatDateLabel(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+// Constant-time string comparison.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
+}
+
 async function verifySlackSignature(req: Request, rawBody: string, signingSecret: string): Promise<boolean> {
-  const timestamp = req.headers.get('x-slack-request-timestamp');
-  const signature = req.headers.get('x-slack-signature');
-  if (!timestamp || !signature) return false;
+  const ts = req.headers.get('x-slack-request-timestamp');
+  const sig = req.headers.get('x-slack-signature');
+  if (!ts || !sig) return false;
 
-  // Reject replay attacks > 5 minutes old
-  const age = Math.abs(Math.floor(Date.now() / 1000) - parseInt(timestamp, 10));
-  if (Number.isNaN(age) || age > 60 * 5) return false;
+  // Reject replays older than 5 minutes.
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - Number(ts)) > 60 * 5) return false;
 
-  const baseString = `v0:${timestamp}:${rawBody}`;
-  const enc = new TextEncoder();
+  const base = `v0:${ts}:${rawBody}`;
   const key = await crypto.subtle.importKey(
     'raw',
-    enc.encode(signingSecret),
+    new TextEncoder().encode(signingSecret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
-  const sigBuf = await crypto.subtle.sign('HMAC', key, enc.encode(baseString));
-  const computed = 'v0=' + Array.from(new Uint8Array(sigBuf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-
-  // Constant-time-ish compare
-  if (computed.length !== signature.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < computed.length; i++) {
-    mismatch |= computed.charCodeAt(i) ^ signature.charCodeAt(i);
-  }
-  return mismatch === 0;
+  const macBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(base));
+  const hex = Array.from(new Uint8Array(macBuf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const expected = `v0=${hex}`;
+  return timingSafeEqual(expected, sig);
 }
 
-async function slackCall(method: string, token: string, payload: Record<string, unknown>) {
-  const res = await fetch(`${SLACK_API}/${method}`, {
+async function slackApi(path: string, body: Record<string, unknown>, apiKey: string, connKey: string) {
+  const res = await fetch(`${GATEWAY_URL}/${path}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json; charset=utf-8',
+      'Authorization': `Bearer ${apiKey}`,
+      'X-Connection-Api-Key': connKey,
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
-  if (!data.ok) console.error(`Slack ${method} failed:`, data);
-  return data;
-}
-
-function buildDmModal(payload: { state: string; gap_hours: number; source_ts: string; candidates: any[] }) {
-  const defaultMessage =
-    `Hey — we're short ~${payload.gap_hours}h of coverage in ${payload.state} today. ` +
-    `Could you pick up a few extra slots? Thanks! 🙏`;
-
-  const checkboxOptions = payload.candidates.map((c, idx) => ({
-    text: { type: 'plain_text', text: c.name + (c.context ? ` — ${c.context}` : '') },
-    value: String(idx),
-  }));
-
-  return {
-    type: 'modal',
-    callback_id: 'send_coverage_dms',
-    private_metadata: JSON.stringify(payload),
-    title: { type: 'plain_text', text: `DM coverage — ${payload.state}` },
-    submit: { type: 'plain_text', text: 'Send DMs' },
-    close: { type: 'plain_text', text: 'Cancel' },
-    blocks: [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*${payload.state}* needs *${payload.gap_hours}h* of coverage. Select providers to message:`,
-        },
-      },
-      {
-        type: 'input',
-        block_id: 'recipients',
-        label: { type: 'plain_text', text: 'Recipients' },
-        element: {
-          type: 'checkboxes',
-          action_id: 'recipients_checkboxes',
-          initial_options: checkboxOptions,
-          options: checkboxOptions,
-        },
-      },
-      {
-        type: 'input',
-        block_id: 'message',
-        label: { type: 'plain_text', text: 'Message' },
-        element: {
-          type: 'plain_text_input',
-          action_id: 'message_text',
-          multiline: true,
-          initial_value: defaultMessage,
-          max_length: 1500,
-        },
-      },
-    ],
-  };
+  return { ok: res.ok && data?.ok === true, data };
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
-
-  try {
-    const SIGNING_SECRET = Deno.env.get('SLACK_SIGNING_SECRET');
-    const INBOUND_TOKEN = Deno.env.get('SLACK_INBOUND_BOT_TOKEN');
-    if (!SIGNING_SECRET) throw new Error('SLACK_SIGNING_SECRET is not configured');
-    if (!INBOUND_TOKEN) throw new Error('SLACK_INBOUND_BOT_TOKEN is not configured');
-
-    const rawBody = await req.text();
-    const verified = await verifySlackSignature(req, rawBody, SIGNING_SECRET);
-    if (!verified) {
-      return new Response('Invalid signature', { status: 401 });
-    }
-
-    // Slack interactivity payloads come as application/x-www-form-urlencoded
-    // with a single "payload" field containing JSON
-    const params = new URLSearchParams(rawBody);
-    const payloadStr = params.get('payload');
-    if (!payloadStr) {
-      return new Response('Missing payload', { status: 400 });
-    }
-    const payload = JSON.parse(payloadStr);
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    );
-
-    // ===== BUTTON CLICK → open modal =====
-    if (payload.type === 'block_actions') {
-      const action = payload.actions?.[0];
-      if (action?.action_id === 'open_coverage_dm_modal') {
-        let buttonPayload: any;
-        try { buttonPayload = JSON.parse(action.value); }
-        catch { return new Response(JSON.stringify({ error: 'bad payload' }), { status: 400 }); }
-
-        const triggerId = payload.trigger_id;
-        const view = buildDmModal(buttonPayload);
-        await slackCall('views.open', INBOUND_TOKEN, { trigger_id: triggerId, view });
-        return new Response('', { status: 200 });
-      }
-      return new Response('', { status: 200 });
-    }
-
-    // ===== MODAL SUBMIT → send DMs =====
-    if (payload.type === 'view_submission' && payload.view?.callback_id === 'send_coverage_dms') {
-      const meta = JSON.parse(payload.view.private_metadata) as {
-        state: string;
-        gap_hours: number;
-        source_ts: string;
-        candidates: { profile_id: string | null; name: string; context: string }[];
-      };
-      const state = payload.view.state.values;
-      const selectedIdxs: string[] = (state.recipients?.recipients_checkboxes?.selected_options ?? [])
-        .map((o: any) => o.value);
-      const messageText: string = state.message?.message_text?.value ?? '';
-
-      const senderSlackId: string = payload.user?.id ?? '';
-      const senderName: string = payload.user?.username ?? payload.user?.name ?? '';
-
-      // Resolve each selected candidate → slack_user_id (lookup if missing)
-      const sendResults: Array<{ name: string; ok: boolean; error?: string; channel?: string; ts?: string; slack_user_id?: string; profile_id?: string | null }> = [];
-      for (const idx of selectedIdxs) {
-        const cand = meta.candidates[Number(idx)];
-        if (!cand) continue;
-
-        // Look up slack_user_id from profiles
-        let slackUserId: string | null = null;
-        let recipientEmail: string | null = null;
-        if (cand.profile_id) {
-          const { data: prof } = await supabase
-            .from('profiles')
-            .select('slack_user_id, email')
-            .eq('id', cand.profile_id)
-            .maybeSingle();
-          slackUserId = prof?.slack_user_id ?? null;
-          recipientEmail = prof?.email ?? null;
-        }
-
-        // Fallback: lookup by email via Slack API
-        if (!slackUserId && recipientEmail) {
-          const lookup = await fetch(`${SLACK_API}/users.lookupByEmail?email=${encodeURIComponent(recipientEmail)}`, {
-            method: 'GET',
-            headers: { Authorization: `Bearer ${INBOUND_TOKEN}` },
-          });
-          const lookupData = await lookup.json();
-          if (lookupData.ok && lookupData.user?.id) {
-            slackUserId = lookupData.user.id;
-            // Cache for next time
-            if (cand.profile_id) {
-              await supabase.from('profiles').update({ slack_user_id: slackUserId }).eq('id', cand.profile_id);
-            }
-          }
-        }
-
-        if (!slackUserId) {
-          sendResults.push({ name: cand.name, ok: false, error: 'no_slack_user_id', profile_id: cand.profile_id });
-          await supabase.from('coverage_ping_log').insert({
-            state_abbreviation: meta.state,
-            gap_hours: meta.gap_hours,
-            recipient_profile_id: cand.profile_id,
-            recipient_slack_user_id: 'unknown',
-            recipient_name: cand.name,
-            message_preview: messageText,
-            delivery_status: 'failed',
-            error_message: 'No Slack user ID found for provider',
-            sent_by_slack_user_id: senderSlackId,
-            sent_by_name: senderName,
-            source_message_ts: meta.source_ts,
-          });
-          continue;
-        }
-
-        // Open IM channel
-        const open = await slackCall('conversations.open', INBOUND_TOKEN, { users: slackUserId });
-        const channelId = open?.channel?.id;
-        if (!channelId) {
-          sendResults.push({ name: cand.name, ok: false, error: 'open_im_failed', slack_user_id: slackUserId, profile_id: cand.profile_id });
-          continue;
-        }
-
-        // Post message
-        const post = await slackCall('chat.postMessage', INBOUND_TOKEN, {
-          channel: channelId,
-          text: messageText,
-        });
-
-        const ok = !!post.ok;
-        sendResults.push({
-          name: cand.name,
-          ok,
-          error: ok ? undefined : (post.error ?? 'post_failed'),
-          channel: channelId,
-          ts: post.ts,
-          slack_user_id: slackUserId,
-          profile_id: cand.profile_id,
-        });
-
-        await supabase.from('coverage_ping_log').insert({
-          state_abbreviation: meta.state,
-          gap_hours: meta.gap_hours,
-          recipient_profile_id: cand.profile_id,
-          recipient_slack_user_id: slackUserId,
-          recipient_name: cand.name,
-          message_preview: messageText,
-          slack_dm_channel_id: channelId,
-          slack_dm_message_ts: post.ts ?? null,
-          delivery_status: ok ? 'sent' : 'failed',
-          error_message: ok ? null : (post.error ?? 'unknown'),
-          sent_by_slack_user_id: senderSlackId,
-          sent_by_name: senderName,
-          source_message_ts: meta.source_ts,
-        });
-      }
-
-      // Post threaded confirmation back to the ops channel thread
-      const sentNames = sendResults.filter(r => r.ok).map(r => r.name);
-      const failedNames = sendResults.filter(r => !r.ok).map(r => `${r.name} (${r.error})`);
-      const confirmLines: string[] = [];
-      if (sentNames.length > 0) {
-        confirmLines.push(`✅ <@${senderSlackId}> sent DMs for *${meta.state}* to: ${sentNames.join(', ')}`);
-      }
-      if (failedNames.length > 0) {
-        confirmLines.push(`⚠️ Failed: ${failedNames.join(', ')}`);
-      }
-      if (confirmLines.length > 0) {
-        // Use the connector token to post in the channel (consistent voice)
-        const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-        const SLACK_API_KEY = Deno.env.get('SLACK_API_KEY');
-        if (LOVABLE_API_KEY && SLACK_API_KEY) {
-          await fetch('https://connector-gateway.lovable.dev/slack/api/chat.postMessage', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${LOVABLE_API_KEY}`,
-              'X-Connection-Api-Key': SLACK_API_KEY,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              channel: 'C08A03ET7C3',
-              thread_ts: meta.source_ts,
-              text: confirmLines.join('\n'),
-              username: 'Ops Coverage Bot 📊',
-              icon_emoji: ':bar_chart:',
-              unfurl_links: false,
-            }),
-          });
-        }
-      }
-
-      // Empty 200 closes the modal
-      return new Response('', { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    // Unhandled type — ack to prevent retries
-    return new Response('', { status: 200 });
-  } catch (error) {
-    console.error('handle-slack-interaction error:', error);
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+  if (req.method !== 'POST') {
+    return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
+
+  const signingSecret = Deno.env.get('SLACK_SIGNING_SECRET');
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  const SLACK_API_KEY = Deno.env.get('SLACK_API_KEY');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  if (!signingSecret || !LOVABLE_API_KEY || !SLACK_API_KEY) {
+    console.error('Missing required secrets');
+    return new Response('Server misconfigured', { status: 500, headers: corsHeaders });
+  }
+
+  const rawBody = await req.text();
+  const verified = await verifySlackSignature(req, rawBody, signingSecret);
+  if (!verified) {
+    return new Response('Invalid signature', { status: 401, headers: corsHeaders });
+  }
+
+  // Slack sends interactions as application/x-www-form-urlencoded with a single
+  // `payload` field whose value is JSON.
+  const params = new URLSearchParams(rawBody);
+  const payloadStr = params.get('payload');
+  if (!payloadStr) return new Response('Missing payload', { status: 400, headers: corsHeaders });
+
+  let payload: any;
+  try { payload = JSON.parse(payloadStr); } catch {
+    return new Response('Bad payload', { status: 400, headers: corsHeaders });
+  }
+
+  if (payload.type !== 'block_actions') {
+    return new Response('', { status: 200, headers: corsHeaders });
+  }
+
+  const action = (payload.actions ?? [])[0];
+  if (!action || action.action_id !== 'send_coverage_ping') {
+    return new Response('', { status: 200, headers: corsHeaders });
+  }
+
+  let parsed: { v: number; s: string; d: string; ids: string[] };
+  try {
+    parsed = JSON.parse(action.value);
+  } catch {
+    return new Response('Bad action value', { status: 400, headers: corsHeaders });
+  }
+  const { s: stateAbbr, d: targetDate, ids: profileIds } = parsed;
+  if (!stateAbbr || !targetDate || !Array.isArray(profileIds) || profileIds.length === 0) {
+    return new Response('Bad action value', { status: 400, headers: corsHeaders });
+  }
+
+  const sentBySlackUserId = payload.user?.id ?? 'unknown';
+  const sentByName = payload.user?.name ?? payload.user?.username ?? null;
+  const channelId = payload.channel?.id ?? null;
+  const sourceMessageTs = payload.message?.ts ?? null;
+  const originalBlocks: any[] = payload.message?.blocks ?? [];
+  const responseUrl: string | null = payload.response_url ?? null;
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  // Look up slack_user_ids for the target providers.
+  const { data: profiles, error: profErr } = await supabase
+    .from('profiles')
+    .select('id, full_name, email, slack_user_id')
+    .in('id', profileIds);
+
+  if (profErr) {
+    console.error('profiles lookup failed:', profErr);
+    return new Response('Lookup failed', { status: 500, headers: corsHeaders });
+  }
+
+  const withSlack = (profiles ?? []).filter((p) => !!p.slack_user_id);
+  const withoutSlack = (profiles ?? []).filter((p) => !p.slack_user_id);
+
+  const dateLabel = formatDateLabel(targetDate);
+  const messageText = buildMessage(dateLabel);
+
+  // Send one DM per provider. We open a DM conversation first, then post.
+  const results: Array<{ profile_id: string; slack_user_id: string; ok: boolean; error?: string }> = [];
+  for (const p of withSlack) {
+    try {
+      const { ok: openOk, data: openData } = await slackApi(
+        'conversations.open',
+        { users: p.slack_user_id },
+        LOVABLE_API_KEY,
+        SLACK_API_KEY,
+      );
+      if (!openOk) {
+        results.push({ profile_id: p.id, slack_user_id: p.slack_user_id!, ok: false, error: `open: ${openData?.error}` });
+        continue;
+      }
+      const dmChannel = openData.channel?.id;
+      if (!dmChannel) {
+        results.push({ profile_id: p.id, slack_user_id: p.slack_user_id!, ok: false, error: 'no dm channel' });
+        continue;
+      }
+      const { ok: postOk, data: postData } = await slackApi(
+        'chat.postMessage',
+        { channel: dmChannel, text: messageText, unfurl_links: false },
+        LOVABLE_API_KEY,
+        SLACK_API_KEY,
+      );
+      results.push({
+        profile_id: p.id,
+        slack_user_id: p.slack_user_id!,
+        ok: postOk,
+        error: postOk ? undefined : `post: ${postData?.error}`,
+      });
+    } catch (e) {
+      results.push({
+        profile_id: p.id,
+        slack_user_id: p.slack_user_id!,
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  const successes = results.filter((r) => r.ok);
+  const failures = results.filter((r) => !r.ok);
+
+  // Log the send (one row per click, captures all recipients).
+  await supabase.from('coverage_ping_log').insert({
+    sent_by_slack_user_id: sentBySlackUserId,
+    sent_by_name: sentByName,
+    state_abbreviation: stateAbbr,
+    target_date: targetDate,
+    provider_profile_ids: successes.map((r) => r.profile_id),
+    provider_slack_user_ids: successes.map((r) => r.slack_user_id),
+    skipped_provider_profile_ids: withoutSlack.map((p) => p.id),
+    channel: 'slack_dm',
+    message_text: messageText,
+    source_channel_id: channelId,
+    source_message_ts: sourceMessageTs,
+    success: failures.length === 0 && withoutSlack.length === 0,
+    error_details: failures.length || withoutSlack.length
+      ? {
+          failures,
+          missing_slack_id: withoutSlack.map((p) => ({ profile_id: p.id, name: p.full_name, email: p.email })),
+        }
+      : null,
+  });
+
+  // Update the original message: swap the clicked state's actions block for a
+  // confirmation footer so the button can't be clicked again.
+  const receiptLines: string[] = [];
+  if (successes.length > 0) {
+    receiptLines.push(`✅ DM sent to *${successes.length}* provider${successes.length === 1 ? '' : 's'} by <@${sentBySlackUserId}>`);
+  }
+  if (withoutSlack.length > 0) {
+    const names = withoutSlack.map((p) => p.full_name ?? p.email ?? 'unknown').join(', ');
+    receiptLines.push(`⚠️ Skipped (no Slack ID): ${names}`);
+  }
+  if (failures.length > 0) {
+    receiptLines.push(`❌ Failed for ${failures.length} provider${failures.length === 1 ? '' : 's'} — see logs`);
+  }
+
+  const newBlocks = originalBlocks.map((b) => {
+    if (b.type === 'actions' && b.block_id === `cov_ping:${stateAbbr}`) {
+      return {
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: receiptLines.join('  ·  ') }],
+      };
+    }
+    return b;
+  });
+
+  if (responseUrl) {
+    // response_url lets us update the message without needing the channel/ts.
+    try {
+      await fetch(responseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          replace_original: true,
+          blocks: newBlocks,
+          text: 'Providers to contact directly',
+        }),
+      });
+    } catch (e) {
+      console.warn('response_url update failed:', e);
+    }
+  }
+
+  return new Response('', { status: 200, headers: corsHeaders });
 });

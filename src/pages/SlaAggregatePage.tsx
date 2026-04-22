@@ -101,7 +101,14 @@ export default function SlaAggregatePage() {
                 Daily network-wide average SLA · updated automatically each morning
               </p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isRefetching}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isRefetching}
+              aria-label="Refresh SLA data"
+              title="Refresh SLA data"
+            >
               <RefreshCw className={cn('h-4 w-4', isRefetching && 'animate-spin')} />
             </Button>
           </div>

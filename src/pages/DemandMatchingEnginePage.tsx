@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { StatusChip } from '@/components/StatusChip';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -319,9 +320,9 @@ function runMatching(
 
 function StatusBadge({ status }: { status: StateResult['status'] }) {
   switch (status) {
-    case 'SURPLUS':  return <Badge className="bg-blue-500 text-white hover:bg-blue-500">SURPLUS</Badge>;
-    case 'BALANCED': return <Badge className="bg-emerald-500 text-white hover:bg-emerald-500">BALANCED</Badge>;
-    case 'DEFICIT':  return <Badge variant="destructive">DEFICIT</Badge>;
+    case 'SURPLUS':  return <StatusChip tone="info"   label="SURPLUS" />;
+    case 'BALANCED': return <StatusChip tone="active" label="BALANCED" />;
+    case 'DEFICIT':  return <StatusChip tone="error"  label="DEFICIT" />;
   }
 }
 

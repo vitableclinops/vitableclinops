@@ -14,6 +14,7 @@ import { CollabEmailPanel } from '@/components/agreements/CollabEmailPanel';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { StatusChip } from '@/components/StatusChip';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
@@ -245,29 +246,29 @@ export default function AgreementDetailPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="bg-success/10 text-success border-success/20">Active</Badge>;
+        return <StatusChip tone="active"   label="Active" />;
       case 'draft':
-        return <Badge variant="secondary">Draft</Badge>;
+        return <StatusChip tone="inactive" label="Draft" />;
       case 'in_progress':
-        return <Badge variant="default">In Progress</Badge>;
+        return <StatusChip tone="pending"  label="In Progress" />;
       case 'pending_setup':
-        return <Badge variant="default">Pending Setup</Badge>;
+        return <StatusChip tone="pending"  label="Pending Setup" />;
       case 'pending_signatures':
-        return <Badge variant="default">Pending Signatures</Badge>;
+        return <StatusChip tone="pending"  label="Pending Signatures" />;
       case 'pending_verification':
-        return <Badge variant="default">Pending Verification</Badge>;
+        return <StatusChip tone="pending"  label="Pending Verification" />;
       case 'termination_initiated':
-        return <Badge variant="destructive">Pending Termination</Badge>;
+        return <StatusChip tone="error"    label="Pending Termination" />;
       case 'terminated':
-        return <Badge variant="destructive">Terminated</Badge>;
+        return <StatusChip tone="error"    label="Terminated" />;
       case 'cancelled':
-        return <Badge variant="destructive">Cancelled</Badge>;
+        return <StatusChip tone="error"    label="Cancelled" />;
       case 'archived':
-        return <Badge variant="secondary">Archived</Badge>;
+        return <StatusChip tone="inactive" label="Archived" />;
       case 'invalid':
-        return <Badge variant="destructive">Invalid</Badge>;
+        return <StatusChip tone="error"    label="Invalid" />;
       default:
-        return <Badge variant="outline">{status?.replace(/_/g, ' ')}</Badge>;
+        return <StatusChip tone="inactive" label={status?.replace(/_/g, ' ') ?? 'Unknown'} />;
     }
   };
 

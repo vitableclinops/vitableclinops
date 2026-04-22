@@ -778,7 +778,7 @@ const CollaborativeAgreementsPage = () => {
                 </Select>
 
                 <Select value={physicianFilter} onValueChange={setPhysicianFilter}>
-                  <SelectTrigger className="w-[180px] h-10">
+                  <SelectTrigger className="w-full sm:w-[180px] h-10">
                     <SelectValue placeholder="Physician" />
                   </SelectTrigger>
                   <SelectContent>
@@ -790,7 +790,7 @@ const CollaborativeAgreementsPage = () => {
                 </Select>
 
                 <Select value={meetingFilter} onValueChange={setMeetingFilter}>
-                  <SelectTrigger className="w-[170px] h-10">
+                  <SelectTrigger className="w-full sm:w-[170px] h-10">
                     <SelectValue placeholder="Next Meeting" />
                   </SelectTrigger>
                   <SelectContent>

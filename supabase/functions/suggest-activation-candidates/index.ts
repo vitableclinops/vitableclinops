@@ -238,13 +238,23 @@ Deno.serve(async (req: Request) => {
   // We fuzzy-match profile display name → daily row's provider_name.
   const { data: dailyRows } = await supabase
     .from('provider_utilization_daily')
-    .select('provider_name, utilization_pct')
+    .select('provider_name, profile_id, utilization_pct')
     .eq('util_date', targetDate);
 
   const utilizationByProfile = new Map<string, { pct: number; source: 'daily' | 'five_week_avg' }>();
 
-  // Name-match daily rows to eligible profiles (Metabase only provides provider_name).
-  const unmatchedDaily = (dailyRows ?? []).filter((r) => r.provider_name && typeof r.utilization_pct === 'number');
+  // First pass: rows with explicit profile_id.
+  for (const row of dailyRows ?? []) {
+    if (row.profile_id && typeof row.utilization_pct === 'number') {
+      utilizationByProfile.set(row.profile_id as string, {
+        pct: Number(row.utilization_pct),
+        source: 'daily',
+      });
+    }
+  }
+
+  // Second pass: name-match remaining daily rows to eligible profiles.
+  const unmatchedDaily = (dailyRows ?? []).filter((r) => !r.profile_id && r.provider_name && typeof r.utilization_pct === 'number');
   for (const pid of eligibleProfileIds) {
     if (utilizationByProfile.has(pid)) continue;
     const profileName = profileById.get(pid)?.name;

@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -57,6 +57,59 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+const ROUTE_TITLES: Array<{ match: (p: string) => boolean; title: string }> = [
+  { match: p => p === '/auth', title: 'Sign in' },
+  { match: p => p === '/' || p === '/admin', title: 'Dashboard' },
+  { match: p => p === '/provider', title: 'My Dashboard' },
+  { match: p => p === '/physician', title: 'Physician Portal' },
+  { match: p => p.startsWith('/task/'), title: 'Task' },
+  { match: p => p === '/providers' || p === '/directory', title: 'Provider Directory' },
+  { match: p => p === '/admin/intake', title: 'Provider Intake' },
+  { match: p => p === '/admin/add-provider', title: 'Add Provider' },
+  { match: p => p === '/grid', title: 'Provider Grid' },
+  { match: p => p === '/admin/activation', title: 'Activation Queue' },
+  { match: p => p === '/admin/states', title: 'States & Compliance' },
+  { match: p => p.startsWith('/states/'), title: 'State detail' },
+  { match: p => p === '/admin/agreements', title: 'Collaborative Agreements' },
+  { match: p => p.startsWith('/admin/agreements/'), title: 'Agreement' },
+  { match: p => p === '/admin/license-optimizer', title: 'License Optimizer' },
+  { match: p => p === '/admin/data-quality', title: 'Data Quality' },
+  { match: p => p === '/admin/executive-briefing', title: 'Executive Briefing' },
+  { match: p => p === '/admin/ops', title: 'Coverage Hub' },
+  { match: p => p === '/admin/utilization', title: 'Utilization' },
+  { match: p => p === '/admin/routing', title: 'Routing Intelligence' },
+  { match: p => p === '/admin/matching', title: 'Demand Matching' },
+  { match: p => p === '/admin/demand-forecast', title: 'Demand Forecast' },
+  { match: p => p === '/admin/contractor-strategy', title: 'Contractor Strategy' },
+  { match: p => p === '/admin/sla-aggregate', title: 'SLA Aggregate' },
+  { match: p => p === '/admin/tasks', title: 'Task Repository' },
+  { match: p => p === '/admin/reimbursements', title: 'Reimbursements' },
+  { match: p => p === '/admin/agencies', title: 'Agencies' },
+  { match: p => p.startsWith('/admin/agencies/'), title: 'Agency' },
+  { match: p => p === '/admin/hiring', title: 'Hiring Pipeline' },
+  { match: p => p === '/admin/calendar', title: 'Calendar' },
+  { match: p => p === '/knowledge', title: 'Knowledge Base' },
+  { match: p => p === '/enhancements', title: 'Enhancement Registry' },
+  { match: p => p === '/provider/licenses', title: 'My Licenses' },
+  { match: p => p.startsWith('/licensure/'), title: 'Licensure Application' },
+  { match: p => p === '/provider/pod', title: 'My Pod' },
+  { match: p => p === '/onboarding', title: 'Onboarding' },
+  { match: p => p === '/admin/roles', title: 'User Roles' },
+  { match: p => p === '/admin/settings', title: 'System Settings' },
+  { match: p => p === '/profile/settings', title: 'Profile Settings' },
+];
+
+const BASE_TITLE = 'Vitable Ops';
+
+function DocumentTitleWatcher() {
+  const location = useLocation();
+  useEffect(() => {
+    const entry = ROUTE_TITLES.find(r => r.match(location.pathname));
+    document.title = entry ? `${entry.title} · ${BASE_TITLE}` : BASE_TITLE;
+  }, [location.pathname]);
+  return null;
+}
+
 function SessionExpiredWatcher() {
   const { sessionExpired, clearSessionExpired } = useAuth();
   useEffect(() => {
@@ -77,6 +130,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <DocumentTitleWatcher />
           <SessionExpiredWatcher />
           <Routes>
             <Route path="/auth" element={<AuthPage />} />

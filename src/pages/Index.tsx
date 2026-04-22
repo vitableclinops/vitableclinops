@@ -203,7 +203,7 @@ const Index = () => {
         </div>
 
         {/* Quick stats */}
-        <div className="mt-16 grid grid-cols-3 gap-8 text-center">
+        <div className="mt-16 grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
           <div>
             <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
               <Users className="h-5 w-5" />

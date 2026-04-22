@@ -218,7 +218,7 @@ const CalendarPage = () => {
                 </TabsTrigger>
               </TabsList>
               <Select value={eventTypeFilter} onValueChange={setEventTypeFilter}>
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger className="w-full sm:w-[160px]">
                   <SelectValue placeholder="Event type" />
                 </SelectTrigger>
                 <SelectContent>

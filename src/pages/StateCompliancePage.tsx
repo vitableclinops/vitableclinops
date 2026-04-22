@@ -310,7 +310,7 @@ const StateCompliancePage = () => {
                       </Select>
 
                       <Select value={filterFPA} onValueChange={(v) => setFilterFPA(v as FPAFilter)}>
-                        <SelectTrigger className="w-[170px]">
+                        <SelectTrigger className="w-full sm:w-[170px]">
                           <SelectValue placeholder="FPA Status" />
                         </SelectTrigger>
                         <SelectContent>

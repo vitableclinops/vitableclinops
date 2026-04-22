@@ -194,7 +194,13 @@ export function AdminTaskQueue({
             <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={onAddTask}>
               <Plus className="h-3.5 w-3.5" /> Add Task
             </Button>
-            <Button variant="ghost" size="sm" onClick={refetch}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={refetch}
+              aria-label="Refresh task list"
+              title="Refresh task list"
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>

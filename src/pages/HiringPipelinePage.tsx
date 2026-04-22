@@ -117,7 +117,7 @@ const HiringPipelinePage = () => {
           </div>
 
           {/* Stage Summary Cards */}
-          <div className="grid grid-cols-6 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
             {ALL_STAGES.map(stage => {
               const config = STAGE_CONFIG[stage];
               const count = stageCounts[stage] || 0;

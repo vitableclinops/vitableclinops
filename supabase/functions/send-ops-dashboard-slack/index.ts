@@ -406,17 +406,11 @@ Deno.serve(async (req) => {
           if (r1.ok) reply1Ts = r1.ts;
           else console.warn('Reply #1 failed:', r1);
 
-          // ---- Reply #2: residual gaps → per-state blocks with DM button ----
+          // ---- Reply #2: residual gaps → who to contact (with per-state DM buttons) ----
           const stillShort = needyStates.filter(s => (s.residual_gap_hours ?? s.gap_hours) > 2);
           if (stillShort.length > 0) {
             const r2blocks: any[] = [
-              {
-                type: 'section',
-                text: {
-                  type: 'mrkdwn',
-                  text: '*📞 Gaps still open after reallocation — providers to contact directly*',
-                },
-              },
+              { type: 'section', text: { type: 'mrkdwn', text: '*📞 Gaps still open after reallocation — providers to contact directly*' } },
             ];
             let hasAny = false;
             for (const s of stillShort) {
@@ -425,9 +419,7 @@ Deno.serve(async (req) => {
               hasAny = true;
               const emoji = s.status === 'zero' ? '🔴' : s.status === 'critical' ? '🟠' : '🟡';
               const residual = s.residual_gap_hours ?? s.gap_hours;
-              const headerLine = `${emoji} *${s.state}* (still -${residual.toFixed(1)}h)`;
-              const candidateLines: string[] = [];
-              const candidatePayload: any[] = [];
+              const stateLines: string[] = [`${emoji} *${s.state}* (still -${residual.toFixed(1)}h)`];
               for (const c of sendable) {
                 const ctxParts: string[] = [];
                 if (c.working_today && c.shift_window) ctxParts.push(`working today ${c.shift_window}`);
@@ -439,39 +431,40 @@ Deno.serve(async (req) => {
                 }
                 if (typeof c.appointments_today === 'number') ctxParts.push(`${c.appointments_today} appts today`);
                 const ctx = ctxParts.length ? ` (${ctxParts.join(', ')})` : '';
-                candidateLines.push(`   → ${c.name}${ctx}`);
-                candidatePayload.push({
-                  profile_id: c.profile_id ?? null,
-                  name: c.name,
-                  context: ctx ? ctx.replace(/^\s\(|\)$/g, '') : '',
-                });
+                stateLines.push(`   → ${c.name}${ctx}`);
               }
+
               r2blocks.push({
                 type: 'section',
-                text: { type: 'mrkdwn', text: `${headerLine}\n${candidateLines.join('\n')}` },
+                text: { type: 'mrkdwn', text: stateLines.join('\n') },
               });
-              // Compact JSON payload — Slack action_id has 255 char limit, value has 2000
+
+              // Per-state DM button. Payload stays under Slack's 2000-char value limit.
               const buttonValue = JSON.stringify({
-                state: s.state,
-                gap_hours: Number(residual.toFixed(1)),
-                source_ts: data.ts,
-                candidates: candidatePayload,
+                v: 1,
+                s: s.state,
+                d: today,
+                ids: sendable.map((c: any) => c.profile_id),
               });
-              if (buttonValue.length < 1900) {
-                r2blocks.push({
-                  type: 'actions',
-                  block_id: `coverage_dm_${s.state}`,
-                  elements: [
-                    {
-                      type: 'button',
-                      action_id: 'open_coverage_dm_modal',
-                      text: { type: 'plain_text', text: `📨 DM ${sendable.length} provider${sendable.length === 1 ? '' : 's'}`, emoji: true },
-                      style: 'primary',
-                      value: buttonValue,
+              r2blocks.push({
+                type: 'actions',
+                block_id: `cov_ping:${s.state}`,
+                elements: [
+                  {
+                    type: 'button',
+                    action_id: 'send_coverage_ping',
+                    style: 'primary',
+                    text: { type: 'plain_text', text: `📨 DM ${sendable.length} provider${sendable.length === 1 ? '' : 's'}`, emoji: true },
+                    value: buttonValue,
+                    confirm: {
+                      title: { type: 'plain_text', text: `DM about ${s.state}?` },
+                      text: { type: 'mrkdwn', text: `Send the coverage request DM to *${sendable.length}* provider${sendable.length === 1 ? '' : 's'} for *${s.state}* on *${today}*?` },
+                      confirm: { type: 'plain_text', text: 'Send' },
+                      deny: { type: 'plain_text', text: 'Cancel' },
                     },
-                  ],
-                });
-              }
+                  },
+                ],
+              });
             }
 
             if (hasAny) {

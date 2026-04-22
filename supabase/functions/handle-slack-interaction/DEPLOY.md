@@ -1,106 +1,120 @@
-# Slack Interactivity — Deploy & Setup Guide
+# Coverage Ping — Deployment Steps
 
-This function lets the daily ops Slack thread show **DM provider** buttons and a checkbox modal so admins can ping coverage candidates with one click. Outbound posting still uses the existing Lovable Slack connector — only the *inbound* webhook needs a parallel custom Slack app.
+End-to-end: a "DM providers" button on the daily Ops Coverage digest sends the
+templated Jotform outreach to the suggested providers for a state, logs the
+send, and updates the original message so the button can't be clicked twice.
 
----
+## 1. Apply the migration
 
-## 1. Database
-
-Migration `20260422_coverage_ping_log.sql` was applied automatically by Lovable. It adds:
-- `profiles.slack_user_id` (text, nullable, indexed)
-- `coverage_ping_log` table with RLS (admins + pod leads can read, service role inserts)
-
-## 2. Edge functions (auto-deployed)
-
-| Function | URL | Auth |
-|---|---|---|
-| `handle-slack-interaction` | `https://saksjvmqyudkowxypoce.supabase.co/functions/v1/handle-slack-interaction` | public (Slack signature verified in code) |
-| `backfill-slack-user-ids` | `https://saksjvmqyudkowxypoce.supabase.co/functions/v1/backfill-slack-user-ids` | public |
-| `send-ops-dashboard-slack` | (existing) | public |
-
-## 3. Create the parallel custom Slack app
-
-1. Go to https://api.slack.com/apps → **Create New App** → **From an app manifest**
-2. Pick the same workspace as the connector
-3. Paste this manifest (replace nothing — URL is already correct):
-
-```yaml
-display_information:
-  name: Vitable Coverage DM Bot
-  description: Sends coverage outreach DMs from the ops dashboard thread
-  background_color: "#1a4d4d"
-features:
-  bot_user:
-    display_name: Vitable Coverage Bot
-    always_online: true
-oauth_config:
-  scopes:
-    bot:
-      - chat:write
-      - im:write
-      - users:read
-      - users:read.email
-settings:
-  interactivity:
-    is_enabled: true
-    request_url: https://saksjvmqyudkowxypoce.supabase.co/functions/v1/handle-slack-interaction
-  org_deploy_enabled: false
-  socket_mode_enabled: false
-  token_rotation_enabled: false
+```sh
+cd ~/Desktop/Scheduling/vitableclinops-main
+supabase db push
 ```
 
-4. Click **Create**
-5. **Install to Workspace** (top of the app's settings page) → authorize
-6. Copy two values:
-   - **Bot User OAuth Token** (starts with `xoxb-…`) — *OAuth & Permissions* page
-   - **Signing Secret** — *Basic Information* → *App Credentials*
+This adds `profiles.slack_user_id` and creates `coverage_ping_log`.
 
-## 4. Add secrets to Lovable
+## 2. Deploy the edge functions
 
-Lovable will prompt for these via the secure form:
-- `SLACK_INBOUND_BOT_TOKEN` = the `xoxb-…` token
-- `SLACK_SIGNING_SECRET` = the signing secret
-
-## 5. Backfill provider Slack IDs
-
-Hit the backfill function (dry run first):
-
-```bash
-curl -X POST 'https://saksjvmqyudkowxypoce.supabase.co/functions/v1/backfill-slack-user-ids' \
-  -H 'Content-Type: application/json' \
-  -d '{"dry_run": true}'
+```sh
+supabase functions deploy handle-slack-interaction
+supabase functions deploy backfill-slack-user-ids
+supabase functions deploy send-ops-dashboard-slack   # has the new buttons
 ```
 
-Review the matched/not_found counts in the response. Then run for real:
+## 3. Slack app: enable Interactivity
 
-```bash
-curl -X POST 'https://saksjvmqyudkowxypoce.supabase.co/functions/v1/backfill-slack-user-ids' \
-  -H 'Content-Type: application/json' \
-  -d '{}'
-```
+In the Slack app powering the Lovable Slack connection
+(api.slack.com/apps → your app):
 
-Re-runs are safe — only profiles missing a `slack_user_id` are scanned.
-
-## 6. Smoke test
-
-1. Manually trigger the daily post:
-   ```bash
-   curl -X POST 'https://saksjvmqyudkowxypoce.supabase.co/functions/v1/send-ops-dashboard-slack' \
-     -H 'Content-Type: application/json' -d '{}'
+1. **Interactivity & Shortcuts** → turn on.
+   - Request URL:
+     `https://saksjvmqyudkowxypoce.supabase.co/functions/v1/handle-slack-interaction`
+2. **OAuth & Permissions** → ensure these bot scopes exist. Reinstall if you add any:
+   - `chat:write`
+   - `im:write`
+   - `users:read`
+   - `users:read.email`
+3. **Basic Information → App Credentials → Signing Secret** → copy.
+4. Add it as a Supabase secret:
+   ```sh
+   supabase secrets set SLACK_SIGNING_SECRET=xxxxxxxxxxxx
    ```
-2. In `#appointment-availability-update`, scroll to **reply #2** in the thread
-3. Click `📨 DM N providers` on a state
-4. Modal opens → uncheck anyone you want to skip → adjust message → **Send DMs**
-5. Verify:
-   - The selected providers receive the DM from "Vitable Coverage Bot"
-   - A confirmation `✅ <@you> sent DMs for <STATE> to: …` posts back to the thread
-   - A row appears in `coverage_ping_log` per recipient
 
-## Common errors
+> If the Slack app is fully managed by Lovable and the Signing Secret isn't
+> exposable, you'll need to create a direct Slack app alongside it. The
+> outbound (posting) path can keep using the gateway; only the inbound
+> interactivity webhook needs the signing secret.
 
-| Symptom | Fix |
-|---|---|
-| `Invalid signature` (401) | `SLACK_SIGNING_SECRET` is wrong or missing |
-| `views.open` fails with `not_authed` | `SLACK_INBOUND_BOT_TOKEN` is wrong or app not installed |
-| Some recipients get "no_slack_user_id" in the log | Their email doesn't match a Slack account — re-run backfill or check email |
-| Button appears but click does nothing | Interactivity Request URL not saved or app not installed in workspace |
+## 4. Backfill provider Slack IDs
+
+```sh
+# Dry run first — shows which profiles match / miss.
+curl -X POST "https://saksjvmqyudkowxypoce.supabase.co/functions/v1/backfill-slack-user-ids" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true}'
+
+# For real:
+curl -X POST "https://saksjvmqyudkowxypoce.supabase.co/functions/v1/backfill-slack-user-ids" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json"
+```
+
+Re-run anytime a new provider is onboarded (or wire it into the onboarding
+completion flow).
+
+## 5. Smoke test
+
+1. Manually run the digest:
+   ```sh
+   curl -X POST "https://saksjvmqyudkowxypoce.supabase.co/functions/v1/send-ops-dashboard-slack" \
+     -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"
+   ```
+2. In `#appointment-availability-update`, open the thread → find reply #2
+   ("Gaps still open after reallocation"). Each state should now show a blue
+   **📨 DM N providers** button.
+3. Click one → confirm dialog appears → click **Send** → the actions block
+   swaps to `✅ DM sent to N providers by @you`. The providers receive a DM
+   matching the template.
+4. Verify the log:
+   ```sql
+   SELECT sent_at, sent_by_name, state_abbreviation, target_date,
+          array_length(provider_profile_ids, 1) AS n_sent,
+          array_length(skipped_provider_profile_ids, 1) AS n_skipped
+   FROM coverage_ping_log
+   ORDER BY sent_at DESC
+   LIMIT 10;
+   ```
+
+## What gets sent
+
+```
+Hi there,
+
+We're reaching out because you indicated interest in being considered for
+additional availability. We're specifically looking for more coverage on
+*Wednesday, April 22, 2026*.
+
+If you're able to provide extra hours, please resubmit the Jotform here as
+soon as possible.   ← linked to https://form.jotform.com/252224341308043
+
+Thank you for your continued flexibility and support.
+
+Warmly,
+Vitable Provider Team
+providersupport@vitablehealth.com
+```
+
+The date pulled in is the same date the recommendation engine used (today in
+Chicago, or the override date passed to `send-ops-dashboard-slack`).
+
+## Safety notes
+
+- **Confirm dialog**: Slack shows a native confirm dialog before the DM fires,
+  even in "fire-and-forget" mode — one accidental click won't spam anyone.
+- **Providers without Slack IDs** are skipped with a warning in the receipt;
+  the ones with IDs still go through. Re-run the backfill to fill gaps.
+- **Replay protection**: signed request timestamps older than 5 minutes are
+  rejected, so old webhooks can't be replayed.
+- **Audit trail**: every click is one row in `coverage_ping_log` with who
+  sent, when, to whom, and the exact text — use it for disputes or metrics.

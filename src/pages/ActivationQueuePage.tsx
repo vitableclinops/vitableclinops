@@ -306,7 +306,7 @@ export default function ActivationQueuePage() {
                   />
                 </div>
                 <Select value={stateFilter} onValueChange={setStateFilter}>
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-full sm:w-[180px]">
                     <SelectValue placeholder="All States" />
                   </SelectTrigger>
                   <SelectContent>

@@ -180,6 +180,13 @@ export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: App
     }))
     .filter(group => group.items.length > 0);
 
+  // Longest-prefix-wins so /admin/hiring highlights "Hiring Pipeline" rather than
+  // also matching "Admin Dashboard" (/admin) as a prefix.
+  const activeHref = visibleGroups
+    .flatMap(g => g.items.map(i => i.href))
+    .filter(h => location.pathname === h || location.pathname.startsWith(h.split('?')[0] + '/'))
+    .sort((a, b) => b.length - a.length)[0];
+
   return (
     <aside
       className={cn(
@@ -239,7 +246,8 @@ export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: App
                     (cleanHref !== '/' &&
                       cleanHref !== '/admin' &&
                       location.pathname.startsWith(cleanHref + '/'));
-                  
+
+
                   return (
                     <NavLink
                       key={item.href + item.label}

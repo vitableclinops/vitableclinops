@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Badge } from '@/components/ui/badge';
+import { StatusChip } from '@/components/StatusChip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -227,11 +228,11 @@ function useSlaTrend(activeStates: Set<string>) {
 
 function StatusBadge({ status }: { status: WeekStatus }) {
   switch (status) {
-    case 'ok':       return <Badge className="bg-emerald-500 text-white hover:bg-emerald-500">OK</Badge>;
-    case 'low':      return <Badge className="bg-yellow-500 text-white hover:bg-yellow-500">LOW</Badge>;
-    case 'critical': return <Badge className="bg-orange-500 text-white hover:bg-orange-500">CRITICAL</Badge>;
-    case 'zero':     return <Badge variant="destructive">ZERO</Badge>;
-    case 'no_data':  return <Badge variant="outline" className="text-muted-foreground">NO DATA</Badge>;
+    case 'ok':       return <StatusChip tone="active"   label="OK" />;
+    case 'low':      return <StatusChip tone="pending"  label="LOW" />;
+    case 'critical': return <StatusChip tone="warning"  label="CRITICAL" />;
+    case 'zero':     return <StatusChip tone="error"    label="ZERO" />;
+    case 'no_data':  return <StatusChip tone="inactive" label="NO DATA" />;
   }
 }
 
@@ -445,7 +446,14 @@ export default function OpsDashboardPage() {
               }}>
                 Tomorrow
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isRefetching}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => refetch()}
+                disabled={isRefetching}
+                aria-label="Refresh coverage data"
+                title="Refresh coverage data"
+              >
                 <RefreshCw className={cn('h-4 w-4', isRefetching && 'animate-spin')} />
               </Button>
               {isAdmin && (

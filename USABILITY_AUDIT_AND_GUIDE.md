@@ -329,6 +329,20 @@ If a user's session expires mid-action, they lose their form data on redirect to
 - ✅ **AgencyDetailPage** contact form converted to rhf + zod — required contact name, email format check, phone length check; replaces 6 useState hooks
 - ✅ Typecheck clean, no new lint errors introduced (zodResolver casts removed cleanly)
 
+### Session 5 — landed (2026-04-21, post-login crawl)
+
+Live click-through of every admin page surfaced two real bugs the static audits had missed:
+
+- 🔴 **Sidebar nav-highlight was wrong on leaf pages.** The active check was `pathname.startsWith(item.href)` — which meant every `/admin/*` page also matched the `/admin` ("Admin Dashboard") entry, so visiting Hiring Pipeline / System Settings / etc. highlighted the Admin Dashboard in the sidebar instead of the actual page. Fixed with longest-prefix-wins in [AppSidebar.tsx:181-186](src/components/AppSidebar.tsx:181).
+- 🔴 **Every page had the same browser tab title.** `document.title` was never updated after initial HTML load, so all tabs/bookmarks/browser history showed "Vitable Health — Provider Operations Hub." Fixed by adding a `DocumentTitleWatcher` in [App.tsx](src/App.tsx) that maps route → title on navigation. Verified: `/admin/ops` → "Coverage Hub · Vitable Ops", `/admin/hiring` → "Hiring Pipeline · Vitable Ops", etc.
+
+### Session 4 — landed (2026-04-21)
+
+- ✅ `<StatusChip>` migration: replaced hand-rolled status badges in [OpsDashboardPage.tsx:227-235](src/pages/OpsDashboardPage.tsx:227), [ContractorStrategyPage.tsx:200-208](src/pages/ContractorStrategyPage.tsx:200), [DemandMatchingEnginePage.tsx:320-326](src/pages/DemandMatchingEnginePage.tsx:320), and [AgreementDetailPage.tsx:244-269](src/pages/AgreementDetailPage.tsx:244) — removes `bg-emerald-500 text-white` / `bg-success/10 text-success` duplicates and routes all status rendering through the shared chip
+- ✅ `aria-label` + `title` on icon-only refresh buttons: [OpsDashboardPage.tsx:448](src/pages/OpsDashboardPage.tsx:448), [SlaAggregatePage.tsx:104](src/pages/SlaAggregatePage.tsx:104), [AdminTaskQueue.tsx:197](src/components/admin/AdminTaskQueue.tsx:197)
+- ✅ Mobile responsiveness: `Index.tsx` quick-stats (`grid-cols-3` → `grid-cols-1 sm:grid-cols-3`); `HiringPipelinePage.tsx` stage summary (`grid-cols-6` → `grid-cols-2 sm:grid-cols-3 lg:grid-cols-6`); fixed-width selects made responsive (`w-[170-180px]` → `w-full sm:w-[170-180px]`) on `CollaborativeAgreementsPage` (physician + meeting filters), `CalendarPage` (event type filter), `ActivationQueuePage` (state filter), `StateCompliancePage` (FPA filter)
+- ✅ Typecheck clean; dev server + HMR happy, no console errors
+
 ### Session 2 — landed
 
 - ✅ Deleted 3 orphan pages (`CompliancePage`, `DataImportPage`, `StateConfigPage`) and removed the dangling `App.tsx` import
