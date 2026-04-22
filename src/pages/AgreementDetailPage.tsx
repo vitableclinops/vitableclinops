@@ -901,6 +901,13 @@ export default function AgreementDetailPage() {
                       </Card>
                     </TabsContent>
 
+                    <TabsContent value="emails" className="mt-4">
+                      <CollabEmailPanel
+                        agreementId={agreementId!}
+                        stateAbbreviation={agreement.state_abbreviation}
+                      />
+                    </TabsContent>
+
                     <TabsContent value="history" className="mt-4">
                       <AuditHistory agreementId={agreementId!} />
                     </TabsContent>
