@@ -1064,6 +1064,102 @@ export type Database = {
           },
         ]
       }
+      collab_email_log: {
+        Row: {
+          agreement_id: string | null
+          blocked_reason: string | null
+          created_at: string
+          email_id: string
+          error_message: string | null
+          id: string
+          recipient_email: string
+          recipient_type: string
+          resend_id: string | null
+          state_code: string | null
+          status: string
+          subject: string | null
+          triggered_by: string | null
+        }
+        Insert: {
+          agreement_id?: string | null
+          blocked_reason?: string | null
+          created_at?: string
+          email_id: string
+          error_message?: string | null
+          id?: string
+          recipient_email: string
+          recipient_type: string
+          resend_id?: string | null
+          state_code?: string | null
+          status: string
+          subject?: string | null
+          triggered_by?: string | null
+        }
+        Update: {
+          agreement_id?: string | null
+          blocked_reason?: string | null
+          created_at?: string
+          email_id?: string
+          error_message?: string | null
+          id?: string
+          recipient_email?: string
+          recipient_type?: string
+          resend_id?: string | null
+          state_code?: string | null
+          status?: string
+          subject?: string | null
+          triggered_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collab_email_log_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collab_email_log_agreement_id_fkey"
+            columns: ["agreement_id"]
+            isOneToOne: false
+            referencedRelation: "collaborative_agreements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collab_email_state_requirements: {
+        Row: {
+          chart_req: string
+          collab_statute: string
+          created_at: string
+          meeting_req: string
+          ongoing_req: string
+          state_code: string
+          state_name: string
+          updated_at: string
+        }
+        Insert: {
+          chart_req: string
+          collab_statute: string
+          created_at?: string
+          meeting_req: string
+          ongoing_req: string
+          state_code: string
+          state_name: string
+          updated_at?: string
+        }
+        Update: {
+          chart_req?: string
+          collab_statute?: string
+          created_at?: string
+          meeting_req?: string
+          ongoing_req?: string
+          state_code?: string
+          state_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       collaborative_agreements: {
         Row: {
           admin_override: boolean | null

@@ -10,6 +10,7 @@ import { VerificationChecklistDialog } from '@/components/agreements/Verificatio
 import { generateAuditReport } from '@/components/agreements/AuditReportGenerator';
 import { TaskDialog, type TaskDialogTask } from '@/components/tasks/TaskDialog';
 import { TaskAssignmentSelect } from '@/components/agreements/TaskAssignmentSelect';
+import { CollabEmailPanel } from '@/components/agreements/CollabEmailPanel';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -612,6 +613,7 @@ export default function AgreementDetailPage() {
                       <TabsTrigger value="documents">Documents</TabsTrigger>
                       <TabsTrigger value="providers">Providers ({activeProviders.length})</TabsTrigger>
                       <TabsTrigger value="meetings">Meetings ({meetings.length})</TabsTrigger>
+                      <TabsTrigger value="emails">Emails</TabsTrigger>
                       <TabsTrigger value="history">History</TabsTrigger>
                     </TabsList>
 
@@ -897,6 +899,13 @@ export default function AgreementDetailPage() {
                           )}
                         </CardContent>
                       </Card>
+                    </TabsContent>
+
+                    <TabsContent value="emails" className="mt-4">
+                      <CollabEmailPanel
+                        agreementId={agreementId!}
+                        stateAbbreviation={agreement.state_abbreviation}
+                      />
                     </TabsContent>
 
                     <TabsContent value="history" className="mt-4">

@@ -8,6 +8,7 @@ import { ProviderSelectionStep } from './wizard/ProviderSelectionStep';
 import { AgreementDetailsStep } from './wizard/AgreementDetailsStep';
 import { ReviewStep } from './wizard/ReviewStep';
 import { useAgreementWorkflow } from '@/hooks/useAgreementWorkflow';
+import { supabase } from '@/integrations/supabase/client';
 import { useStateCompliance } from '@/hooks/useStateCompliance';
 import { usePhysicianCapacity } from '@/hooks/usePhysicianCapacity';
 import { toast } from 'sonner';
@@ -130,7 +131,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
 
     setIsSubmitting(true);
     try {
-      await createAgreementWithTasks(
+      const newAgreement = await createAgreementWithTasks(
         {
           state_id: formData.selectedState.id,
           state_name: formData.selectedState.name,
@@ -156,6 +157,24 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
       toast.success('Agreement created — In Progress', {
         description: `Required tasks have been generated for ${formData.selectedState.name}. Complete all tasks to activate.`,
       });
+
+      // Fire Email 1 (initiation) — non-blocking; failures appear in collab_email_log.
+      if (newAgreement?.id) {
+        supabase.functions
+          .invoke('send-collab-email', {
+            body: { agreementId: newAgreement.id, emailId: 'email_1_initiation' },
+          })
+          .then(({ data }) => {
+            if (data?.blocked) {
+              toast.warning('Initiation email blocked', {
+                description: data.message ?? `No collab email requirements for ${formData.selectedState!.abbreviation}.`,
+              });
+            }
+          })
+          .catch((err) => {
+            console.error('Initiation email failed:', err);
+          });
+      }
 
       onOpenChange(false);
       onSuccess?.();
