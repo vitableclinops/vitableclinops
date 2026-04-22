@@ -406,10 +406,18 @@ Deno.serve(async (req) => {
           if (r1.ok) reply1Ts = r1.ts;
           else console.warn('Reply #1 failed:', r1);
 
-          // ---- Reply #2: residual gaps → who to contact ----
+          // ---- Reply #2: residual gaps → per-state blocks with DM button ----
           const stillShort = needyStates.filter(s => (s.residual_gap_hours ?? s.gap_hours) > 2);
           if (stillShort.length > 0) {
-            const r2lines: string[] = ['*📞 Gaps still open after reallocation — providers to contact directly*', ''];
+            const r2blocks: any[] = [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: '*📞 Gaps still open after reallocation — providers to contact directly*',
+                },
+              },
+            ];
             let hasAny = false;
             for (const s of stillShort) {
               const sendable = (s.outreach_candidates ?? []).filter((c: any) => !c.on_cooldown).slice(0, 3);
@@ -417,7 +425,9 @@ Deno.serve(async (req) => {
               hasAny = true;
               const emoji = s.status === 'zero' ? '🔴' : s.status === 'critical' ? '🟠' : '🟡';
               const residual = s.residual_gap_hours ?? s.gap_hours;
-              r2lines.push(`${emoji} *${s.state}* (still -${residual.toFixed(1)}h)`);
+              const headerLine = `${emoji} *${s.state}* (still -${residual.toFixed(1)}h)`;
+              const candidateLines: string[] = [];
+              const candidatePayload: any[] = [];
               for (const c of sendable) {
                 const ctxParts: string[] = [];
                 if (c.working_today && c.shift_window) ctxParts.push(`working today ${c.shift_window}`);
@@ -429,9 +439,39 @@ Deno.serve(async (req) => {
                 }
                 if (typeof c.appointments_today === 'number') ctxParts.push(`${c.appointments_today} appts today`);
                 const ctx = ctxParts.length ? ` (${ctxParts.join(', ')})` : '';
-                r2lines.push(`   → ${c.name}${ctx}`);
+                candidateLines.push(`   → ${c.name}${ctx}`);
+                candidatePayload.push({
+                  profile_id: c.profile_id ?? null,
+                  name: c.name,
+                  context: ctx ? ctx.replace(/^\s\(|\)$/g, '') : '',
+                });
               }
-              r2lines.push('');
+              r2blocks.push({
+                type: 'section',
+                text: { type: 'mrkdwn', text: `${headerLine}\n${candidateLines.join('\n')}` },
+              });
+              // Compact JSON payload — Slack action_id has 255 char limit, value has 2000
+              const buttonValue = JSON.stringify({
+                state: s.state,
+                gap_hours: Number(residual.toFixed(1)),
+                source_ts: data.ts,
+                candidates: candidatePayload,
+              });
+              if (buttonValue.length < 1900) {
+                r2blocks.push({
+                  type: 'actions',
+                  block_id: `coverage_dm_${s.state}`,
+                  elements: [
+                    {
+                      type: 'button',
+                      action_id: 'open_coverage_dm_modal',
+                      text: { type: 'plain_text', text: `📨 DM ${sendable.length} provider${sendable.length === 1 ? '' : 's'}`, emoji: true },
+                      style: 'primary',
+                      value: buttonValue,
+                    },
+                  ],
+                });
+              }
             }
 
             if (hasAny) {
@@ -446,7 +486,7 @@ Deno.serve(async (req) => {
                   channel: OPS_CHANNEL_ID,
                   thread_ts: data.ts,
                   text: 'Providers to contact directly',
-                  blocks: [{ type: 'section', text: { type: 'mrkdwn', text: r2lines.join('\n') } }],
+                  blocks: r2blocks,
                   username: 'Ops Coverage Bot 📊',
                   icon_emoji: ':bar_chart:',
                   unfurl_links: false,

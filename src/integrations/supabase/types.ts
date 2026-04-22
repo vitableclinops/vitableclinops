@@ -1413,6 +1413,85 @@ export type Database = {
           },
         ]
       }
+      coverage_ping_log: {
+        Row: {
+          created_at: string
+          delivery_status: string
+          error_message: string | null
+          gap_hours: number | null
+          id: string
+          message_preview: string | null
+          recipient_name: string | null
+          recipient_profile_id: string | null
+          recipient_slack_user_id: string
+          sent_by_name: string | null
+          sent_by_slack_user_id: string | null
+          slack_dm_channel_id: string | null
+          slack_dm_message_ts: string | null
+          source: string
+          source_message_ts: string | null
+          state_abbreviation: string
+        }
+        Insert: {
+          created_at?: string
+          delivery_status?: string
+          error_message?: string | null
+          gap_hours?: number | null
+          id?: string
+          message_preview?: string | null
+          recipient_name?: string | null
+          recipient_profile_id?: string | null
+          recipient_slack_user_id: string
+          sent_by_name?: string | null
+          sent_by_slack_user_id?: string | null
+          slack_dm_channel_id?: string | null
+          slack_dm_message_ts?: string | null
+          source?: string
+          source_message_ts?: string | null
+          state_abbreviation: string
+        }
+        Update: {
+          created_at?: string
+          delivery_status?: string
+          error_message?: string | null
+          gap_hours?: number | null
+          id?: string
+          message_preview?: string | null
+          recipient_name?: string | null
+          recipient_profile_id?: string | null
+          recipient_slack_user_id?: string
+          sent_by_name?: string | null
+          sent_by_slack_user_id?: string | null
+          slack_dm_channel_id?: string | null
+          slack_dm_message_ts?: string | null
+          source?: string
+          source_message_ts?: string | null
+          state_abbreviation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coverage_ping_log_recipient_profile_id_fkey"
+            columns: ["recipient_profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coverage_ping_log_recipient_profile_id_fkey"
+            columns: ["recipient_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coverage_ping_log_recipient_profile_id_fkey"
+            columns: ["recipient_profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       demand_forecast: {
         Row: {
           created_at: string
@@ -2820,6 +2899,7 @@ export type Database = {
           secondary_contact_email: string | null
           service_offerings: string | null
           services_offered: string | null
+          slack_user_id: string | null
           start_date_on_network: string | null
           updated_at: string
           user_id: string | null
@@ -2880,6 +2960,7 @@ export type Database = {
           secondary_contact_email?: string | null
           service_offerings?: string | null
           services_offered?: string | null
+          slack_user_id?: string | null
           start_date_on_network?: string | null
           updated_at?: string
           user_id?: string | null
@@ -2940,6 +3021,7 @@ export type Database = {
           secondary_contact_email?: string | null
           service_offerings?: string | null
           services_offered?: string | null
+          slack_user_id?: string | null
           start_date_on_network?: string | null
           updated_at?: string
           user_id?: string | null
