@@ -53,3 +53,9 @@ verify_jwt = false
 
 [functions.compute-coverage-recommendations]
 verify_jwt = false
+
+[functions.handle-slack-interaction]
+verify_jwt = false
+
+[functions.backfill-slack-user-ids]
+verify_jwt = false
