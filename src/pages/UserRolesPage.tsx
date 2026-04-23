@@ -45,6 +45,10 @@ export default function UserRolesPage() {
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [editTarget, setEditTarget] = useState<UserWithRoles | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [statusTarget, setStatusTarget] = useState<{ user: UserWithRoles; nextStatus: 'active' | 'inactive' } | null>(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const userRole = roles[0] || 'provider';
   const userName = profile?.full_name || profile?.email || 'User';
