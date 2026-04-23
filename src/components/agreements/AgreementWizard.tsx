@@ -43,7 +43,7 @@ export interface AgreementFormData {
   // Agreement Details
   startDate: Date | undefined;
   renewalCadence: 'annual' | 'biennial';
-  meetingCadence: 'weekly' | 'biweekly' | 'monthly' | 'quarterly';
+  meetingCadence: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'as_needed';
   chartReviewRequired: boolean;
   chartReviewFrequency: string;
   
