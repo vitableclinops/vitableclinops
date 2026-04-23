@@ -182,11 +182,24 @@ const ProfileSettingsPage = () => {
     setIsSaving(true);
 
     try {
+      const trimmedEmail = email.trim();
+      const emailChanged = trimmedEmail && trimmedEmail !== (profile?.email || '');
+
+      // If email changed, update auth first. Supabase will send a confirmation email.
+      if (emailChanged) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+          throw new Error('Please enter a valid email address.');
+        }
+        const { error: authError } = await supabase.auth.updateUser({ email: trimmedEmail });
+        if (authError) throw authError;
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update({
           full_name: fullName,
           avatar_url: avatarUrl,
+          ...(emailChanged ? { email: trimmedEmail } : {}),
           phone_number: phoneNumber || null,
           npi_number: npiNumber || null,
           credentials: credentials || null,
@@ -205,7 +218,9 @@ const ProfileSettingsPage = () => {
 
       toast({
         title: 'Profile updated',
-        description: 'Your profile has been saved successfully.',
+        description: emailChanged
+          ? 'Profile saved. Check your new inbox to confirm the email change.'
+          : 'Your profile has been saved successfully.',
       });
 
       window.location.reload();
