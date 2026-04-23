@@ -89,6 +89,7 @@ const ProfileSettingsPage = () => {
         const p = data as ExtendedProfile;
         setFullName(p.full_name || '');
         setAvatarUrl(p.avatar_url || '');
+        setEmail(p.email || '');
         setPhoneNumber(p.phone_number || '');
         setNpiNumber(p.npi_number || '');
         setCredentials(p.credentials || '');
