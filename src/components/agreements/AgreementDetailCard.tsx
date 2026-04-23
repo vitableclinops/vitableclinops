@@ -164,7 +164,11 @@ export function AgreementDetailCard({
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
             <Clock className="h-4 w-4" />
-            <span>{agreement.meeting_cadence || 'Monthly'} meetings</span>
+            <span>
+              {agreement.meeting_cadence === 'as_needed'
+                ? 'As-needed supervision'
+                : `${agreement.meeting_cadence || 'Monthly'} meetings`}
+            </span>
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
             <RefreshCw className="h-4 w-4" />

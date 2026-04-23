@@ -84,12 +84,18 @@ export const AgreementDetailsStep = ({ formData, updateFormData }: AgreementDeta
 
       {/* Meeting Cadence */}
       <div className="space-y-2">
-        <Label>Supervision Meeting Cadence</Label>
+        <Label>Supervision Cadence</Label>
         <Select
           value={formData.meetingCadence}
-          onValueChange={(value: 'weekly' | 'biweekly' | 'monthly' | 'quarterly') => 
-            updateFormData({ meetingCadence: value })
-          }
+          onValueChange={(value: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'as_needed') => {
+            // "As needed" cadence implies periodic chart review is the supervision mechanism,
+            // so auto-enable chart review tracking. For scheduled cadences, leave the toggle alone.
+            if (value === 'as_needed') {
+              updateFormData({ meetingCadence: value, chartReviewRequired: true });
+            } else {
+              updateFormData({ meetingCadence: value });
+            }
+          }}
         >
           <SelectTrigger>
             <SelectValue />
@@ -99,38 +105,40 @@ export const AgreementDetailsStep = ({ formData, updateFormData }: AgreementDeta
             <SelectItem value="biweekly">Bi-weekly</SelectItem>
             <SelectItem value="monthly">Monthly</SelectItem>
             <SelectItem value="quarterly">Quarterly</SelectItem>
+            <SelectItem value="as_needed">As needed (chart-review based)</SelectItem>
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
           {formData.selectedState?.collaborativeAgreementRequirements?.meetingCadence ? (
             <>State requires: <strong className="capitalize">{formData.selectedState.collaborativeAgreementRequirements.meetingCadence}</strong> meetings</>
           ) : (
-            'How often supervision meetings should occur.'
+            'How often supervision meetings should occur. Choose "As needed" for chart-review-driven supervision.'
           )}
         </p>
       </div>
 
-      {/* Chart Review */}
+      {/* Supervision Details — unified chart review + meeting notes */}
       <Card className="p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <Label>Chart Review Required</Label>
+            <Label>Includes chart review</Label>
             <p className="text-xs text-muted-foreground">
-              Enable if the physician must review patient charts.
+              Auto-enabled for "As needed" cadence. Chart reviews count as supervision touchpoints.
             </p>
           </div>
           <Switch
             checked={formData.chartReviewRequired}
             onCheckedChange={(checked) => updateFormData({ chartReviewRequired: checked })}
+            disabled={formData.meetingCadence === 'as_needed'}
           />
         </div>
 
         {formData.chartReviewRequired && (
           <div className="space-y-2">
-            <Label htmlFor="chart-frequency">Review Frequency</Label>
+            <Label htmlFor="chart-frequency">Supervision details</Label>
             <Input
               id="chart-frequency"
-              placeholder="e.g., 10% of charts monthly"
+              placeholder="e.g., 10% of charts monthly, ad-hoc clinical questions, etc."
               value={formData.chartReviewFrequency}
               onChange={(e) => updateFormData({ chartReviewFrequency: e.target.value })}
             />
