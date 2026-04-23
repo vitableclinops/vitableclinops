@@ -430,6 +430,26 @@ export default function UserRolesPage() {
           </DialogContent>
         </Dialog>
 
+        <EditAccountDialog
+          open={editOpen}
+          onOpenChange={(o) => { setEditOpen(o); if (!o) setEditTarget(null); }}
+          user={editTarget ? { user_id: editTarget.user_id, full_name: editTarget.full_name, email: editTarget.email } : null}
+        />
+
+        <ConfirmActionDialog
+          open={!!statusTarget}
+          onOpenChange={(o) => { if (!o && !isUpdatingStatus) setStatusTarget(null); }}
+          title={statusTarget?.nextStatus === 'inactive' ? 'Deactivate account?' : 'Reactivate account?'}
+          description={
+            statusTarget?.nextStatus === 'inactive'
+              ? `${statusTarget.user.full_name || statusTarget.user.email} will be marked inactive and hidden from operational views. They can still be reactivated later. Historical records are preserved.`
+              : `${statusTarget?.user.full_name || statusTarget?.user.email} will be reactivated and reappear in operational views.`
+          }
+          confirmLabel={statusTarget?.nextStatus === 'inactive' ? 'Deactivate' : 'Reactivate'}
+          destructive={statusTarget?.nextStatus === 'inactive'}
+          onConfirm={handleConfirmStatusChange}
+        />
+
       </main>
     </div>
   );
