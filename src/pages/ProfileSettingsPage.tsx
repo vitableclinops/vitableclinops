@@ -423,17 +423,18 @@ const ProfileSettingsPage = () => {
                   </Popover>
                 </div>
 
-                {/* Email (Read-only) */}
+                {/* Email */}
                 <div className="space-y-2">
                   <Label htmlFor="email">Email Address</Label>
                   <Input
                     id="email"
-                    value={userEmail}
-                    disabled
-                    className="bg-muted"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
                   />
                   <p className="text-sm text-muted-foreground">
-                    Your email address cannot be changed.
+                    Changing your email will send a confirmation link to your new address. The change takes effect after you confirm it.
                   </p>
                 </div>
 
