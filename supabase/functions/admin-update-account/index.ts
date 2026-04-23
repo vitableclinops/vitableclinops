@@ -10,6 +10,7 @@ interface RequestBody {
   fullName?: string;
   email?: string;
   employmentStatus?: 'active' | 'inactive' | 'terminated';
+  profession?: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -58,7 +59,7 @@ Deno.serve(async (req) => {
     }
 
     const body = (await req.json()) as RequestBody;
-    const { userId, fullName, email, employmentStatus } = body;
+    const { userId, fullName, email, employmentStatus, profession } = body;
 
     if (!userId) {
       return new Response(
@@ -95,6 +96,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    const ALLOWED_PROFESSIONS = ['MD', 'DO', 'NP', 'RN', 'LPC', 'mental_health_coach', 'physician'];
+    if (profession !== undefined && profession !== null && !ALLOWED_PROFESSIONS.includes(profession)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid profession' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // Update auth user (email) if provided
@@ -116,6 +125,7 @@ Deno.serve(async (req) => {
     if (fullName !== undefined) profileUpdate.full_name = fullName.trim();
     if (email !== undefined) profileUpdate.email = email.trim();
     if (employmentStatus !== undefined) profileUpdate.employment_status = employmentStatus;
+    if (profession !== undefined) profileUpdate.profession = profession;
 
     if (Object.keys(profileUpdate).length > 1) {
       const { error: profileError } = await adminClient
@@ -128,6 +138,30 @@ Deno.serve(async (req) => {
           JSON.stringify({ error: `Profile update failed: ${profileError.message}` }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
+      }
+    }
+
+    // Sync physician role <-> profession (MD/DO)
+    if (profession !== undefined) {
+      const isPhysicianProfession = profession === 'MD' || profession === 'DO' || profession === 'physician';
+      if (isPhysicianProfession) {
+        // Ensure physician role exists
+        const { data: existingRole } = await adminClient
+          .from('user_roles')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('role', 'physician')
+          .maybeSingle();
+        if (!existingRole) {
+          await adminClient.from('user_roles').insert({ user_id: userId, role: 'physician' });
+        }
+      } else {
+        // Remove physician role if profession is no longer MD/DO
+        await adminClient
+          .from('user_roles')
+          .delete()
+          .eq('user_id', userId)
+          .eq('role', 'physician');
       }
     }
 
