@@ -48,6 +48,7 @@ const ProfileSettingsPage = () => {
   // Basic info
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
+  const [email, setEmail] = useState(profile?.email || '');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [npiNumber, setNpiNumber] = useState('');
   const [credentials, setCredentials] = useState('');
