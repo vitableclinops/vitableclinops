@@ -48,6 +48,7 @@ const ProfileSettingsPage = () => {
   // Basic info
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
+  const [email, setEmail] = useState(profile?.email || '');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [npiNumber, setNpiNumber] = useState('');
   const [credentials, setCredentials] = useState('');
@@ -88,6 +89,7 @@ const ProfileSettingsPage = () => {
         const p = data as ExtendedProfile;
         setFullName(p.full_name || '');
         setAvatarUrl(p.avatar_url || '');
+        setEmail(p.email || '');
         setPhoneNumber(p.phone_number || '');
         setNpiNumber(p.npi_number || '');
         setCredentials(p.credentials || '');
@@ -180,11 +182,24 @@ const ProfileSettingsPage = () => {
     setIsSaving(true);
 
     try {
+      const trimmedEmail = email.trim();
+      const emailChanged = trimmedEmail && trimmedEmail !== (profile?.email || '');
+
+      // If email changed, update auth first. Supabase will send a confirmation email.
+      if (emailChanged) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+          throw new Error('Please enter a valid email address.');
+        }
+        const { error: authError } = await supabase.auth.updateUser({ email: trimmedEmail });
+        if (authError) throw authError;
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update({
           full_name: fullName,
           avatar_url: avatarUrl,
+          ...(emailChanged ? { email: trimmedEmail } : {}),
           phone_number: phoneNumber || null,
           npi_number: npiNumber || null,
           credentials: credentials || null,
@@ -203,7 +218,9 @@ const ProfileSettingsPage = () => {
 
       toast({
         title: 'Profile updated',
-        description: 'Your profile has been saved successfully.',
+        description: emailChanged
+          ? 'Profile saved. Check your new inbox to confirm the email change.'
+          : 'Your profile has been saved successfully.',
       });
 
       window.location.reload();
@@ -406,17 +423,18 @@ const ProfileSettingsPage = () => {
                   </Popover>
                 </div>
 
-                {/* Email (Read-only) */}
+                {/* Email */}
                 <div className="space-y-2">
                   <Label htmlFor="email">Email Address</Label>
                   <Input
                     id="email"
-                    value={userEmail}
-                    disabled
-                    className="bg-muted"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
                   />
                   <p className="text-sm text-muted-foreground">
-                    Your email address cannot be changed.
+                    Changing your email will send a confirmation link to your new address. The change takes effect after you confirm it.
                   </p>
                 </div>
 

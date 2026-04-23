@@ -8,12 +8,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Shield, Users, ArrowLeft, UserPlus, Info, ChevronDown, KeyRound, Copy, Check } from 'lucide-react';
+import { Loader2, Shield, Users, ArrowLeft, UserPlus, Info, ChevronDown, KeyRound, Copy, Check, Pencil, UserX, UserCheck } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { CreateAccountDialog } from '@/components/admin/CreateAccountDialog';
+import { EditAccountDialog } from '@/components/admin/EditAccountDialog';
+import { ConfirmActionDialog } from '@/components/ConfirmActionDialog';
 import type { Tables, Enums } from '@/integrations/supabase/types';
 
 type Profile = Tables<'profiles'>;
@@ -43,6 +45,10 @@ export default function UserRolesPage() {
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [editTarget, setEditTarget] = useState<UserWithRoles | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [statusTarget, setStatusTarget] = useState<{ user: UserWithRoles; nextStatus: 'active' | 'inactive' } | null>(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const userRole = roles[0] || 'provider';
   const userName = profile?.full_name || profile?.email || 'User';
@@ -166,6 +172,28 @@ export default function UserRolesPage() {
     setTempPassword(null);
     setCopied(false);
     setResetDialogOpen(true);
+  };
+
+  const handleConfirmStatusChange = async () => {
+    if (!statusTarget) return;
+    setIsUpdatingStatus(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-update-account', {
+        body: { userId: statusTarget.user.user_id, employmentStatus: statusTarget.nextStatus },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast({
+        title: statusTarget.nextStatus === 'inactive' ? 'Account deactivated' : 'Account reactivated',
+        description: `${statusTarget.user.full_name || statusTarget.user.email} is now ${statusTarget.nextStatus}.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['users-with-roles'] });
+      setStatusTarget(null);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to update status', variant: 'destructive' });
+    } finally {
+      setIsUpdatingStatus(false);
+    }
   };
 
   return (
@@ -323,14 +351,43 @@ export default function UserRolesPage() {
                           );
                         })}
                         <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openResetDialog(user.user_id, user.full_name || 'User', user.email || '')}
-                            title="Reset password"
-                          >
-                            <KeyRound className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => { setEditTarget(user); setEditOpen(true); }}
+                              title="Edit name & email"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openResetDialog(user.user_id, user.full_name || 'User', user.email || '')}
+                              title="Reset password"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                            {(user as any).employment_status === 'inactive' || (user as any).employment_status === 'terminated' ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setStatusTarget({ user, nextStatus: 'active' })}
+                                title="Reactivate account"
+                              >
+                                <UserCheck className="h-4 w-4 text-green-600" />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setStatusTarget({ user, nextStatus: 'inactive' })}
+                                title="Deactivate account"
+                              >
+                                <UserX className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -372,6 +429,26 @@ export default function UserRolesPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        <EditAccountDialog
+          open={editOpen}
+          onOpenChange={(o) => { setEditOpen(o); if (!o) setEditTarget(null); }}
+          user={editTarget ? { user_id: editTarget.user_id, full_name: editTarget.full_name, email: editTarget.email } : null}
+        />
+
+        <ConfirmActionDialog
+          open={!!statusTarget}
+          onOpenChange={(o) => { if (!o && !isUpdatingStatus) setStatusTarget(null); }}
+          title={statusTarget?.nextStatus === 'inactive' ? 'Deactivate account?' : 'Reactivate account?'}
+          description={
+            statusTarget?.nextStatus === 'inactive'
+              ? `${statusTarget.user.full_name || statusTarget.user.email} will be marked inactive and hidden from operational views. They can still be reactivated later. Historical records are preserved.`
+              : `${statusTarget?.user.full_name || statusTarget?.user.email} will be reactivated and reappear in operational views.`
+          }
+          confirmLabel={statusTarget?.nextStatus === 'inactive' ? 'Deactivate' : 'Reactivate'}
+          destructive={statusTarget?.nextStatus === 'inactive'}
+          onConfirm={handleConfirmStatusChange}
+        />
 
       </main>
     </div>
