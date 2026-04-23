@@ -334,8 +334,8 @@ const handler = async (req: Request): Promise<Response> => {
 
     const { subject, html } = getEmailContent(type, data || {}, recipientName || 'Team Member');
 
-    // Note: Replace 'noreply@yourdomain.com' with your verified Resend domain
-    const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") || "noreply@yourdomain.com";
+    // TODO: Switch back to "Vitable Health <providers@vitablehealth.com>" once domain is verified in Resend.
+    const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") || "Vitable Health <onboarding@resend.dev>";
 
     const emailResponse = await resend.emails.send({
       from: `Credentialing Platform <${fromAddress}>`,

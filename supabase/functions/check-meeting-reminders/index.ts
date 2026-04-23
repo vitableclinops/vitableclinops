@@ -26,7 +26,8 @@ const handler = async (req: Request): Promise<Response> => {
 
     const resend = new Resend(resendApiKey);
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") || "noreply@yourdomain.com";
+    // TODO: Switch back to "Vitable Health <providers@vitablehealth.com>" once domain is verified in Resend.
+    const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") || "Vitable Health <onboarding@resend.dev>";
 
     // Look for meetings happening tomorrow (24-48 hours from now)
     const tomorrow = new Date();
