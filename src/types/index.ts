@@ -155,7 +155,7 @@ export interface State {
 }
 
 export interface CollabRequirements {
-  meetingCadence: 'weekly' | 'biweekly' | 'monthly' | 'quarterly';
+  meetingCadence: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'as_needed';
   chartReviewRequired: boolean;
   chartReviewFrequency?: string;
   supervisoryActivities: string[];
@@ -273,7 +273,7 @@ export interface CollaborativeAgreement {
   nextRenewalDate: Date;
   status: 'draft' | 'active' | 'pending_renewal' | 'expired' | 'terminated';
   // Supervision requirements
-  meetingCadence: 'weekly' | 'biweekly' | 'monthly' | 'quarterly';
+  meetingCadence: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'as_needed';
   chartReviewRequired: boolean;
   chartReviewFrequency?: string;
   supervisoryActivities: string[];
