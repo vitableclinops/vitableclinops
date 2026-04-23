@@ -591,7 +591,7 @@ export const allUSStates: State[] = [
     fpaApplicationRequired: false,
     requiresCollaborativeAgreement: true,
     collaborativeAgreementRequirements: {
-      meetingCadence: 'quarterly',
+      meetingCadence: 'as_needed',
       chartReviewRequired: true,
       chartReviewFrequency: 'Periodic - coordinate directly',
       supervisoryActivities: ['Standard Care Arrangement review', 'Periodic meetings', 'Chart review'],
