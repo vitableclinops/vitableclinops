@@ -84,7 +84,11 @@ const TEMPLATES: Record<EmailId, Record<RecipientType, { to: string; subject: st
   },
 };
 
-const FROM_ADDRESS = "Vitable Health <providers@vitablehealth.com>";
+// TODO: Once vitablehealth.com is verified in Resend, change this back to:
+// "Vitable Health <providers@vitablehealth.com>"
+// Using Resend's pre-verified test sender so emails work without DNS setup.
+// Reply-to is still set to providers@vitablehealth.com so replies route correctly.
+const FROM_ADDRESS = Deno.env.get("EMAIL_FROM_ADDRESS") || "Vitable Health <onboarding@resend.dev>";
 
 function interpolate(str: string, vars: RenderVars): string {
   return str.replace(/\{\{(\w+)\}\}/g, (_, key) => (vars as any)[key] ?? `{{${key}}}`);
