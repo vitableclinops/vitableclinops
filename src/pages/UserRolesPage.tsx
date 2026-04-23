@@ -174,6 +174,28 @@ export default function UserRolesPage() {
     setResetDialogOpen(true);
   };
 
+  const handleConfirmStatusChange = async () => {
+    if (!statusTarget) return;
+    setIsUpdatingStatus(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-update-account', {
+        body: { userId: statusTarget.user.user_id, employmentStatus: statusTarget.nextStatus },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast({
+        title: statusTarget.nextStatus === 'inactive' ? 'Account deactivated' : 'Account reactivated',
+        description: `${statusTarget.user.full_name || statusTarget.user.email} is now ${statusTarget.nextStatus}.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['users-with-roles'] });
+      setStatusTarget(null);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to update status', variant: 'destructive' });
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-background">
       <AppSidebar userRole={userRole} userName={userName} userEmail={userEmail} userAvatarUrl={profile?.avatar_url || undefined} />
