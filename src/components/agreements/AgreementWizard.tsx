@@ -75,7 +75,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
     startDate: undefined,
     renewalCadence: 'annual',
     meetingCadence: 'monthly',
-    chartReviewRequired: false,
+    chartReviewRequired: true,
     chartReviewFrequency: '',
     providerMessage: '',
   };
