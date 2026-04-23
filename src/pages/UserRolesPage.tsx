@@ -374,7 +374,7 @@ export default function UserRolesPage() {
                               ) : (
                                 <Checkbox
                                   checked={hasRole}
-                                  onCheckedChange={() => handleToggleRole(user.user_id, role, hasRole)}
+                                  onCheckedChange={() => handleToggleRole(user.user_id, role, hasRole, (user as any).profession)}
                                   aria-label={`Toggle ${role} role for ${user.email}`}
                                 />
                               )}
