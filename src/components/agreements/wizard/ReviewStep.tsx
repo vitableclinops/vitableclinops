@@ -137,15 +137,16 @@ export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
           <div>
             <p className="text-xs text-muted-foreground">Supervision Cadence</p>
             <p className="font-medium text-sm capitalize">
-              {formData.meetingCadence === 'as_needed' ? 'As needed (chart-review based)' : formData.meetingCadence}
+              {formData.meetingCadence === 'as_needed' ? 'As needed' : formData.meetingCadence}
             </p>
+            <p className="text-xs text-muted-foreground mt-1">Includes chart review</p>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Supervision Details</p>
-            <p className="font-medium text-sm">
-              {formData.chartReviewRequired ? formData.chartReviewFrequency || 'Required' : 'Not required'}
-            </p>
-          </div>
+          {formData.chartReviewFrequency && (
+            <div>
+              <p className="text-xs text-muted-foreground">Supervision Notes</p>
+              <p className="font-medium text-sm">{formData.chartReviewFrequency}</p>
+            </div>
+          )}
         </div>
       </Card>
 
