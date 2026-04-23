@@ -351,14 +351,43 @@ export default function UserRolesPage() {
                           );
                         })}
                         <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openResetDialog(user.user_id, user.full_name || 'User', user.email || '')}
-                            title="Reset password"
-                          >
-                            <KeyRound className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => { setEditTarget(user); setEditOpen(true); }}
+                              title="Edit name & email"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openResetDialog(user.user_id, user.full_name || 'User', user.email || '')}
+                              title="Reset password"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                            {(user as any).employment_status === 'inactive' || (user as any).employment_status === 'terminated' ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setStatusTarget({ user, nextStatus: 'active' })}
+                                title="Reactivate account"
+                              >
+                                <UserCheck className="h-4 w-4 text-green-600" />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setStatusTarget({ user, nextStatus: 'inactive' })}
+                                title="Deactivate account"
+                              >
+                                <UserX className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
