@@ -94,7 +94,17 @@ export default function UserRolesPage() {
   });
 
   const toggleRoleMutation = useMutation({
-    mutationFn: async ({ userId, role, hasRole }: { userId: string; role: AppRole; hasRole: boolean }) => {
+    mutationFn: async ({
+      userId,
+      role,
+      hasRole,
+      currentProfession,
+    }: {
+      userId: string;
+      role: AppRole;
+      hasRole: boolean;
+      currentProfession?: string | null;
+    }) => {
       if (hasRole) {
         // Remove role
         const { error } = await supabase
@@ -103,19 +113,40 @@ export default function UserRolesPage() {
           .eq('user_id', userId)
           .eq('role', role);
         if (error) throw error;
+
+        // If removing physician role and profession is MD/DO, clear it
+        if (role === 'physician' && (currentProfession === 'MD' || currentProfession === 'DO' || currentProfession === 'physician')) {
+          await supabase
+            .from('profiles')
+            .update({ profession: null, updated_at: new Date().toISOString() })
+            .eq('user_id', userId);
+        }
       } else {
         // Add role
         const { error } = await supabase
           .from('user_roles')
           .insert({ user_id: userId, role });
         if (error) throw error;
+
+        // If adding physician role and profession isn't already MD/DO, default to MD
+        if (role === 'physician' && currentProfession !== 'MD' && currentProfession !== 'DO' && currentProfession !== 'physician') {
+          await supabase
+            .from('profiles')
+            .update({ profession: 'MD', updated_at: new Date().toISOString() })
+            .eq('user_id', userId);
+        }
       }
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['users-with-roles'] });
+      const isPhysicianSync = variables.role === 'physician';
       toast({
         title: variables.hasRole ? 'Role removed' : 'Role added',
-        description: `Successfully ${variables.hasRole ? 'removed' : 'added'} ${variables.role} role.`,
+        description: isPhysicianSync
+          ? variables.hasRole
+            ? 'Removed physician role. Profession cleared if it was MD/DO.'
+            : 'Added physician role. Profession set to MD (edit account to change to DO).'
+          : `Successfully ${variables.hasRole ? 'removed' : 'added'} ${variables.role} role.`,
       });
       setUpdatingUser(null);
     },
@@ -129,9 +160,9 @@ export default function UserRolesPage() {
     },
   });
 
-  const handleToggleRole = (userId: string, role: AppRole, hasRole: boolean) => {
+  const handleToggleRole = (userId: string, role: AppRole, hasRole: boolean, currentProfession?: string | null) => {
     setUpdatingUser(`${userId}-${role}`);
-    toggleRoleMutation.mutate({ userId, role, hasRole });
+    toggleRoleMutation.mutate({ userId, role, hasRole, currentProfession });
   };
 
   const handleResetPassword = async () => {
