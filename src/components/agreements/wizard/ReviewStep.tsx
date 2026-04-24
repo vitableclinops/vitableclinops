@@ -1,11 +1,6 @@
-import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
-import { supabase } from '@/integrations/supabase/client';
 import { 
   MapPin, 
   UserRound, 
@@ -14,7 +9,6 @@ import {
   RefreshCw, 
   ClipboardList,
   CheckCircle2,
-  MessageSquare,
 } from 'lucide-react';
 import type { AgreementFormData } from '../AgreementWizard';
 
@@ -23,33 +17,7 @@ interface ReviewStepProps {
   updateFormData?: (updates: Partial<AgreementFormData>) => void;
 }
 
-export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
-  const [templates, setTemplates] = useState<Array<{ id: string; template_name: string; body_template: string; subject_template: string }>>([]);
-
-  useEffect(() => {
-    const fetchTemplates = async () => {
-      const { data } = await supabase
-        .from('workflow_message_templates')
-        .select('id, template_name, body_template, subject_template')
-        .eq('workflow_type', 'initiation');
-      setTemplates(data || []);
-    };
-    fetchTemplates();
-  }, []);
-
-  const applyTemplate = (templateId: string) => {
-    const template = templates.find(t => t.id === templateId);
-    if (!template || !updateFormData) return;
-    
-    let body = template.body_template;
-    body = body.replace(/\{\{provider_name\}\}/g, formData.providers[0]?.name || '[Provider Name]');
-    body = body.replace(/\{\{physician_name\}\}/g, formData.physicianName || '[Physician Name]');
-    body = body.replace(/\{\{state_name\}\}/g, formData.selectedState?.name || '[State]');
-    body = body.replace(/\{\{admin_name\}\}/g, '[Your Name]');
-    
-    updateFormData({ providerMessage: body });
-  };
-
+export const ReviewStep = ({ formData }: ReviewStepProps) => {
   return (
     <div className="space-y-4">
       <Card className="p-4 bg-muted/30">
@@ -147,40 +115,6 @@ export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
               <p className="font-medium text-sm">{formData.chartReviewFrequency}</p>
             </div>
           )}
-        </div>
-      </Card>
-
-      {/* Provider Message */}
-      <Card className="p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <MessageSquare className="h-4 w-4 text-primary" />
-          <h4 className="font-medium">Provider-Facing Message</h4>
-        </div>
-        <div className="pl-6 space-y-3">
-          {templates.length > 0 && (
-            <div className="space-y-1">
-              <Label className="text-xs">Load from template</Label>
-              <Select onValueChange={applyTemplate}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a message template..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {templates.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.template_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <Textarea
-            placeholder="Enter a provider-facing message for this agreement (optional)..."
-            value={formData.providerMessage}
-            onChange={(e) => updateFormData?.({ providerMessage: e.target.value })}
-            rows={5}
-          />
-          <p className="text-xs text-muted-foreground">
-            This message is stored on the agreement record and shown to admins as a copy/paste email template.
-          </p>
         </div>
       </Card>
 

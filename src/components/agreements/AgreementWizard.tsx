@@ -169,7 +169,6 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
         {
           chartReviewRequired: formData.chartReviewRequired,
           meetingCadence: formData.meetingCadence,
-          providerMessage: formData.providerMessage || undefined,
         }
       );
 
