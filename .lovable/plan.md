@@ -1,79 +1,43 @@
 
 
-## Threaded Action Plan: Surgical Reallocation Recommendations
+## Question: Do the auto-email and Provider Message field both make sense?
 
-Extend the daily ops Slack post with **threaded replies** that propose concrete activation / deactivation moves to close coverage gaps, plus a math check on whether those moves are sufficient.
+**Short answer: No, having both creates confusion. Recommend removing the Provider Message field from the wizard.**
 
-### What you'll see in Slack
+### Why they overlap awkwardly
 
-**Main post (unchanged)**: Daily coverage summary + suggested providers to ping.
+| | Auto-sent Initiation Email | Provider Message field |
+|---|---|---|
+| **When** | Fires automatically on agreement creation | Saved to record, never auto-sent |
+| **Recipient** | NP + Physician (both) | None — admin reference only |
+| **Content** | Vitable-branded template with state-specific statute language | Free-text from admin |
+| **Purpose** | Officially notify the parties | ??? — currently just sits on the record |
 
-**Reply #1 — "Actions to improve availability"**, posted in the same thread:
-```
-🛠 Suggested reallocation moves
+The auto-email already covers the actual job (notifying the provider that their agreement is being set up). The Provider Message field was useful **before** the auto-email existed, but now it's a vestigial input that:
+- Adds a step to the wizard with unclear purpose
+- Gets shown on the agreement detail page but never reaches the provider unless an admin manually copies it into an email
+- Could lead admins to think they've messaged the provider when they haven't
 
-🔴 DE — gap 12.0h
-   ✅ Activate: Mandy Roe (license active, ready, +6h capacity once live)
-   ✅ Activate: Tom Lee (license active, ready, +4h capacity)
-   = projected +10h → still 2.0h short
+### Recommended change
 
-🟡 OH (SURPLUS state)
-   ➖ Deactivate: Kelsie Smith (12h allocated, 3h demand, frees 9h to redistribute)
+**Option A (recommended): Remove the Provider Message field entirely from the wizard.**
+- Delete the textarea + template selector from `ReviewStep.tsx`
+- Keep the `provider_message` DB column for now (it's used by `TerminationDialog.tsx` for transfer notes — that's a legit different use case)
+- Keep the display block on `AgreementDetailPage.tsx` so existing data still renders, but no new agreements will populate it from the wizard
 
-📊 Net effect across critical/zero states
-   Total gap before: 38.5h
-   Total recoverable: 28.0h
-   Result: ✅ 3 of 5 states resolved · ⚠️ 2 still short (DE -2h, NJ -8h)
-```
+**Option B (if you want to keep manual messaging): Repurpose it as "Internal notes for this agreement"** — relabel clearly so it's obviously not an email and not auto-sent.
 
-**Reply #2 — "Next actions" (only posted if gaps remain)**:
-```
-📞 Gaps still open after reallocation — providers to contact directly
+### Files affected (Option A)
 
-🔴 DE (still -2h)
-   → Sarah Chen (working today 9a–5p CT, 4h surplus in NY)
-   → Marcus Kim (BALANCED in TX, 2 appts today)
+- `src/components/agreements/wizard/ReviewStep.tsx` — remove the Provider-Facing Message Card, remove template-fetching logic, remove `updateFormData` calls for `providerMessage`
+- `src/components/agreements/AgreementWizard.tsx` — remove `providerMessage` from form state (or leave default `''` for safety)
+- `src/hooks/useAgreementWorkflow.ts` — stop passing `providerMessage` on creation (line 236)
 
-🔴 NJ (still -8h)
-   → Lin Park (working today, SURPLUS in PA)
-   → Dr. Patel (MD, BALANCED in MD)
-```
+No DB migration needed. Transfer flow (`TerminationDialog.tsx`) keeps working unchanged.
 
-### How it decides moves
+### My recommendation
 
-For each `zero / critical / low` state, the engine produces three candidate move types:
+Go with **Option A**. The auto-email is doing the real work, the manual message field is a leftover from before that automation existed, and removing it makes the wizard cleaner and removes the "wait, did this get sent?" confusion you just hit.
 
-1. **Activate**: provider has `provider_licenses.status='active'` + `provider_state_status.readiness_status='ready'` + `ehr_activation_status` in `('inactive','deactivated','activation_requested')`. Estimated capacity gain = their typical weekly hours / 5 (cap at gap size). Filters out NPs in the 8 MD-only states.
-
-2. **Deactivate**: provider in a `SURPLUS` state today (`license_optimization_snapshots.quadrant='SURPLUS'`) with `slack = allocated_hours - estimated_demand_hours >= 3h`. These free up redistributable hours but don't directly fill the gap state — surfaced as context for "where to pull from."
-
-3. **Ping** (already-active providers to contact today): the existing `outreach_candidates` logic, filtered to those `working_today` or with `current_state_status='SURPLUS'`.
-
-**The math check** sums the projected capacity gain from activations against the total gap. If `recoverable >= gap`, marks state ✅ resolved. Otherwise computes residual gap, which drives Reply #2.
-
-### Files to change
-
-- `supabase/functions/compute-coverage-recommendations/index.ts`
-  - Add `activation_recommendations[]`, `deactivation_recommendations[]`, `projected_gain_hours`, `residual_gap_hours` per state
-  - New query: `provider_state_status` filtered to `readiness_status='ready'` and inactive `ehr_activation_status`, joined with active licenses
-  - New query: snapshots where `quadrant='SURPLUS'` for deactivation candidates
-  - Per-provider capacity estimate from `utilization_daily` average over last 14 days (or fallback default of 6h/day)
-
-- `supabase/functions/send-ops-dashboard-slack/index.ts`
-  - After main `chat.postMessage` succeeds, capture `data.ts` (already done)
-  - Build "Reply #1" blocks from new recommendation fields → second `chat.postMessage` with `thread_ts: data.ts`
-  - Compute residual gaps; if any > 0, build "Reply #2" blocks → third `chat.postMessage` with same `thread_ts`
-  - Skip threaded replies entirely if no actionable moves exist (keeps the post clean on calm days)
-
-### Configuration
-
-- Capacity-gain estimate per activation: capped at min(provider's avg daily hours, state gap remaining) — prevents over-counting when one provider could "fill" multiple states
-- Deactivation threshold: SURPLUS slack ≥ 3h (avoids noise from minor surpluses)
-- Reply #2 only triggers when residual gap > 2h (rounding tolerance)
-
-No new tables or schema changes. No migrations.
-
-### Open question
-
-When proposing **activations**, should the bot also auto-create an EHR activation task assigned to the compliance admin, or just suggest in Slack and require an admin to click through to the activation queue? Default in this plan: **suggest only**, no task creation — matches the existing "ping" pattern where admins confirm before action.
+Want me to proceed with Option A, or would you prefer Option B?
 
