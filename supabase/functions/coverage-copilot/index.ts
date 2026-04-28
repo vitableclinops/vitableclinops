@@ -300,6 +300,26 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       (forecastRes.data ?? []).map(r => [r.state_abbreviation as string, r.projected_visits as number]),
     );
 
+    // Forecast fallback: if no demand_forecast rows exist for the requested
+    // week (very common because forecasts are loaded weekly and may lag),
+    // mirror runNetworkMode and fall back to the most recent available week.
+    let forecastSourceWeek: string = weekStart;
+    let forecastIsFallback = false;
+    if (forecastByState.size === 0) {
+      const { data: latestFc } = await supabase.from('demand_forecast')
+        .select('state_abbreviation, week_start, projected_visits')
+        .order('week_start', { ascending: false })
+        .limit(200);
+      if (latestFc && latestFc.length > 0) {
+        forecastSourceWeek = latestFc[0].week_start as string;
+        forecastIsFallback = true;
+        for (const r of latestFc) {
+          if (r.week_start !== forecastSourceWeek) continue;
+          forecastByState.set(r.state_abbreviation as string, Number(r.projected_visits) || 0);
+        }
+      }
+    }
+
     // Provider's snapshot allocations (for deactivation candidates)
     const latestSnap = snapsLatestRes.data?.[0]?.snapshot_date as string | undefined;
     const snapsRes = latestSnap
@@ -435,8 +455,15 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
         timezone: extracted.timezone, requested_hours: requestedHours,
       },
       existing_shift_hours_that_day: round1(existingShiftHours),
-      eligible_state_count: stateFacts.filter(f => f.eligible_to_practice).length,
-      active_state_count: stateFacts.filter(f => f.eligible_to_practice && f.currently_active).length,
+      // licensed_state_count: licensed AND legally allowed to practice (NP-prohibited states excluded).
+      // network_state_count: of those, states currently on in our network (state_activation.is_active).
+      // ehr_active_state_count: of those, states where this provider is actually EHR-active and can take hours with no further setup.
+      licensed_state_count: stateFacts.filter(f => f.eligible_to_practice).length,
+      network_state_count: stateFacts.filter(f => f.eligible_to_practice && f.currently_active).length,
+      ehr_active_state_count: stateFacts.filter(f => f.eligible_to_practice && f.currently_active && f.ehr_status === 'active').length,
+      ehr_active_states: stateFacts
+        .filter(f => f.eligible_to_practice && f.currently_active && f.ehr_status === 'active')
+        .map(f => f.state),
       neediest_states: neediestStates.slice(0, 5),
       activation_opportunities: activationOpportunities.slice(0, 5),
       deactivation_opportunities: deactivationOpportunities.slice(0, 5),
@@ -446,6 +473,10 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       ),
       sla_buffer: buffer,
       slots_per_hour: SLOTS_PER_HOUR,
+      forecast_source: forecastIsFallback
+        ? `Fallback: no demand_forecast for week of ${weekStart}; using most recent week ${forecastSourceWeek} as a proxy. Numbers may be off if demand has shifted.`
+        : `demand_forecast week ${forecastSourceWeek}`,
+      forecast_is_fallback: forecastIsFallback,
       data_freshness: {
         metabase_lag_days: lagDays,
         settled_through: metabaseSettledThrough,
@@ -466,8 +497,11 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
     // Plain-English narrative for the provider-mode facts.
     {
       const plain: string[] = [];
-      plain.push(`${provider.full_name} is licensed in ${facts.eligible_state_count} state(s) where they can legally practice; ${facts.active_state_count} of those are active in our network.`);
+      plain.push(`${provider.full_name} is licensed in ${facts.licensed_state_count} state(s) where she can legally practice. ${facts.network_state_count} of those are switched on in our network, but she is currently EHR-active in only ${facts.ehr_active_state_count}${facts.ehr_active_state_count > 0 ? ` (${facts.ehr_active_states.join(', ')})` : ''}. Hours can be approved with no setup only in EHR-active states; everywhere else needs an activation step first.`);
       plain.push(`On ${date} they already have ${facts.existing_shift_hours_that_day}h scheduled in Homebase. The request adds ${requestedHours}h.`);
+      if (forecastIsFallback) {
+        plain.push(`⚠️ No demand forecast loaded for the week of ${weekStart}; falling back to the most recent week (${forecastSourceWeek}) as a proxy. Gap/surplus numbers may be off if demand has shifted — confidence should be lowered.`);
+      }
       plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. A "gap" means the state is short of that target; a "surplus" means open availability not booked.`);
       if (requestedDayIsPreliminary) {
         plain.push(`⚠️ Metabase visit actuals are settled only through ${metabaseSettledThrough}. Coverage numbers for ${date} are projected (forecast of unfilled slots given bookings so far) and tend to overstate gaps; they firm up after the overnight Metabase sync.`);
@@ -570,6 +604,8 @@ Decision rules:
 - Only recommend "decline" if BOTH neediest_states AND activation_opportunities are empty (no gap she can help with even if activated).
 - Use conditional_no for states where this provider has surplus_hours >= 3 (could be deactivated to free capacity).
 - Never invent numbers. Cite facts only.
+- Vocabulary discipline (CRITICAL): facts.licensed_state_count = states she could legally practice in; facts.network_state_count = states our company runs in; facts.ehr_active_state_count = states she can take hours in TODAY with no setup. NEVER conflate these. Do NOT say "active in N states" when you mean "licensed in N states" or "in network in N states" — name which one. If ehr_active_state_count is 0, the provider is NOT ready to take hours anywhere without an activation step.
+- If facts.forecast_is_fallback is true, mention the fallback forecast week (facts.forecast_source) in the summary and lower confidence to "medium" at most.
 - IMPORTANT: When neediest_states is empty, do NOT say "no gaps" without qualification. Either point to activation_opportunities (if any) as the unlock, or — if activation_opportunities is also empty — explicitly say "no gaps in states where {provider} is licensed and legally eligible, even though the network has Xh in gaps elsewhere" referencing facts.network_picture_for_requested_date.total_gap_hours.
 - If facts.data_freshness.requested_day_is_preliminary is true, call out that the day is PRELIMINARY (booking-aware forecast that tends to overstate) and lower confidence accordingly.
 - Keep summary under 4 sentences.`;
@@ -645,6 +681,22 @@ async function computeNetworkDaySummary(
   const fcByState = new Map<string, number>(
     (fcRes.data ?? []).map((r: any) => [r.state_abbreviation, Number(r.projected_visits) || 0]),
   );
+  // Same fallback as the main provider-mode flow and runNetworkMode: if no
+  // demand_forecast for this week, use the most recent available week.
+  let fcFallbackWeek: string | null = null;
+  if (fcByState.size === 0) {
+    const { data: latest } = await supabase.from('demand_forecast')
+      .select('state_abbreviation, week_start, projected_visits')
+      .order('week_start', { ascending: false })
+      .limit(200);
+    if (latest && latest.length > 0) {
+      fcFallbackWeek = latest[0].week_start as string;
+      for (const r of latest) {
+        if (r.week_start !== fcFallbackWeek) continue;
+        fcByState.set(r.state_abbreviation, Number(r.projected_visits) || 0);
+      }
+    }
+  }
   let totalGap = 0;
   let totalSurplus = 0;
   let gapStateCount = 0;
@@ -672,6 +724,10 @@ async function computeNetworkDaySummary(
     total_surplus_hours: totalSurplus,
     gap_state_count: gapStateCount,
     top_gap_states: topGaps.slice(0, 5),
+    forecast_is_fallback: fcFallbackWeek !== null,
+    forecast_source: fcFallbackWeek
+      ? `Fallback: most recent demand_forecast week ${fcFallbackWeek}`
+      : `demand_forecast week ${getMonday(date)}`,
     providers_states_overlap_note:
       'these gap states are not in the provider eligible+active list above (otherwise they would appear in neediest_states)',
   };
