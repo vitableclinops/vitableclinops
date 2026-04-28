@@ -237,6 +237,11 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       if (!Number.isNaN(parsed) && parsed > 0) buffer = parsed;
     }
 
+    // Data freshness: when is Metabase actuals data trustworthy through?
+    const lagDays = await getMetabaseLagDays(supabase);
+    const metabaseSettledThrough = settledThrough(todayDefault, lagDays);
+    const requestedDayIsPreliminary = date > metabaseSettledThrough;
+
     // Provider's licenses (with state) and provider_state_status
     const [licRes, statusRes, activationsRes, slotsRes, forecastRes, snapsLatestRes] = await Promise.all([
       supabase.from('provider_licenses')
@@ -264,10 +269,31 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       (activationsRes.data ?? []).filter(a => a.is_active).map(a => a.state_abbreviation as string),
     );
     const slotsByState = new Map<string, number>();
+    const slotSourceByState = new Map<string, 'metabase_settled' | 'metabase_preliminary' | 'schedule_forecast'>();
     for (const r of slotsRes.data ?? []) {
+      const isHistorical = r.window_type === 'historical';
+      const isForecast = r.window_type === 'forecast';
+      // For settled days: prefer historical (Metabase actuals).
+      // For preliminary days (today / yesterday-ish): prefer forecast (Homebase schedule)
+      // because Metabase visits haven't fully landed yet.
       const ex = slotsByState.get(r.state_abbreviation);
-      if (ex === undefined || r.window_type === 'historical') {
-        slotsByState.set(r.state_abbreviation, r.unfilled_slots);
+      const exSrc = slotSourceByState.get(r.state_abbreviation);
+      if (requestedDayIsPreliminary) {
+        if (isForecast) {
+          slotsByState.set(r.state_abbreviation, r.unfilled_slots);
+          slotSourceByState.set(r.state_abbreviation, 'schedule_forecast');
+        } else if (isHistorical && exSrc !== 'schedule_forecast') {
+          slotsByState.set(r.state_abbreviation, r.unfilled_slots);
+          slotSourceByState.set(r.state_abbreviation, 'metabase_preliminary');
+        }
+      } else {
+        if (ex === undefined || isHistorical) {
+          slotsByState.set(r.state_abbreviation, r.unfilled_slots);
+          slotSourceByState.set(
+            r.state_abbreviation,
+            isHistorical ? 'metabase_settled' : 'schedule_forecast',
+          );
+        }
       }
     }
     const forecastByState = new Map<string, number>(
@@ -396,6 +422,14 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       ),
       sla_buffer: buffer,
       slots_per_hour: SLOTS_PER_HOUR,
+      data_freshness: {
+        metabase_lag_days: lagDays,
+        settled_through: metabaseSettledThrough,
+        requested_day_is_preliminary: requestedDayIsPreliminary,
+        note: requestedDayIsPreliminary
+          ? `Metabase visit data is settled through ${metabaseSettledThrough}. ${date} is too recent — slot numbers shown for that day come from the Homebase schedule (forecast), not finalized actuals.`
+          : `Metabase visit data is settled through ${metabaseSettledThrough}, which covers ${date}. Slot numbers reflect actual booked visits.`,
+      },
     };
 
     // Plain-English narrative for the provider-mode facts.
@@ -404,6 +438,11 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       plain.push(`${provider.full_name} is licensed in ${facts.eligible_state_count} state(s) where they can legally practice; ${facts.active_state_count} of those are active in our network.`);
       plain.push(`On ${date} they already have ${facts.existing_shift_hours_that_day}h scheduled in Homebase. The request adds ${requestedHours}h.`);
       plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. A "gap" means the state is short of that target; a "surplus" means open availability not booked.`);
+      if (requestedDayIsPreliminary) {
+        plain.push(`⚠️ Metabase visit actuals are only settled through ${metabaseSettledThrough}. Coverage numbers for ${date} use the Homebase schedule as a proxy and will firm up once overnight imports run.`);
+      } else {
+        plain.push(`Metabase visit actuals are settled through ${metabaseSettledThrough}, so coverage numbers for ${date} reflect finalized data.`);
+      }
       if (neediestStates.length > 0) {
         plain.push(`Active eligible states with the biggest gaps that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}.`);
       } else {
