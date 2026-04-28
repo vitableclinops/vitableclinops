@@ -681,6 +681,22 @@ async function computeNetworkDaySummary(
   const fcByState = new Map<string, number>(
     (fcRes.data ?? []).map((r: any) => [r.state_abbreviation, Number(r.projected_visits) || 0]),
   );
+  // Same fallback as the main provider-mode flow and runNetworkMode: if no
+  // demand_forecast for this week, use the most recent available week.
+  let fcFallbackWeek: string | null = null;
+  if (fcByState.size === 0) {
+    const { data: latest } = await supabase.from('demand_forecast')
+      .select('state_abbreviation, week_start, projected_visits')
+      .order('week_start', { ascending: false })
+      .limit(200);
+    if (latest && latest.length > 0) {
+      fcFallbackWeek = latest[0].week_start as string;
+      for (const r of latest) {
+        if (r.week_start !== fcFallbackWeek) continue;
+        fcByState.set(r.state_abbreviation, Number(r.projected_visits) || 0);
+      }
+    }
+  }
   let totalGap = 0;
   let totalSurplus = 0;
   let gapStateCount = 0;
@@ -708,6 +724,10 @@ async function computeNetworkDaySummary(
     total_surplus_hours: totalSurplus,
     gap_state_count: gapStateCount,
     top_gap_states: topGaps.slice(0, 5),
+    forecast_is_fallback: fcFallbackWeek !== null,
+    forecast_source: fcFallbackWeek
+      ? `Fallback: most recent demand_forecast week ${fcFallbackWeek}`
+      : `demand_forecast week ${getMonday(date)}`,
     providers_states_overlap_note:
       'these gap states are not in the provider eligible+active list above (otherwise they would appear in neediest_states)',
   };
