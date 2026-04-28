@@ -270,6 +270,13 @@ export default function CoverageCopilotPage() {
                       <> · Scanned {response.facts.scan_range.start_date} → {response.facts.scan_range.end_date}</>
                     )}
                   </p>
+                  {Array.isArray(response.facts?.confidence_explanation) && response.facts.confidence_explanation.length > 0 && (
+                    <ul className="text-xs text-muted-foreground mt-1.5 list-disc pl-4 space-y-0.5">
+                      {response.facts.confidence_explanation.map((line: string, i: number) => (
+                        <li key={i}>{line}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 {net.highlighted_date && (
                   <Badge variant="secondary">{net.highlighted_date}</Badge>
@@ -375,6 +382,13 @@ export default function CoverageCopilotPage() {
                   <p className="text-xs text-muted-foreground mt-1">
                     Confidence: <span className="capitalize">{rec.confidence}</span>
                   </p>
+                  {Array.isArray(response.facts?.confidence_explanation) && response.facts.confidence_explanation.length > 0 && (
+                    <ul className="text-xs text-muted-foreground mt-1.5 list-disc pl-4 space-y-0.5">
+                      {response.facts.confidence_explanation.map((line: string, i: number) => (
+                        <li key={i}>{line}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 {recBadge(rec.recommendation)}
               </CardHeader>
