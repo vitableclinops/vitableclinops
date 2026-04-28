@@ -300,6 +300,26 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       (forecastRes.data ?? []).map(r => [r.state_abbreviation as string, r.projected_visits as number]),
     );
 
+    // Forecast fallback: if no demand_forecast rows exist for the requested
+    // week (very common because forecasts are loaded weekly and may lag),
+    // mirror runNetworkMode and fall back to the most recent available week.
+    let forecastSourceWeek: string = weekStart;
+    let forecastIsFallback = false;
+    if (forecastByState.size === 0) {
+      const { data: latestFc } = await supabase.from('demand_forecast')
+        .select('state_abbreviation, week_start, projected_visits')
+        .order('week_start', { ascending: false })
+        .limit(200);
+      if (latestFc && latestFc.length > 0) {
+        forecastSourceWeek = latestFc[0].week_start as string;
+        forecastIsFallback = true;
+        for (const r of latestFc) {
+          if (r.week_start !== forecastSourceWeek) continue;
+          forecastByState.set(r.state_abbreviation as string, Number(r.projected_visits) || 0);
+        }
+      }
+    }
+
     // Provider's snapshot allocations (for deactivation candidates)
     const latestSnap = snapsLatestRes.data?.[0]?.snapshot_date as string | undefined;
     const snapsRes = latestSnap
