@@ -41,7 +41,7 @@ function normalizeName(n: string): string {
 // reliable until ~12h after the day ends (i.e. midday the day after). To stay
 // safe we treat any `historical` slot row whose date is AFTER the cutoff as
 // "preliminary" and prefer the Homebase-derived `forecast` row instead.
-const DEFAULT_METABASE_LAG_DAYS = 2;
+const DEFAULT_METABASE_LAG_DAYS = 1;
 
 function addDaysISO(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split('-').map(Number);
