@@ -432,6 +432,13 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       },
     };
 
+    // ──────── Network-wide picture for the same date (so the AI can explain
+    // why a provider-scoped answer differs from a network-scoped one). ────────
+    const networkSummary = await computeNetworkDaySummary(
+      supabase, date, buffer, activeStates, requestedDayIsPreliminary,
+    );
+    (facts as any).network_picture_for_requested_date = networkSummary;
+
     // Plain-English narrative for the provider-mode facts.
     {
       const plain: string[] = [];
