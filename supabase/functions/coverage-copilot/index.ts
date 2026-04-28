@@ -370,6 +370,26 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       slots_per_hour: SLOTS_PER_HOUR,
     };
 
+    // Plain-English narrative for the provider-mode facts.
+    {
+      const plain: string[] = [];
+      plain.push(`${provider.full_name} is licensed in ${facts.eligible_state_count} state(s) where they can legally practice; ${facts.active_state_count} of those are active in our network.`);
+      plain.push(`On ${date} they already have ${facts.existing_shift_hours_that_day}h scheduled in Homebase. The request adds ${requestedHours}h.`);
+      plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. A "gap" means the state is short of that target; a "surplus" means open availability not booked.`);
+      if (neediestStates.length > 0) {
+        plain.push(`Active eligible states with the biggest gaps that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}.`);
+      } else {
+        plain.push(`No active eligible states are short on coverage that day.`);
+      }
+      if (activationOpportunities.length > 0) {
+        plain.push(`Activation candidates (provider is ready but EHR-inactive in a state with a gap): ${activationOpportunities.map(s => s.state).join(', ')}.`);
+      }
+      if (deactivationOpportunities.length > 0) {
+        plain.push(`Deactivation candidates (this provider has slack ≥3h or the state has surplus ≥4h): ${deactivationOpportunities.map(s => s.state).join(', ')}.`);
+      }
+      (facts as any).plain_english = plain;
+    }
+
     // ──────────────── Step D: synthesize recommendation ────────────────
     const synthTools = [{
       type: 'function',
@@ -645,6 +665,28 @@ async function runNetworkMode(
       ? `No coverage data found between ${startDate} and ${endDate}. Either state_leftover_slots are missing for these dates or no demand_forecast exists at all.`
       : null,
   };
+
+  // Plain-English narrative of the facts (deterministic, not AI generated).
+  const plain: string[] = [];
+  plain.push(`Scanned ${perDay.length} day(s) of coverage data from ${startDate} to ${endDate}.`);
+  if (fallbackWeek) {
+    plain.push(`No demand forecast exists for the scanned range, so the most recent week (${fallbackWeek}) was used as a proxy. Numbers may be off if demand has shifted.`);
+  }
+  plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. Slots are converted to hours at ${SLOTS_PER_HOUR} slots/hour.`);
+  plain.push(`A "gap" means available slots fell short of the SLA target. A "surplus" means available slots exceeded the SLA target — note this counts open Homebase availability that wasn't booked, not extra staffed labor.`);
+  if (firstDayWithGaps) {
+    const states = firstDayWithGaps.gap_states.slice(0, 5).join(', ') || 'none';
+    plain.push(`Earliest day with gaps: ${firstDayWithGaps.date} — total ${firstDayWithGaps.total_gap_hours}h short across ${firstDayWithGaps.gap_states.length} state(s) (${states}).`);
+  } else if (perDay.length > 0) {
+    plain.push(`No gaps found in any active state across the scanned range — every day meets or exceeds SLA target.`);
+  }
+  if (topGapStates.length > 0) {
+    plain.push(`States with the largest cumulative gaps: ${topGapStates.map(s => `${s.state} (${s.gap_hours}h short over ${s.days_with_gaps} day(s))`).join('; ')}.`);
+  }
+  if (topSurplusStates.length > 0) {
+    plain.push(`States with the largest cumulative surplus (open availability not booked): ${topSurplusStates.map(s => `${s.state} (${s.surplus_hours}h)`).join('; ')}.`);
+  }
+  (facts as any).plain_english = plain;
 
   const synthTools = [{
     type: 'function',

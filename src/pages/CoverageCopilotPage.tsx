@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Sparkles, CheckCircle2, AlertTriangle, XCircle, ChevronDown, Copy, MessageSquare, Calendar, TrendingDown, TrendingUp } from 'lucide-react';
+import { Sparkles, CheckCircle2, AlertTriangle, XCircle, ChevronDown, Copy, MessageSquare, Calendar, TrendingDown, TrendingUp, Code2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -115,6 +115,52 @@ export default function CoverageCopilotPage() {
     if (!response?.recommendation?.summary) return;
     await navigator.clipboard.writeText(response.recommendation.summary);
     toast({ title: 'Copied to clipboard' });
+  };
+
+  const copyJson = async () => {
+    if (!response?.facts) return;
+    await navigator.clipboard.writeText(JSON.stringify(response.facts, null, 2));
+    toast({ title: 'Raw facts copied as JSON' });
+  };
+
+  const renderFactsCard = () => {
+    if (!response?.facts) return null;
+    const plain: string[] = Array.isArray(response.facts?.plain_english) ? response.facts.plain_english : [];
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Facts used</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {plain.length > 0 ? (
+            <ul className="text-sm space-y-1.5 list-disc pl-5">
+              {plain.map((p, i) => <li key={i}>{p}</li>)}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">No plain-English breakdown available for this answer.</p>
+          )}
+          <Collapsible>
+            <div className="flex items-center justify-between">
+              <CollapsibleTrigger asChild>
+                <button className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                  <Code2 className="h-3.5 w-3.5" />
+                  View raw JSON
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+              </CollapsibleTrigger>
+              <Button size="sm" variant="ghost" onClick={copyJson}>
+                <Copy className="h-3.5 w-3.5 mr-1" /> Copy JSON
+              </Button>
+            </div>
+            <CollapsibleContent className="mt-2">
+              <pre className="text-[11px] bg-muted rounded p-3 overflow-x-auto max-h-[400px]">
+                {JSON.stringify(response.facts, null, 2)}
+              </pre>
+            </CollapsibleContent>
+          </Collapsible>
+        </CardContent>
+      </Card>
+    );
   };
 
   const rec = response?.recommendation;
@@ -313,23 +359,7 @@ export default function CoverageCopilotPage() {
             </div>
 
             {/* Facts viewer */}
-            <Card>
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <button className="w-full flex items-center justify-between p-4 text-sm hover:bg-accent rounded-t-lg">
-                    <span className="font-medium">Facts used</span>
-                    <ChevronDown className="h-4 w-4" />
-                  </button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <CardContent className="pt-0">
-                    <pre className="text-[11px] bg-muted rounded p-3 overflow-x-auto max-h-[400px]">
-                      {JSON.stringify(response.facts, null, 2)}
-                    </pre>
-                  </CardContent>
-                </CollapsibleContent>
-              </Collapsible>
-            </Card>
+            {renderFactsCard()}
           </div>
         )}
 
@@ -430,23 +460,7 @@ export default function CoverageCopilotPage() {
             ) : null}
 
             {/* Facts viewer */}
-            <Card>
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <button className="w-full flex items-center justify-between p-4 text-sm hover:bg-accent rounded-t-lg">
-                    <span className="font-medium">Facts used</span>
-                    <ChevronDown className="h-4 w-4" />
-                  </button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <CardContent className="pt-0">
-                    <pre className="text-[11px] bg-muted rounded p-3 overflow-x-auto max-h-[400px]">
-                      {JSON.stringify(response.facts, null, 2)}
-                    </pre>
-                  </CardContent>
-                </CollapsibleContent>
-              </Collapsible>
-            </Card>
+            {renderFactsCard()}
           </div>
         )}
       </div>
