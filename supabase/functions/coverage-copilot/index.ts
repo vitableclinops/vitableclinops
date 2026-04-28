@@ -65,6 +65,85 @@ function settledThrough(todayStr: string, lagDays: number): string {
 }
 
 const LOVABLE_API = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+
+function weeksBetween(aISO: string, bISO: string): number {
+  const [ay, am, ad] = aISO.split('-').map(Number);
+  const [by, bm, bd] = bISO.split('-').map(Number);
+  const a = Date.UTC(ay, am - 1, ad);
+  const b = Date.UTC(by, bm - 1, bd);
+  return Math.round(Math.abs(a - b) / (7 * 24 * 60 * 60 * 1000));
+}
+
+/**
+ * Build a deterministic, plain-English list of factors that should lower
+ * confidence in the answer. Returned as short bullet strings the UI can
+ * render directly under the "Confidence: low/medium" line.
+ */
+async function buildConfidenceExplanation(
+  supabase: any,
+  opts: {
+    forecastIsFallback: boolean;
+    requestedForecastWeek: string;
+    fallbackWeek: string | null;
+    requestedDayIsPreliminary: boolean;
+    metabaseSettledThrough: string;
+    requestedDate?: string | null;
+  },
+): Promise<string[]> {
+  const out: string[] = [];
+
+  if (opts.forecastIsFallback && opts.fallbackWeek) {
+    const weeksOld = weeksBetween(opts.requestedForecastWeek, opts.fallbackWeek);
+    out.push(
+      `No demand forecast was loaded for the week of ${opts.requestedForecastWeek} — using the most recent available week (${opts.fallbackWeek}, ~${weeksOld} week${weeksOld === 1 ? '' : 's'} old) as a proxy.`,
+    );
+
+    // Compare fallback week vs the week immediately before it so we can say
+    // whether demand has been trending up/down (and therefore whether the
+    // proxy is likely an over- or under-estimate).
+    const { data: priorFc } = await supabase
+      .from('demand_forecast')
+      .select('week_start, projected_visits')
+      .lt('week_start', opts.fallbackWeek)
+      .order('week_start', { ascending: false })
+      .limit(200);
+    if (priorFc && priorFc.length > 0) {
+      const priorWeek = priorFc[0].week_start as string;
+      let priorTotal = 0;
+      for (const r of priorFc) {
+        if (r.week_start !== priorWeek) continue;
+        priorTotal += Number(r.projected_visits) || 0;
+      }
+      const { data: fbFc } = await supabase
+        .from('demand_forecast')
+        .select('projected_visits')
+        .eq('week_start', opts.fallbackWeek);
+      const fbTotal = (fbFc ?? []).reduce(
+        (acc: number, r: any) => acc + (Number(r.projected_visits) || 0),
+        0,
+      );
+      if (priorTotal > 0 && fbTotal > 0) {
+        const deltaPct = Math.round(((fbTotal - priorTotal) / priorTotal) * 100);
+        const direction = deltaPct > 0 ? 'up' : deltaPct < 0 ? 'down' : 'flat';
+        out.push(
+          `Network-wide projected visits in the fallback week (${opts.fallbackWeek}: ${Math.round(fbTotal)}) are ${Math.abs(deltaPct)}% ${direction} vs the prior week (${priorWeek}: ${Math.round(priorTotal)}) — recent demand has been moving, so the proxy may be off.`,
+        );
+      }
+    } else {
+      out.push(
+        `Only one forecast week is loaded, so we can't tell whether demand has been trending up or down — treat gap/surplus numbers as directional only.`,
+      );
+    }
+  }
+
+  if (opts.requestedDayIsPreliminary && opts.requestedDate) {
+    out.push(
+      `${opts.requestedDate} is past the Metabase settled cutoff (${opts.metabaseSettledThrough}), so unfilled-slot counts come from a booking-aware forecast that tends to overstate gaps and tightens as bookings land.`,
+    );
+  }
+
+  return out;
+}
 const MODEL = 'google/gemini-3-flash-preview';
 
 async function callAI(body: Record<string, unknown>, apiKey: string) {
