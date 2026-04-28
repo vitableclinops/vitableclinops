@@ -545,7 +545,9 @@ Decision rules:
 - Use conditional_yes for states where readiness=ready and ehr is inactive/deactivated/activation_requested AND state has gap.
 - Use conditional_no for states where this provider has surplus_hours >= 3 (could be deactivated to free capacity).
 - Never invent numbers. Cite facts only.
-- Keep summary under 3 sentences.`;
+- IMPORTANT: When you say "no gaps", clarify the scope. If facts.neediest_states is empty BUT facts.network_picture_for_requested_date.total_gap_hours > 0, your summary MUST say something like "no gaps in states where {provider} can practice — though the network has Xh in gaps elsewhere on that date" so the answer doesn't contradict the network-mode view.
+- If facts.data_freshness.requested_day_is_preliminary is true, call out that the day is PRELIMINARY (booking-aware forecast that tends to overstate) and lower confidence accordingly.
+- Keep summary under 4 sentences.`;
 
     const synthRes = await callAI({
       messages: [
