@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Sparkles, CheckCircle2, AlertTriangle, XCircle, ChevronDown, Copy, MessageSquare } from 'lucide-react';
+import { Sparkles, CheckCircle2, AlertTriangle, XCircle, ChevronDown, Copy, MessageSquare, Calendar, TrendingDown, TrendingUp } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -27,17 +27,30 @@ interface Recommendation {
   summary: string;
 }
 interface CopilotResponse {
+  mode?: 'provider' | 'network';
   extracted?: Record<string, unknown>;
-  facts?: Record<string, unknown>;
+  facts?: any;
   recommendation?: Recommendation;
+  network_answer?: NetworkAnswer;
   error?: string;
   candidates?: { id: string; name: string; email: string }[];
 }
 
+interface NetworkAnswer {
+  headline: string;
+  summary: string;
+  highlighted_date?: string;
+  key_states?: string[];
+  reasons: string[];
+  suggested_actions?: string[];
+  confidence: 'high' | 'medium' | 'low';
+}
+
 const SAMPLES = [
   'Mandy wants to work additional hours on May 1st from 10am-5pm EST. Do we need her hours?',
-  'Can Sarah pick up an extra 4-hour shift tomorrow 1pm-5pm ET?',
-  'Jordan offered to work Saturday 9am-1pm EST — should we approve?',
+  'When is the next date with coverage gaps?',
+  'Which states are short on coverage this week?',
+  'Do we have surplus capacity on Friday?',
 ];
 
 function recBadge(rec: Recommendation['recommendation']) {
@@ -105,6 +118,7 @@ export default function CoverageCopilotPage() {
   };
 
   const rec = response?.recommendation;
+  const net = response?.network_answer;
 
   return (
     <div className="min-h-screen bg-background">
@@ -192,6 +206,131 @@ export default function CoverageCopilotPage() {
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{response.error}</AlertDescription>
           </Alert>
+        )}
+
+        {/* Network-mode answer */}
+        {net && response && (
+          <div className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-primary" />
+                    Network insight
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Confidence: <span className="capitalize">{net.confidence}</span>
+                    {response.facts?.scan_range && (
+                      <> · Scanned {response.facts.scan_range.start_date} → {response.facts.scan_range.end_date}</>
+                    )}
+                  </p>
+                </div>
+                {net.highlighted_date && (
+                  <Badge variant="secondary">{net.highlighted_date}</Badge>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="text-lg font-medium">{net.headline}</div>
+                <div className="rounded-md bg-muted p-3 text-sm flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2">
+                    <MessageSquare className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                    <p>{net.summary}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(net.summary);
+                      toast({ title: 'Copied to clipboard' });
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+                  </Button>
+                </div>
+                {net.key_states && net.key_states.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {net.key_states.map(s => (
+                      <Badge key={s} variant="outline">{s}</Badge>
+                    ))}
+                  </div>
+                )}
+                {net.reasons?.length > 0 && (
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground mb-1.5">Why</div>
+                    <ul className="text-sm space-y-1 list-disc pl-5">
+                      {net.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {net.suggested_actions && net.suggested_actions.length > 0 && (
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground mb-1.5">Suggested actions</div>
+                    <ul className="text-sm space-y-1 list-disc pl-5">
+                      {net.suggested_actions.map((a, i) => <li key={i}>{a}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              {response.facts?.top_gap_states?.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm flex items-center gap-1.5">
+                      <TrendingDown className="h-4 w-4 text-destructive" />
+                      Top gap states
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-1.5">
+                    {response.facts.top_gap_states.map((s: any) => (
+                      <div key={s.state} className="text-sm flex justify-between">
+                        <span><Badge variant="outline" className="mr-2">{s.state}</Badge>{s.days_with_gaps} day(s) short</span>
+                        <span className="font-medium">{s.gap_hours}h</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+              {response.facts?.top_surplus_states?.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm flex items-center gap-1.5">
+                      <TrendingUp className="h-4 w-4 text-emerald-500" />
+                      Top surplus states
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-1.5">
+                    {response.facts.top_surplus_states.map((s: any) => (
+                      <div key={s.state} className="text-sm flex justify-between">
+                        <Badge variant="outline">{s.state}</Badge>
+                        <span className="font-medium">{s.surplus_hours}h</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            {/* Facts viewer */}
+            <Card>
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <button className="w-full flex items-center justify-between p-4 text-sm hover:bg-accent rounded-t-lg">
+                    <span className="font-medium">Facts used</span>
+                    <ChevronDown className="h-4 w-4" />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <pre className="text-[11px] bg-muted rounded p-3 overflow-x-auto max-h-[400px]">
+                      {JSON.stringify(response.facts, null, 2)}
+                    </pre>
+                  </CardContent>
+                </CollapsibleContent>
+              </Collapsible>
+            </Card>
+          </div>
         )}
 
         {/* Recommendation */}
