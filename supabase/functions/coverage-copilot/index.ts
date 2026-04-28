@@ -541,6 +541,27 @@ async function runNetworkMode(
     fcByWeekState.set(`${r.week_start}|${r.state_abbreviation}`, Number(r.projected_visits) || 0);
   }
 
+  // Fallback: if no forecast for any week in range, use the most recent available
+  // forecast week as a proxy (so we can still report gaps/surplus using slots).
+  let fallbackForecast: Map<string, number> | null = null;
+  let fallbackWeek: string | null = null;
+  if (fcByWeekState.size === 0) {
+    let lfQ = supabase.from('demand_forecast')
+      .select('state_abbreviation, week_start, projected_visits')
+      .order('week_start', { ascending: false })
+      .limit(200);
+    if (stateFilter) lfQ = lfQ.eq('state_abbreviation', stateFilter);
+    const { data: latest } = await lfQ;
+    if (latest && latest.length > 0) {
+      fallbackWeek = latest[0].week_start as string;
+      fallbackForecast = new Map();
+      for (const r of latest) {
+        if (r.week_start !== fallbackWeek) continue;
+        fallbackForecast.set(r.state_abbreviation, Number(r.projected_visits) || 0);
+      }
+    }
+  }
+
   // Compute per-day per-state gap/surplus. Prefer historical over forecast for slots.
   const slotKey = new Map<string, { slots: number; window: string }>();
   for (const r of slotRows ?? []) {
@@ -562,7 +583,10 @@ async function runNetworkMode(
     const [date, state] = k.split('|');
     if (!activeStates.has(state)) continue;
     const wk = getMonday(date);
-    const visits = fcByWeekState.get(`${wk}|${state}`);
+    let visits = fcByWeekState.get(`${wk}|${state}`);
+    if (visits === undefined && fallbackForecast) {
+      visits = fallbackForecast.get(state);
+    }
     if (visits === undefined) continue;
     const target = slaTargetSlots(visits, buffer);
     const diff = target - v.slots;
@@ -606,6 +630,9 @@ async function runNetworkMode(
     mode: 'network',
     scan_range: { start_date: startDate, end_date: endDate },
     state_filter: stateFilter,
+    forecast_source: fallbackWeek
+      ? `Using fallback forecast from week ${fallbackWeek} (no forecast loaded for the scanned range).`
+      : 'Using forecast aligned to scanned weeks.',
     days_with_data: perDay.length,
     first_day_with_gaps: firstDayWithGaps,
     per_day: perDay.slice(0, 30),
@@ -615,7 +642,7 @@ async function runNetworkMode(
     sla_buffer: buffer,
     slots_per_hour: SLOTS_PER_HOUR,
     note: perDay.length === 0
-      ? 'No coverage data found in this date range. Check that demand_forecast and state_leftover_slots are loaded.'
+      ? `No coverage data found between ${startDate} and ${endDate}. Either state_leftover_slots are missing for these dates or no demand_forecast exists at all.`
       : null,
   };
 
