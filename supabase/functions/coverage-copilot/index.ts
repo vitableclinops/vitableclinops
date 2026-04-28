@@ -453,7 +453,18 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       if (neediestStates.length > 0) {
         plain.push(`Active eligible states with the biggest gaps that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}.`);
       } else {
-        plain.push(`No active eligible states are short on coverage that day.`);
+        plain.push(`No active eligible states (where ${provider.full_name} can legally practice and is EHR-active) are short on coverage that day.`);
+      }
+      // Cross-reference network-wide gap picture so we don't contradict the
+      // network-mode answer for the same date.
+      const np = (facts as any).network_picture_for_requested_date;
+      if (np) {
+        if (np.total_gap_hours > 0) {
+          const tag = np.is_preliminary ? ' (PRELIMINARY — booking-aware forecast that tends to overstate)' : '';
+          plain.push(`Network-wide on ${date}${tag}: ${np.total_gap_hours}h short across ${np.gap_state_count} state(s). ${provider.full_name} cannot help because ${np.providers_states_overlap_note}.`);
+        } else {
+          plain.push(`Network-wide on ${date}: no gaps in any active state.`);
+        }
       }
       if (activationOpportunities.length > 0) {
         plain.push(`Activation candidates (provider is ready but EHR-inactive in a state with a gap): ${activationOpportunities.map(s => s.state).join(', ')}.`);
