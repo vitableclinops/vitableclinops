@@ -646,6 +646,28 @@ async function runNetworkMode(
       : null,
   };
 
+  // Plain-English narrative of the facts (deterministic, not AI generated).
+  const plain: string[] = [];
+  plain.push(`Scanned ${perDay.length} day(s) of coverage data from ${startDate} to ${endDate}.`);
+  if (fallbackWeek) {
+    plain.push(`No demand forecast exists for the scanned range, so the most recent week (${fallbackWeek}) was used as a proxy. Numbers may be off if demand has shifted.`);
+  }
+  plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. Slots are converted to hours at ${SLOTS_PER_HOUR} slots/hour.`);
+  plain.push(`A "gap" means available slots fell short of the SLA target. A "surplus" means available slots exceeded the SLA target — note this counts open Homebase availability that wasn't booked, not extra staffed labor.`);
+  if (firstDayWithGaps) {
+    const states = firstDayWithGaps.gap_states.slice(0, 5).join(', ') || 'none';
+    plain.push(`Earliest day with gaps: ${firstDayWithGaps.date} — total ${firstDayWithGaps.total_gap_hours}h short across ${firstDayWithGaps.gap_states.length} state(s) (${states}).`);
+  } else if (perDay.length > 0) {
+    plain.push(`No gaps found in any active state across the scanned range — every day meets or exceeds SLA target.`);
+  }
+  if (topGapStates.length > 0) {
+    plain.push(`States with the largest cumulative gaps: ${topGapStates.map(s => `${s.state} (${s.gap_hours}h short over ${s.days_with_gaps} day(s))`).join('; ')}.`);
+  }
+  if (topSurplusStates.length > 0) {
+    plain.push(`States with the largest cumulative surplus (open availability not booked): ${topSurplusStates.map(s => `${s.state} (${s.surplus_hours}h)`).join('; ')}.`);
+  }
+  (facts as any).plain_english = plain;
+
   const synthTools = [{
     type: 'function',
     function: {
