@@ -55,12 +55,16 @@ async function callAI(body: Record<string, unknown>, apiKey: string) {
 }
 
 interface ExtractedQuery {
+  mode: 'provider' | 'network';
   provider_query: string;
   date: string;            // YYYY-MM-DD
   start_local: string;     // HH:MM (24h)
   end_local: string;       // HH:MM (24h)
   timezone: string;        // IANA
-  intent: 'approve_extra_hours' | 'general';
+  intent: 'approve_extra_hours' | 'find_gaps' | 'find_surplus' | 'general';
+  scan_start_date?: string; // YYYY-MM-DD, for network scans
+  scan_end_date?: string;   // YYYY-MM-DD, for network scans
+  state_filter?: string;    // optional state abbreviation
   notes?: string;
 }
 
@@ -91,19 +95,23 @@ Deno.serve(async (req) => {
       type: 'function',
       function: {
         name: 'parse_question',
-        description: 'Extract structured shift-approval parameters from the question.',
+        description: 'Extract structured parameters from a coverage question. Pick mode="provider" when the question is about a specific provider working extra hours. Pick mode="network" when it asks about the network/state level (e.g. "when is the next date with gaps", "which states are short this week", "do we have surplus on Friday").',
         parameters: {
           type: 'object',
           properties: {
-            provider_query: { type: 'string', description: 'Provider name as written, e.g. "Mandy" or "Amanda Smith".' },
-            date: { type: 'string', description: 'Target date YYYY-MM-DD. Today is ' + todayDefault + '. Year defaults to current year if missing.' },
-            start_local: { type: 'string', description: '24h local start time HH:MM, e.g. "10:00".' },
-            end_local: { type: 'string', description: '24h local end time HH:MM, e.g. "17:00".' },
+            mode: { type: 'string', enum: ['provider', 'network'], description: 'provider = question about one named provider. network = question about overall state coverage / gaps / surplus across the network.' },
+            provider_query: { type: 'string', description: 'Provider name as written. Empty string if mode=network.' },
+            date: { type: 'string', description: 'Target date YYYY-MM-DD if a single date is asked about. Today is ' + todayDefault + '. Empty string if mode=network and a date range is implied.' },
+            start_local: { type: 'string', description: '24h local start time HH:MM. Empty string if not specified.' },
+            end_local: { type: 'string', description: '24h local end time HH:MM. Empty string if not specified.' },
             timezone: { type: 'string', description: 'IANA timezone. Default America/New_York if EST/ET implied or unspecified.' },
-            intent: { type: 'string', enum: ['approve_extra_hours', 'general'] },
+            intent: { type: 'string', enum: ['approve_extra_hours', 'find_gaps', 'find_surplus', 'general'] },
+            scan_start_date: { type: 'string', description: 'For network mode: start of date range to scan, YYYY-MM-DD. Default to today (' + todayDefault + ') if "next" / "upcoming" is implied. Empty string if not applicable.' },
+            scan_end_date: { type: 'string', description: 'For network mode: end of date range, YYYY-MM-DD. Default to 14 days after scan_start_date if not specified. Empty string if not applicable.' },
+            state_filter: { type: 'string', description: 'Optional 2-letter state abbreviation to focus on. Empty string if none.' },
             notes: { type: 'string', description: 'Optional extra context.' },
           },
-          required: ['provider_query', 'date', 'start_local', 'end_local', 'timezone', 'intent'],
+          required: ['mode', 'provider_query', 'date', 'start_local', 'end_local', 'timezone', 'intent'],
           additionalProperties: false,
         },
       },
@@ -111,7 +119,13 @@ Deno.serve(async (req) => {
 
     const extractRes = await callAI({
       messages: [
-        { role: 'system', content: 'You extract shift-approval parameters from short natural-language questions sent by ops staff. Always return a tool call. Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone America/New_York.' },
+        { role: 'system', content: `You extract structured parameters from short natural-language coverage questions sent by ops staff. Always return a tool call.
+
+Mode rules:
+- mode="provider": a specific provider name is mentioned and the question is about their hours/shift (e.g. "Mandy wants extra hours May 1 10am-5pm").
+- mode="network": no specific provider, or the question is about the state/network level (e.g. "when is the next date with gaps", "which states are short this week", "do we have surplus Friday", "is TX covered next Monday"). Leave provider_query as empty string.
+
+Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone America/New_York. Today is ${todayDefault}. "Next date with gaps" -> scan_start_date=${todayDefault}, scan_end_date 14 days later.` },
         { role: 'user', content: question },
       ],
       tools: extractTools,
@@ -121,10 +135,18 @@ Deno.serve(async (req) => {
     const extractCall = extractRes.choices?.[0]?.message?.tool_calls?.[0];
     if (!extractCall) {
       return new Response(JSON.stringify({
-        error: 'Could not parse question. Please include a provider name, date, and time window (e.g. "Mandy wants extra hours May 1, 10am-5pm EST").',
+        error: 'Could not parse question. Try "Mandy wants extra hours May 1 10am-5pm EST" or "When is the next date with coverage gaps?"',
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     const extracted: ExtractedQuery = JSON.parse(extractCall.function.arguments);
+
+    // ──────────────── Network mode short-circuit ────────────────
+    if (extracted.mode === 'network') {
+      const networkResult = await runNetworkMode(supabase, extracted, todayDefault, apiKey, question);
+      return new Response(JSON.stringify(networkResult), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // ──────────────── Step B: resolve provider ────────────────
     const queryNorm = normalizeName(extracted.provider_query);
@@ -458,3 +480,213 @@ function hoursBetween(start: string, end: string): number {
   return round1(mins / 60);
 }
 function round1(n: number): number { return Math.round(n * 10) / 10; }
+
+function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+async function runNetworkMode(
+  supabase: any,
+  extracted: ExtractedQuery,
+  todayDefault: string,
+  apiKey: string,
+  question: string,
+) {
+  const startDate = extracted.scan_start_date && extracted.scan_start_date.length === 10
+    ? extracted.scan_start_date
+    : (extracted.date && extracted.date.length === 10 ? extracted.date : todayDefault);
+  const endDate = extracted.scan_end_date && extracted.scan_end_date.length === 10
+    ? extracted.scan_end_date
+    : (extracted.date && extracted.date.length === 10 ? extracted.date : addDays(startDate, 14));
+  const stateFilter = extracted.state_filter && extracted.state_filter.length === 2
+    ? extracted.state_filter.toUpperCase() : null;
+
+  // SLA buffer
+  let buffer = DEFAULT_SLA_BUFFER;
+  const { data: cfg } = await supabase.from('system_config')
+    .select('value').eq('key', 'sla_buffer_multiplier').maybeSingle();
+  if (cfg?.value) {
+    const parsed = parseFloat(String(cfg.value));
+    if (!Number.isNaN(parsed) && parsed > 0) buffer = parsed;
+  }
+
+  // Active states only
+  const { data: actRows } = await supabase.from('state_activation')
+    .select('state_abbreviation, is_active');
+  const activeStates = new Set(
+    (actRows ?? []).filter((a: any) => a.is_active).map((a: any) => a.state_abbreviation as string),
+  );
+
+  // Slots over the date range
+  let slotsQ = supabase.from('state_leftover_slots')
+    .select('state_abbreviation, slot_date, unfilled_slots, window_type')
+    .gte('slot_date', startDate).lte('slot_date', endDate)
+    .in('window_type', ['historical', 'forecast']);
+  if (stateFilter) slotsQ = slotsQ.eq('state_abbreviation', stateFilter);
+  const { data: slotRows } = await slotsQ;
+
+  // Forecast: weekly visits per state. Pull all weeks overlapping range.
+  const startMonday = getMonday(startDate);
+  const endMonday = getMonday(endDate);
+  let fcQ = supabase.from('demand_forecast')
+    .select('state_abbreviation, week_start, projected_visits')
+    .gte('week_start', startMonday).lte('week_start', endMonday);
+  if (stateFilter) fcQ = fcQ.eq('state_abbreviation', stateFilter);
+  const { data: fcRows } = await fcQ;
+  const fcByWeekState = new Map<string, number>();
+  for (const r of fcRows ?? []) {
+    fcByWeekState.set(`${r.week_start}|${r.state_abbreviation}`, Number(r.projected_visits) || 0);
+  }
+
+  // Fallback: if no forecast for any week in range, use the most recent available
+  // forecast week as a proxy (so we can still report gaps/surplus using slots).
+  let fallbackForecast: Map<string, number> | null = null;
+  let fallbackWeek: string | null = null;
+  if (fcByWeekState.size === 0) {
+    let lfQ = supabase.from('demand_forecast')
+      .select('state_abbreviation, week_start, projected_visits')
+      .order('week_start', { ascending: false })
+      .limit(200);
+    if (stateFilter) lfQ = lfQ.eq('state_abbreviation', stateFilter);
+    const { data: latest } = await lfQ;
+    if (latest && latest.length > 0) {
+      fallbackWeek = latest[0].week_start as string;
+      fallbackForecast = new Map();
+      for (const r of latest) {
+        if (r.week_start !== fallbackWeek) continue;
+        fallbackForecast.set(r.state_abbreviation, Number(r.projected_visits) || 0);
+      }
+    }
+  }
+
+  // Compute per-day per-state gap/surplus. Prefer historical over forecast for slots.
+  const slotKey = new Map<string, { slots: number; window: string }>();
+  for (const r of slotRows ?? []) {
+    const k = `${r.slot_date}|${r.state_abbreviation}`;
+    const existing = slotKey.get(k);
+    if (!existing || r.window_type === 'historical') {
+      slotKey.set(k, { slots: Number(r.unfilled_slots) || 0, window: r.window_type });
+    }
+  }
+
+  type DayState = {
+    date: string; state: string;
+    available_slots: number; target_slots: number;
+    gap_hours: number; surplus_hours: number;
+    window: string;
+  };
+  const perDayState: DayState[] = [];
+  for (const [k, v] of slotKey) {
+    const [date, state] = k.split('|');
+    if (!activeStates.has(state)) continue;
+    const wk = getMonday(date);
+    let visits = fcByWeekState.get(`${wk}|${state}`);
+    if (visits === undefined && fallbackForecast) {
+      visits = fallbackForecast.get(state);
+    }
+    if (visits === undefined) continue;
+    const target = slaTargetSlots(visits, buffer);
+    const diff = target - v.slots;
+    perDayState.push({
+      date, state,
+      available_slots: Math.round(v.slots),
+      target_slots: Math.round(target),
+      gap_hours: diff > 0 ? round1(slotsToHours(diff)) : 0,
+      surplus_hours: diff < 0 ? round1(slotsToHours(-diff)) : 0,
+      window: v.window,
+    });
+  }
+
+  // Aggregate per-day totals
+  const perDayMap = new Map<string, { date: string; total_gap_hours: number; total_surplus_hours: number; gap_states: string[]; surplus_states: string[] }>();
+  for (const r of perDayState) {
+    const d = perDayMap.get(r.date) ?? { date: r.date, total_gap_hours: 0, total_surplus_hours: 0, gap_states: [], surplus_states: [] };
+    d.total_gap_hours = round1(d.total_gap_hours + r.gap_hours);
+    d.total_surplus_hours = round1(d.total_surplus_hours + r.surplus_hours);
+    if (r.gap_hours > 0) d.gap_states.push(`${r.state}(${r.gap_hours}h)`);
+    if (r.surplus_hours > 0) d.surplus_states.push(`${r.state}(${r.surplus_hours}h)`);
+    perDayMap.set(r.date, d);
+  }
+  const perDay = [...perDayMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+  const firstDayWithGaps = perDay.find(d => d.total_gap_hours > 0) ?? null;
+  const worstDays = [...perDay].sort((a, b) => b.total_gap_hours - a.total_gap_hours).slice(0, 5);
+  const stateTotals = new Map<string, { state: string; gap_hours: number; surplus_hours: number; days_with_gaps: number }>();
+  for (const r of perDayState) {
+    const s = stateTotals.get(r.state) ?? { state: r.state, gap_hours: 0, surplus_hours: 0, days_with_gaps: 0 };
+    s.gap_hours = round1(s.gap_hours + r.gap_hours);
+    s.surplus_hours = round1(s.surplus_hours + r.surplus_hours);
+    if (r.gap_hours > 0) s.days_with_gaps += 1;
+    stateTotals.set(r.state, s);
+  }
+  const topGapStates = [...stateTotals.values()].filter(s => s.gap_hours > 0)
+    .sort((a, b) => b.gap_hours - a.gap_hours).slice(0, 5);
+  const topSurplusStates = [...stateTotals.values()].filter(s => s.surplus_hours > 0)
+    .sort((a, b) => b.surplus_hours - a.surplus_hours).slice(0, 5);
+
+  const facts = {
+    mode: 'network',
+    scan_range: { start_date: startDate, end_date: endDate },
+    state_filter: stateFilter,
+    forecast_source: fallbackWeek
+      ? `Using fallback forecast from week ${fallbackWeek} (no forecast loaded for the scanned range).`
+      : 'Using forecast aligned to scanned weeks.',
+    days_with_data: perDay.length,
+    first_day_with_gaps: firstDayWithGaps,
+    per_day: perDay.slice(0, 30),
+    worst_days_by_gap: worstDays,
+    top_gap_states: topGapStates,
+    top_surplus_states: topSurplusStates,
+    sla_buffer: buffer,
+    slots_per_hour: SLOTS_PER_HOUR,
+    note: perDay.length === 0
+      ? `No coverage data found between ${startDate} and ${endDate}. Either state_leftover_slots are missing for these dates or no demand_forecast exists at all.`
+      : null,
+  };
+
+  const synthTools = [{
+    type: 'function',
+    function: {
+      name: 'network_answer',
+      description: 'Answer a network-level coverage question grounded only in the provided facts.',
+      parameters: {
+        type: 'object',
+        properties: {
+          headline: { type: 'string', description: 'One-sentence direct answer to the question.' },
+          summary: { type: 'string', description: 'Plain-English answer suitable for replying in Slack. Under 4 sentences.' },
+          highlighted_date: { type: 'string', description: 'Most relevant date YYYY-MM-DD if applicable, else empty string.' },
+          key_states: { type: 'array', items: { type: 'string' }, description: 'Up to 5 state abbreviations the answer focuses on.' },
+          reasons: { type: 'array', items: { type: 'string' }, description: 'Bullet reasons grounded in the facts.' },
+          suggested_actions: { type: 'array', items: { type: 'string' }, description: 'Concrete next steps (e.g. "Activate ready providers in TX", "Approve extra hours mid-week").' },
+          confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+        },
+        required: ['headline', 'summary', 'reasons', 'confidence'],
+        additionalProperties: false,
+      },
+    },
+  }];
+
+  const synthSystem = `You are an ops copilot answering network-level coverage questions for the team.
+- Use ONLY the provided facts. Never invent numbers, dates, or states.
+- gap_hours > 0 means the state is short of the SLA target. surplus_hours > 0 means extra capacity.
+- If facts.first_day_with_gaps is null, there are no gaps in the scanned range — say so plainly.
+- If facts.note is set (no data), explain that politely and stop.
+- Keep summary under 4 sentences.`;
+
+  const synthRes = await callAI({
+    messages: [
+      { role: 'system', content: synthSystem },
+      { role: 'user', content: 'FACTS:\n' + JSON.stringify(facts, null, 2) + '\n\nORIGINAL QUESTION:\n' + question },
+    ],
+    tools: synthTools,
+    tool_choice: { type: 'function', function: { name: 'network_answer' } },
+  }, apiKey);
+
+  const call = synthRes.choices?.[0]?.message?.tool_calls?.[0];
+  if (!call) throw new Error('AI did not return a network answer');
+  const network_answer = JSON.parse(call.function.arguments);
+
+  return { mode: 'network', extracted, facts, network_answer };
+}
