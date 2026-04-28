@@ -55,12 +55,16 @@ async function callAI(body: Record<string, unknown>, apiKey: string) {
 }
 
 interface ExtractedQuery {
+  mode: 'provider' | 'network';
   provider_query: string;
   date: string;            // YYYY-MM-DD
   start_local: string;     // HH:MM (24h)
   end_local: string;       // HH:MM (24h)
   timezone: string;        // IANA
-  intent: 'approve_extra_hours' | 'general';
+  intent: 'approve_extra_hours' | 'find_gaps' | 'find_surplus' | 'general';
+  scan_start_date?: string; // YYYY-MM-DD, for network scans
+  scan_end_date?: string;   // YYYY-MM-DD, for network scans
+  state_filter?: string;    // optional state abbreviation
   notes?: string;
 }
 
@@ -91,19 +95,23 @@ Deno.serve(async (req) => {
       type: 'function',
       function: {
         name: 'parse_question',
-        description: 'Extract structured shift-approval parameters from the question.',
+        description: 'Extract structured parameters from a coverage question. Pick mode="provider" when the question is about a specific provider working extra hours. Pick mode="network" when it asks about the network/state level (e.g. "when is the next date with gaps", "which states are short this week", "do we have surplus on Friday").',
         parameters: {
           type: 'object',
           properties: {
-            provider_query: { type: 'string', description: 'Provider name as written, e.g. "Mandy" or "Amanda Smith".' },
-            date: { type: 'string', description: 'Target date YYYY-MM-DD. Today is ' + todayDefault + '. Year defaults to current year if missing.' },
-            start_local: { type: 'string', description: '24h local start time HH:MM, e.g. "10:00".' },
-            end_local: { type: 'string', description: '24h local end time HH:MM, e.g. "17:00".' },
+            mode: { type: 'string', enum: ['provider', 'network'], description: 'provider = question about one named provider. network = question about overall state coverage / gaps / surplus across the network.' },
+            provider_query: { type: 'string', description: 'Provider name as written. Empty string if mode=network.' },
+            date: { type: 'string', description: 'Target date YYYY-MM-DD if a single date is asked about. Today is ' + todayDefault + '. Empty string if mode=network and a date range is implied.' },
+            start_local: { type: 'string', description: '24h local start time HH:MM. Empty string if not specified.' },
+            end_local: { type: 'string', description: '24h local end time HH:MM. Empty string if not specified.' },
             timezone: { type: 'string', description: 'IANA timezone. Default America/New_York if EST/ET implied or unspecified.' },
-            intent: { type: 'string', enum: ['approve_extra_hours', 'general'] },
+            intent: { type: 'string', enum: ['approve_extra_hours', 'find_gaps', 'find_surplus', 'general'] },
+            scan_start_date: { type: 'string', description: 'For network mode: start of date range to scan, YYYY-MM-DD. Default to today (' + todayDefault + ') if "next" / "upcoming" is implied. Empty string if not applicable.' },
+            scan_end_date: { type: 'string', description: 'For network mode: end of date range, YYYY-MM-DD. Default to 14 days after scan_start_date if not specified. Empty string if not applicable.' },
+            state_filter: { type: 'string', description: 'Optional 2-letter state abbreviation to focus on. Empty string if none.' },
             notes: { type: 'string', description: 'Optional extra context.' },
           },
-          required: ['provider_query', 'date', 'start_local', 'end_local', 'timezone', 'intent'],
+          required: ['mode', 'provider_query', 'date', 'start_local', 'end_local', 'timezone', 'intent'],
           additionalProperties: false,
         },
       },
@@ -111,7 +119,13 @@ Deno.serve(async (req) => {
 
     const extractRes = await callAI({
       messages: [
-        { role: 'system', content: 'You extract shift-approval parameters from short natural-language questions sent by ops staff. Always return a tool call. Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone America/New_York.' },
+        { role: 'system', content: `You extract structured parameters from short natural-language coverage questions sent by ops staff. Always return a tool call.
+
+Mode rules:
+- mode="provider": a specific provider name is mentioned and the question is about their hours/shift (e.g. "Mandy wants extra hours May 1 10am-5pm").
+- mode="network": no specific provider, or the question is about the state/network level (e.g. "when is the next date with gaps", "which states are short this week", "do we have surplus Friday", "is TX covered next Monday"). Leave provider_query as empty string.
+
+Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone America/New_York. Today is ${todayDefault}. "Next date with gaps" -> scan_start_date=${todayDefault}, scan_end_date 14 days later.` },
         { role: 'user', content: question },
       ],
       tools: extractTools,
@@ -121,10 +135,18 @@ Deno.serve(async (req) => {
     const extractCall = extractRes.choices?.[0]?.message?.tool_calls?.[0];
     if (!extractCall) {
       return new Response(JSON.stringify({
-        error: 'Could not parse question. Please include a provider name, date, and time window (e.g. "Mandy wants extra hours May 1, 10am-5pm EST").',
+        error: 'Could not parse question. Try "Mandy wants extra hours May 1 10am-5pm EST" or "When is the next date with coverage gaps?"',
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     const extracted: ExtractedQuery = JSON.parse(extractCall.function.arguments);
+
+    // ──────────────── Network mode short-circuit ────────────────
+    if (extracted.mode === 'network') {
+      const networkResult = await runNetworkMode(supabase, extracted, todayDefault, apiKey, question);
+      return new Response(JSON.stringify(networkResult), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // ──────────────── Step B: resolve provider ────────────────
     const queryNorm = normalizeName(extracted.provider_query);
