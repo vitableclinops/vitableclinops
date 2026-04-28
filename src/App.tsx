@@ -41,6 +41,7 @@ import MyPodPage from "./pages/MyPodPage";
 import HiringPipelinePage from "./pages/HiringPipelinePage";
 import LicenseOptimizerPage from "./pages/LicenseOptimizerPage";
 import OpsDashboardPage from "./pages/OpsDashboardPage";
+import CoverageCopilotPage from "./pages/CoverageCopilotPage";
 import DemandForecastPage from "./pages/DemandForecastPage";
 import UtilizationPage from "./pages/UtilizationPage";
 import RoutingIntelligencePage from "./pages/RoutingIntelligencePage";
@@ -76,6 +77,7 @@ const ROUTE_TITLES: Array<{ match: (p: string) => boolean; title: string }> = [
   { match: p => p === '/admin/data-quality', title: 'Data Quality' },
   { match: p => p === '/admin/executive-briefing', title: 'Executive Briefing' },
   { match: p => p === '/admin/ops', title: 'Coverage Hub' },
+  { match: p => p === '/admin/coverage-copilot', title: 'Coverage Copilot' },
   { match: p => p === '/admin/utilization', title: 'Utilization' },
   { match: p => p === '/admin/routing', title: 'Routing Intelligence' },
   { match: p => p === '/admin/matching', title: 'Demand Matching' },
@@ -298,6 +300,11 @@ const App = () => (
             <Route path="/admin/ops" element={
               <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
                 <OpsDashboardPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/coverage-copilot" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <CoverageCopilotPage />
               </ProtectedRoute>
             } />
             <Route path="/admin/demand-forecast" element={
