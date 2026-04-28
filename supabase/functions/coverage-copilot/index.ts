@@ -41,7 +41,7 @@ function normalizeName(n: string): string {
 // reliable until ~12h after the day ends (i.e. midday the day after). To stay
 // safe we treat any `historical` slot row whose date is AFTER the cutoff as
 // "preliminary" and prefer the Homebase-derived `forecast` row instead.
-const DEFAULT_METABASE_LAG_DAYS = 2;
+const DEFAULT_METABASE_LAG_DAYS = 1;
 
 function addDaysISO(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -427,7 +427,7 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
         settled_through: metabaseSettledThrough,
         requested_day_is_preliminary: requestedDayIsPreliminary,
         note: requestedDayIsPreliminary
-          ? `Metabase visit data is settled through ${metabaseSettledThrough}. ${date} is too recent — slot numbers shown for that day come from the Homebase schedule (forecast), not finalized actuals.`
+          ? `Metabase visit actuals are settled through ${metabaseSettledThrough}. ${date} uses projected-unfilled forecasts (booking-aware predictions of how many slots will end the day unfilled). These predictions tend to overstate the gap and converge toward actuals as bookings come in.`
           : `Metabase visit data is settled through ${metabaseSettledThrough}, which covers ${date}. Slot numbers reflect actual booked visits.`,
       },
     };
@@ -439,7 +439,7 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       plain.push(`On ${date} they already have ${facts.existing_shift_hours_that_day}h scheduled in Homebase. The request adds ${requestedHours}h.`);
       plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. A "gap" means the state is short of that target; a "surplus" means open availability not booked.`);
       if (requestedDayIsPreliminary) {
-        plain.push(`⚠️ Metabase visit actuals are only settled through ${metabaseSettledThrough}. Coverage numbers for ${date} use the Homebase schedule as a proxy and will firm up once overnight imports run.`);
+        plain.push(`⚠️ Metabase visit actuals are settled only through ${metabaseSettledThrough}. Coverage numbers for ${date} are projected (forecast of unfilled slots given bookings so far) and tend to overstate gaps; they firm up after the overnight Metabase sync.`);
       } else {
         plain.push(`Metabase visit actuals are settled through ${metabaseSettledThrough}, so coverage numbers for ${date} reflect finalized data.`);
       }
@@ -756,7 +756,7 @@ async function runNetworkMode(
       metabase_lag_days: lagDays,
       settled_through: metabaseSettledThrough,
       preliminary_dates: perDay.filter(d => d.is_preliminary).map(d => d.date),
-      note: `Metabase visit actuals lag ~${lagDays * 24}h. Days after ${metabaseSettledThrough} use the Homebase schedule (forecast) and are flagged as preliminary; their gap/surplus numbers will firm up after overnight imports.`,
+      note: `Metabase visit actuals lag ~${lagDays * 24}h. Days after ${metabaseSettledThrough} are PRELIMINARY: their unfilled-slot counts come from booking-aware forecasts (projected unfilled at end-of-day given current bookings). Forecasts tend to overstate gaps and converge toward actuals as the day fills up.`,
     },
     days_with_data: perDay.length,
     first_day_with_gaps: firstDayWithGaps,
@@ -776,7 +776,7 @@ async function runNetworkMode(
   plain.push(`Scanned ${perDay.length} day(s) of coverage data from ${startDate} to ${endDate}.`);
   const prelimDates = perDay.filter(d => d.is_preliminary).map(d => d.date);
   if (prelimDates.length > 0) {
-    plain.push(`⚠️ Metabase visit actuals are settled only through ${metabaseSettledThrough}. ${prelimDates.length} day(s) in this range (${prelimDates.join(', ')}) are PRELIMINARY — their slot counts come from the Homebase schedule, not finalized visits. Re-check after the overnight Metabase sync.`);
+    plain.push(`⚠️ Metabase visit actuals are settled only through ${metabaseSettledThrough}. ${prelimDates.length} day(s) in this range (${prelimDates.join(', ')}) are PRELIMINARY — slot counts are booking-aware forecasts of how many slots will end the day unfilled. Forecasts tend to overstate gaps and tighten as bookings land. Re-check after the overnight Metabase sync.`);
   } else {
     plain.push(`All days in this range are within the Metabase settled window (through ${metabaseSettledThrough}), so numbers reflect finalized visit data.`);
   }
@@ -828,7 +828,7 @@ async function runNetworkMode(
 - If facts.first_day_with_gaps is null, there are no gaps in the scanned range — say so plainly.
 - If facts.note is set (no data), explain that politely and stop.
 - If a date you reference is in facts.data_freshness.preliminary_dates, explicitly call it PRELIMINARY in the summary, and add a suggested_action to re-check after the overnight Metabase visit sync.
-- If facts.first_day_with_gaps.is_preliminary is true, soften your confidence (use "medium" not "high") and tell the user the gap may shrink once actuals land.
+- If facts.first_day_with_gaps.is_preliminary is true, soften your confidence (use "medium" not "high") and explain the gap is from a booking-aware forecast that tends to overstate shortfall; it will likely shrink once same-day bookings land.
 - Keep summary under 4 sentences.`;
 
   const synthRes = await callAI({
