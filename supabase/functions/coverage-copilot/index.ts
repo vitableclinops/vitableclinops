@@ -36,6 +36,34 @@ function normalizeName(n: string): string {
   return n.toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+// ──────────────── Data freshness helpers ────────────────
+// Metabase visit data lags behind real time. The full day's actuals are not
+// reliable until ~12h after the day ends (i.e. midday the day after). To stay
+// safe we treat any `historical` slot row whose date is AFTER the cutoff as
+// "preliminary" and prefer the Homebase-derived `forecast` row instead.
+const DEFAULT_METABASE_LAG_DAYS = 2;
+
+function addDaysISO(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+async function getMetabaseLagDays(supabase: any): Promise<number> {
+  const { data } = await supabase.from('system_config')
+    .select('value').eq('key', 'metabase_lag_days').maybeSingle();
+  if (data?.value) {
+    const parsed = parseInt(String(data.value), 10);
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 7) return parsed;
+  }
+  return DEFAULT_METABASE_LAG_DAYS;
+}
+
+function settledThrough(todayStr: string, lagDays: number): string {
+  return addDaysISO(todayStr, -lagDays);
+}
+
 const LOVABLE_API = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 const MODEL = 'google/gemini-3-flash-preview';
 
@@ -209,6 +237,11 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       if (!Number.isNaN(parsed) && parsed > 0) buffer = parsed;
     }
 
+    // Data freshness: when is Metabase actuals data trustworthy through?
+    const lagDays = await getMetabaseLagDays(supabase);
+    const metabaseSettledThrough = settledThrough(todayDefault, lagDays);
+    const requestedDayIsPreliminary = date > metabaseSettledThrough;
+
     // Provider's licenses (with state) and provider_state_status
     const [licRes, statusRes, activationsRes, slotsRes, forecastRes, snapsLatestRes] = await Promise.all([
       supabase.from('provider_licenses')
@@ -236,10 +269,31 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       (activationsRes.data ?? []).filter(a => a.is_active).map(a => a.state_abbreviation as string),
     );
     const slotsByState = new Map<string, number>();
+    const slotSourceByState = new Map<string, 'metabase_settled' | 'metabase_preliminary' | 'schedule_forecast'>();
     for (const r of slotsRes.data ?? []) {
+      const isHistorical = r.window_type === 'historical';
+      const isForecast = r.window_type === 'forecast';
+      // For settled days: prefer historical (Metabase actuals).
+      // For preliminary days (today / yesterday-ish): prefer forecast (Homebase schedule)
+      // because Metabase visits haven't fully landed yet.
       const ex = slotsByState.get(r.state_abbreviation);
-      if (ex === undefined || r.window_type === 'historical') {
-        slotsByState.set(r.state_abbreviation, r.unfilled_slots);
+      const exSrc = slotSourceByState.get(r.state_abbreviation);
+      if (requestedDayIsPreliminary) {
+        if (isForecast) {
+          slotsByState.set(r.state_abbreviation, r.unfilled_slots);
+          slotSourceByState.set(r.state_abbreviation, 'schedule_forecast');
+        } else if (isHistorical && exSrc !== 'schedule_forecast') {
+          slotsByState.set(r.state_abbreviation, r.unfilled_slots);
+          slotSourceByState.set(r.state_abbreviation, 'metabase_preliminary');
+        }
+      } else {
+        if (ex === undefined || isHistorical) {
+          slotsByState.set(r.state_abbreviation, r.unfilled_slots);
+          slotSourceByState.set(
+            r.state_abbreviation,
+            isHistorical ? 'metabase_settled' : 'schedule_forecast',
+          );
+        }
       }
     }
     const forecastByState = new Map<string, number>(
@@ -368,6 +422,14 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       ),
       sla_buffer: buffer,
       slots_per_hour: SLOTS_PER_HOUR,
+      data_freshness: {
+        metabase_lag_days: lagDays,
+        settled_through: metabaseSettledThrough,
+        requested_day_is_preliminary: requestedDayIsPreliminary,
+        note: requestedDayIsPreliminary
+          ? `Metabase visit data is settled through ${metabaseSettledThrough}. ${date} is too recent — slot numbers shown for that day come from the Homebase schedule (forecast), not finalized actuals.`
+          : `Metabase visit data is settled through ${metabaseSettledThrough}, which covers ${date}. Slot numbers reflect actual booked visits.`,
+      },
     };
 
     // Plain-English narrative for the provider-mode facts.
@@ -376,6 +438,11 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       plain.push(`${provider.full_name} is licensed in ${facts.eligible_state_count} state(s) where they can legally practice; ${facts.active_state_count} of those are active in our network.`);
       plain.push(`On ${date} they already have ${facts.existing_shift_hours_that_day}h scheduled in Homebase. The request adds ${requestedHours}h.`);
       plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. A "gap" means the state is short of that target; a "surplus" means open availability not booked.`);
+      if (requestedDayIsPreliminary) {
+        plain.push(`⚠️ Metabase visit actuals are only settled through ${metabaseSettledThrough}. Coverage numbers for ${date} use the Homebase schedule as a proxy and will firm up once overnight imports run.`);
+      } else {
+        plain.push(`Metabase visit actuals are settled through ${metabaseSettledThrough}, so coverage numbers for ${date} reflect finalized data.`);
+      }
       if (neediestStates.length > 0) {
         plain.push(`Active eligible states with the biggest gaps that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}.`);
       } else {
@@ -533,6 +600,11 @@ async function runNetworkMode(
     if (!Number.isNaN(parsed) && parsed > 0) buffer = parsed;
   }
 
+  // Data freshness cutoff for Metabase actuals
+  const lagDays = await getMetabaseLagDays(supabase);
+  const metabaseSettledThrough = settledThrough(todayDefault, lagDays);
+  const isPreliminaryDate = (d: string) => d > metabaseSettledThrough;
+
   // Active states only
   const { data: actRows } = await supabase.from('state_activation')
     .select('state_abbreviation, is_active');
@@ -583,12 +655,32 @@ async function runNetworkMode(
   }
 
   // Compute per-day per-state gap/surplus. Prefer historical over forecast for slots.
-  const slotKey = new Map<string, { slots: number; window: string }>();
+  // For days at or before the Metabase cutoff, prefer 'historical'. For days after
+  // the cutoff (today / very recent), prefer 'forecast' (Homebase schedule) because
+  // visits haven't fully landed in Metabase yet.
+  type SlotPick = { slots: number; window: string; data_source: 'metabase_settled' | 'metabase_preliminary' | 'schedule_forecast' };
+  const slotKey = new Map<string, SlotPick>();
   for (const r of slotRows ?? []) {
     const k = `${r.slot_date}|${r.state_abbreviation}`;
+    const isHistorical = r.window_type === 'historical';
+    const isForecast = r.window_type === 'forecast';
+    const preliminary = isPreliminaryDate(r.slot_date);
     const existing = slotKey.get(k);
-    if (!existing || r.window_type === 'historical') {
-      slotKey.set(k, { slots: Number(r.unfilled_slots) || 0, window: r.window_type });
+    const slots = Number(r.unfilled_slots) || 0;
+    if (preliminary) {
+      // prefer schedule_forecast; fall back to historical labeled preliminary
+      if (isForecast) {
+        slotKey.set(k, { slots, window: r.window_type, data_source: 'schedule_forecast' });
+      } else if (isHistorical && (!existing || existing.data_source !== 'schedule_forecast')) {
+        slotKey.set(k, { slots, window: r.window_type, data_source: 'metabase_preliminary' });
+      }
+    } else {
+      if (!existing || isHistorical) {
+        slotKey.set(k, {
+          slots, window: r.window_type,
+          data_source: isHistorical ? 'metabase_settled' : 'schedule_forecast',
+        });
+      }
     }
   }
 
@@ -597,6 +689,8 @@ async function runNetworkMode(
     available_slots: number; target_slots: number;
     gap_hours: number; surplus_hours: number;
     window: string;
+    is_preliminary: boolean;
+    data_source: 'metabase_settled' | 'metabase_preliminary' | 'schedule_forecast';
   };
   const perDayState: DayState[] = [];
   for (const [k, v] of slotKey) {
@@ -617,21 +711,26 @@ async function runNetworkMode(
       gap_hours: diff > 0 ? round1(slotsToHours(diff)) : 0,
       surplus_hours: diff < 0 ? round1(slotsToHours(-diff)) : 0,
       window: v.window,
+      is_preliminary: isPreliminaryDate(date),
+      data_source: v.data_source,
     });
   }
 
   // Aggregate per-day totals
-  const perDayMap = new Map<string, { date: string; total_gap_hours: number; total_surplus_hours: number; gap_states: string[]; surplus_states: string[] }>();
+  const perDayMap = new Map<string, { date: string; total_gap_hours: number; total_surplus_hours: number; gap_states: string[]; surplus_states: string[]; is_preliminary: boolean }>();
   for (const r of perDayState) {
-    const d = perDayMap.get(r.date) ?? { date: r.date, total_gap_hours: 0, total_surplus_hours: 0, gap_states: [], surplus_states: [] };
+    const d = perDayMap.get(r.date) ?? { date: r.date, total_gap_hours: 0, total_surplus_hours: 0, gap_states: [], surplus_states: [], is_preliminary: r.is_preliminary };
     d.total_gap_hours = round1(d.total_gap_hours + r.gap_hours);
     d.total_surplus_hours = round1(d.total_surplus_hours + r.surplus_hours);
     if (r.gap_hours > 0) d.gap_states.push(`${r.state}(${r.gap_hours}h)`);
     if (r.surplus_hours > 0) d.surplus_states.push(`${r.state}(${r.surplus_hours}h)`);
+    if (r.is_preliminary) d.is_preliminary = true;
     perDayMap.set(r.date, d);
   }
   const perDay = [...perDayMap.values()].sort((a, b) => a.date.localeCompare(b.date));
-  const firstDayWithGaps = perDay.find(d => d.total_gap_hours > 0) ?? null;
+  // Prefer settled gap days; fall back to preliminary if nothing settled has gaps.
+  const firstSettledGap = perDay.find(d => d.total_gap_hours > 0 && !d.is_preliminary) ?? null;
+  const firstDayWithGaps = firstSettledGap ?? perDay.find(d => d.total_gap_hours > 0) ?? null;
   const worstDays = [...perDay].sort((a, b) => b.total_gap_hours - a.total_gap_hours).slice(0, 5);
   const stateTotals = new Map<string, { state: string; gap_hours: number; surplus_hours: number; days_with_gaps: number }>();
   for (const r of perDayState) {
@@ -653,6 +752,12 @@ async function runNetworkMode(
     forecast_source: fallbackWeek
       ? `Using fallback forecast from week ${fallbackWeek} (no forecast loaded for the scanned range).`
       : 'Using forecast aligned to scanned weeks.',
+    data_freshness: {
+      metabase_lag_days: lagDays,
+      settled_through: metabaseSettledThrough,
+      preliminary_dates: perDay.filter(d => d.is_preliminary).map(d => d.date),
+      note: `Metabase visit actuals lag ~${lagDays * 24}h. Days after ${metabaseSettledThrough} use the Homebase schedule (forecast) and are flagged as preliminary; their gap/surplus numbers will firm up after overnight imports.`,
+    },
     days_with_data: perDay.length,
     first_day_with_gaps: firstDayWithGaps,
     per_day: perDay.slice(0, 30),
@@ -669,6 +774,12 @@ async function runNetworkMode(
   // Plain-English narrative of the facts (deterministic, not AI generated).
   const plain: string[] = [];
   plain.push(`Scanned ${perDay.length} day(s) of coverage data from ${startDate} to ${endDate}.`);
+  const prelimDates = perDay.filter(d => d.is_preliminary).map(d => d.date);
+  if (prelimDates.length > 0) {
+    plain.push(`⚠️ Metabase visit actuals are settled only through ${metabaseSettledThrough}. ${prelimDates.length} day(s) in this range (${prelimDates.join(', ')}) are PRELIMINARY — their slot counts come from the Homebase schedule, not finalized visits. Re-check after the overnight Metabase sync.`);
+  } else {
+    plain.push(`All days in this range are within the Metabase settled window (through ${metabaseSettledThrough}), so numbers reflect finalized visit data.`);
+  }
   if (fallbackWeek) {
     plain.push(`No demand forecast exists for the scanned range, so the most recent week (${fallbackWeek}) was used as a proxy. Numbers may be off if demand has shifted.`);
   }
@@ -676,7 +787,8 @@ async function runNetworkMode(
   plain.push(`A "gap" means available slots fell short of the SLA target. A "surplus" means available slots exceeded the SLA target — note this counts open Homebase availability that wasn't booked, not extra staffed labor.`);
   if (firstDayWithGaps) {
     const states = firstDayWithGaps.gap_states.slice(0, 5).join(', ') || 'none';
-    plain.push(`Earliest day with gaps: ${firstDayWithGaps.date} — total ${firstDayWithGaps.total_gap_hours}h short across ${firstDayWithGaps.gap_states.length} state(s) (${states}).`);
+    const tag = firstDayWithGaps.is_preliminary ? ' (PRELIMINARY — confirm tomorrow)' : '';
+    plain.push(`Earliest day with gaps: ${firstDayWithGaps.date}${tag} — total ${firstDayWithGaps.total_gap_hours}h short across ${firstDayWithGaps.gap_states.length} state(s) (${states}).`);
   } else if (perDay.length > 0) {
     plain.push(`No gaps found in any active state across the scanned range — every day meets or exceeds SLA target.`);
   }
@@ -715,6 +827,8 @@ async function runNetworkMode(
 - gap_hours > 0 means the state is short of the SLA target. surplus_hours > 0 means extra capacity.
 - If facts.first_day_with_gaps is null, there are no gaps in the scanned range — say so plainly.
 - If facts.note is set (no data), explain that politely and stop.
+- If a date you reference is in facts.data_freshness.preliminary_dates, explicitly call it PRELIMINARY in the summary, and add a suggested_action to re-check after the overnight Metabase visit sync.
+- If facts.first_day_with_gaps.is_preliminary is true, soften your confidence (use "medium" not "high") and tell the user the gap may shrink once actuals land.
 - Keep summary under 4 sentences.`;
 
   const synthRes = await callAI({
