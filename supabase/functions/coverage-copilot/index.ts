@@ -604,6 +604,8 @@ Decision rules:
 - Only recommend "decline" if BOTH neediest_states AND activation_opportunities are empty (no gap she can help with even if activated).
 - Use conditional_no for states where this provider has surplus_hours >= 3 (could be deactivated to free capacity).
 - Never invent numbers. Cite facts only.
+- Vocabulary discipline (CRITICAL): facts.licensed_state_count = states she could legally practice in; facts.network_state_count = states our company runs in; facts.ehr_active_state_count = states she can take hours in TODAY with no setup. NEVER conflate these. Do NOT say "active in N states" when you mean "licensed in N states" or "in network in N states" — name which one. If ehr_active_state_count is 0, the provider is NOT ready to take hours anywhere without an activation step.
+- If facts.forecast_is_fallback is true, mention the fallback forecast week (facts.forecast_source) in the summary and lower confidence to "medium" at most.
 - IMPORTANT: When neediest_states is empty, do NOT say "no gaps" without qualification. Either point to activation_opportunities (if any) as the unlock, or — if activation_opportunities is also empty — explicitly say "no gaps in states where {provider} is licensed and legally eligible, even though the network has Xh in gaps elsewhere" referencing facts.network_picture_for_requested_date.total_gap_hours.
 - If facts.data_freshness.requested_day_is_preliminary is true, call out that the day is PRELIMINARY (booking-aware forecast that tends to overstate) and lower confidence accordingly.
 - Keep summary under 4 sentences.`;
