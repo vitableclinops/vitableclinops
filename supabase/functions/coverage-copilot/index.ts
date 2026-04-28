@@ -588,6 +588,70 @@ function hoursBetween(start: string, end: string): number {
 }
 function round1(n: number): number { return Math.round(n * 10) / 10; }
 
+// Compute the network-wide gap picture for a single date so provider-mode
+// answers can cross-reference what the network-mode answer would say.
+async function computeNetworkDaySummary(
+  supabase: any,
+  date: string,
+  buffer: number,
+  activeStates: Set<string>,
+  isPreliminary: boolean,
+) {
+  const weekStart = getMonday(date);
+  const [slotsRes, fcRes] = await Promise.all([
+    supabase.from('state_leftover_slots')
+      .select('state_abbreviation, unfilled_slots, window_type')
+      .eq('slot_date', date).in('window_type', ['historical', 'forecast']),
+    supabase.from('demand_forecast')
+      .select('state_abbreviation, projected_visits').eq('week_start', weekStart),
+  ]);
+  const slotsByState = new Map<string, number>();
+  for (const r of slotsRes.data ?? []) {
+    const isHist = r.window_type === 'historical';
+    const isFc = r.window_type === 'forecast';
+    const ex = slotsByState.has(r.state_abbreviation);
+    if (isPreliminary) {
+      if (isFc) slotsByState.set(r.state_abbreviation, Number(r.unfilled_slots) || 0);
+      else if (isHist && !ex) slotsByState.set(r.state_abbreviation, Number(r.unfilled_slots) || 0);
+    } else {
+      if (!ex || isHist) slotsByState.set(r.state_abbreviation, Number(r.unfilled_slots) || 0);
+    }
+  }
+  const fcByState = new Map<string, number>(
+    (fcRes.data ?? []).map((r: any) => [r.state_abbreviation, Number(r.projected_visits) || 0]),
+  );
+  let totalGap = 0;
+  let totalSurplus = 0;
+  let gapStateCount = 0;
+  const topGaps: Array<{ state: string; gap_hours: number }> = [];
+  for (const [state, slots] of slotsByState) {
+    if (!activeStates.has(state)) continue;
+    const visits = fcByState.get(state);
+    if (visits === undefined) continue;
+    const target = slaTargetSlots(visits, buffer);
+    const diff = target - slots;
+    if (diff > 0) {
+      const gh = round1(slotsToHours(diff));
+      totalGap = round1(totalGap + gh);
+      gapStateCount += 1;
+      topGaps.push({ state, gap_hours: gh });
+    } else if (diff < 0) {
+      totalSurplus = round1(totalSurplus + slotsToHours(-diff));
+    }
+  }
+  topGaps.sort((a, b) => b.gap_hours - a.gap_hours);
+  return {
+    date,
+    is_preliminary: isPreliminary,
+    total_gap_hours: totalGap,
+    total_surplus_hours: totalSurplus,
+    gap_state_count: gapStateCount,
+    top_gap_states: topGaps.slice(0, 5),
+    providers_states_overlap_note:
+      'these gap states are not in the provider eligible+active list above (otherwise they would appear in neediest_states)',
+  };
+}
+
 function addDays(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
