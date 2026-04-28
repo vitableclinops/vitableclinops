@@ -455,8 +455,15 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
         timezone: extracted.timezone, requested_hours: requestedHours,
       },
       existing_shift_hours_that_day: round1(existingShiftHours),
-      eligible_state_count: stateFacts.filter(f => f.eligible_to_practice).length,
-      active_state_count: stateFacts.filter(f => f.eligible_to_practice && f.currently_active).length,
+      // licensed_state_count: licensed AND legally allowed to practice (NP-prohibited states excluded).
+      // network_state_count: of those, states currently on in our network (state_activation.is_active).
+      // ehr_active_state_count: of those, states where this provider is actually EHR-active and can take hours with no further setup.
+      licensed_state_count: stateFacts.filter(f => f.eligible_to_practice).length,
+      network_state_count: stateFacts.filter(f => f.eligible_to_practice && f.currently_active).length,
+      ehr_active_state_count: stateFacts.filter(f => f.eligible_to_practice && f.currently_active && f.ehr_status === 'active').length,
+      ehr_active_states: stateFacts
+        .filter(f => f.eligible_to_practice && f.currently_active && f.ehr_status === 'active')
+        .map(f => f.state),
       neediest_states: neediestStates.slice(0, 5),
       activation_opportunities: activationOpportunities.slice(0, 5),
       deactivation_opportunities: deactivationOpportunities.slice(0, 5),
@@ -466,6 +473,10 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       ),
       sla_buffer: buffer,
       slots_per_hour: SLOTS_PER_HOUR,
+      forecast_source: forecastIsFallback
+        ? `Fallback: no demand_forecast for week of ${weekStart}; using most recent week ${forecastSourceWeek} as a proxy. Numbers may be off if demand has shifted.`
+        : `demand_forecast week ${forecastSourceWeek}`,
+      forecast_is_fallback: forecastIsFallback,
       data_freshness: {
         metabase_lag_days: lagDays,
         settled_through: metabaseSettledThrough,
@@ -486,8 +497,11 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
     // Plain-English narrative for the provider-mode facts.
     {
       const plain: string[] = [];
-      plain.push(`${provider.full_name} is licensed in ${facts.eligible_state_count} state(s) where they can legally practice; ${facts.active_state_count} of those are active in our network.`);
+      plain.push(`${provider.full_name} is licensed in ${facts.licensed_state_count} state(s) where she can legally practice. ${facts.network_state_count} of those are switched on in our network, but she is currently EHR-active in only ${facts.ehr_active_state_count}${facts.ehr_active_state_count > 0 ? ` (${facts.ehr_active_states.join(', ')})` : ''}. Hours can be approved with no setup only in EHR-active states; everywhere else needs an activation step first.`);
       plain.push(`On ${date} they already have ${facts.existing_shift_hours_that_day}h scheduled in Homebase. The request adds ${requestedHours}h.`);
+      if (forecastIsFallback) {
+        plain.push(`⚠️ No demand forecast loaded for the week of ${weekStart}; falling back to the most recent week (${forecastSourceWeek}) as a proxy. Gap/surplus numbers may be off if demand has shifted — confidence should be lowered.`);
+      }
       plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. A "gap" means the state is short of that target; a "surplus" means open availability not booked.`);
       if (requestedDayIsPreliminary) {
         plain.push(`⚠️ Metabase visit actuals are settled only through ${metabaseSettledThrough}. Coverage numbers for ${date} are projected (forecast of unfilled slots given bookings so far) and tend to overstate gaps; they firm up after the overnight Metabase sync.`);
