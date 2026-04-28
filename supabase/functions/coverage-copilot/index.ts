@@ -383,20 +383,44 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       }
     }
 
-    // Active states needing help where provider is licensed but NOT EHR-active → activation candidates
-    const activationOpportunities = stateFacts.filter(f =>
-      f.eligible_to_practice && f.currently_active &&
-      (f.gap_hours ?? 0) > 0 &&
-      f.readiness === 'ready' &&
-      f.ehr_status && ['inactive', 'deactivated', 'activation_requested'].includes(f.ehr_status)
-    );
+    // Active states with gaps where provider is licensed but NOT currently
+    // EHR-active → activation candidates. We treat MISSING provider_state_status
+    // (null readiness / null ehr) as "not yet activated but eligible" because
+    // most providers don't have a row until ops manually flips them on.
+    // Hard requirement: licensed + legally eligible to practice + state is in
+    // the network + state has a gap that day + EHR is not already 'active'.
+    const isEhrActivatable = (ehr: string | null) =>
+      ehr === null ||
+      ehr === 'inactive' ||
+      ehr === 'deactivated' ||
+      ehr === 'activation_requested' ||
+      ehr === 'pending';
+    const isReadyOrUnknown = (r: string | null) =>
+      r === null || r === 'ready' || r === 'pending';
+    const activationOpportunities = stateFacts
+      .filter(f =>
+        f.eligible_to_practice &&
+        f.currently_active &&
+        (f.gap_hours ?? 0) > 0 &&
+        f.ehr_status !== 'active' &&
+        isEhrActivatable(f.ehr_status) &&
+        isReadyOrUnknown(f.readiness),
+      )
+      // Sort by biggest gap so PA / NJ / etc. surface first.
+      .sort((a, b) => (b.gap_hours ?? 0) - (a.gap_hours ?? 0));
     // States where this provider has surplus today → deactivation candidates
     const deactivationOpportunities = stateFacts.filter(f =>
       (f.provider_slack_hours ?? 0) >= 3 || (f.surplus_hours ?? 0) >= 4
     );
-    // Active eligible states with biggest gaps
+    // Active eligible states with biggest gaps where the provider IS already
+    // EHR-active (so hours can be approved with no further activation step).
     const neediestStates = [...stateFacts]
-      .filter(f => f.eligible_to_practice && f.currently_active && (f.gap_hours ?? 0) > 0)
+      .filter(f =>
+        f.eligible_to_practice &&
+        f.currently_active &&
+        (f.gap_hours ?? 0) > 0 &&
+        f.ehr_status === 'active',
+      )
       .sort((a, b) => (b.gap_hours ?? 0) - (a.gap_hours ?? 0));
 
     const facts = {
