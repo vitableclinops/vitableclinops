@@ -1105,6 +1105,7 @@ async function runNetworkMode(
 - If facts.note is set (no data), explain that politely and stop.
 - If a date you reference is in facts.data_freshness.preliminary_dates, explicitly call it PRELIMINARY in the summary, and add a suggested_action to re-check after the overnight Metabase visit sync.
 - If facts.first_day_with_gaps.is_preliminary is true, soften your confidence (use "medium" not "high") and explain the gap is from a booking-aware forecast that tends to overstate shortfall; it will likely shrink once same-day bookings land.
+- If facts.confidence_explanation has any entries, treat each as a reason confidence cannot be "high". Two or more entries => confidence "low".
 - Keep summary under 4 sentences.`;
 
   const synthRes = await callAI({
