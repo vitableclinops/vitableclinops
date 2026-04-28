@@ -432,6 +432,13 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       },
     };
 
+    // ──────── Network-wide picture for the same date (so the AI can explain
+    // why a provider-scoped answer differs from a network-scoped one). ────────
+    const networkSummary = await computeNetworkDaySummary(
+      supabase, date, buffer, activeStates, requestedDayIsPreliminary,
+    );
+    (facts as any).network_picture_for_requested_date = networkSummary;
+
     // Plain-English narrative for the provider-mode facts.
     {
       const plain: string[] = [];
@@ -446,7 +453,18 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       if (neediestStates.length > 0) {
         plain.push(`Active eligible states with the biggest gaps that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}.`);
       } else {
-        plain.push(`No active eligible states are short on coverage that day.`);
+        plain.push(`No active eligible states (where ${provider.full_name} can legally practice and is EHR-active) are short on coverage that day.`);
+      }
+      // Cross-reference network-wide gap picture so we don't contradict the
+      // network-mode answer for the same date.
+      const np = (facts as any).network_picture_for_requested_date;
+      if (np) {
+        if (np.total_gap_hours > 0) {
+          const tag = np.is_preliminary ? ' (PRELIMINARY — booking-aware forecast that tends to overstate)' : '';
+          plain.push(`Network-wide on ${date}${tag}: ${np.total_gap_hours}h short across ${np.gap_state_count} state(s). ${provider.full_name} cannot help because ${np.providers_states_overlap_note}.`);
+        } else {
+          plain.push(`Network-wide on ${date}: no gaps in any active state.`);
+        }
       }
       if (activationOpportunities.length > 0) {
         plain.push(`Activation candidates (provider is ready but EHR-inactive in a state with a gap): ${activationOpportunities.map(s => s.state).join(', ')}.`);
@@ -527,7 +545,9 @@ Decision rules:
 - Use conditional_yes for states where readiness=ready and ehr is inactive/deactivated/activation_requested AND state has gap.
 - Use conditional_no for states where this provider has surplus_hours >= 3 (could be deactivated to free capacity).
 - Never invent numbers. Cite facts only.
-- Keep summary under 3 sentences.`;
+- IMPORTANT: When you say "no gaps", clarify the scope. If facts.neediest_states is empty BUT facts.network_picture_for_requested_date.total_gap_hours > 0, your summary MUST say something like "no gaps in states where {provider} can practice — though the network has Xh in gaps elsewhere on that date" so the answer doesn't contradict the network-mode view.
+- If facts.data_freshness.requested_day_is_preliminary is true, call out that the day is PRELIMINARY (booking-aware forecast that tends to overstate) and lower confidence accordingly.
+- Keep summary under 4 sentences.`;
 
     const synthRes = await callAI({
       messages: [
@@ -567,6 +587,70 @@ function hoursBetween(start: string, end: string): number {
   return round1(mins / 60);
 }
 function round1(n: number): number { return Math.round(n * 10) / 10; }
+
+// Compute the network-wide gap picture for a single date so provider-mode
+// answers can cross-reference what the network-mode answer would say.
+async function computeNetworkDaySummary(
+  supabase: any,
+  date: string,
+  buffer: number,
+  activeStates: Set<string>,
+  isPreliminary: boolean,
+) {
+  const weekStart = getMonday(date);
+  const [slotsRes, fcRes] = await Promise.all([
+    supabase.from('state_leftover_slots')
+      .select('state_abbreviation, unfilled_slots, window_type')
+      .eq('slot_date', date).in('window_type', ['historical', 'forecast']),
+    supabase.from('demand_forecast')
+      .select('state_abbreviation, projected_visits').eq('week_start', weekStart),
+  ]);
+  const slotsByState = new Map<string, number>();
+  for (const r of slotsRes.data ?? []) {
+    const isHist = r.window_type === 'historical';
+    const isFc = r.window_type === 'forecast';
+    const ex = slotsByState.has(r.state_abbreviation);
+    if (isPreliminary) {
+      if (isFc) slotsByState.set(r.state_abbreviation, Number(r.unfilled_slots) || 0);
+      else if (isHist && !ex) slotsByState.set(r.state_abbreviation, Number(r.unfilled_slots) || 0);
+    } else {
+      if (!ex || isHist) slotsByState.set(r.state_abbreviation, Number(r.unfilled_slots) || 0);
+    }
+  }
+  const fcByState = new Map<string, number>(
+    (fcRes.data ?? []).map((r: any) => [r.state_abbreviation, Number(r.projected_visits) || 0]),
+  );
+  let totalGap = 0;
+  let totalSurplus = 0;
+  let gapStateCount = 0;
+  const topGaps: Array<{ state: string; gap_hours: number }> = [];
+  for (const [state, slots] of slotsByState) {
+    if (!activeStates.has(state)) continue;
+    const visits = fcByState.get(state);
+    if (visits === undefined) continue;
+    const target = slaTargetSlots(visits, buffer);
+    const diff = target - slots;
+    if (diff > 0) {
+      const gh = round1(slotsToHours(diff));
+      totalGap = round1(totalGap + gh);
+      gapStateCount += 1;
+      topGaps.push({ state, gap_hours: gh });
+    } else if (diff < 0) {
+      totalSurplus = round1(totalSurplus + slotsToHours(-diff));
+    }
+  }
+  topGaps.sort((a, b) => b.gap_hours - a.gap_hours);
+  return {
+    date,
+    is_preliminary: isPreliminary,
+    total_gap_hours: totalGap,
+    total_surplus_hours: totalSurplus,
+    gap_state_count: gapStateCount,
+    top_gap_states: topGaps.slice(0, 5),
+    providers_states_overlap_note:
+      'these gap states are not in the provider eligible+active list above (otherwise they would appear in neediest_states)',
+  };
+}
 
 function addDays(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split('-').map(Number);
