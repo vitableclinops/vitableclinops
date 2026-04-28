@@ -65,6 +65,85 @@ function settledThrough(todayStr: string, lagDays: number): string {
 }
 
 const LOVABLE_API = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+
+function weeksBetween(aISO: string, bISO: string): number {
+  const [ay, am, ad] = aISO.split('-').map(Number);
+  const [by, bm, bd] = bISO.split('-').map(Number);
+  const a = Date.UTC(ay, am - 1, ad);
+  const b = Date.UTC(by, bm - 1, bd);
+  return Math.round(Math.abs(a - b) / (7 * 24 * 60 * 60 * 1000));
+}
+
+/**
+ * Build a deterministic, plain-English list of factors that should lower
+ * confidence in the answer. Returned as short bullet strings the UI can
+ * render directly under the "Confidence: low/medium" line.
+ */
+async function buildConfidenceExplanation(
+  supabase: any,
+  opts: {
+    forecastIsFallback: boolean;
+    requestedForecastWeek: string;
+    fallbackWeek: string | null;
+    requestedDayIsPreliminary: boolean;
+    metabaseSettledThrough: string;
+    requestedDate?: string | null;
+  },
+): Promise<string[]> {
+  const out: string[] = [];
+
+  if (opts.forecastIsFallback && opts.fallbackWeek) {
+    const weeksOld = weeksBetween(opts.requestedForecastWeek, opts.fallbackWeek);
+    out.push(
+      `No demand forecast was loaded for the week of ${opts.requestedForecastWeek} — using the most recent available week (${opts.fallbackWeek}, ~${weeksOld} week${weeksOld === 1 ? '' : 's'} old) as a proxy.`,
+    );
+
+    // Compare fallback week vs the week immediately before it so we can say
+    // whether demand has been trending up/down (and therefore whether the
+    // proxy is likely an over- or under-estimate).
+    const { data: priorFc } = await supabase
+      .from('demand_forecast')
+      .select('week_start, projected_visits')
+      .lt('week_start', opts.fallbackWeek)
+      .order('week_start', { ascending: false })
+      .limit(200);
+    if (priorFc && priorFc.length > 0) {
+      const priorWeek = priorFc[0].week_start as string;
+      let priorTotal = 0;
+      for (const r of priorFc) {
+        if (r.week_start !== priorWeek) continue;
+        priorTotal += Number(r.projected_visits) || 0;
+      }
+      const { data: fbFc } = await supabase
+        .from('demand_forecast')
+        .select('projected_visits')
+        .eq('week_start', opts.fallbackWeek);
+      const fbTotal = (fbFc ?? []).reduce(
+        (acc: number, r: any) => acc + (Number(r.projected_visits) || 0),
+        0,
+      );
+      if (priorTotal > 0 && fbTotal > 0) {
+        const deltaPct = Math.round(((fbTotal - priorTotal) / priorTotal) * 100);
+        const direction = deltaPct > 0 ? 'up' : deltaPct < 0 ? 'down' : 'flat';
+        out.push(
+          `Network-wide projected visits in the fallback week (${opts.fallbackWeek}: ${Math.round(fbTotal)}) are ${Math.abs(deltaPct)}% ${direction} vs the prior week (${priorWeek}: ${Math.round(priorTotal)}) — recent demand has been moving, so the proxy may be off.`,
+        );
+      }
+    } else {
+      out.push(
+        `Only one forecast week is loaded, so we can't tell whether demand has been trending up or down — treat gap/surplus numbers as directional only.`,
+      );
+    }
+  }
+
+  if (opts.requestedDayIsPreliminary && opts.requestedDate) {
+    out.push(
+      `${opts.requestedDate} is past the Metabase settled cutoff (${opts.metabaseSettledThrough}), so unfilled-slot counts come from a booking-aware forecast that tends to overstate gaps and tightens as bookings land.`,
+    );
+  }
+
+  return out;
+}
 const MODEL = 'google/gemini-3-flash-preview';
 
 async function callAI(body: Record<string, unknown>, apiKey: string) {
@@ -487,6 +566,21 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       },
     };
 
+    // Deterministic confidence factors (drives the "why is confidence low?"
+    // explainer in the UI). Keep this independent of the AI summary so it's
+    // always trustworthy.
+    (facts as any).confidence_explanation = await buildConfidenceExplanation(
+      supabase,
+      {
+        forecastIsFallback,
+        requestedForecastWeek: weekStart,
+        fallbackWeek: forecastIsFallback ? forecastSourceWeek : null,
+        requestedDayIsPreliminary,
+        metabaseSettledThrough,
+        requestedDate: date,
+      },
+    );
+
     // ──────── Network-wide picture for the same date (so the AI can explain
     // why a provider-scoped answer differs from a network-scoped one). ────────
     const networkSummary = await computeNetworkDaySummary(
@@ -606,6 +700,7 @@ Decision rules:
 - Never invent numbers. Cite facts only.
 - Vocabulary discipline (CRITICAL): facts.licensed_state_count = states she could legally practice in; facts.network_state_count = states our company runs in; facts.ehr_active_state_count = states she can take hours in TODAY with no setup. NEVER conflate these. Do NOT say "active in N states" when you mean "licensed in N states" or "in network in N states" — name which one. If ehr_active_state_count is 0, the provider is NOT ready to take hours anywhere without an activation step.
 - If facts.forecast_is_fallback is true, mention the fallback forecast week (facts.forecast_source) in the summary and lower confidence to "medium" at most.
+- If facts.confidence_explanation has any entries, treat each as a reason your confidence cannot be "high". Two or more entries => confidence "low".
 - IMPORTANT: When neediest_states is empty, do NOT say "no gaps" without qualification. Either point to activation_opportunities (if any) as the unlock, or — if activation_opportunities is also empty — explicitly say "no gaps in states where {provider} is licensed and legally eligible, even though the network has Xh in gaps elsewhere" referencing facts.network_picture_for_requested_date.total_gap_hours.
 - If facts.data_freshness.requested_day_is_preliminary is true, call out that the day is PRELIMINARY (booking-aware forecast that tends to overstate) and lower confidence accordingly.
 - Keep summary under 4 sentences.`;
@@ -965,6 +1060,22 @@ async function runNetworkMode(
   }
   (facts as any).plain_english = plain;
 
+  // Deterministic confidence factors for the network-mode answer.
+  const networkRequestedWeek = getMonday(
+    firstDayWithGaps?.date ?? startDate,
+  );
+  (facts as any).confidence_explanation = await buildConfidenceExplanation(
+    supabase,
+    {
+      forecastIsFallback: fallbackWeek !== null,
+      requestedForecastWeek: networkRequestedWeek,
+      fallbackWeek,
+      requestedDayIsPreliminary: !!firstDayWithGaps?.is_preliminary,
+      metabaseSettledThrough,
+      requestedDate: firstDayWithGaps?.date ?? null,
+    },
+  );
+
   const synthTools = [{
     type: 'function',
     function: {
@@ -994,6 +1105,7 @@ async function runNetworkMode(
 - If facts.note is set (no data), explain that politely and stop.
 - If a date you reference is in facts.data_freshness.preliminary_dates, explicitly call it PRELIMINARY in the summary, and add a suggested_action to re-check after the overnight Metabase visit sync.
 - If facts.first_day_with_gaps.is_preliminary is true, soften your confidence (use "medium" not "high") and explain the gap is from a booking-aware forecast that tends to overstate shortfall; it will likely shrink once same-day bookings land.
+- If facts.confidence_explanation has any entries, treat each as a reason confidence cannot be "high". Two or more entries => confidence "low".
 - Keep summary under 4 sentences.`;
 
   const synthRes = await callAI({
