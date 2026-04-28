@@ -475,9 +475,9 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
         plain.push(`Metabase visit actuals are settled through ${metabaseSettledThrough}, so coverage numbers for ${date} reflect finalized data.`);
       }
       if (neediestStates.length > 0) {
-        plain.push(`Active eligible states with the biggest gaps that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}.`);
+        plain.push(`Active eligible states where ${provider.full_name} is ALREADY EHR-active and there's a gap that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}. Hours here can be approved with no further setup.`);
       } else {
-        plain.push(`No active eligible states (where ${provider.full_name} can legally practice and is EHR-active) are short on coverage that day.`);
+        plain.push(`${provider.full_name} is not currently EHR-active in any state with a gap that day — but see activation_opportunities below for states where she's licensed and could be activated to help.`);
       }
       // Cross-reference network-wide gap picture so we don't contradict the
       // network-mode answer for the same date.
@@ -491,7 +491,8 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
         }
       }
       if (activationOpportunities.length > 0) {
-        plain.push(`Activation candidates (provider is ready but EHR-inactive in a state with a gap): ${activationOpportunities.map(s => s.state).join(', ')}.`);
+        const totalActivatableGap = round1(activationOpportunities.reduce((acc, s) => acc + (s.gap_hours ?? 0), 0));
+        plain.push(`Activation candidates — states where ${provider.full_name} is LICENSED and there's a gap, but she's not yet EHR-active. Approving hours here is conditional on activating her first: ${activationOpportunities.slice(0,8).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}. Total addressable gap if activated: ${totalActivatableGap}h.`);
       }
       if (deactivationOpportunities.length > 0) {
         plain.push(`Deactivation candidates (this provider has slack ≥3h or the state has surplus ≥4h): ${deactivationOpportunities.map(s => s.state).join(', ')}.`);
