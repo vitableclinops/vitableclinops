@@ -383,20 +383,44 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       }
     }
 
-    // Active states needing help where provider is licensed but NOT EHR-active → activation candidates
-    const activationOpportunities = stateFacts.filter(f =>
-      f.eligible_to_practice && f.currently_active &&
-      (f.gap_hours ?? 0) > 0 &&
-      f.readiness === 'ready' &&
-      f.ehr_status && ['inactive', 'deactivated', 'activation_requested'].includes(f.ehr_status)
-    );
+    // Active states with gaps where provider is licensed but NOT currently
+    // EHR-active → activation candidates. We treat MISSING provider_state_status
+    // (null readiness / null ehr) as "not yet activated but eligible" because
+    // most providers don't have a row until ops manually flips them on.
+    // Hard requirement: licensed + legally eligible to practice + state is in
+    // the network + state has a gap that day + EHR is not already 'active'.
+    const isEhrActivatable = (ehr: string | null) =>
+      ehr === null ||
+      ehr === 'inactive' ||
+      ehr === 'deactivated' ||
+      ehr === 'activation_requested' ||
+      ehr === 'pending';
+    const isReadyOrUnknown = (r: string | null) =>
+      r === null || r === 'ready' || r === 'pending';
+    const activationOpportunities = stateFacts
+      .filter(f =>
+        f.eligible_to_practice &&
+        f.currently_active &&
+        (f.gap_hours ?? 0) > 0 &&
+        f.ehr_status !== 'active' &&
+        isEhrActivatable(f.ehr_status) &&
+        isReadyOrUnknown(f.readiness),
+      )
+      // Sort by biggest gap so PA / NJ / etc. surface first.
+      .sort((a, b) => (b.gap_hours ?? 0) - (a.gap_hours ?? 0));
     // States where this provider has surplus today → deactivation candidates
     const deactivationOpportunities = stateFacts.filter(f =>
       (f.provider_slack_hours ?? 0) >= 3 || (f.surplus_hours ?? 0) >= 4
     );
-    // Active eligible states with biggest gaps
+    // Active eligible states with biggest gaps where the provider IS already
+    // EHR-active (so hours can be approved with no further activation step).
     const neediestStates = [...stateFacts]
-      .filter(f => f.eligible_to_practice && f.currently_active && (f.gap_hours ?? 0) > 0)
+      .filter(f =>
+        f.eligible_to_practice &&
+        f.currently_active &&
+        (f.gap_hours ?? 0) > 0 &&
+        f.ehr_status === 'active',
+      )
       .sort((a, b) => (b.gap_hours ?? 0) - (a.gap_hours ?? 0));
 
     const facts = {
@@ -451,9 +475,9 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
         plain.push(`Metabase visit actuals are settled through ${metabaseSettledThrough}, so coverage numbers for ${date} reflect finalized data.`);
       }
       if (neediestStates.length > 0) {
-        plain.push(`Active eligible states with the biggest gaps that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}.`);
+        plain.push(`Active eligible states where ${provider.full_name} is ALREADY EHR-active and there's a gap that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}. Hours here can be approved with no further setup.`);
       } else {
-        plain.push(`No active eligible states (where ${provider.full_name} can legally practice and is EHR-active) are short on coverage that day.`);
+        plain.push(`${provider.full_name} is not currently EHR-active in any state with a gap that day — but see activation_opportunities below for states where she's licensed and could be activated to help.`);
       }
       // Cross-reference network-wide gap picture so we don't contradict the
       // network-mode answer for the same date.
@@ -467,7 +491,8 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
         }
       }
       if (activationOpportunities.length > 0) {
-        plain.push(`Activation candidates (provider is ready but EHR-inactive in a state with a gap): ${activationOpportunities.map(s => s.state).join(', ')}.`);
+        const totalActivatableGap = round1(activationOpportunities.reduce((acc, s) => acc + (s.gap_hours ?? 0), 0));
+        plain.push(`Activation candidates — states where ${provider.full_name} is LICENSED and there's a gap, but she's not yet EHR-active. Approving hours here is conditional on activating her first: ${activationOpportunities.slice(0,8).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}. Total addressable gap if activated: ${totalActivatableGap}h.`);
       }
       if (deactivationOpportunities.length > 0) {
         plain.push(`Deactivation candidates (this provider has slack ≥3h or the state has surplus ≥4h): ${deactivationOpportunities.map(s => s.state).join(', ')}.`);
@@ -538,14 +563,14 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
     const synthSystem = `You are an ops copilot deciding whether to approve a provider's request for additional hours.
 
 Decision rules:
-- Only approve hours that match a real GAP in an active state where the provider is eligible (licensed AND allowed to practice) AND already EHR-active.
+- "approve_full" / "approve_partial" without conditions = hours covered by neediest_states (where provider is ALREADY EHR-active).
 - approved_hours <= request.requested_hours and <= sum of gap_hours across eligible+active states.
-- If gap_hours == 0 in all eligible+active states, recommend "decline" UNLESS conditional activation in another state would create demand.
 - If gap exists but only partially fills the request, recommend "approve_partial" with approved_hours equal to the coverable gap.
-- Use conditional_yes for states where readiness=ready and ehr is inactive/deactivated/activation_requested AND state has gap.
+- If neediest_states is empty BUT activation_opportunities is non-empty, the answer is a CONDITIONAL YES, not a decline. Recommend "approve_partial" (or "approve_full" if the activatable gap covers the request), set primary_state to the largest activation candidate, and add one conditional_yes entry per top activation candidate state. The summary must say something like "Yes — add her to the schedule, but only if we activate her in PA, NJ, ... first." List the specific states and the hours each unlocks.
+- Only recommend "decline" if BOTH neediest_states AND activation_opportunities are empty (no gap she can help with even if activated).
 - Use conditional_no for states where this provider has surplus_hours >= 3 (could be deactivated to free capacity).
 - Never invent numbers. Cite facts only.
-- IMPORTANT: When you say "no gaps", clarify the scope. If facts.neediest_states is empty BUT facts.network_picture_for_requested_date.total_gap_hours > 0, your summary MUST say something like "no gaps in states where {provider} can practice — though the network has Xh in gaps elsewhere on that date" so the answer doesn't contradict the network-mode view.
+- IMPORTANT: When neediest_states is empty, do NOT say "no gaps" without qualification. Either point to activation_opportunities (if any) as the unlock, or — if activation_opportunities is also empty — explicitly say "no gaps in states where {provider} is licensed and legally eligible, even though the network has Xh in gaps elsewhere" referencing facts.network_picture_for_requested_date.total_gap_hours.
 - If facts.data_freshness.requested_day_is_preliminary is true, call out that the day is PRELIMINARY (booking-aware forecast that tends to overstate) and lower confidence accordingly.
 - Keep summary under 4 sentences.`;
 
