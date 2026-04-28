@@ -128,19 +128,35 @@ Deno.serve(async (req) => {
 
     // ──────────────── Step B: resolve provider ────────────────
     const queryNorm = normalizeName(extracted.provider_query);
+    const queryTokens = queryNorm.split(' ').filter(Boolean);
     const { data: allProfiles } = await supabase
       .from('profiles')
       .select('id, full_name, email, profession, employment_status')
       .eq('employment_status', 'active');
 
-    const profileMatches = (allProfiles ?? []).filter(p => {
-      if (!p.full_name) return false;
-      const n = normalizeName(p.full_name);
-      // Match if any token in query appears as a token in name (forename, nickname, etc.)
-      const queryTokens = queryNorm.split(' ').filter(Boolean);
-      const nameTokens = n.split(' ');
-      return queryTokens.some(qt => nameTokens.some(nt => nt === qt || nt.startsWith(qt) || qt.startsWith(nt)));
-    });
+    // Score every profile: exact-name > full-substring > token-prefix > email-localpart-substring
+    type Scored = { p: any; score: number };
+    const scored: Scored[] = [];
+    for (const p of allProfiles ?? []) {
+      if (!p.full_name) continue;
+      const nameNorm = normalizeName(p.full_name);
+      const nameTokens = nameNorm.split(' ');
+      const emailLocal = (p.email ?? '').split('@')[0].toLowerCase();
+      let score = 0;
+      if (nameNorm === queryNorm) score = 100;
+      else if (nameNorm.includes(queryNorm) || queryNorm.includes(nameNorm)) score = 80;
+      else if (queryTokens.some(qt => nameTokens.includes(qt))) score = 70;
+      else if (queryTokens.some(qt => qt.length >= 3 && nameTokens.some(nt => nt.startsWith(qt) || qt.startsWith(nt)))) score = 60;
+      else if (queryTokens.some(qt => qt.length >= 3 && emailLocal.includes(qt))) score = 50;
+      if (score > 0) scored.push({ p, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    // If top score is much higher than runner-up, treat as unique match.
+    let profileMatches: any[];
+    if (scored.length === 0) profileMatches = [];
+    else if (scored.length === 1) profileMatches = [scored[0].p];
+    else if (scored[0].score - scored[1].score >= 20) profileMatches = [scored[0].p];
+    else profileMatches = scored.filter(s => s.score === scored[0].score).map(s => s.p);
 
     if (profileMatches.length === 0) {
       return new Response(JSON.stringify({
