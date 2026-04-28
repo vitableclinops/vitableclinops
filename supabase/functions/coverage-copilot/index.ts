@@ -1059,6 +1059,22 @@ async function runNetworkMode(
   }
   (facts as any).plain_english = plain;
 
+  // Deterministic confidence factors for the network-mode answer.
+  const networkRequestedWeek = getMonday(
+    firstDayWithGaps?.date ?? startDate,
+  );
+  (facts as any).confidence_explanation = await buildConfidenceExplanation(
+    supabase,
+    {
+      forecastIsFallback: fallbackWeek !== null,
+      requestedForecastWeek: networkRequestedWeek,
+      fallbackWeek,
+      requestedDayIsPreliminary: !!firstDayWithGaps?.is_preliminary,
+      metabaseSettledThrough,
+      requestedDate: firstDayWithGaps?.date ?? null,
+    },
+  );
+
   const synthTools = [{
     type: 'function',
     function: {
