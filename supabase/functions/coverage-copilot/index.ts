@@ -370,6 +370,26 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       slots_per_hour: SLOTS_PER_HOUR,
     };
 
+    // Plain-English narrative for the provider-mode facts.
+    {
+      const plain: string[] = [];
+      plain.push(`${provider.full_name} is licensed in ${facts.eligible_state_count} state(s) where they can legally practice; ${facts.active_state_count} of those are active in our network.`);
+      plain.push(`On ${date} they already have ${facts.existing_shift_hours_that_day}h scheduled in Homebase. The request adds ${requestedHours}h.`);
+      plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. A "gap" means the state is short of that target; a "surplus" means open availability not booked.`);
+      if (neediestStates.length > 0) {
+        plain.push(`Active eligible states with the biggest gaps that day: ${neediestStates.slice(0,5).map(s => `${s.state} (${s.gap_hours}h short)`).join('; ')}.`);
+      } else {
+        plain.push(`No active eligible states are short on coverage that day.`);
+      }
+      if (activationOpportunities.length > 0) {
+        plain.push(`Activation candidates (provider is ready but EHR-inactive in a state with a gap): ${activationOpportunities.map(s => s.state).join(', ')}.`);
+      }
+      if (deactivationOpportunities.length > 0) {
+        plain.push(`Deactivation candidates (this provider has slack ≥3h or the state has surplus ≥4h): ${deactivationOpportunities.map(s => s.state).join(', ')}.`);
+      }
+      (facts as any).plain_english = plain;
+    }
+
     // ──────────────── Step D: synthesize recommendation ────────────────
     const synthTools = [{
       type: 'function',
