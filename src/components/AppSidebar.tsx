@@ -48,6 +48,7 @@ import {
   Wifi,
   CalendarCheck,
   HelpCircle,
+  Sparkles,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -110,6 +111,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Executive Briefing',     icon: Target,        href: '/admin/executive-briefing',           roles: ['admin'] },
       { label: 'Coverage Hub',           icon: Activity,      href: '/admin/ops',                          roles: ['admin', 'pod_lead'] },
+      { label: 'Coverage Copilot',       icon: Sparkles,      href: '/admin/coverage-copilot',             roles: ['admin'] },
       { label: 'Utilization',            icon: BarChart3,     href: '/admin/utilization',                  roles: ['admin', 'pod_lead'] },
       { label: 'Demand Forecast',        icon: TrendingUp,    href: '/admin/demand-forecast',              roles: ['admin'] },
       { label: 'SLA Average',            icon: Target,        href: '/admin/sla-aggregate',                roles: ['admin', 'pod_lead'] },
