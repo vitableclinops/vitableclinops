@@ -566,6 +566,21 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       },
     };
 
+    // Deterministic confidence factors (drives the "why is confidence low?"
+    // explainer in the UI). Keep this independent of the AI summary so it's
+    // always trustworthy.
+    (facts as any).confidence_explanation = await buildConfidenceExplanation(
+      supabase,
+      {
+        forecastIsFallback,
+        requestedForecastWeek: weekStart,
+        fallbackWeek: forecastIsFallback ? forecastSourceWeek : null,
+        requestedDayIsPreliminary,
+        metabaseSettledThrough,
+        requestedDate: date,
+      },
+    );
+
     // ──────── Network-wide picture for the same date (so the AI can explain
     // why a provider-scoped answer differs from a network-scoped one). ────────
     const networkSummary = await computeNetworkDaySummary(
