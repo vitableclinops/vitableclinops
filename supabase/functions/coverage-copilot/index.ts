@@ -827,6 +827,8 @@ async function runNetworkMode(
 - gap_hours > 0 means the state is short of the SLA target. surplus_hours > 0 means extra capacity.
 - If facts.first_day_with_gaps is null, there are no gaps in the scanned range — say so plainly.
 - If facts.note is set (no data), explain that politely and stop.
+- If a date you reference is in facts.data_freshness.preliminary_dates, explicitly call it PRELIMINARY in the summary, and add a suggested_action to re-check after the overnight Metabase visit sync.
+- If facts.first_day_with_gaps.is_preliminary is true, soften your confidence (use "medium" not "high") and tell the user the gap may shrink once actuals land.
 - Keep summary under 4 sentences.`;
 
   const synthRes = await callAI({
