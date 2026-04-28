@@ -427,7 +427,7 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
         settled_through: metabaseSettledThrough,
         requested_day_is_preliminary: requestedDayIsPreliminary,
         note: requestedDayIsPreliminary
-          ? `Metabase visit data is settled through ${metabaseSettledThrough}. ${date} is too recent — slot numbers shown for that day come from the Homebase schedule (forecast), not finalized actuals.`
+          ? `Metabase visit actuals are settled through ${metabaseSettledThrough}. ${date} uses projected-unfilled forecasts (booking-aware predictions of how many slots will end the day unfilled). These predictions tend to overstate the gap and converge toward actuals as bookings come in.`
           : `Metabase visit data is settled through ${metabaseSettledThrough}, which covers ${date}. Slot numbers reflect actual booked visits.`,
       },
     };
@@ -439,7 +439,7 @@ Times like "10am-5pm EST" map to start_local 10:00 end_local 17:00 timezone Amer
       plain.push(`On ${date} they already have ${facts.existing_shift_hours_that_day}h scheduled in Homebase. The request adds ${requestedHours}h.`);
       plain.push(`SLA target = (weekly projected visits ÷ 7) × ${buffer} buffer × ${SLOTS_PER_HOUR} slots/hour. A "gap" means the state is short of that target; a "surplus" means open availability not booked.`);
       if (requestedDayIsPreliminary) {
-        plain.push(`⚠️ Metabase visit actuals are only settled through ${metabaseSettledThrough}. Coverage numbers for ${date} use the Homebase schedule as a proxy and will firm up once overnight imports run.`);
+        plain.push(`⚠️ Metabase visit actuals are settled only through ${metabaseSettledThrough}. Coverage numbers for ${date} are projected (forecast of unfilled slots given bookings so far) and tend to overstate gaps; they firm up after the overnight Metabase sync.`);
       } else {
         plain.push(`Metabase visit actuals are settled through ${metabaseSettledThrough}, so coverage numbers for ${date} reflect finalized data.`);
       }
