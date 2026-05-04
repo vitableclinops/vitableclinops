@@ -35,8 +35,19 @@ Run every morning at 7am ET.
 ### Q5. Which states are meeting same-day and next-day SLA?
 - **Source:** Metabase
 - **Storage:** `sla_daily` (Supabase)
-- **Fields:** `date`, `state`, `sla_target`, `sla_actual`, `status` ∈ {`met`, `critical`, `low`, `zero`, `no_data`}
-- **Note:** Status categories match the existing Slack daily-report taxonomy.
+- **Fields:** `date`, `state`, `available_slots`, `daily_target`, `ratio`, `sla_pct`, `status`, `sla_flagged`
+- **Status calculation** (canonical — also encoded in `workflows/src/prompts/daily_availability_prompt.py`):
+  ```
+  daily_demand = monthly_completed_visits / 20      # 20 working days/month
+  daily_target = max(5, daily_demand * 1.5)         # 50% wiggle room, floor of 5
+  ratio        = available_slots / daily_target
+  ```
+- **Buckets:**
+  - `critical` — `ratio < 1.0` (shortfall)
+  - `low` — `1.0 ≤ ratio < 2.0` (covered, thin buffer)
+  - `ok` — `ratio ≥ 2.0` (well-covered)
+  - `zero` / `no_data` — used when `available_slots == 0` or Metabase data missing
+- **SLA flag:** independent of bucket. `sla_flagged = True` when `sla_pct < 85%` (Metabase card 2931, MTD).
 
 ### Q6. What is the daily demand per state per date?
 - **Source:** Metabase forecast (and/or Claude-computed forecast)
@@ -69,12 +80,16 @@ Three sub-questions, written to `recommendations_daily`:
 ### M1. Monthly schedule building (e.g., June)
 
 **Inputs:**
-- Projected by-state demand forecast for the month (Q6 extended)
+- Projected by-state demand forecast for the month (Q6 extended; uses the `demand-forecast` skill in `/demand-forecast/SKILL.md`)
 - Provider hour requests for the month from Jotform
 - Provider licensure (Q2)
 - Where each provider is currently active (Q3)
+- Provider pay rates (`provider_pay_rates`)
 
-**Goal:** Meet all by-state demand *with reasonable wiggle room*, without overshooting. Overshooting inflates cost-per-visit by paying for unused capacity.
+**Two-sided objective:**
+- **Lower bound:** cover projected demand with wiggle room (target = `monthly_visits/20 × 1.5`, floor 5 slots/day per state).
+- **Upper bound:** stay under cost-per-visit ceiling. **Target: <$60/visit. Current state: well above target.**
+- Overshooting inflates cost-per-visit by paying for unused capacity; undershooting hurts member experience and SLA. Optimize for the smallest provider footprint that still keeps every state at `ratio ≥ 1.5` on the daily SLA bucket.
 
 **Outputs (per provider):**
 - `accepted_hours` — subset of their Jotform submission we approve
@@ -85,6 +100,7 @@ Three sub-questions, written to `recommendations_daily`:
 - `hire_to_fill` — states where even accepting all submitted hours leaves a demand gap (signal for hiring)
 - `cuts_required` — states/dates where we have to decline otherwise-willing hours
 - `state_deactivations` — providers currently active in states where demand can be covered without them, freeing them to focus on licensure-constrained states
+- `projected_cost_per_visit` — per state and network-level, given the proposed schedule
 
 ### M2. Licensure investment plan (quarterly)
 
@@ -124,9 +140,20 @@ Need to add:
 
 ---
 
-## Open Questions
+## Constants and constraints
 
-- SLA status thresholds — what visit counts or percentages define `critical` vs. `low`? Lock these in code, not in interpretation.
-- `state_demand_targets` — derived from the forecast, or manually maintained? If manual, who owns updates and on what cadence?
-- Cost-per-visit benchmark for M1 trade-off decisions — is there a target we're optimizing toward, or is "minimize without overshooting" the only constraint?
-- M1 wiggle room — what percentage above projected demand is acceptable before it counts as overshooting? (e.g., 10%, 15%)
+These were open questions during drafting and have been resolved. Encode in code, not interpretation.
+
+| Setting | Value | Source / rationale |
+|---|---|---|
+| Daily slot target formula | `max(5, monthly_visits/20 × 1.5)` | `workflows/src/prompts/daily_availability_prompt.py` |
+| Daily slot wiggle room | **50%** (the 1.5× multiplier) | Same |
+| Daily slot floor | 5 slots/day per state | Same |
+| SLA bucket: critical | ratio < 1.0 | Same |
+| SLA bucket: low | 1.0 ≤ ratio < 2.0 | Same |
+| SLA bucket: ok | ratio ≥ 2.0 | Same |
+| SLA flag threshold | `sla_pct < 85%` (MTD) | Same |
+| Monthly demand growth buffer | 15–30% (per market, by recent trend) | `demand-forecast` skill |
+| Cost-per-visit target | **<$60** (currently above target) | Maddi |
+| `state_demand_targets` cadence | **Derived monthly from forecast**, refreshed at the start of each month | Maddi |
+| `state_demand_targets` ownership | Computed by `demand-forecast` skill output → written to Supabase | Maddi |
