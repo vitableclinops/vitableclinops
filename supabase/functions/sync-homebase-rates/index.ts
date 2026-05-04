@@ -12,7 +12,11 @@
  *   2. Keep roles whose name matches the profession AND contains "tele".
  *   3. Among those, prefer roles whose name contains "telemedicine" or
  *      "telehealth". Falls back to the first remaining match.
- *   4. Providers matched but with no qualifying telehealth role land in
+ *   4. If no telehealth role found, fall back to the JOB-level wage_rate
+ *      (`emp.job.wage_rate`). Stored under role='job_default' so it's
+ *      distinguishable from real telehealth-role matches. Note: in-home
+ *      and training role rates are never used as a fallback.
+ *   5. Providers with no telehealth role and no positive job wage land in
  *      `unrated_matches` for manual review.
  *
  * Rate write logic (per provider+role):
@@ -56,10 +60,12 @@ const HB_NAME_OVERRIDES: Record<string, string> = {
 
 const canon = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
+type RateSource = 'role' | 'job_default';
+
 function pickRate(
   emp: HBEmployee,
   profession: string | null,
-): { role: string; rate: number } | null {
+): { role: string; rate: number; source: RateSource } | null {
   const roles = emp.job?.roles ?? [];
   const prof = (profession ?? '').toUpperCase();
   const isNP = prof === 'NP';
@@ -78,11 +84,18 @@ function pickRate(
     isProfMatch(r.name) &&
     /tele/i.test(r.name)
   );
-  if (candidates.length === 0) return null;
+  if (candidates.length > 0) {
+    const preferred = candidates.find((r) => /telemedicine|telehealth/i.test(r.name));
+    const chosen = preferred ?? candidates[0];
+    return { role: chosen.name, rate: Number(chosen.wage_rate), source: 'role' };
+  }
 
-  const preferred = candidates.find((r) => /telemedicine|telehealth/i.test(r.name));
-  const chosen = preferred ?? candidates[0];
-  return { role: chosen.name, rate: Number(chosen.wage_rate) };
+  const jobWage = Number(emp.job?.wage_rate ?? 0);
+  if (jobWage > 0) {
+    return { role: 'job_default', rate: jobWage, source: 'job_default' };
+  }
+
+  return null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -145,6 +158,9 @@ Deno.serve(async (req: Request) => {
   const unratedMatches: {
     provider: string;
     profession: string | null;
+    job_wage_rate: number;
+    job_wage_type: string | null;
+    job_default_role: string | null;
     available_roles: { name: string; wage_rate: number }[];
   }[] = [];
   const ratesPreview: {
@@ -152,6 +168,7 @@ Deno.serve(async (req: Request) => {
     profession: string | null;
     role: string;
     rate: number;
+    source: RateSource;
   }[] = [];
 
   const seenEmployees = new Set<number>();
@@ -202,6 +219,9 @@ Deno.serve(async (req: Request) => {
           unratedMatches.push({
             provider: provider.name,
             profession: provider.profession,
+            job_wage_rate: Number(emp.job?.wage_rate ?? 0),
+            job_wage_type: emp.job?.wage_type ?? null,
+            job_default_role: emp.job?.default_role ?? null,
             available_roles: (emp.job?.roles ?? []).map((r) => ({
               name: r.name,
               wage_rate: Number(r.wage_rate),
@@ -215,6 +235,7 @@ Deno.serve(async (req: Request) => {
           profession: provider.profession,
           role: pick.role,
           rate: pick.rate,
+          source: pick.source,
         });
 
         if (dryRun) continue;
