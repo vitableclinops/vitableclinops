@@ -1,0 +1,82 @@
+name: Availability Sync — Jotform → Notion
+
+# Polls for new Monthly Availability submissions every 30 minutes and pushes
+# them into the Notion Schedule Builder database via Claude.
+#
+# First-run setup:
+#   1. Disable your Zapier "Availability Submissions from Jotform to Notion" zap.
+#   2. Find the Jotform submission ID of the last entry Zapier already processed.
+#   3. Trigger this workflow manually (workflow_dispatch) with `since_id` set to
+#      that submission ID. The workflow will bootstrap the state file and process
+#      only submissions newer than that ID going forward.
+#   4. Merge the PR that introduced this workflow — automatic runs take over.
+#
+# Required repository secrets:
+#   JOTFORM_API_KEY    — Jotform account API key (Account Settings → API)
+#   NOTION_TOKEN       — Notion integration token (notion.so/my-integrations)
+#   ANTHROPIC_API_KEY  — Anthropic API key (console.anthropic.com)
+#
+# The integration token must be shared with:
+#   - "Schedule Builder" database
+#   - "Provider Scheduling Status" database
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # every 30 minutes
+  workflow_dispatch:
+    inputs:
+      since_id:
+        description: >
+          Process submissions newer than this Jotform submission ID.
+          Use on first run to set the starting point (last Zapier-handled ID).
+          Leave blank on subsequent manual runs to use saved state.
+        required: false
+        type: string
+
+permissions:
+  contents: write   # needed to commit the state file back to the branch
+
+jobs:
+  sync-availability:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workflows
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: workflows/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run availability sync
+        id: sync
+        env:
+          JOTFORM_API_KEY: ${{ secrets.JOTFORM_API_KEY }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SINCE_ID_OVERRIDE: ${{ inputs.since_id }}
+        run: python src/availability_workflow.py
+
+      - name: Commit updated state file
+        if: always() && steps.sync.outputs.last_submission_id != ''
+        working-directory: ${{ github.workspace }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add workflows/state/availability-state.json
+          if git diff --staged --quiet; then
+            echo "State file unchanged — nothing to commit."
+          else
+            git commit -m "chore: update availability sync state [skip ci]"
+            git push origin HEAD
+          fi

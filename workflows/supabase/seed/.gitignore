@@ -1,0 +1,4 @@
+# Real provider rosters never get committed — only the .example templates do.
+providers.csv
+licenses.csv
+*.local.csv
