@@ -15,9 +15,13 @@
  *   4. If no telehealth role found, fall back to the JOB-level wage_rate
  *      (`emp.job.wage_rate`). Stored under role='job_default' so it's
  *      distinguishable from real telehealth-role matches. Note: in-home
- *      and training role rates are never used as a fallback.
- *   5. Providers with no telehealth role and no positive job wage land in
- *      `unrated_matches` for manual review.
+ *      and training role rates are never used as a fallback. The job-level
+ *      fallback is rejected when:
+ *        - rate is 0 or missing                                  -> no_rate
+ *        - rate > MAX_REASONABLE_HOURLY (likely an annual salary) -> rate_too_high
+ *        - job.default_role looks like collaborating/supervising  -> collaborating_default
+ *   5. Providers matched but with no usable rate land in `unrated_matches`
+ *      with a `rejected_reason` for manual review.
  *
  * Rate write logic (per provider+role):
  *   - existing open row, same rate -> no-op
@@ -60,17 +64,21 @@ const HB_NAME_OVERRIDES: Record<string, string> = {
 
 const canon = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-type RateSource = 'role' | 'job_default';
+const MAX_REASONABLE_HOURLY = 500;
 
-function pickRate(
-  emp: HBEmployee,
-  profession: string | null,
-): { role: string; rate: number; source: RateSource } | null {
+type RateSource = 'role' | 'job_default';
+type RejectReason = 'no_rate' | 'rate_too_high' | 'collaborating_default';
+
+type PickResult =
+  | { ok: true; role: string; rate: number; source: RateSource }
+  | { ok: false; reason: RejectReason };
+
+function pickRate(emp: HBEmployee, profession: string | null): PickResult {
   const roles = emp.job?.roles ?? [];
   const prof = (profession ?? '').toUpperCase();
   const isNP = prof === 'NP';
   const isMD = prof === 'MD' || prof === 'DO' || prof === 'PHYSICIAN';
-  if (!isNP && !isMD) return null;
+  if (!isNP && !isMD) return { ok: false, reason: 'no_rate' };
 
   const isExcluded = (n: string) => /collaborating|supervising/i.test(n);
   const isProfMatch = (n: string) => {
@@ -87,15 +95,15 @@ function pickRate(
   if (candidates.length > 0) {
     const preferred = candidates.find((r) => /telemedicine|telehealth/i.test(r.name));
     const chosen = preferred ?? candidates[0];
-    return { role: chosen.name, rate: Number(chosen.wage_rate), source: 'role' };
+    return { ok: true, role: chosen.name, rate: Number(chosen.wage_rate), source: 'role' };
   }
 
   const jobWage = Number(emp.job?.wage_rate ?? 0);
-  if (jobWage > 0) {
-    return { role: 'job_default', rate: jobWage, source: 'job_default' };
-  }
-
-  return null;
+  const defaultRole = emp.job?.default_role ?? '';
+  if (jobWage <= 0) return { ok: false, reason: 'no_rate' };
+  if (isExcluded(defaultRole)) return { ok: false, reason: 'collaborating_default' };
+  if (jobWage > MAX_REASONABLE_HOURLY) return { ok: false, reason: 'rate_too_high' };
+  return { ok: true, role: 'job_default', rate: jobWage, source: 'job_default' };
 }
 
 Deno.serve(async (req: Request) => {
@@ -158,6 +166,7 @@ Deno.serve(async (req: Request) => {
   const unratedMatches: {
     provider: string;
     profession: string | null;
+    rejected_reason: RejectReason;
     job_wage_rate: number;
     job_wage_type: string | null;
     job_default_role: string | null;
@@ -169,6 +178,7 @@ Deno.serve(async (req: Request) => {
     role: string;
     rate: number;
     source: RateSource;
+    job_default_role: string | null;
   }[] = [];
 
   const seenEmployees = new Set<number>();
@@ -214,11 +224,12 @@ Deno.serve(async (req: Request) => {
         counters.matched++;
 
         const pick = pickRate(emp, provider.profession);
-        if (!pick) {
+        if (!pick.ok) {
           counters.no_rate_found++;
           unratedMatches.push({
             provider: provider.name,
             profession: provider.profession,
+            rejected_reason: pick.reason,
             job_wage_rate: Number(emp.job?.wage_rate ?? 0),
             job_wage_type: emp.job?.wage_type ?? null,
             job_default_role: emp.job?.default_role ?? null,
@@ -236,6 +247,7 @@ Deno.serve(async (req: Request) => {
           role: pick.role,
           rate: pick.rate,
           source: pick.source,
+          job_default_role: emp.job?.default_role ?? null,
         });
 
         if (dryRun) continue;
