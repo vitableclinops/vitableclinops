@@ -13,15 +13,21 @@
  *   3. Among those, prefer roles whose name contains "telemedicine" or
  *      "telehealth". Falls back to the first remaining match.
  *   4. If no telehealth role found, fall back to the JOB-level wage_rate
- *      (`emp.job.wage_rate`). Stored under role='job_default' so it's
- *      distinguishable from real telehealth-role matches. Note: in-home
- *      and training role rates are never used as a fallback. The job-level
- *      fallback is rejected when:
- *        - rate is 0 or missing                                  -> no_rate
- *        - rate > MAX_REASONABLE_HOURLY (likely an annual salary) -> rate_too_high
- *        - job.default_role looks like collaborating/supervising  -> collaborating_default
+ *      (`emp.job.wage_rate`). In-home and training role rates are never
+ *      used as a fallback. Job-level fallback handling:
+ *        - rate <= 0                                             -> no_rate
+ *        - default_role contains "collaborating"/"supervising"    -> collaborating_default
+ *        - 0 < rate <= MAX_REASONABLE_HOURLY                      -> hourly (role='job_default')
+ *        - MAX_REASONABLE_HOURLY < rate < MAX_REASONABLE_SALARY   -> annual salary,
+ *          divided by SALARY_HOURS_PER_YEAR (2080) to get hourly  (role='job_default')
+ *        - rate >= MAX_REASONABLE_SALARY                          -> rate_too_high
  *   5. Providers matched but with no usable rate land in `unrated_matches`
  *      with a `rejected_reason` for manual review.
+ *
+ * DB source values written to provider_pay_rates.source:
+ *   - 'homebase'              : matched a telehealth role
+ *   - 'homebase_job_hourly'   : matched job-level hourly wage_rate
+ *   - 'homebase_salary_2080'  : converted annual salary (wage_rate / 2080)
  *
  * Rate write logic (per provider+role):
  *   - existing open row, same rate -> no-op
@@ -65,13 +71,26 @@ const HB_NAME_OVERRIDES: Record<string, string> = {
 const canon = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const MAX_REASONABLE_HOURLY = 500;
+const MAX_REASONABLE_SALARY = 500_000;
+const SALARY_HOURS_PER_YEAR = 2080;
 
-type RateSource = 'role' | 'job_default';
+type RateSource = 'role' | 'job_hourly' | 'job_salary_converted';
 type RejectReason = 'no_rate' | 'rate_too_high' | 'collaborating_default';
 
-type PickResult =
-  | { ok: true; role: string; rate: number; source: RateSource }
-  | { ok: false; reason: RejectReason };
+type PickOk = {
+  ok: true;
+  role: string;
+  rate: number;
+  source: RateSource;
+  source_amount?: number; // raw annual salary when source='job_salary_converted'
+};
+type PickResult = PickOk | { ok: false; reason: RejectReason };
+
+const DB_SOURCE: Record<RateSource, string> = {
+  role: 'homebase',
+  job_hourly: 'homebase_job_hourly',
+  job_salary_converted: 'homebase_salary_2080',
+};
 
 function pickRate(emp: HBEmployee, profession: string | null): PickResult {
   const roles = emp.job?.roles ?? [];
@@ -102,8 +121,20 @@ function pickRate(emp: HBEmployee, profession: string | null): PickResult {
   const defaultRole = emp.job?.default_role ?? '';
   if (jobWage <= 0) return { ok: false, reason: 'no_rate' };
   if (isExcluded(defaultRole)) return { ok: false, reason: 'collaborating_default' };
-  if (jobWage > MAX_REASONABLE_HOURLY) return { ok: false, reason: 'rate_too_high' };
-  return { ok: true, role: 'job_default', rate: jobWage, source: 'job_default' };
+  if (jobWage <= MAX_REASONABLE_HOURLY) {
+    return { ok: true, role: 'job_default', rate: jobWage, source: 'job_hourly' };
+  }
+  if (jobWage < MAX_REASONABLE_SALARY) {
+    const hourly = Math.round((jobWage / SALARY_HOURS_PER_YEAR) * 100) / 100;
+    return {
+      ok: true,
+      role: 'job_default',
+      rate: hourly,
+      source: 'job_salary_converted',
+      source_amount: jobWage,
+    };
+  }
+  return { ok: false, reason: 'rate_too_high' };
 }
 
 Deno.serve(async (req: Request) => {
@@ -178,6 +209,7 @@ Deno.serve(async (req: Request) => {
     role: string;
     rate: number;
     source: RateSource;
+    source_amount: number | null;
     job_default_role: string | null;
   }[] = [];
 
@@ -247,6 +279,7 @@ Deno.serve(async (req: Request) => {
           role: pick.role,
           rate: pick.rate,
           source: pick.source,
+          source_amount: pick.source_amount ?? null,
           job_default_role: emp.job?.default_role ?? null,
         });
 
@@ -286,7 +319,7 @@ Deno.serve(async (req: Request) => {
           hourly_rate: pick.rate,
           role: pick.role,
           effective_from: today,
-          source: 'homebase',
+          source: DB_SOURCE[pick.source],
         });
         if (insErr) throw insErr;
         counters.rates_inserted++;
