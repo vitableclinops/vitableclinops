@@ -15,12 +15,26 @@ supabase/
 │   ├── 0002_create_provider_licenses.sql
 │   ├── 0003_create_provider_utilization_daily.sql
 │   ├── 0004_get_activation_candidates.sql
-│   └── 0005_enable_rls.sql
+│   ├── 0005_enable_rls.sql
+│   ├── 0006_create_shifts.sql                      # Homebase sync
+│   ├── 0007_create_provider_state_active.sql       # Metabase: where active
+│   ├── 0008_create_utilization_summary.sql         # 7d max + 30d avg rollup
+│   ├── 0009_create_sla_daily.sql                   # Q5 daily SLA buckets
+│   ├── 0010_create_demand_forecast.sql             # Q6 per-(date,state)
+│   ├── 0011_create_state_demand_targets.sql        # Derived monthly targets
+│   ├── 0012_create_coverage_gaps_daily.sql         # Q7 calculated
+│   ├── 0013_create_provider_pay_rates.sql          # Cost-per-visit math
+│   ├── 0014_create_schedule_submissions.sql        # Jotform → here
+│   ├── 0015_create_recommendations.sql             # Q8 + M1/M2 outputs
+│   └── 0016_enable_rls_new_tables.sql              # Lock down new tables
 └── seed/
     ├── seed_providers.py               # Idempotent CSV → REST upsert.
     ├── providers.csv.example
     └── licenses.csv.example
 ```
+
+Migrations 0006–0016 implement the schema required by
+[`SCHEDULING_DECISION_CONTRACT.md`](../../SCHEDULING_DECISION_CONTRACT.md).
 
 ## Apply migrations (one-time setup)
 
@@ -35,10 +49,9 @@ web SQL Editor.
 4. Open `migrations/0001_create_providers.sql` from this repo. Copy the entire
    file. Paste into the SQL Editor. Click **Run** (bottom-right). Should say
    "Success. No rows returned."
-5. Repeat for `0002`, `0003`, `0004`, `0005` — five files, five paste-and-runs,
-   in that order.
-6. Verify: click **Table Editor** in the sidebar. You should see
-   `providers`, `provider_licenses`, and `provider_utilization_daily`.
+5. Repeat for each subsequent file in numeric order, through `0016`.
+6. Verify: click **Table Editor** in the sidebar. You should see all the
+   tables listed in the layout above.
 
 If a migration errors, stop and read the message — it's almost always a
 missing prior migration (e.g. running `0002` without `0001`).
