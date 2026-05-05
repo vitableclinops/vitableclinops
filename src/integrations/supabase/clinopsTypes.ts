@@ -335,6 +335,78 @@ export type ClinOpsDatabase = {
         }
         Relationships: []
       }
+      shift_recommendations: {
+        Row: {
+          assigned_state: string | null
+          created_at: string | null
+          decision_run_id: string
+          end_min: number
+          homebase_shift_id: string | null
+          hours: number
+          id: string
+          notes: string | null
+          provider_id: string | null
+          provider_name: string
+          publish_status: string
+          published_at: string | null
+          published_by: string | null
+          recommendation: string
+          recommendation_reason: string | null
+          shift_date: string
+          shift_type: string
+          start_min: number
+          submission_id: string
+          target_month: string
+          updated_at: string | null
+        }
+        Insert: {
+          assigned_state?: string | null
+          created_at?: string | null
+          decision_run_id: string
+          end_min: number
+          homebase_shift_id?: string | null
+          hours: number
+          id?: string
+          notes?: string | null
+          provider_id?: string | null
+          provider_name: string
+          publish_status?: string
+          published_at?: string | null
+          published_by?: string | null
+          recommendation: string
+          recommendation_reason?: string | null
+          shift_date: string
+          shift_type: string
+          start_min: number
+          submission_id: string
+          target_month: string
+          updated_at?: string | null
+        }
+        Update: {
+          assigned_state?: string | null
+          created_at?: string | null
+          decision_run_id?: string
+          end_min?: number
+          homebase_shift_id?: string | null
+          hours?: number
+          id?: string
+          notes?: string | null
+          provider_id?: string | null
+          provider_name?: string
+          publish_status?: string
+          published_at?: string | null
+          published_by?: string | null
+          recommendation?: string
+          recommendation_reason?: string | null
+          shift_date?: string
+          shift_type?: string
+          start_min?: number
+          submission_id?: string
+          target_month?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       schedule_submissions: {
         Row: {
           accepted_hours: number | null
@@ -567,6 +639,22 @@ export type ClinOpsDatabase = {
           provider_id: string | null
           rate_role: string | null
           rate_source: string | null
+        }
+        Relationships: []
+      }
+      v_provider_shift_summary: {
+        Row: {
+          confirmed_count: number | null
+          cut_count: number | null
+          cut_hours: number | null
+          pending_publish: number | null
+          provider_id: string | null
+          provider_name: string | null
+          publish_count: number | null
+          publish_hours: number | null
+          published_count: number | null
+          target_month: string | null
+          total_shifts: number | null
         }
         Relationships: []
       }

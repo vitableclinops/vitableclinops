@@ -60,6 +60,7 @@ function useOpsCoverage() {
 const OPS_LINKS = [
   { label: 'Ops Dashboard', icon: Activity,    href: '/admin/ops',                  color: 'text-primary' },
   { label: 'Monthly Forecast', icon: TrendingUp, href: '/admin/monthly-forecast',     color: 'text-emerald-700' },
+  { label: 'Shift Plan',    icon: Activity,    href: '/admin/shift-plan',            color: 'text-emerald-700' },
   { label: 'Demand Forecast', icon: TrendingUp,  href: '/admin/demand-forecast',       color: 'text-emerald-600' },
   { label: 'Utilization',   icon: BarChart3,   href: '/admin/utilization',           color: 'text-yellow-600' },
   { label: 'Routing',       icon: Network,     href: '/admin/routing',               color: 'text-blue-600' },

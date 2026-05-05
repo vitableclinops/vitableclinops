@@ -26,7 +26,11 @@
  *   7. Compute state_demand_targets per the formula:
  *        monthly_visits_target = adjusted_monthly_demand
  *        daily_target_slots    = max(5, round(monthly_visits / 20 * 1.5))
- *        monthly_hours_target  = daily_target_slots * 20 / VISITS_PER_HOUR
+ *        monthly_hours_target  = monthly_visits_target / VISITS_PER_HOUR
+ *      VISITS_PER_HOUR is the operational rule that one clinical hour
+ *      contains two appointment slots (default 2). monthly_hours_target
+ *      is the demand-side hours figure used for fill-rate math; the
+ *      separate daily_target_slots is the SLA capacity floor.
  *   8. Write demand_forecast (per-day rows, is_baseline=true, fresh
  *      forecast_run_id; demote prior baseline first) and upsert
  *      state_demand_targets keyed on (state, month).
@@ -38,7 +42,7 @@
  * Optional secrets / env:
  *   METABASE_BASELINE_CARD_ID  default 2974
  *   METABASE_HISTORY_CARD_ID   default 3011
- *   VISITS_PER_HOUR            default 1.5
+ *   VISITS_PER_HOUR            default 2 (two appointment slots per clinical hour)
  *
  * Query params:
  *   ?target_month=YYYY-MM-01    default = first day of next calendar month
@@ -51,7 +55,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { toAbbreviation } from '../_shared/stateNormalization.ts';
 
 const METABASE_URL = 'https://metabase.vitablehealth.com';
-const VISITS_PER_HOUR = Number(Deno.env.get('VISITS_PER_HOUR') ?? '1.5');
+const VISITS_PER_HOUR = Number(Deno.env.get('VISITS_PER_HOUR') ?? '2');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -255,7 +259,10 @@ Deno.serve(async (req: Request) => {
       const monthlyVisits = Math.max(0, Math.round(monthlyTotalByState.get(state) ?? 0));
       const dailyTargetRaw = (monthlyVisits / 20) * 1.5;
       const dailyTargetSlots = Math.max(5, Math.round(dailyTargetRaw));
-      const monthlyHoursTarget = round2(dailyTargetSlots * 20 / VISITS_PER_HOUR);
+      // Demand hours = visits / VISITS_PER_HOUR (2 slots per clinical hour).
+      // This is the demand-side figure for fill-rate; daily_target_slots
+      // remains the SLA capacity floor and is independent.
+      const monthlyHoursTarget = round2(monthlyVisits / VISITS_PER_HOUR);
       const mult = multiplierByState.get(state)?.multiplier ?? 1.0;
 
       targets.push({

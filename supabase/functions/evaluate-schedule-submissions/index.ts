@@ -23,10 +23,13 @@
  *      slot.
  *   3. effective_hours = sum of (endMin - startMin)/60 for all merged
  *      slots in the timeline.
- *   4. eligible_states = provider's licensed states.
+ *   4. eligible_states = provider's licensed states, filtered by the
+ *      MD-only state rule: AL/IN/GA/MS/MO/SC/TN/LA can only be allocated
+ *      to providers whose profession is MD or DO.
  *   5. For each eligible state, demand_hours = sum_of_demand_visits /
- *      VISITS_PER_HOUR over the target month, minus committed hours from
- *      decisions made in prior runs for OTHER providers in same state+month.
+ *      VISITS_PER_HOUR over the target month (default 2 — two slots per
+ *      clinical hour), minus committed hours from decisions made in prior
+ *      runs for OTHER providers in same state+month.
  *   6. total_gap = sum of demand_hours across eligible states (clipped 0).
  *   7. Decision:
  *        total_gap >= effective_hours       → accepted (all of it)
@@ -46,7 +49,12 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const VISITS_PER_HOUR = Number(Deno.env.get('VISITS_PER_HOUR') ?? '1.5');
+const VISITS_PER_HOUR = Number(Deno.env.get('VISITS_PER_HOUR') ?? '2');
+
+// States that can only be served by MDs/DOs per Vitable scope-of-practice rules.
+// NPs licensed in these states cannot be allocated demand hours here.
+const MD_ONLY_STATES = new Set(['AL', 'IN', 'GA', 'MS', 'MO', 'SC', 'TN', 'LA']);
+const MD_PROFESSIONS = new Set(['MD', 'DO']);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -71,11 +79,14 @@ type Submission = {
   submitted_at: string;
 };
 
+type ShiftType = 'virtual_recurring' | 'virtual_oneoff' | 'in_home_clinic';
+
 type Slot = {
   date: string;        // YYYY-MM-DD
   startMin: number;    // 0..1440
   endMin: number;      // > startMin (we pre-split midnight crossings)
   sourceSubmissionId: string;
+  shiftType: ShiftType;
 };
 
 Deno.serve(async (req: Request) => {
@@ -167,7 +178,22 @@ Deno.serve(async (req: Request) => {
       submissionsByGroup.get(k)!.push(s);
     }
 
-    // ── Preload provider licenses ──────────────────────────────────────
+    // ── Preload provider profession (for MD-only state enforcement) ────
+    const professionByProvider = new Map<string, string | null>();
+    if (providerIds.length > 0) {
+      const { data: provs } = await supabase
+        .from('providers')
+        .select('id, profession')
+        .in('id', providerIds);
+      for (const p of provs ?? []) {
+        professionByProvider.set(p.id, p.profession ?? null);
+      }
+    }
+
+    // ── Preload provider licenses (filtered by MD-only constraint) ─────
+    // For the eight MD-only states, only providers whose profession is MD/DO
+    // are eligible — even if an NP holds a valid license. Drop non-eligible
+    // (provider, state) pairs at preload time so the allocator never sees them.
     const licensedStatesByProvider = new Map<string, Set<string>>();
     if (providerIds.length > 0) {
       const { data: licenses } = await supabase
@@ -178,6 +204,8 @@ Deno.serve(async (req: Request) => {
         if (!l.provider_id || !l.state) continue;
         if (l.status && !['active', 'verified', 'pending_renewal'].includes(l.status)) continue;
         const st = String(l.state).trim().toUpperCase();
+        const profession = (professionByProvider.get(l.provider_id) ?? '').toUpperCase();
+        if (MD_ONLY_STATES.has(st) && !MD_PROFESSIONS.has(profession)) continue;
         if (!licensedStatesByProvider.has(l.provider_id)) {
           licensedStatesByProvider.set(l.provider_id, new Set());
         }
@@ -400,6 +428,22 @@ Deno.serve(async (req: Request) => {
           decision_run_id: decisionRunId,
         });
 
+        // Emit per-shift recommendations: one row per slot in the merged
+        // timeline with a publish/cut decision. The scheduling team executes
+        // by entering 'publish' rows into Homebase. Cut rows are documented
+        // in case a provider asks why their submitted shift wasn't scheduled.
+        await writeShiftRecommendations(supabase, {
+          submissionIds: groupSubs.map(s => s.id),
+          providerId,
+          providerName: latest.provider_name,
+          targetMonth,
+          timeline,
+          declinedHours: declined,
+          allocations,
+          decisionRunId,
+          decisionStatus: status,
+        });
+
         if (status === 'accepted') counters.accepted++;
         else if (status === 'partial') counters.partial++;
         else counters.declined++;
@@ -454,19 +498,22 @@ function expandSubmissionSlots(
     const range = parseTimeRange(e['Start Time (ET)'], e['End Time (ET)']);
     if (!range || !dayName) continue;
     for (const date of weekdayDatesInMonth(dayName, targetMonth)) {
-      pushSlot(slots, submissionId, date, range);
+      pushSlot(slots, submissionId, date, range, 'virtual_recurring');
     }
   }
 
   // One-off virtual + in-home: each entry is one date
-  for (const widget of [parsed.one_off_virtual, parsed.in_home_clinic]) {
-    for (const e of parseWidgetArray(widget)) {
+  const widgets: Array<{ raw: unknown; type: ShiftType }> = [
+    { raw: parsed.one_off_virtual, type: 'virtual_oneoff' },
+    { raw: parsed.in_home_clinic, type: 'in_home_clinic' },
+  ];
+  for (const w of widgets) {
+    for (const e of parseWidgetArray(w.raw)) {
       const date = parseFormDate(e['Date']);
       const range = parseTimeRange(e['Start Time (ET)'], e['End Time (ET)']);
       if (!date || !range) continue;
-      // Only count if it falls within target_month
       if (!isInMonth(date, targetMonth)) continue;
-      pushSlot(slots, submissionId, date, range);
+      pushSlot(slots, submissionId, date, range, w.type);
     }
   }
 
@@ -478,14 +525,15 @@ function pushSlot(
   sourceSubmissionId: string,
   date: string,
   range: { startMin: number; endMin: number },
+  shiftType: ShiftType,
 ) {
   // If endMin <= startMin (crosses midnight), split into two slots
   if (range.endMin <= range.startMin) {
-    out.push({ date, startMin: range.startMin, endMin: 1440, sourceSubmissionId });
+    out.push({ date, startMin: range.startMin, endMin: 1440, sourceSubmissionId, shiftType });
     const next = nextDate(date);
-    if (next) out.push({ date: next, startMin: 0, endMin: range.endMin, sourceSubmissionId });
+    if (next) out.push({ date: next, startMin: 0, endMin: range.endMin, sourceSubmissionId, shiftType });
   } else {
-    out.push({ date, startMin: range.startMin, endMin: range.endMin, sourceSubmissionId });
+    out.push({ date, startMin: range.startMin, endMin: range.endMin, sourceSubmissionId, shiftType });
   }
 }
 
@@ -620,6 +668,112 @@ async function writeDecision(
     })
     .eq('id', submissionId);
   if (error) throw new Error(error.message);
+}
+
+async function writeShiftRecommendations(
+  supabase: ReturnType<typeof createClient>,
+  args: {
+    submissionIds: string[];
+    providerId: string;
+    providerName: string;
+    targetMonth: string;
+    timeline: Slot[];
+    declinedHours: number;
+    allocations: Array<{ state: string; hours: number }>;
+    decisionRunId: string;
+    decisionStatus: 'accepted' | 'partial' | 'declined';
+  },
+) {
+  // Wipe any prior recommendations for this group so re-runs are idempotent.
+  // CASCADE on submission_id FK isn't automatic on rerun; do it explicitly.
+  await supabase
+    .from('shift_recommendations')
+    .delete()
+    .in('submission_id', args.submissionIds);
+
+  if (args.timeline.length === 0) return;
+
+  // Cut budget walks the timeline from the END of the month, latest slot first.
+  // This preserves earlier-month commitments — providers expect to work the
+  // hours they submitted at the start of the month and lose later flexibility
+  // if oversupplied.
+  const sortedDesc = [...args.timeline].sort((a, b) =>
+    b.date.localeCompare(a.date) || b.startMin - a.startMin,
+  );
+  let cutBudget = round2(args.declinedHours);
+  const cutSlots = new Set<Slot>();
+  for (const slot of sortedDesc) {
+    if (cutBudget <= 0.001) break;
+    const slotHours = round2((slot.endMin - slot.startMin) / 60);
+    cutSlots.add(slot);
+    cutBudget = round2(cutBudget - slotHours);
+  }
+
+  // For publish slots, assign a state from the allocation buckets.
+  // Walk slots in chronological order; each slot consumes hours from the
+  // state with the largest remaining bucket. This naturally distributes
+  // shifts across multi-state providers' allocations.
+  const sortedAsc = [...args.timeline].sort((a, b) =>
+    a.date.localeCompare(b.date) || a.startMin - b.startMin,
+  );
+  const buckets = new Map<string, number>(args.allocations.map(a => [a.state, a.hours]));
+
+  const rows = sortedAsc.map(slot => {
+    const slotHours = round2((slot.endMin - slot.startMin) / 60);
+    const isCut = cutSlots.has(slot);
+    let assignedState: string | null = null;
+    let reason: string;
+
+    if (isCut) {
+      reason = args.decisionStatus === 'declined'
+        ? 'Provider has no remaining demand-hour gap in any licensed state'
+        : 'Trimmed as oversupply — accepted hours capped at network demand';
+    } else {
+      // Pick the bucket with largest remaining hours
+      let bestState: string | null = null;
+      let bestRemaining = -1;
+      for (const [state, remaining] of buckets) {
+        if (remaining > bestRemaining) {
+          bestState = state;
+          bestRemaining = remaining;
+        }
+      }
+      assignedState = bestState;
+      if (bestState) {
+        buckets.set(bestState, round2((buckets.get(bestState) ?? 0) - slotHours));
+      }
+      reason = bestState
+        ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
+        : 'Publish (no state allocation; review manually)';
+    }
+
+    return {
+      submission_id: slot.sourceSubmissionId,
+      provider_id: args.providerId,
+      provider_name: args.providerName,
+      target_month: args.targetMonth,
+      shift_date: slot.date,
+      start_min: slot.startMin,
+      end_min: slot.endMin,
+      hours: slotHours,
+      shift_type: slot.shiftType,
+      assigned_state: assignedState,
+      recommendation: isCut ? 'cut' : 'publish',
+      recommendation_reason: reason,
+      decision_run_id: args.decisionRunId,
+      publish_status: 'pending',
+    };
+  });
+
+  if (rows.length === 0) return;
+
+  // Insert in chunks to stay under PostgREST limits
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const { error } = await supabase.from('shift_recommendations').insert(chunk);
+    if (error) throw new Error(`shift_recommendations insert failed: ${error.message}`);
+  }
 }
 
 async function markSuperseded(
