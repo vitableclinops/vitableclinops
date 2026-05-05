@@ -114,6 +114,7 @@ const navGroups: NavGroup[] = [
       { label: 'Coverage Copilot',       icon: Sparkles,      href: '/admin/coverage-copilot',             roles: ['admin'] },
       { label: 'Utilization',            icon: BarChart3,     href: '/admin/utilization',                  roles: ['admin', 'pod_lead'] },
       { label: 'Demand Forecast',        icon: TrendingUp,    href: '/admin/demand-forecast',              roles: ['admin'] },
+      { label: 'Monthly Forecast',       icon: Calendar,      href: '/admin/monthly-forecast',             roles: ['admin'] },
       { label: 'SLA Average',            icon: Target,        href: '/admin/sla-aggregate',                roles: ['admin', 'pod_lead'] },
       { label: 'Telemedicine Avail.',    icon: Wifi,          href: '/admin/telemedicine-availability',    roles: ['admin', 'pod_lead'] },
       { label: 'PCP Coverage',           icon: Stethoscope,   href: '/admin/pcp-coverage',                 roles: ['admin', 'pod_lead'] },
