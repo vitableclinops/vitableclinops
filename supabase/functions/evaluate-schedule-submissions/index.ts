@@ -1,40 +1,47 @@
 /**
  * evaluate-schedule-submissions edge function
  *
- * Reads schedule_submissions whose decision_status='pending' (or filtered by
- * target_month / submission_id), joins them against demand_forecast, and
- * writes back a decision (accepted / partial / declined) plus accepted_hours,
- * declined_hours, and decision_notes.
+ * Reads schedule_submissions and writes back a decision (accepted /
+ * partial / declined) plus accepted_hours / declined_hours / decision_notes.
  *
- * Decision logic per submission:
- *   1. Provider must be matched (provider_id set). Otherwise leave pending.
- *   2. Eligible states = intersect(parsed_shifts.requested_states,
- *      provider's licensed states). If requested_states is empty, fall back
- *      to all licensed states.
- *   3. For each eligible state, sum projected_visits across the target_month
- *      from demand_forecast (is_baseline=true, latest forecast_run_id), then
- *      convert to hours via VISITS_PER_HOUR.
- *   4. Subtract already-committed hours from prior submissions for the same
- *      state+month with decision_status in (accepted, partial).
- *   5. total_gap = sum of remaining gap-hours across eligible states.
- *   6. requested = parsed_shifts.requested_hours_total.
+ * Resubmission handling:
+ *   When a provider submits multiple times for the same target_month, we
+ *   group those submissions together and walk them chronologically. New
+ *   submissions overwrite any overlapping date/time slots from earlier
+ *   submissions; non-overlapping slots from earlier submissions remain.
+ *   The latest submission in the group gets the decision based on the
+ *   merged effective hours; earlier submissions get decision_status =
+ *   'superseded' so the audit trail stays intact.
+ *
+ * Decision math (per group of submissions for the same provider + month):
+ *   1. Expand every submission's parsed_shifts into concrete slots
+ *      (date, startMin, endMin). Recurring entries expand into one slot
+ *      per matching weekday in the target month. One-off and in-home
+ *      entries become one slot each.
+ *   2. Walk slots chronologically (by submitted_at). For each new slot,
+ *      trim or remove any existing timeline slot it overlaps. Add the new
+ *      slot.
+ *   3. effective_hours = sum of (endMin - startMin)/60 for all merged
+ *      slots in the timeline.
+ *   4. eligible_states = provider's licensed states.
+ *   5. For each eligible state, demand_hours = sum_of_demand_visits /
+ *      VISITS_PER_HOUR over the target month, minus committed hours from
+ *      decisions made in prior runs for OTHER providers in same state+month.
+ *   6. total_gap = sum of demand_hours across eligible states (clipped 0).
  *   7. Decision:
- *        - total_gap >= requested        → accepted (accepted_hours=requested,
- *                                          declined_hours=0)
- *        - 0 < total_gap < requested     → partial  (accepted_hours=total_gap,
- *                                          declined_hours=requested-total_gap)
- *        - total_gap <= 0                → declined (accepted_hours=0,
- *                                          declined_hours=requested)
+ *        total_gap >= effective_hours       → accepted (all of it)
+ *        0 < total_gap < effective_hours    → partial  (accept = total_gap,
+ *                                                      decline = remainder)
+ *        total_gap <= 0                     → declined
  *
  * Modes:
  *   POST /functions/v1/evaluate-schedule-submissions
- *     → evaluate all submissions where decision_status='pending'
+ *     → evaluate every (provider, target_month) group with at least one
+ *       pending submission
  *   POST /functions/v1/evaluate-schedule-submissions?target_month=YYYY-MM-01
- *     → evaluate every submission for that month (skips ones already decided
- *       unless force=1)
- *   POST /functions/v1/evaluate-schedule-submissions?submission_id=<uuid>
- *     → evaluate a single submission
- *   Add &force=1 to overwrite existing non-pending decisions in this run
+ *     → evaluate every group for that month (re-runs supersedes too)
+ *   POST /functions/v1/evaluate-schedule-submissions?provider_id=<uuid>
+ *     → evaluate just that provider's pending groups
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -48,10 +55,10 @@ const corsHeaders = {
 
 type ParsedShifts = {
   requested_states?: string[];
-  requested_hours_total?: number | null;
-  shifts?: unknown;
-  email?: string | null;
-  match_confidence?: string | null;
+  recurring_virtual?: unknown;
+  one_off_virtual?: unknown;
+  in_home_clinic?: unknown;
+  [k: string]: unknown;
 };
 
 type Submission = {
@@ -61,6 +68,14 @@ type Submission = {
   target_month: string;
   parsed_shifts: ParsedShifts | null;
   decision_status: string;
+  submitted_at: string;
+};
+
+type Slot = {
+  date: string;        // YYYY-MM-DD
+  startMin: number;    // 0..1440
+  endMin: number;      // > startMin (we pre-split midnight crossings)
+  sourceSubmissionId: string;
 };
 
 Deno.serve(async (req: Request) => {
@@ -73,40 +88,76 @@ Deno.serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const monthFilter = url.searchParams.get('target_month');
-  const submissionIdFilter = url.searchParams.get('submission_id');
-  const force = url.searchParams.get('force') === '1';
+  const providerFilter = url.searchParams.get('provider_id');
 
   const decisionRunId = crypto.randomUUID();
-  const counters = { evaluated: 0, accepted: 0, partial: 0, declined: 0, skipped: 0, errors: 0 };
+  const counters = {
+    groups: 0,
+    accepted: 0,
+    partial: 0,
+    declined: 0,
+    superseded: 0,
+    skipped_unmatched_provider: 0,
+    skipped_no_hours: 0,
+    skipped_no_licensed_states: 0,
+    errors: 0,
+  };
   const decisions: Array<Record<string, unknown>> = [];
 
   try {
-    // ── Load submissions to evaluate ────────────────────────────────────
-    let q = supabase
+    // ── Find groups (provider, target_month) that need work ─────────────
+    let pendingQuery = supabase
       .from('schedule_submissions')
-      .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status');
+      .select('provider_id, target_month, decision_status');
 
-    if (submissionIdFilter) {
-      q = q.eq('id', submissionIdFilter);
-    } else if (monthFilter) {
-      q = q.eq('target_month', monthFilter);
-      if (!force) q = q.eq('decision_status', 'pending');
-    } else {
-      q = q.eq('decision_status', 'pending');
+    if (monthFilter) pendingQuery = pendingQuery.eq('target_month', monthFilter);
+    if (providerFilter) pendingQuery = pendingQuery.eq('provider_id', providerFilter);
+    if (!monthFilter && !providerFilter) {
+      pendingQuery = pendingQuery.eq('decision_status', 'pending');
     }
 
-    const { data: subs, error: subsErr } = await q;
-    if (subsErr) throw new Error(`Failed to load submissions: ${subsErr.message}`);
-    const submissions = (subs ?? []) as Submission[];
+    const { data: pendingRows, error: pErr } = await pendingQuery;
+    if (pErr) throw new Error(`Pending lookup failed: ${pErr.message}`);
 
-    if (submissions.length === 0) {
-      return json({ ok: true, decision_run_id: decisionRunId, ...counters, message: 'No submissions to evaluate' });
+    const groupKeys = new Set<string>();
+    for (const r of pendingRows ?? []) {
+      if (!r.provider_id || !r.target_month) continue;
+      groupKeys.add(`${r.provider_id}|${r.target_month}`);
     }
 
-    // ── Preload provider licenses ───────────────────────────────────────
-    const providerIds = Array.from(
-      new Set(submissions.map(s => s.provider_id).filter((x): x is string => !!x)),
-    );
+    if (groupKeys.size === 0) {
+      return json({
+        ok: true, decision_run_id: decisionRunId, ...counters,
+        message: 'No groups with pending submissions',
+      });
+    }
+
+    // ── Load every submission in those groups ──────────────────────────
+    const providerIds = Array.from(new Set(
+      Array.from(groupKeys).map(k => k.split('|')[0])
+    ));
+    const months = Array.from(new Set(
+      Array.from(groupKeys).map(k => k.split('|')[1])
+    ));
+
+    const { data: subsRaw, error: sErr } = await supabase
+      .from('schedule_submissions')
+      .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, submitted_at')
+      .in('provider_id', providerIds)
+      .in('target_month', months);
+    if (sErr) throw new Error(`Submissions load failed: ${sErr.message}`);
+
+    const submissions = (subsRaw ?? []) as Submission[];
+    const submissionsByGroup = new Map<string, Submission[]>();
+    for (const s of submissions) {
+      if (!s.provider_id) continue;
+      const k = `${s.provider_id}|${s.target_month}`;
+      if (!groupKeys.has(k)) continue;
+      if (!submissionsByGroup.has(k)) submissionsByGroup.set(k, []);
+      submissionsByGroup.get(k)!.push(s);
+    }
+
+    // ── Preload provider licenses ──────────────────────────────────────
     const licensedStatesByProvider = new Map<string, Set<string>>();
     if (providerIds.length > 0) {
       const { data: licenses } = await supabase
@@ -116,145 +167,168 @@ Deno.serve(async (req: Request) => {
       for (const l of licenses ?? []) {
         if (!l.provider_id || !l.state) continue;
         if (l.status && !['active', 'verified', 'pending_renewal'].includes(l.status)) continue;
-        const s = String(l.state).trim().toUpperCase();
+        const st = String(l.state).trim().toUpperCase();
         if (!licensedStatesByProvider.has(l.provider_id)) {
           licensedStatesByProvider.set(l.provider_id, new Set());
         }
-        licensedStatesByProvider.get(l.provider_id)!.add(s);
+        licensedStatesByProvider.get(l.provider_id)!.add(st);
       }
     }
 
-    // ── Preload demand_forecast for the months in scope ─────────────────
-    const months = Array.from(new Set(submissions.map(s => s.target_month)));
-    // For each month: sum projected_visits per state across all dates in the
-    // month, using the latest baseline forecast_run_id.
-    const demandByKey = new Map<string, number>(); // `${state}_${month}` → demand_visits
-    for (const month of months) {
-      const monthStart = month;
-      const next = nextMonth(month);
-      const { data: rows } = await supabase
-        .from('demand_forecast')
-        .select('state, projected_visits, forecast_run_id, is_baseline, computed_at, date')
-        .gte('date', monthStart)
-        .lt('date', next)
-        .eq('is_baseline', true);
-
-      // Pick the latest forecast_run_id (max computed_at) and aggregate
-      let latestRunId: string | null = null;
-      let latestComputed = 0;
-      for (const r of rows ?? []) {
-        const ts = r.computed_at ? new Date(r.computed_at).getTime() : 0;
-        if (ts > latestComputed) { latestComputed = ts; latestRunId = r.forecast_run_id; }
-      }
-      if (!latestRunId) continue;
-
-      for (const r of rows ?? []) {
-        if (r.forecast_run_id !== latestRunId) continue;
-        const st = String(r.state).trim().toUpperCase();
-        const k = `${st}_${month}`;
-        demandByKey.set(k, (demandByKey.get(k) ?? 0) + Number(r.projected_visits ?? 0));
+    // ── Preload baseline demand per (state, month) ──────────────────────
+    const demandByKey = new Map<string, number>(); // `${state}_${month}` → total visits
+    if (months.length > 0) {
+      // For each month, sum projected_visits across all dates in the month
+      // using the rows where is_baseline=true.
+      for (const month of months) {
+        const next = nextMonth(month);
+        const { data: rows } = await supabase
+          .from('demand_forecast')
+          .select('state, projected_visits')
+          .gte('date', month)
+          .lt('date', next)
+          .eq('is_baseline', true);
+        for (const r of rows ?? []) {
+          const st = String(r.state).trim().toUpperCase();
+          const k = `${st}_${month}`;
+          demandByKey.set(k, (demandByKey.get(k) ?? 0) + Number(r.projected_visits ?? 0));
+        }
       }
     }
 
-    // ── Preload already-committed hours per state/month ─────────────────
-    const submissionIdsInScope = new Set(submissions.map(s => s.id));
-    const committedByKey = new Map<string, number>();
+    // ── Preload committed hours from OTHER groups (not in scope) ────────
+    const groupKeysInScope = groupKeys;
+    const committedByKey = new Map<string, number>(); // `${state}_${month}` → committed hours
     if (months.length > 0) {
       const { data: committed } = await supabase
         .from('schedule_submissions')
-        .select('id, target_month, parsed_shifts, accepted_hours, decision_status')
+        .select('id, provider_id, target_month, parsed_shifts, accepted_hours, decision_status')
         .in('target_month', months)
         .in('decision_status', ['accepted', 'partial']);
 
+      // Sum accepted_hours per (state, month) for groups NOT being re-evaluated.
+      // Best-effort even-split across the provider's licensed states for that month.
       for (const c of committed ?? []) {
-        if (submissionIdsInScope.has(c.id)) continue;
-        const ps = (c.parsed_shifts ?? {}) as ParsedShifts;
-        const states = (ps.requested_states ?? []).map(s => s.toUpperCase());
+        if (!c.provider_id || !c.target_month) continue;
+        const k = `${c.provider_id}|${c.target_month}`;
+        if (groupKeysInScope.has(k)) continue;
         const hours = typeof c.accepted_hours === 'number' ? c.accepted_hours : 0;
-        if (!states.length || hours <= 0 || !c.target_month) continue;
-        const perState = hours / states.length;
+        if (hours <= 0) continue;
+        const states = licensedStatesByProvider.get(c.provider_id);
+        if (!states || states.size === 0) continue;
+        const perState = hours / states.size;
         for (const st of states) {
-          const k = `${st}_${c.target_month}`;
-          committedByKey.set(k, (committedByKey.get(k) ?? 0) + perState);
+          const key = `${st}_${c.target_month}`;
+          committedByKey.set(key, (committedByKey.get(key) ?? 0) + perState);
         }
       }
     }
 
-    // ── Evaluate each submission ────────────────────────────────────────
-    for (const sub of submissions) {
+    // ── Evaluate each group ─────────────────────────────────────────────
+    for (const [key, groupSubs] of submissionsByGroup) {
       try {
-        if (!sub.provider_id) {
-          counters.skipped++;
-          decisions.push({ id: sub.id, status: 'skipped', reason: 'unmatched_provider' });
+        counters.groups++;
+        const [providerId, targetMonth] = key.split('|');
+
+        // Sort chronologically; latest is the one that carries the decision
+        groupSubs.sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
+        const latest = groupSubs[groupSubs.length - 1];
+        const olderIds = groupSubs.slice(0, -1).map(s => s.id);
+
+        if (!providerId) {
+          counters.skipped_unmatched_provider++;
+          decisions.push({ group: key, status: 'skipped', reason: 'unmatched_provider' });
           continue;
         }
 
-        const ps = (sub.parsed_shifts ?? {}) as ParsedShifts;
-        const requestedHours = ps.requested_hours_total ?? null;
-        if (!requestedHours || requestedHours <= 0) {
-          counters.skipped++;
-          decisions.push({ id: sub.id, status: 'skipped', reason: 'no_hours_requested' });
-          continue;
+        // Build merged slot timeline
+        let timeline: Slot[] = [];
+        for (const sub of groupSubs) {
+          const slots = expandSubmissionSlots(sub.id, sub.parsed_shifts, targetMonth);
+          for (const slot of slots) {
+            timeline = mergeSlot(timeline, slot);
+          }
         }
 
-        const licensed = licensedStatesByProvider.get(sub.provider_id) ?? new Set<string>();
-        const requested = new Set((ps.requested_states ?? []).map(s => s.toUpperCase()));
-        const eligibleStates = requested.size === 0
-          ? Array.from(licensed)
-          : Array.from(requested).filter(s => licensed.has(s));
+        const effectiveHours = round2(timeline.reduce(
+          (sum, s) => sum + (s.endMin - s.startMin) / 60, 0,
+        ));
 
-        if (eligibleStates.length === 0) {
-          await writeDecision(supabase, sub.id, {
+        if (effectiveHours <= 0) {
+          counters.skipped_no_hours++;
+          // Mark older as superseded; latest becomes 'declined' with note
+          await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; group has 0 effective hours`);
+          await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
-            declined_hours: requestedHours,
-            notes: requested.size === 0
-              ? 'Provider has no active licenses on file.'
-              : `Provider not licensed in requested states: ${Array.from(requested).join(', ')}`,
+            declined_hours: 0,
+            notes: 'No effective hours in any submission for this provider+month',
             decision_run_id: decisionRunId,
           });
-          counters.evaluated++;
           counters.declined++;
-          decisions.push({ id: sub.id, status: 'declined', reason: 'no_licensed_states' });
+          counters.superseded += olderIds.length;
+          decisions.push({ group: key, provider: latest.provider_name, target_month: targetMonth, status: 'declined', reason: 'no_hours', superseded: olderIds.length });
           continue;
         }
 
-        // Compute remaining gap-hours per state, ranked
+        // Eligible states = provider's licensed states (form has no state field)
+        const licensed = licensedStatesByProvider.get(providerId) ?? new Set<string>();
+        if (licensed.size === 0) {
+          counters.skipped_no_licensed_states++;
+          await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
+          await writeDecision(supabase, latest.id, {
+            status: 'declined',
+            accepted_hours: 0,
+            declined_hours: effectiveHours,
+            notes: 'Provider has no active licenses on file',
+            decision_run_id: decisionRunId,
+          });
+          counters.declined++;
+          counters.superseded += olderIds.length;
+          decisions.push({ group: key, provider: latest.provider_name, target_month: targetMonth, status: 'declined', reason: 'no_licenses', superseded: olderIds.length });
+          continue;
+        }
+
+        // Compute remaining demand-hour gap per state
         const gapByState: Array<{ state: string; gapHours: number; missingDemand: boolean }> = [];
-        for (const st of eligibleStates) {
-          const key = `${st}_${sub.target_month}`;
-          const visits = demandByKey.get(key);
+        for (const st of licensed) {
+          const dKey = `${st}_${targetMonth}`;
+          const visits = demandByKey.get(dKey);
           if (visits === undefined) {
             gapByState.push({ state: st, gapHours: 0, missingDemand: true });
             continue;
           }
           const demandHours = visits / VISITS_PER_HOUR;
-          const committed = committedByKey.get(key) ?? 0;
-          gapByState.push({ state: st, gapHours: Math.max(0, demandHours - committed), missingDemand: false });
+          const committed = committedByKey.get(dKey) ?? 0;
+          gapByState.push({
+            state: st,
+            gapHours: Math.max(0, demandHours - committed),
+            missingDemand: false,
+          });
         }
         gapByState.sort((a, b) => b.gapHours - a.gapHours);
-
-        const totalGap = gapByState.reduce((s, g) => s + g.gapHours, 0);
+        const totalGap = round2(gapByState.reduce((s, g) => s + g.gapHours, 0));
         const missingDemandStates = gapByState.filter(g => g.missingDemand).map(g => g.state);
 
+        // Decide
         let status: 'accepted' | 'partial' | 'declined';
         let accepted: number;
         let declined: number;
         if (totalGap <= 0) {
           status = 'declined';
           accepted = 0;
-          declined = requestedHours;
-        } else if (totalGap >= requestedHours) {
+          declined = effectiveHours;
+        } else if (totalGap >= effectiveHours) {
           status = 'accepted';
-          accepted = requestedHours;
+          accepted = effectiveHours;
           declined = 0;
         } else {
           status = 'partial';
-          accepted = round2(totalGap);
-          declined = round2(requestedHours - accepted);
+          accepted = totalGap;
+          declined = round2(effectiveHours - accepted);
         }
 
-        // Allocate accepted hours greedily across states with biggest gaps
+        // Allocate accepted hours greedily across states
         const allocations: Array<{ state: string; hours: number }> = [];
         let remaining = accepted;
         for (const g of gapByState) {
@@ -267,22 +341,28 @@ Deno.serve(async (req: Request) => {
         }
 
         const noteParts: string[] = [];
-        noteParts.push(`requested=${requestedHours}h`);
-        noteParts.push(`total_gap=${round2(totalGap)}h`);
-        if (gapByState.length) {
-          noteParts.push(
-            'state_gaps=' + gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : round2(g.gapHours) + 'h'}`).join(','),
-          );
-        }
+        noteParts.push(`group_size=${groupSubs.length}`);
+        noteParts.push(`effective_hours=${effectiveHours}h`);
+        noteParts.push(`total_gap=${totalGap}h`);
+        noteParts.push(
+          'state_gaps=' + gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : round2(g.gapHours) + 'h'}`).join(','),
+        );
         if (allocations.length) {
           noteParts.push('alloc=' + allocations.map(a => `${a.state}:${a.hours}h`).join(','));
         }
         if (missingDemandStates.length) {
           noteParts.push(`missing_demand=${missingDemandStates.join(',')}`);
         }
+        if (olderIds.length) noteParts.push(`supersedes=${olderIds.length}`);
         noteParts.push(`vph=${VISITS_PER_HOUR}`);
 
-        await writeDecision(supabase, sub.id, {
+        // Mark older as superseded
+        if (olderIds.length) {
+          await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
+          counters.superseded += olderIds.length;
+        }
+
+        await writeDecision(supabase, latest.id, {
           status,
           accepted_hours: accepted,
           declined_hours: declined,
@@ -290,46 +370,203 @@ Deno.serve(async (req: Request) => {
           decision_run_id: decisionRunId,
         });
 
-        counters.evaluated++;
         if (status === 'accepted') counters.accepted++;
         else if (status === 'partial') counters.partial++;
         else counters.declined++;
 
         decisions.push({
-          id: sub.id,
-          provider: sub.provider_name,
-          target_month: sub.target_month,
-          requested_hours: requestedHours,
-          total_gap_hours: round2(totalGap),
+          group: key,
+          provider: latest.provider_name,
+          target_month: targetMonth,
+          group_size: groupSubs.length,
+          superseded: olderIds.length,
+          effective_hours: effectiveHours,
+          total_gap_hours: totalGap,
           status,
           accepted_hours: accepted,
           declined_hours: declined,
           allocations,
         });
 
-        // Update local committed map so subsequent submissions in this run
-        // see this allocation.
+        // Update committed map so subsequent groups in this run see this allocation
         if (accepted > 0 && allocations.length) {
           for (const a of allocations) {
-            const k = `${a.state}_${sub.target_month}`;
-            committedByKey.set(k, (committedByKey.get(k) ?? 0) + a.hours);
+            const dKey = `${a.state}_${targetMonth}`;
+            committedByKey.set(dKey, (committedByKey.get(dKey) ?? 0) + a.hours);
           }
         }
       } catch (e) {
         counters.errors++;
         const message = e instanceof Error ? e.message : String(e);
-        decisions.push({ id: sub.id, status: 'error', error: message });
-        console.error('Evaluate error', sub.id, message);
+        decisions.push({ group: key, status: 'error', error: message });
+        console.error('Evaluate error', key, message);
       }
     }
 
     return json({ ok: true, decision_run_id: decisionRunId, ...counters, decisions });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return json({ error: message, decision_run_id: decisionRunId, ...counters }, 500);
+    return json({ error: err instanceof Error ? err.message : String(err), decision_run_id: decisionRunId, ...counters }, 500);
   }
 });
 
+// ── Slot expansion ────────────────────────────────────────────────────────
+function expandSubmissionSlots(
+  submissionId: string,
+  parsed: ParsedShifts | null,
+  targetMonth: string,
+): Slot[] {
+  if (!parsed) return [];
+  const slots: Slot[] = [];
+
+  // Recurring weekly: expand to every matching weekday in target month
+  for (const e of parseWidgetArray(parsed.recurring_virtual)) {
+    const dayName = e['Day of Week'];
+    const range = parseTimeRange(e['Start Time (ET)'], e['End Time (ET)']);
+    if (!range || !dayName) continue;
+    for (const date of weekdayDatesInMonth(dayName, targetMonth)) {
+      pushSlot(slots, submissionId, date, range);
+    }
+  }
+
+  // One-off virtual + in-home: each entry is one date
+  for (const widget of [parsed.one_off_virtual, parsed.in_home_clinic]) {
+    for (const e of parseWidgetArray(widget)) {
+      const date = parseFormDate(e['Date']);
+      const range = parseTimeRange(e['Start Time (ET)'], e['End Time (ET)']);
+      if (!date || !range) continue;
+      // Only count if it falls within target_month
+      if (!isInMonth(date, targetMonth)) continue;
+      pushSlot(slots, submissionId, date, range);
+    }
+  }
+
+  return slots;
+}
+
+function pushSlot(
+  out: Slot[],
+  sourceSubmissionId: string,
+  date: string,
+  range: { startMin: number; endMin: number },
+) {
+  // If endMin <= startMin (crosses midnight), split into two slots
+  if (range.endMin <= range.startMin) {
+    out.push({ date, startMin: range.startMin, endMin: 1440, sourceSubmissionId });
+    const next = nextDate(date);
+    if (next) out.push({ date: next, startMin: 0, endMin: range.endMin, sourceSubmissionId });
+  } else {
+    out.push({ date, startMin: range.startMin, endMin: range.endMin, sourceSubmissionId });
+  }
+}
+
+// ── Slot merging: new slot wins over overlapping existing ─────────────────
+function mergeSlot(timeline: Slot[], incoming: Slot): Slot[] {
+  const out: Slot[] = [];
+  for (const existing of timeline) {
+    if (existing.date !== incoming.date || !overlaps(existing, incoming)) {
+      out.push(existing);
+      continue;
+    }
+    // Trim existing to non-overlapping portions
+    if (existing.startMin < incoming.startMin) {
+      out.push({ ...existing, endMin: incoming.startMin });
+    }
+    if (existing.endMin > incoming.endMin) {
+      out.push({ ...existing, startMin: incoming.endMin });
+    }
+    // Drop the part that fully overlaps with incoming
+  }
+  out.push(incoming);
+  return out;
+}
+
+function overlaps(a: Slot, b: Slot): boolean {
+  return a.startMin < b.endMin && b.startMin < a.endMin;
+}
+
+// ── Time / date helpers ───────────────────────────────────────────────────
+function parseWidgetArray(raw: unknown): Record<string, string>[] {
+  if (raw == null) return [];
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((e): e is Record<string, string> => e != null && typeof e === 'object');
+}
+
+function parseTimeRange(start: string | undefined, end: string | undefined): { startMin: number; endMin: number } | null {
+  if (!start || !end) return null;
+  const s = parseTimeOfDay(start);
+  const e = parseTimeOfDay(end);
+  if (s == null || e == null) return null;
+  return { startMin: s, endMin: e };
+}
+
+/** "09:00 AM" / "5:00 PM" / "13:00" → minutes from midnight (0..1440). */
+function parseTimeOfDay(t: string): number | null {
+  const m = String(t).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?\s*$/i);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = Number(m[2]);
+  const ampm = (m[3] ?? '').toUpperCase();
+  if (ampm === 'AM') {
+    if (h === 12) h = 0;
+  } else if (ampm === 'PM') {
+    if (h !== 12) h += 12;
+  }
+  if (h < 0 || h > 24 || min < 0 || min >= 60) return null;
+  return h * 60 + min;
+}
+
+const DAY_TO_INDEX: Record<string, number> = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
+  thursday: 4, friday: 5, saturday: 6,
+};
+
+function weekdayDatesInMonth(dayName: string, monthISO: string): string[] {
+  const dayIdx = DAY_TO_INDEX[String(dayName).trim().toLowerCase()];
+  if (dayIdx === undefined) return [];
+  const [y, m] = monthISO.split('-').map(Number);
+  const firstWeekday = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const offset = (dayIdx - firstWeekday + 7) % 7;
+  const dates: string[] = [];
+  for (let day = 1 + offset; day <= daysInMonth; day += 7) {
+    dates.push(`${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+  }
+  return dates;
+}
+
+/** Form sends "MM-DD-YYYY" (e.g. "06-04-2026"). */
+function parseFormDate(raw: unknown): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  const mdy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (mdy) return `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return null;
+}
+
+function isInMonth(dateISO: string, monthISO: string): boolean {
+  return dateISO >= monthISO && dateISO < nextMonth(monthISO);
+}
+
+function nextMonth(monthISO: string): string {
+  const [y, m] = monthISO.split('-').map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, '0')}-01`;
+}
+
+function nextDate(dateISO: string): string | null {
+  const d = new Date(dateISO + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// ── DB writes ─────────────────────────────────────────────────────────────
 async function writeDecision(
   supabase: ReturnType<typeof createClient>,
   submissionId: string,
@@ -355,11 +592,25 @@ async function writeDecision(
   if (error) throw new Error(error.message);
 }
 
-function nextMonth(monthStartISO: string): string {
-  const [y, m] = monthStartISO.split('-').map(Number);
-  const ny = m === 12 ? y + 1 : y;
-  const nm = m === 12 ? 1 : m + 1;
-  return `${ny}-${String(nm).padStart(2, '0')}-01`;
+async function markSuperseded(
+  supabase: ReturnType<typeof createClient>,
+  ids: string[],
+  decisionRunId: string,
+  note: string,
+) {
+  if (ids.length === 0) return;
+  const { error } = await supabase
+    .from('schedule_submissions')
+    .update({
+      decision_status: 'superseded',
+      accepted_hours: 0,
+      declined_hours: 0,
+      decision_notes: note,
+      decided_at: new Date().toISOString(),
+      decision_run_id: decisionRunId,
+    })
+    .in('id', ids);
+  if (error) throw new Error(error.message);
 }
 
 function round2(n: number): number {
