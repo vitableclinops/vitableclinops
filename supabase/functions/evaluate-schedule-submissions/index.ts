@@ -58,11 +58,12 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
-  normalizeProviderAvailability,
-  type RawInterval,
-  type NormalizationResult,
-  type ValidationReportRow,
-} from '../_shared/availabilityValidation.ts';
+  buildSubmissionTimeline,
+  buildShiftRecommendationRows,
+  emailFromParsedShifts,
+  type BuildTimelineResult,
+  type ShiftRecommendationRow,
+} from '../_shared/submissionTimeline.ts';
 
 // States that can only be served by MDs/DOs per Vitable scope-of-practice rules.
 // NPs licensed in these states cannot be allocated demand hours here.
@@ -94,16 +95,6 @@ type Submission = {
   submitted_at: string;
 };
 
-type ShiftType = 'virtual_recurring' | 'virtual_oneoff' | 'in_home_clinic';
-
-type Slot = {
-  date: string;        // YYYY-MM-DD
-  startMin: number;    // 0..1440
-  endMin: number;      // > startMin (we pre-split midnight crossings)
-  sourceSubmissionId: string;
-  shiftType: ShiftType;
-};
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -122,6 +113,7 @@ Deno.serve(async (req: Request) => {
     accepted: 0,
     partial: 0,
     declined: 0,
+    needs_review: 0,
     superseded: 0,
     skipped_unmatched_provider: 0,
     skipped_no_hours: 0,
@@ -139,7 +131,9 @@ Deno.serve(async (req: Request) => {
     if (monthFilter) pendingQuery = pendingQuery.eq('target_month', monthFilter);
     if (providerFilter) pendingQuery = pendingQuery.eq('provider_id', providerFilter);
     if (!monthFilter && !providerFilter) {
-      pendingQuery = pendingQuery.eq('decision_status', 'pending');
+      // Pick up new pending rows AND previously-flagged needs_review rows so
+      // a re-run after fixing the override config or raw entry decides them.
+      pendingQuery = pendingQuery.in('decision_status', ['pending', 'needs_review']);
     }
     pendingQuery = pendingQuery.range(0, 49999);
 
@@ -314,34 +308,80 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        // Build merged slot timeline via the validation/normalization pipeline.
-        // The pipeline applies provider-specific overrides + default AM/PM
-        // corrections, dedups overlapping slots, subtracts unavailable dates,
-        // and emits a per-interval audit report. The forecast approve/deny
-        // logic below uses the *normalized* timeline; the raw submission is
-        // preserved untouched on the schedule_submissions row.
-        const latestEmail = readEmailFromParsed(latest.parsed_shifts);
-        const unavailableDates = collectUnavailableDates(groupSubs);
-        const validation = runValidationPipeline(groupSubs, {
-          providerId,
-          email: latestEmail,
-          name: latest.provider_name,
-        }, targetMonth, unavailableDates);
-        const timeline: Slot[] = validation.timeline.map(s => ({
-          date: s.date,
-          startMin: s.startMin,
-          endMin: s.endMin,
-          sourceSubmissionId: s.source.submissionId ?? latest.id,
-          shiftType: kindToShiftType(s.source.kind),
-        }));
-
+        // Build merged slot timeline via the shared validation/normalization
+        // pipeline. emit-shift-recommendations runs the SAME function with
+        // the SAME inputs, so timelines match.
+        // Raw submission data on the row is preserved verbatim — we only
+        // read it here.
+        const validation: BuildTimelineResult = buildSubmissionTimeline(
+          groupSubs.map(s => ({
+            id: s.id,
+            submitted_at: s.submitted_at,
+            parsed_shifts: s.parsed_shifts ?? null,
+          })),
+          {
+            providerId,
+            email: emailFromParsedShifts(latest.parsed_shifts),
+            name: latest.provider_name,
+          },
+          targetMonth,
+        );
+        const fullTimeline = validation.timeline;
+        const forecastTimeline = validation.forecastTimeline;
         const effectiveHours = validation.summary.final_approvable_hours;
+
         if (validation.report.length > 0) {
           console.log(`[validation] ${latest.provider_name} ${targetMonth}`,
             JSON.stringify({
               summary: validation.summary,
               report: validation.report,
             }));
+        }
+
+        // ── needs_review short-circuit ────────────────────────────────────
+        // If validation surfaced intervals that need a human eyeball, do NOT
+        // auto-decide the group. The latest submission gets decision_status
+        // 'needs_review' with accepted=0 and declined=0; older submissions
+        // are still superseded so the audit trail is intact. ClinOps can
+        // re-run after the override config or raw entry is fixed.
+        const needsReview = validation.summary.intervals_needing_review > 0
+          || validation.summary.intervals_rejected > 0;
+        if (needsReview) {
+          if (olderIds.length) {
+            await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
+            counters.superseded += olderIds.length;
+          }
+          const reviewReasons = validation.report
+            .filter(r => r.needs_manual_review)
+            .map(r => `${r.day_of_week ?? r.date ?? ''} ${r.raw_time_range}: ${r.warnings.join('; ')}`)
+            .slice(0, 8);
+          const notes = [
+            `decision=needs_review`,
+            `intervals_needing_review=${validation.summary.intervals_needing_review}`,
+            `intervals_rejected=${validation.summary.intervals_rejected}`,
+            `raw_hours=${validation.summary.raw_total_hours}h`,
+            `forecastable_hours=${effectiveHours}h`,
+            `reasons=${reviewReasons.join(' | ') || '(see validation_report)'}`,
+          ].join('; ');
+          await writeDecision(supabase, latest.id, {
+            status: 'needs_review',
+            accepted_hours: 0,
+            declined_hours: 0,
+            notes,
+            decision_run_id: decisionRunId,
+            validation,
+          });
+          counters.needs_review++;
+          decisions.push({
+            group: key,
+            provider: latest.provider_name,
+            target_month: targetMonth,
+            status: 'needs_review',
+            superseded: olderIds.length,
+            validation_summary: validation.summary,
+            validation_report: validation.report,
+          });
+          continue;
         }
 
         if (effectiveHours <= 0) {
@@ -354,6 +394,7 @@ Deno.serve(async (req: Request) => {
             declined_hours: 0,
             notes: 'No effective hours in any submission for this provider+month',
             decision_run_id: decisionRunId,
+            validation,
           });
           counters.declined++;
           counters.superseded += olderIds.length;
@@ -372,6 +413,7 @@ Deno.serve(async (req: Request) => {
             declined_hours: effectiveHours,
             notes: 'Provider has no active licenses on file',
             decision_run_id: decisionRunId,
+            validation,
           });
           counters.declined++;
           counters.superseded += olderIds.length;
@@ -476,23 +518,25 @@ Deno.serve(async (req: Request) => {
           declined_hours: declined,
           notes: noteParts.join('; '),
           decision_run_id: decisionRunId,
+          validation,
         });
 
-        // Emit per-shift recommendations: one row per slot in the merged
-        // timeline with a publish/cut decision. The scheduling team executes
-        // by entering 'publish' rows into Homebase. Cut rows are documented
-        // in case a provider asks why their submitted shift wasn't scheduled.
-        await writeShiftRecommendations(supabase, {
-          submissionIds: groupSubs.map(s => s.id),
+        // Emit per-shift recommendations using the SAME shared row builder
+        // that emit-shift-recommendations uses. This guarantees the rows
+        // produced here match what a subsequent emit run would produce for
+        // the same (provider, target_month).
+        const recRows = buildShiftRecommendationRows({
           providerId,
           providerName: latest.provider_name,
           targetMonth,
-          timeline,
+          timeline: fullTimeline,
+          forecastTimeline,
           declinedHours: declined,
+          declineAll: status === 'declined',
           allocations,
           decisionRunId,
-          decisionStatus: status,
         });
+        await writeShiftRecommendations(supabase, groupSubs.map(s => s.id), recRows);
 
         if (status === 'accepted') counters.accepted++;
         else if (status === 'partial') counters.partial++;
@@ -535,121 +579,34 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// ── Validation pipeline integration ───────────────────────────────────────
-function runValidationPipeline(
-  groupSubs: Submission[],
-  identity: { providerId: string; email: string | null; name: string },
-  targetMonth: string,
-  unavailableDates: string[],
-): NormalizationResult {
-  const submissions = groupSubs.map(sub => ({
-    submissionId: sub.id,
-    submittedAt: sub.submitted_at,
-    intervals: extractRawIntervals(sub.parsed_shifts),
-  }));
-  return normalizeProviderAvailability({
-    identity,
-    submissions,
-    targetMonth,
-    unavailableDates,
-  });
-}
-
-function extractRawIntervals(parsed: ParsedShifts | null): RawInterval[] {
-  if (!parsed) return [];
-  const out: RawInterval[] = [];
-  for (const e of parseWidgetArray(parsed.recurring_virtual)) {
-    if (!e['Start Time (ET)'] || !e['End Time (ET)']) continue;
-    out.push({
-      kind: 'recurring',
-      dayOfWeek: e['Day of Week'],
-      rawStart: e['Start Time (ET)'],
-      rawEnd: e['End Time (ET)'],
-    });
-  }
-  for (const e of parseWidgetArray(parsed.one_off_virtual)) {
-    const date = parseFormDate(e['Date']);
-    if (!date || !e['Start Time (ET)'] || !e['End Time (ET)']) continue;
-    out.push({
-      kind: 'one_off',
-      date,
-      rawStart: e['Start Time (ET)'],
-      rawEnd: e['End Time (ET)'],
-    });
-  }
-  for (const e of parseWidgetArray(parsed.in_home_clinic)) {
-    const date = parseFormDate(e['Date']);
-    if (!date || !e['Start Time (ET)'] || !e['End Time (ET)']) continue;
-    out.push({
-      kind: 'in_home',
-      date,
-      rawStart: e['Start Time (ET)'],
-      rawEnd: e['End Time (ET)'],
-    });
-  }
-  return out;
-}
-
-function readEmailFromParsed(parsed: ParsedShifts | null): string | null {
-  if (!parsed) return null;
-  const e = parsed.email;
-  return typeof e === 'string' && e.trim() ? e.trim() : null;
-}
-
-function collectUnavailableDates(groupSubs: Submission[]): string[] {
-  // Pull dates from the latest submission's `unavailable_dates` widget array.
-  // The widget shape is { Date: "MM-DD-YYYY" } — same format as one-off shifts.
-  const out = new Set<string>();
-  for (const sub of groupSubs) {
-    const parsed = sub.parsed_shifts;
-    if (!parsed) continue;
-    for (const e of parseWidgetArray(parsed.unavailable_dates)) {
-      const d = parseFormDate(e['Date']);
-      if (d) out.add(d);
-    }
-  }
-  return Array.from(out);
-}
-
-function kindToShiftType(kind: 'recurring' | 'one_off' | 'in_home'): ShiftType {
-  if (kind === 'recurring') return 'virtual_recurring';
-  if (kind === 'in_home') return 'in_home_clinic';
-  return 'virtual_oneoff';
-}
-
-// ── Widget helpers (Jotform widget JSON shapes) ───────────────────────────
-function parseWidgetArray(raw: unknown): Record<string, string>[] {
-  if (raw == null) return [];
-  let parsed: unknown = raw;
-  if (typeof raw === 'string') {
-    try { parsed = JSON.parse(raw); } catch { return []; }
-  }
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((e): e is Record<string, string> => e != null && typeof e === 'object');
-}
-
-/** Form sends "MM-DD-YYYY" (e.g. "06-04-2026"). */
-function parseFormDate(raw: unknown): string | null {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  const mdy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (mdy) return `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  return null;
-}
-
 // ── DB writes ─────────────────────────────────────────────────────────────
 async function writeDecision(
   supabase: ReturnType<typeof createClient>,
   submissionId: string,
   decision: {
-    status: 'accepted' | 'partial' | 'declined';
+    status: 'accepted' | 'partial' | 'declined' | 'needs_review';
     accepted_hours: number;
     declined_hours: number;
     notes: string;
     decision_run_id: string;
+    validation: BuildTimelineResult;
   },
 ) {
+  const { summary } = decision.validation;
+  const normalizedSlots = decision.validation.timeline.map(s => ({
+    date: s.date,
+    start_min: s.startMin,
+    end_min: s.endMin,
+    hours: round2((s.endMin - s.startMin) / 60),
+    kind: s.source.kind,
+    source_submission_id: s.source.submissionId ?? null,
+    correction_reason: s.source.correction_reason,
+    validation_status: s.source.validation_status,
+  }));
+  const validationWarnings = Array.from(new Set(
+    decision.validation.report.flatMap(r => r.warnings),
+  ));
+
   const { error } = await supabase
     .from('schedule_submissions')
     .update({
@@ -659,109 +616,45 @@ async function writeDecision(
       decision_notes: decision.notes,
       decided_at: new Date().toISOString(),
       decision_run_id: decision.decision_run_id,
+      validation_status: validationStatusForGroup(decision.status, summary),
+      raw_requested_hours: summary.raw_total_hours,
+      normalized_requested_hours: summary.normalized_total_hours,
+      effective_hours_used_for_forecast: summary.final_approvable_hours,
+      validation_warnings: validationWarnings,
+      normalized_slots: normalizedSlots,
+      intervals_auto_corrected: summary.intervals_auto_corrected,
+      intervals_needing_review: summary.intervals_needing_review,
+      hours_removed_for_unavailability: summary.hours_removed_for_unavailability,
+      hours_removed_for_duplicates: summary.hours_removed_for_duplicates,
+      hours_changed_by_validation: summary.hours_changed_by_validation,
+      validation_summary: summary,
     })
     .eq('id', submissionId);
   if (error) throw new Error(error.message);
 }
 
+function validationStatusForGroup(
+  decisionStatus: 'accepted' | 'partial' | 'declined' | 'needs_review',
+  summary: BuildTimelineResult['summary'],
+): string {
+  if (decisionStatus === 'needs_review') return 'needs_review';
+  if (summary.intervals_rejected > 0) return 'partially_rejected';
+  if (summary.intervals_auto_corrected > 0) return 'auto_corrected';
+  return 'valid';
+}
+
 async function writeShiftRecommendations(
   supabase: ReturnType<typeof createClient>,
-  args: {
-    submissionIds: string[];
-    providerId: string;
-    providerName: string;
-    targetMonth: string;
-    timeline: Slot[];
-    declinedHours: number;
-    allocations: Array<{ state: string; hours: number }>;
-    decisionRunId: string;
-    decisionStatus: 'accepted' | 'partial' | 'declined';
-  },
+  submissionIds: string[],
+  rows: ShiftRecommendationRow[],
 ) {
   // Wipe any prior recommendations for this group so re-runs are idempotent.
-  // CASCADE on submission_id FK isn't automatic on rerun; do it explicitly.
   await supabase
     .from('shift_recommendations')
     .delete()
-    .in('submission_id', args.submissionIds);
-
-  if (args.timeline.length === 0) return;
-
-  // Cut budget walks the timeline from the END of the month, latest slot first.
-  // This preserves earlier-month commitments — providers expect to work the
-  // hours they submitted at the start of the month and lose later flexibility
-  // if oversupplied.
-  const sortedDesc = [...args.timeline].sort((a, b) =>
-    b.date.localeCompare(a.date) || b.startMin - a.startMin,
-  );
-  let cutBudget = round2(args.declinedHours);
-  const cutSlots = new Set<Slot>();
-  for (const slot of sortedDesc) {
-    if (cutBudget <= 0.001) break;
-    const slotHours = round2((slot.endMin - slot.startMin) / 60);
-    cutSlots.add(slot);
-    cutBudget = round2(cutBudget - slotHours);
-  }
-
-  // For publish slots, assign a state from the allocation buckets.
-  // Walk slots in chronological order; each slot consumes hours from the
-  // state with the largest remaining bucket. This naturally distributes
-  // shifts across multi-state providers' allocations.
-  const sortedAsc = [...args.timeline].sort((a, b) =>
-    a.date.localeCompare(b.date) || a.startMin - b.startMin,
-  );
-  const buckets = new Map<string, number>(args.allocations.map(a => [a.state, a.hours]));
-
-  const rows = sortedAsc.map(slot => {
-    const slotHours = round2((slot.endMin - slot.startMin) / 60);
-    const isCut = cutSlots.has(slot);
-    let assignedState: string | null = null;
-    let reason: string;
-
-    if (isCut) {
-      reason = args.decisionStatus === 'declined'
-        ? 'Provider has no remaining demand-hour gap in any licensed state'
-        : 'Trimmed as oversupply — accepted hours capped at network demand';
-    } else {
-      // Pick the bucket with largest remaining hours
-      let bestState: string | null = null;
-      let bestRemaining = -1;
-      for (const [state, remaining] of buckets) {
-        if (remaining > bestRemaining) {
-          bestState = state;
-          bestRemaining = remaining;
-        }
-      }
-      assignedState = bestState;
-      if (bestState) {
-        buckets.set(bestState, round2((buckets.get(bestState) ?? 0) - slotHours));
-      }
-      reason = bestState
-        ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
-        : 'Publish (no state allocation; review manually)';
-    }
-
-    return {
-      submission_id: slot.sourceSubmissionId,
-      provider_id: args.providerId,
-      provider_name: args.providerName,
-      target_month: args.targetMonth,
-      shift_date: slot.date,
-      start_min: slot.startMin,
-      end_min: slot.endMin,
-      hours: slotHours,
-      shift_type: slot.shiftType,
-      assigned_state: assignedState,
-      recommendation: isCut ? 'cut' : 'publish',
-      recommendation_reason: reason,
-      decision_run_id: args.decisionRunId,
-      publish_status: 'pending',
-    };
-  });
+    .in('submission_id', submissionIds);
 
   if (rows.length === 0) return;
-
-  // Insert in chunks to stay under PostgREST limits
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const chunk = rows.slice(i, i + CHUNK);

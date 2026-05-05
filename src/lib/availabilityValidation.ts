@@ -103,6 +103,9 @@ export interface NormalizationSummary {
   intervals_auto_corrected: number;
   intervals_needing_review: number;
   intervals_rejected: number;
+  /** Sum of timeline slots across ALL kinds (telehealth + in-home/clinic). */
+  total_normalized_timeline_hours: number;
+  /** Sum of timeline slots restricted to forecastKinds (default telehealth-only). */
   final_approvable_hours: number;
 }
 
@@ -720,6 +723,15 @@ export interface NormalizationInput {
   unavailableDates?: string[];
   config?: ValidationConfig;
   overrides?: ProviderOverride[];
+  /**
+   * Interval kinds that count toward `summary.final_approvable_hours`.
+   * Default: ['recurring', 'one_off'] — i.e. telehealth only. In-home /
+   * clinic shifts are scoped separately and do not consume telehealth
+   * demand-hour gaps. Pass ['recurring','one_off','in_home'] to opt in.
+   * The full normalized `timeline` always contains every kind so downstream
+   * shift recommendations can still publish in-home shifts.
+   */
+  forecastKinds?: IntervalKind[];
 }
 
 export interface NormalizationResult {
@@ -781,8 +793,15 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     return sum + Math.abs(n.normalized_duration_hours - n.original_duration_hours);
   }, 0);
 
-  const finalApprovable = round2(reconciled.slots.reduce(
+  const forecastKinds = new Set<IntervalKind>(input.forecastKinds ?? ['recurring', 'one_off']);
+  const totalTimelineHours = round2(reconciled.slots.reduce(
     (sum, s) => sum + (s.endMin - s.startMin) / 60, 0,
+  ));
+  const finalApprovable = round2(reconciled.slots.reduce(
+    (sum, s) => forecastKinds.has(s.source.kind)
+      ? sum + (s.endMin - s.startMin) / 60
+      : sum,
+    0,
   ));
 
   const summary: NormalizationSummary = {
@@ -794,6 +813,7 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     intervals_auto_corrected: normalized.filter(n => n.validation_status === 'auto_corrected').length,
     intervals_needing_review: normalized.filter(n => n.validation_status === 'needs_review').length,
     intervals_rejected: normalized.filter(n => n.validation_status === 'rejected_or_unusable').length,
+    total_normalized_timeline_hours: totalTimelineHours,
     final_approvable_hours: finalApprovable,
   };
 

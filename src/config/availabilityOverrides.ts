@@ -1,10 +1,26 @@
 /**
  * Provider-specific availability corrections and tunable validation
- * thresholds. Kept here (not embedded in business logic) so ClinOps can
- * adjust without code changes; in a follow-up these can move into a
- * Supabase table and be loaded at runtime. Identifying providers by
- * `email` is preferred — names change, IDs aren't always present in the
- * Jotform payload.
+ * thresholds.
+ *
+ * MVP STORAGE: Overrides live in this file as `AVAILABILITY_OVERRIDES`.
+ * The shape (`ProviderOverride` / `ProviderOverrideRule`) is intentionally
+ * a flat record set so a follow-up migration can move them into a
+ * Supabase `availability_overrides` table without changing any
+ * validation logic. The validator always reads through
+ * `findProviderOverride(identity, overrides)` and accepts a runtime
+ * `overrides` array, so the only swap required will be to load that
+ * array from the DB at the call site.
+ *
+ * TODO(VIT-XXXX): replace AVAILABILITY_OVERRIDES with a `availability_overrides`
+ *   table loaded once per evaluator run. Suggested columns:
+ *     id uuid pk, provider_id uuid null, email text null, full_name text null,
+ *     kind text null, day_of_week text null,
+ *     raw_start text, raw_end text,
+ *     normalized_start text, normalized_end text,
+ *     reason text, created_by uuid, created_at timestamptz default now().
+ *
+ * Identifying providers by `email` is preferred — names change, IDs
+ * aren't always present in the Jotform payload.
  *
  * IMPORTANT: This file is mirrored at
  *   supabase/functions/_shared/availabilityOverrides.ts
