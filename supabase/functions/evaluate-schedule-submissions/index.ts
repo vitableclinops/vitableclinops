@@ -14,26 +14,33 @@
  *   'superseded' so the audit trail stays intact.
  *
  * Decision math (per group of submissions for the same provider + month):
- *   1. Expand every submission's parsed_shifts into concrete slots
- *      (date, startMin, endMin). Recurring entries expand into one slot
- *      per matching weekday in the target month. One-off and in-home
- *      entries become one slot each.
- *   2. Walk slots chronologically (by submitted_at). For each new slot,
- *      trim or remove any existing timeline slot it overlaps. Add the new
- *      slot.
- *   3. effective_hours = sum of (endMin - startMin)/60 for all merged
- *      slots in the timeline.
- *   4. eligible_states = provider's licensed states, filtered by the
+ *   1. Run every submission's parsed_shifts through the validation /
+ *      normalization pipeline (`_shared/availabilityValidation.ts`):
+ *        - Apply provider-specific overrides (e.g. AM/PM corrections)
+ *        - Apply default deterministic AM/PM corrections
+ *        - Flag implausibly long shifts, full-day recurring availability,
+ *          12 AM start/end paired with daytime end/start, etc.
+ *        - Expand recurring entries to weekday occurrences in the month;
+ *          one-off + in-home become single-date slots.
+ *        - Reconcile across submissions: later submissions overwrite
+ *          overlapping slots from earlier ones; duplicates collapse.
+ *        - Subtract unavailable_dates the provider listed.
+ *      The raw submission stays untouched on the row (raw_answers and the
+ *      raw widget values inside parsed_shifts are preserved); only the
+ *      *normalized* timeline drives the forecast decision.
+ *   2. effective_hours = summary.final_approvable_hours from the pipeline
+ *      (normalized + deduped + minus unavailable).
+ *   3. eligible_states = provider's licensed states, filtered by the
  *      MD-only state rule: AL/IN/GA/MS/MO/SC/TN/LA can only be allocated
  *      to providers whose profession is MD or DO.
- *   5. For each eligible state, demand_hours = sum of demand_forecast
+ *   4. For each eligible state, demand_hours = sum of demand_forecast
  *      values over the target month, minus committed hours from decisions
  *      made in prior runs for OTHER providers in same state+month.
  *      Note: demand_forecast.projected_visits stores hours of provider
  *      availability (not visits); column name is legacy. See
  *      compute-demand-forecast for the canonical methodology.
- *   6. total_gap = sum of demand_hours across eligible states (clipped 0).
- *   7. Decision:
+ *   5. total_gap = sum of demand_hours across eligible states (clipped 0).
+ *   6. Decision:
  *        total_gap >= effective_hours       → accepted (all of it)
  *        0 < total_gap < effective_hours    → partial  (accept = total_gap,
  *                                                      decline = remainder)
@@ -50,6 +57,12 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  normalizeProviderAvailability,
+  type RawInterval,
+  type NormalizationResult,
+  type ValidationReportRow,
+} from '../_shared/availabilityValidation.ts';
 
 // States that can only be served by MDs/DOs per Vitable scope-of-practice rules.
 // NPs licensed in these states cannot be allocated demand hours here.
@@ -66,6 +79,8 @@ type ParsedShifts = {
   recurring_virtual?: unknown;
   one_off_virtual?: unknown;
   in_home_clinic?: unknown;
+  unavailable_dates?: unknown;
+  email?: string;
   [k: string]: unknown;
 };
 
@@ -299,18 +314,35 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        // Build merged slot timeline
-        let timeline: Slot[] = [];
-        for (const sub of groupSubs) {
-          const slots = expandSubmissionSlots(sub.id, sub.parsed_shifts, targetMonth);
-          for (const slot of slots) {
-            timeline = mergeSlot(timeline, slot);
-          }
-        }
+        // Build merged slot timeline via the validation/normalization pipeline.
+        // The pipeline applies provider-specific overrides + default AM/PM
+        // corrections, dedups overlapping slots, subtracts unavailable dates,
+        // and emits a per-interval audit report. The forecast approve/deny
+        // logic below uses the *normalized* timeline; the raw submission is
+        // preserved untouched on the schedule_submissions row.
+        const latestEmail = readEmailFromParsed(latest.parsed_shifts);
+        const unavailableDates = collectUnavailableDates(groupSubs);
+        const validation = runValidationPipeline(groupSubs, {
+          providerId,
+          email: latestEmail,
+          name: latest.provider_name,
+        }, targetMonth, unavailableDates);
+        const timeline: Slot[] = validation.timeline.map(s => ({
+          date: s.date,
+          startMin: s.startMin,
+          endMin: s.endMin,
+          sourceSubmissionId: s.source.submissionId ?? latest.id,
+          shiftType: kindToShiftType(s.source.kind),
+        }));
 
-        const effectiveHours = round2(timeline.reduce(
-          (sum, s) => sum + (s.endMin - s.startMin) / 60, 0,
-        ));
+        const effectiveHours = validation.summary.final_approvable_hours;
+        if (validation.report.length > 0) {
+          console.log(`[validation] ${latest.provider_name} ${targetMonth}`,
+            JSON.stringify({
+              summary: validation.summary,
+              report: validation.report,
+            }));
+        }
 
         if (effectiveHours <= 0) {
           counters.skipped_no_hours++;
@@ -404,6 +436,22 @@ Deno.serve(async (req: Request) => {
         const noteParts: string[] = [];
         noteParts.push(`group_size=${groupSubs.length}`);
         noteParts.push(`effective_hours=${effectiveHours}h`);
+        noteParts.push(`raw_hours=${validation.summary.raw_total_hours}h`);
+        if (validation.summary.intervals_auto_corrected > 0) {
+          noteParts.push(`auto_corrected=${validation.summary.intervals_auto_corrected}`);
+        }
+        if (validation.summary.intervals_needing_review > 0) {
+          noteParts.push(`needs_review=${validation.summary.intervals_needing_review}`);
+        }
+        if (validation.summary.intervals_rejected > 0) {
+          noteParts.push(`rejected=${validation.summary.intervals_rejected}`);
+        }
+        if (validation.summary.hours_removed_for_unavailability > 0) {
+          noteParts.push(`hours_removed_unavailable=${validation.summary.hours_removed_for_unavailability}h`);
+        }
+        if (validation.summary.hours_removed_for_duplicates > 0) {
+          noteParts.push(`hours_removed_dup=${validation.summary.hours_removed_for_duplicates}h`);
+        }
         noteParts.push(`total_gap=${totalGap}h`);
         noteParts.push(
           'state_gaps=' + gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : round2(g.gapHours) + 'h'}`).join(','),
@@ -462,6 +510,8 @@ Deno.serve(async (req: Request) => {
           accepted_hours: accepted,
           declined_hours: declined,
           allocations,
+          validation_summary: validation.summary,
+          validation_report: validation.report,
         });
 
         // Update committed map so subsequent groups in this run see this allocation
@@ -485,86 +535,89 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// ── Slot expansion ────────────────────────────────────────────────────────
-function expandSubmissionSlots(
-  submissionId: string,
-  parsed: ParsedShifts | null,
+// ── Validation pipeline integration ───────────────────────────────────────
+function runValidationPipeline(
+  groupSubs: Submission[],
+  identity: { providerId: string; email: string | null; name: string },
   targetMonth: string,
-): Slot[] {
+  unavailableDates: string[],
+): NormalizationResult {
+  const submissions = groupSubs.map(sub => ({
+    submissionId: sub.id,
+    submittedAt: sub.submitted_at,
+    intervals: extractRawIntervals(sub.parsed_shifts),
+  }));
+  return normalizeProviderAvailability({
+    identity,
+    submissions,
+    targetMonth,
+    unavailableDates,
+  });
+}
+
+function extractRawIntervals(parsed: ParsedShifts | null): RawInterval[] {
   if (!parsed) return [];
-  const slots: Slot[] = [];
-
-  // Recurring weekly: expand to every matching weekday in target month
+  const out: RawInterval[] = [];
   for (const e of parseWidgetArray(parsed.recurring_virtual)) {
-    const dayName = e['Day of Week'];
-    const range = parseTimeRange(e['Start Time (ET)'], e['End Time (ET)']);
-    if (!range || !dayName) continue;
-    for (const date of weekdayDatesInMonth(dayName, targetMonth)) {
-      pushSlot(slots, submissionId, date, range, 'virtual_recurring');
-    }
+    if (!e['Start Time (ET)'] || !e['End Time (ET)']) continue;
+    out.push({
+      kind: 'recurring',
+      dayOfWeek: e['Day of Week'],
+      rawStart: e['Start Time (ET)'],
+      rawEnd: e['End Time (ET)'],
+    });
   }
-
-  // One-off virtual + in-home: each entry is one date
-  const widgets: Array<{ raw: unknown; type: ShiftType }> = [
-    { raw: parsed.one_off_virtual, type: 'virtual_oneoff' },
-    { raw: parsed.in_home_clinic, type: 'in_home_clinic' },
-  ];
-  for (const w of widgets) {
-    for (const e of parseWidgetArray(w.raw)) {
-      const date = parseFormDate(e['Date']);
-      const range = parseTimeRange(e['Start Time (ET)'], e['End Time (ET)']);
-      if (!date || !range) continue;
-      if (!isInMonth(date, targetMonth)) continue;
-      pushSlot(slots, submissionId, date, range, w.type);
-    }
+  for (const e of parseWidgetArray(parsed.one_off_virtual)) {
+    const date = parseFormDate(e['Date']);
+    if (!date || !e['Start Time (ET)'] || !e['End Time (ET)']) continue;
+    out.push({
+      kind: 'one_off',
+      date,
+      rawStart: e['Start Time (ET)'],
+      rawEnd: e['End Time (ET)'],
+    });
   }
-
-  return slots;
-}
-
-function pushSlot(
-  out: Slot[],
-  sourceSubmissionId: string,
-  date: string,
-  range: { startMin: number; endMin: number },
-  shiftType: ShiftType,
-) {
-  // If endMin <= startMin (crosses midnight), split into two slots
-  if (range.endMin <= range.startMin) {
-    out.push({ date, startMin: range.startMin, endMin: 1440, sourceSubmissionId, shiftType });
-    const next = nextDate(date);
-    if (next) out.push({ date: next, startMin: 0, endMin: range.endMin, sourceSubmissionId, shiftType });
-  } else {
-    out.push({ date, startMin: range.startMin, endMin: range.endMin, sourceSubmissionId, shiftType });
+  for (const e of parseWidgetArray(parsed.in_home_clinic)) {
+    const date = parseFormDate(e['Date']);
+    if (!date || !e['Start Time (ET)'] || !e['End Time (ET)']) continue;
+    out.push({
+      kind: 'in_home',
+      date,
+      rawStart: e['Start Time (ET)'],
+      rawEnd: e['End Time (ET)'],
+    });
   }
-}
-
-// ── Slot merging: new slot wins over overlapping existing ─────────────────
-function mergeSlot(timeline: Slot[], incoming: Slot): Slot[] {
-  const out: Slot[] = [];
-  for (const existing of timeline) {
-    if (existing.date !== incoming.date || !overlaps(existing, incoming)) {
-      out.push(existing);
-      continue;
-    }
-    // Trim existing to non-overlapping portions
-    if (existing.startMin < incoming.startMin) {
-      out.push({ ...existing, endMin: incoming.startMin });
-    }
-    if (existing.endMin > incoming.endMin) {
-      out.push({ ...existing, startMin: incoming.endMin });
-    }
-    // Drop the part that fully overlaps with incoming
-  }
-  out.push(incoming);
   return out;
 }
 
-function overlaps(a: Slot, b: Slot): boolean {
-  return a.startMin < b.endMin && b.startMin < a.endMin;
+function readEmailFromParsed(parsed: ParsedShifts | null): string | null {
+  if (!parsed) return null;
+  const e = parsed.email;
+  return typeof e === 'string' && e.trim() ? e.trim() : null;
 }
 
-// ── Time / date helpers ───────────────────────────────────────────────────
+function collectUnavailableDates(groupSubs: Submission[]): string[] {
+  // Pull dates from the latest submission's `unavailable_dates` widget array.
+  // The widget shape is { Date: "MM-DD-YYYY" } — same format as one-off shifts.
+  const out = new Set<string>();
+  for (const sub of groupSubs) {
+    const parsed = sub.parsed_shifts;
+    if (!parsed) continue;
+    for (const e of parseWidgetArray(parsed.unavailable_dates)) {
+      const d = parseFormDate(e['Date']);
+      if (d) out.add(d);
+    }
+  }
+  return Array.from(out);
+}
+
+function kindToShiftType(kind: 'recurring' | 'one_off' | 'in_home'): ShiftType {
+  if (kind === 'recurring') return 'virtual_recurring';
+  if (kind === 'in_home') return 'in_home_clinic';
+  return 'virtual_oneoff';
+}
+
+// ── Widget helpers (Jotform widget JSON shapes) ───────────────────────────
 function parseWidgetArray(raw: unknown): Record<string, string>[] {
   if (raw == null) return [];
   let parsed: unknown = raw;
@@ -575,49 +628,6 @@ function parseWidgetArray(raw: unknown): Record<string, string>[] {
   return parsed.filter((e): e is Record<string, string> => e != null && typeof e === 'object');
 }
 
-function parseTimeRange(start: string | undefined, end: string | undefined): { startMin: number; endMin: number } | null {
-  if (!start || !end) return null;
-  const s = parseTimeOfDay(start);
-  const e = parseTimeOfDay(end);
-  if (s == null || e == null) return null;
-  return { startMin: s, endMin: e };
-}
-
-/** "09:00 AM" / "5:00 PM" / "13:00" → minutes from midnight (0..1440). */
-function parseTimeOfDay(t: string): number | null {
-  const m = String(t).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?\s*$/i);
-  if (!m) return null;
-  let h = Number(m[1]);
-  const min = Number(m[2]);
-  const ampm = (m[3] ?? '').toUpperCase();
-  if (ampm === 'AM') {
-    if (h === 12) h = 0;
-  } else if (ampm === 'PM') {
-    if (h !== 12) h += 12;
-  }
-  if (h < 0 || h > 24 || min < 0 || min >= 60) return null;
-  return h * 60 + min;
-}
-
-const DAY_TO_INDEX: Record<string, number> = {
-  sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
-  thursday: 4, friday: 5, saturday: 6,
-};
-
-function weekdayDatesInMonth(dayName: string, monthISO: string): string[] {
-  const dayIdx = DAY_TO_INDEX[String(dayName).trim().toLowerCase()];
-  if (dayIdx === undefined) return [];
-  const [y, m] = monthISO.split('-').map(Number);
-  const firstWeekday = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
-  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const offset = (dayIdx - firstWeekday + 7) % 7;
-  const dates: string[] = [];
-  for (let day = 1 + offset; day <= daysInMonth; day += 7) {
-    dates.push(`${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
-  }
-  return dates;
-}
-
 /** Form sends "MM-DD-YYYY" (e.g. "06-04-2026"). */
 function parseFormDate(raw: unknown): string | null {
   if (!raw) return null;
@@ -626,24 +636,6 @@ function parseFormDate(raw: unknown): string | null {
   if (mdy) return `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`;
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   return null;
-}
-
-function isInMonth(dateISO: string, monthISO: string): boolean {
-  return dateISO >= monthISO && dateISO < nextMonth(monthISO);
-}
-
-function nextMonth(monthISO: string): string {
-  const [y, m] = monthISO.split('-').map(Number);
-  const ny = m === 12 ? y + 1 : y;
-  const nm = m === 12 ? 1 : m + 1;
-  return `${ny}-${String(nm).padStart(2, '0')}-01`;
-}
-
-function nextDate(dateISO: string): string | null {
-  const d = new Date(dateISO + 'T00:00:00Z');
-  if (isNaN(d.getTime())) return null;
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
 }
 
 // ── DB writes ─────────────────────────────────────────────────────────────
