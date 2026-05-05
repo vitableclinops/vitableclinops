@@ -115,13 +115,23 @@ Deno.serve(async (req: Request) => {
     if (!monthFilter && !providerFilter) {
       pendingQuery = pendingQuery.eq('decision_status', 'pending');
     }
+    pendingQuery = pendingQuery.range(0, 49999);
 
     const { data: pendingRows, error: pErr } = await pendingQuery;
     if (pErr) throw new Error(`Pending lookup failed: ${pErr.message}`);
 
+    // Skip historical submissions in the default eval — past months can't be
+    // re-decided operationally, and demand_forecast doesn't have rows for
+    // them. An explicit ?target_month= bypass remains for backfill.
+    const currentMonth = (() => {
+      const d = new Date();
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+    })();
+
     const groupKeys = new Set<string>();
     for (const r of pendingRows ?? []) {
       if (!r.provider_id || !r.target_month) continue;
+      if (!monthFilter && !providerFilter && r.target_month < currentMonth) continue;
       groupKeys.add(`${r.provider_id}|${r.target_month}`);
     }
 
@@ -179,15 +189,19 @@ Deno.serve(async (req: Request) => {
     const demandByKey = new Map<string, number>(); // `${state}_${month}` → total visits
     if (months.length > 0) {
       // For each month, sum projected_visits across all dates in the month
-      // using the rows where is_baseline=true.
+      // using the rows where is_baseline=true. Use .range() to bypass
+      // PostgREST's default 1000-row cap (a full month is 47 states × ~30
+      // days = 1,410 rows; without an explicit range we silently truncate).
       for (const month of months) {
         const next = nextMonth(month);
-        const { data: rows } = await supabase
+        const { data: rows, error: dErr } = await supabase
           .from('demand_forecast')
           .select('state, projected_visits')
           .gte('date', month)
           .lt('date', next)
-          .eq('is_baseline', true);
+          .eq('is_baseline', true)
+          .range(0, 49999);
+        if (dErr) throw new Error(`Demand load failed for ${month}: ${dErr.message}`);
         for (const r of rows ?? []) {
           const st = String(r.state).trim().toUpperCase();
           const k = `${st}_${month}`;
@@ -204,7 +218,8 @@ Deno.serve(async (req: Request) => {
         .from('schedule_submissions')
         .select('id, provider_id, target_month, parsed_shifts, accepted_hours, decision_status')
         .in('target_month', months)
-        .in('decision_status', ['accepted', 'partial']);
+        .in('decision_status', ['accepted', 'partial'])
+        .range(0, 49999);
 
       // Sum accepted_hours per (state, month) for groups NOT being re-evaluated.
       // Best-effort even-split across the provider's licensed states for that month.
@@ -224,8 +239,28 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── Sort groups: most-constrained providers first ──────────────────
+    // Process providers with the fewest licensed-states-with-demand first so
+    // they don't get bumped by multi-state providers who have alternatives.
+    // This is the practical heuristic for "maximize utilization across
+    // providers" — single-state providers grab their state's gap before
+    // flexible providers consume it.
+    const groupKeysSorted = Array.from(submissionsByGroup.keys()).sort((a, b) => {
+      const [provA, monthA] = a.split('|');
+      const [provB, monthB] = b.split('|');
+      const licA = licensedStatesByProvider.get(provA) ?? new Set();
+      const licB = licensedStatesByProvider.get(provB) ?? new Set();
+      const countWithDemand = (states: Set<string>, month: string) =>
+        Array.from(states).filter(s => (demandByKey.get(`${s}_${month}`) ?? 0) > 0).length;
+      const cA = countWithDemand(licA, monthA);
+      const cB = countWithDemand(licB, monthB);
+      if (cA !== cB) return cA - cB;        // fewer licensed-with-demand first
+      return monthA.localeCompare(monthB);  // stable tiebreaker
+    });
+
     // ── Evaluate each group ─────────────────────────────────────────────
-    for (const [key, groupSubs] of submissionsByGroup) {
+    for (const key of groupKeysSorted) {
+      const groupSubs = submissionsByGroup.get(key)!;
       try {
         counters.groups++;
         const [providerId, targetMonth] = key.split('|');
