@@ -1,0 +1,4 @@
+name,email,npi,athena_provider_id,homebase_employee_id,ehr_activation_status,readiness_status,shift_types,is_telemedicine,is_in_home,active
+Jane Doe NP,jane.doe@example.com,1234567890,ATH-1001,HB-501,inactive,ready,NP Telemedicine|Primary Care,true,false,true
+John Smith MD,john.smith@example.com,2345678901,ATH-1002,HB-502,active,ready,MD Telemedicine|Primary Care,true,false,true
+Sara Kamara NP,sara.kamara@example.com,3456789012,ATH-1003,HB-503,inactive,training,NP Telemedicine|In-Home,false,true,true

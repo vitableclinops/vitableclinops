@@ -1,0 +1,6 @@
+provider_email,state,license_number,expiration_date,status
+jane.doe@example.com,PA,RN-PA-12345,2027-06-30,active
+jane.doe@example.com,NJ,RN-NJ-22345,2026-11-30,active
+john.smith@example.com,PA,MD-PA-99001,2028-01-15,active
+john.smith@example.com,NY,MD-NY-99002,2027-03-31,active
+sara.kamara@example.com,PA,RN-PA-55555,2027-09-30,active

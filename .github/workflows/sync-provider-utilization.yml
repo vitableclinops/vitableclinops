@@ -1,0 +1,51 @@
+name: Sync Provider Utilization
+
+# Runs nightly so the morning availability report sees fresh utilization data.
+# 4:00 AM Central — well after EHR daily aggregations finish, well before 8 AM.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # 4:00 AM CDT (Mar–Nov)
+    - cron: '0 10 * * *'  # 4:00 AM CST (Nov–Mar)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Target date (YYYY-MM-DD). Defaults to today.'
+        required: false
+        type: string
+
+jobs:
+  sync-utilization:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workflows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: workflows/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run utilization sync
+        working-directory: workflows/src
+        env:
+          METABASE_URL: ${{ secrets.METABASE_URL }}
+          METABASE_API_KEY: ${{ secrets.METABASE_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Metabase card IDs and column names — set as repo *Variables*
+          # (Settings → Secrets and variables → Actions → Variables tab),
+          # not Secrets, since they're not sensitive.
+          METABASE_DAILY_UTIL_CARD_ID: ${{ vars.METABASE_DAILY_UTIL_CARD_ID }}
+          METABASE_5WK_UTIL_CARD_ID: ${{ vars.METABASE_5WK_UTIL_CARD_ID }}
+          UTIL_NAME_COLUMN: ${{ vars.UTIL_NAME_COLUMN }}
+          UTIL_PCT_COLUMN: ${{ vars.UTIL_PCT_COLUMN }}
+          REPORT_DATE: ${{ inputs.date }}
+        run: python sync_provider_utilization.py

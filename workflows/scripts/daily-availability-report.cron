@@ -1,0 +1,13 @@
+# ClinOps Daily Availability Report — cron.d drop-in alternative to systemd timer.
+# Copy to /etc/cron.d/daily-availability-report on the target server.
+# Runs at 8:00 AM Central Time (America/Chicago); cron handles DST automatically.
+#
+# Requires CLINOPS_ANON_KEY to be set. Either:
+#   (a) Add it to /etc/environment, or
+#   (b) Source a secrets file inside run-daily-availability-report.sh
+
+SHELL=/bin/bash
+MAILTO=""
+CRON_TZ=America/Chicago
+
+0 8 * * * user /home/user/clinopsworkflows/scripts/run-daily-availability-report.sh >> /home/user/clinopsworkflows/logs/cron.log 2>&1

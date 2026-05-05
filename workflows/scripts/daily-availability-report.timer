@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily availability report — 8:00 AM Central (America/Chicago)
+Requires=daily-availability-report.service
+
+[Timer]
+# Fires at 8:00 AM Central Time every day, DST-aware.
+OnCalendar=America/Chicago *-*-* 08:00:00
+# If the system was off at trigger time, run immediately on next boot (within 1h window).
+Persistent=true
+# Randomize start within a 2-minute window to avoid thundering-herd on shared infra.
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target

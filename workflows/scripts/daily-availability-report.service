@@ -1,0 +1,17 @@
+[Unit]
+Description=ClinOps Daily Availability Report
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/user/clinopsworkflows/scripts/run-daily-availability-report.sh
+StandardOutput=journal
+StandardError=journal
+
+# CLINOPS_ANON_KEY is loaded from the drop-in:
+#   ~/.config/systemd/user/daily-availability-report.service.d/env.conf
+# See the script header for setup instructions.
+
+[Install]
+WantedBy=default.target
