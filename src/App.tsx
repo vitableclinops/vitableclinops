@@ -43,6 +43,7 @@ import LicenseOptimizerPage from "./pages/LicenseOptimizerPage";
 import OpsDashboardPage from "./pages/OpsDashboardPage";
 import CoverageCopilotPage from "./pages/CoverageCopilotPage";
 import DemandForecastPage from "./pages/DemandForecastPage";
+import MonthlyForecastPage from "./pages/MonthlyForecastPage";
 import UtilizationPage from "./pages/UtilizationPage";
 import RoutingIntelligencePage from "./pages/RoutingIntelligencePage";
 import DemandMatchingEnginePage from "./pages/DemandMatchingEnginePage";
@@ -82,6 +83,7 @@ const ROUTE_TITLES: Array<{ match: (p: string) => boolean; title: string }> = [
   { match: p => p === '/admin/routing', title: 'Routing Intelligence' },
   { match: p => p === '/admin/matching', title: 'Demand Matching' },
   { match: p => p === '/admin/demand-forecast', title: 'Demand Forecast' },
+  { match: p => p === '/admin/monthly-forecast', title: 'Monthly Forecast' },
   { match: p => p === '/admin/contractor-strategy', title: 'Contractor Strategy' },
   { match: p => p === '/admin/sla-aggregate', title: 'SLA Aggregate' },
   { match: p => p === '/admin/tasks', title: 'Task Repository' },
@@ -310,6 +312,11 @@ const App = () => (
             <Route path="/admin/demand-forecast" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <DemandForecastPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/monthly-forecast" element={
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
+                <MonthlyForecastPage />
               </ProtectedRoute>
             } />
             <Route path="/admin/utilization" element={
