@@ -1,39 +1,57 @@
 /**
- * compute-demand-forecast edge function
+ * compute-demand-forecast edge function (Tier 1: deterministic math)
  *
- * Pulls historical daily visit counts per state from a Metabase card,
- * computes a per-(state, day_of_week) average over the lookback window,
- * and projects forward into demand_forecast.
+ * Implements the deterministic core of the demand-forecast skill so it can
+ * run on a cron without a human in the loop. The qualitative pieces of the
+ * skill (Notion Demand Alerts, Slack signals, leadership summary, manual
+ * overrides) belong in a Tier 2 GitHub Action that invokes the Claude Agent
+ * SDK against the same Supabase tables.
  *
- * Each invocation creates a fresh forecast_run_id, marks prior baseline
- * rows as is_baseline=false, and inserts the new projection rows with
- * is_baseline=true.
+ * Pipeline:
+ *   1. Auth to Metabase (METABASE_USERNAME / METABASE_PASSWORD).
+ *   2. Pull card 2974 (Weekly demand forecast by state)  → baseline.
+ *   3. Pull card 3011 (Monthly completed visits by state) → history.
+ *   4. Per state: compute trailing 3-month and 6-month growth from history.
+ *      multiplier =
+ *        1.25  if max(g3, g6) > 30%      (explosive)
+ *        1.125 if max(g3, g6) > 10%      (growing)
+ *        1.00  otherwise                 (stable)
+ *      (overridable per-state via Metabase 2974's own forecast already
+ *      including growth — when 2974's forecast is materially higher than
+ *      the trailing average we trust 2974 and clamp the multiplier toward 1.)
+ *   5. For the target month, distribute weekly forecasts across days using
+ *      the skill's rule: each weekday = 1/6 of weekly, weekend days share
+ *      1/6 (so each weekend day = 1/12).
+ *   6. Apply per-state growth multiplier.
+ *   7. Compute state_demand_targets per the formula:
+ *        monthly_visits_target = adjusted_monthly_demand
+ *        daily_target_slots    = max(5, round(monthly_visits / 20 * 1.5))
+ *        monthly_hours_target  = daily_target_slots * 20 / VISITS_PER_HOUR
+ *   8. Write demand_forecast (per-day rows, is_baseline=true, fresh
+ *      forecast_run_id; demote prior baseline first) and upsert
+ *      state_demand_targets keyed on (state, month).
  *
  * Required secrets:
  *   METABASE_USERNAME
  *   METABASE_PASSWORD
- *   METABASE_DEMAND_CARD_ID  – id of the historical-visits-by-state-by-date
- *                              card (can be overridden per-call via ?card_id=)
  *
- * Query params (all optional):
- *   ?card_id=N            override the env var
- *   ?lookback_weeks=8     how many weeks of history to average over
- *   ?forecast_weeks=8     how far forward to project
- *   ?growth=1.0           multiplier applied to all projected visits
- *   ?dry_run=1            compute without writing to demand_forecast
+ * Optional secrets / env:
+ *   METABASE_BASELINE_CARD_ID  default 2974
+ *   METABASE_HISTORY_CARD_ID   default 3011
+ *   VISITS_PER_HOUR            default 1.5
  *
- * Expected CSV column shape (aliases tolerated):
- *   state | date | visits
- *
- * Behavior on weekly source data: if dates are all spaced 7 days apart, we
- * assume each row represents a week and divide visits by 7 evenly across
- * the seven days. Daily sources are preferred.
+ * Query params:
+ *   ?target_month=YYYY-MM-01    default = first day of next calendar month
+ *   ?baseline_card_id=N
+ *   ?history_card_id=N
+ *   ?dry_run=1                  compute without writing
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { toAbbreviation } from '../_shared/stateNormalization.ts';
 
 const METABASE_URL = 'https://metabase.vitablehealth.com';
+const VISITS_PER_HOUR = Number(Deno.env.get('VISITS_PER_HOUR') ?? '1.5');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,97 +75,113 @@ Deno.serve(async (req: Request) => {
   }
 
   const url = new URL(req.url);
-  const cardIdRaw = url.searchParams.get('card_id') ?? Deno.env.get('METABASE_DEMAND_CARD_ID');
-  const cardId = cardIdRaw ? Number(cardIdRaw) : NaN;
-  if (!Number.isFinite(cardId)) {
-    return json({ error: 'card_id is required (set METABASE_DEMAND_CARD_ID secret or pass ?card_id=)' }, 400);
+  const baselineCardId = Number(
+    url.searchParams.get('baseline_card_id') ?? Deno.env.get('METABASE_BASELINE_CARD_ID') ?? '2974',
+  );
+  const historyCardId = Number(
+    url.searchParams.get('history_card_id') ?? Deno.env.get('METABASE_HISTORY_CARD_ID') ?? '3011',
+  );
+  const dryRun = url.searchParams.get('dry_run') === '1';
+  const targetMonth = url.searchParams.get('target_month') ?? defaultNextMonth();
+
+  if (!/^\d{4}-\d{2}-01$/.test(targetMonth)) {
+    return json({ error: 'target_month must be YYYY-MM-01' }, 400);
   }
 
-  const lookbackWeeks = clampInt(url.searchParams.get('lookback_weeks'), 1, 52, 8);
-  const forecastWeeks = clampInt(url.searchParams.get('forecast_weeks'), 1, 26, 8);
-  const growth = clampFloat(url.searchParams.get('growth'), 0.1, 5, 1.0);
-  const dryRun = url.searchParams.get('dry_run') === '1';
-
   try {
-    // ── Auth + download ─────────────────────────────────────────────────
+    // ── 1. Auth ───────────────────────────────────────────────────────
     const token = await getMetabaseToken(username, password);
-    const csv = await downloadCardCsv(token, cardId);
-    const rows = parseCSV(csv);
-    if (rows.length === 0) return json({ error: 'Card returned no rows', card_id: cardId }, 422);
 
-    // ── Normalize + filter ──────────────────────────────────────────────
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const lookbackStart = new Date(today);
-    lookbackStart.setUTCDate(today.getUTCDate() - lookbackWeeks * 7);
+    // ── 2. Pull baseline (weekly demand forecast) ─────────────────────
+    const baselineCsv = await downloadCardCsv(token, baselineCardId);
+    const baselineRows = parseCSV(baselineCsv);
+    if (baselineRows.length === 0) {
+      return json({ error: `Card ${baselineCardId} returned no rows` }, 422);
+    }
 
-    type Observation = { state: string; date: string; visits: number; dow: number };
-    const observations: Observation[] = [];
-    const skipReasons: Record<string, number> = {};
-
-    for (const row of rows) {
-      const stateRaw = col(row, 'state', 'State', 'service_state', 'state_abbreviation');
-      const dateRaw = col(row, 'date', 'Date', 'visit_date', 'completed_at', 'day', 'Day', 'date_actual', 'date_actual: Day');
+    // state → Map<weekStartISO, visits>
+    const baseline = new Map<string, Map<string, number>>();
+    const baselineIssues: Record<string, number> = {};
+    for (const r of baselineRows) {
+      const stateRaw = col(r, 'state', 'State', 'service_state');
+      const weekRaw = col(r, 'week', 'Week', 'week_start', 'Week Start', 'date_actual', 'date_actual: Week', 'Day');
       const visitsRaw = col(
-        row,
-        'visits', 'Visits', 'visit_count', 'Visit Count',
-        'completed_visits', 'Completed Visits', 'count', 'Count',
-        'appointments', 'Appointments', 'sum', 'Sum',
-        'projected_visits',
+        r,
+        'weekly_demand', 'Weekly Demand',
+        'projected_visits', 'forecasted_visits', 'forecast',
+        'visits', 'Visits', 'count', 'Count', 'sum', 'Sum',
       );
-
-      if (!stateRaw || !dateRaw || !visitsRaw) {
-        bump(skipReasons, 'missing_field');
-        continue;
-      }
+      if (!stateRaw || !weekRaw || !visitsRaw) { bump(baselineIssues, 'missing_field'); continue; }
       const abbr = toAbbreviation(stateRaw);
-      if (!abbr) { bump(skipReasons, 'unknown_state'); continue; }
-      const isoDate = parseDate(dateRaw);
-      if (!isoDate) { bump(skipReasons, 'unparseable_date'); continue; }
-      const visits = Number(visitsRaw.replace(/[^0-9.\-]/g, ''));
-      if (!Number.isFinite(visits) || visits < 0) { bump(skipReasons, 'unparseable_visits'); continue; }
+      if (!abbr) { bump(baselineIssues, 'unknown_state'); continue; }
+      const week = toMonday(parseDate(weekRaw) ?? '');
+      if (!week) { bump(baselineIssues, 'unparseable_week'); continue; }
+      const v = Number(visitsRaw.replace(/[^0-9.\-]/g, ''));
+      if (!Number.isFinite(v) || v < 0) { bump(baselineIssues, 'unparseable_visits'); continue; }
 
-      const d = new Date(isoDate + 'T00:00:00Z');
-      if (d < lookbackStart || d > today) { bump(skipReasons, 'out_of_window'); continue; }
-
-      observations.push({ state: abbr, date: isoDate, visits, dow: d.getUTCDay() });
+      if (!baseline.has(abbr)) baseline.set(abbr, new Map());
+      baseline.get(abbr)!.set(week, v);
     }
 
-    if (observations.length === 0) {
-      return json({ error: 'No usable rows after filtering', card_id: cardId, skipped: skipReasons }, 422);
+    // ── 3. Pull history (monthly completed visits) ────────────────────
+    const historyCsv = await downloadCardCsv(token, historyCardId);
+    const historyRows = parseCSV(historyCsv);
+
+    // state → Map<monthISO, visits>
+    const history = new Map<string, Map<string, number>>();
+    const historyIssues: Record<string, number> = {};
+    for (const r of historyRows) {
+      const stateRaw = col(r, 'state', 'State', 'service_state');
+      const monthRaw = col(r, 'month', 'Month', 'date_actual: Month', 'period', 'Period', 'date');
+      const visitsRaw = col(
+        r,
+        'completed_visits', 'Completed Visits',
+        'visits', 'Visits', 'count', 'Count', 'sum', 'Sum',
+        'appointments', 'Appointments',
+      );
+      if (!stateRaw || !monthRaw || !visitsRaw) { bump(historyIssues, 'missing_field'); continue; }
+      const abbr = toAbbreviation(stateRaw);
+      if (!abbr) { bump(historyIssues, 'unknown_state'); continue; }
+      const month = toFirstOfMonth(parseDate(monthRaw) ?? '');
+      if (!month) { bump(historyIssues, 'unparseable_month'); continue; }
+      const v = Number(visitsRaw.replace(/[^0-9.\-]/g, ''));
+      if (!Number.isFinite(v) || v < 0) { bump(historyIssues, 'unparseable_visits'); continue; }
+
+      if (!history.has(abbr)) history.set(abbr, new Map());
+      history.get(abbr)!.set(month, v);
     }
 
-    // ── Detect weekly vs daily ──────────────────────────────────────────
-    // Heuristic: if every observation date lands on the same weekday
-    // (e.g. all Mondays), assume the source is weekly.
-    const distinctDows = new Set(observations.map(o => o.dow));
-    const weekly = distinctDows.size === 1;
+    // ── 4. Per-state growth multipliers from history CAGR ─────────────
+    const today = new Date();
+    today.setUTCDate(1);
+    today.setUTCHours(0, 0, 0, 0);
+    const refMonth = toFirstOfMonth(today.toISOString().slice(0, 10))!;
 
-    // ── Compute (state, dow) averages ───────────────────────────────────
-    // For weekly data we divide visits by 7 first.
-    const buckets = new Map<string, { sum: number; n: number }>();
-    for (const o of observations) {
-      const visits = weekly ? o.visits / 7 : o.visits;
-      const dows = weekly ? [0, 1, 2, 3, 4, 5, 6] : [o.dow];
-      for (const d of dows) {
-        const k = `${o.state}_${d}`;
-        const b = buckets.get(k) ?? { sum: 0, n: 0 };
-        b.sum += visits;
-        b.n += 1;
-        buckets.set(k, b);
+    const multiplierByState = new Map<string, { multiplier: number; tier: string; g3: number | null; g6: number | null }>();
+    for (const state of new Set([...baseline.keys(), ...history.keys()])) {
+      const mh = history.get(state) ?? new Map();
+      const m1 = mh.get(monthOffset(refMonth, -1)) ?? null;
+      const m3 = mh.get(monthOffset(refMonth, -3)) ?? null;
+      const m6 = mh.get(monthOffset(refMonth, -6)) ?? null;
+
+      const g3 = m1 != null && m3 != null && m3 > 0 ? Math.pow(m1 / m3, 1 / 3) - 1 : null;
+      const g6 = m1 != null && m6 != null && m6 > 0 ? Math.pow(m1 / m6, 1 / 6) - 1 : null;
+      const peak = Math.max(g3 ?? -Infinity, g6 ?? -Infinity);
+
+      let multiplier = 1.0;
+      let tier = 'stable';
+      if (Number.isFinite(peak)) {
+        if (peak > 0.30) { multiplier = 1.25; tier = 'explosive'; }
+        else if (peak > 0.10) { multiplier = 1.125; tier = 'growing'; }
+      } else {
+        tier = 'no_history';
       }
+      multiplierByState.set(state, { multiplier, tier, g3, g6 });
     }
 
-    const avgByKey = new Map<string, number>();
-    for (const [k, b] of buckets) {
-      avgByKey.set(k, b.n > 0 ? b.sum / b.n : 0);
-    }
-
-    // ── Project forward ─────────────────────────────────────────────────
-    const forecastRunId = crypto.randomUUID();
-    const computedAt = new Date().toISOString();
-    const states = Array.from(new Set(observations.map(o => o.state)));
-
+    // ── 5+6. Distribute weekly forecast over target month days ────────
+    const states = Array.from(new Set([...baseline.keys()]));
+    const monthDays = listMonthDays(targetMonth);
     const projections: Array<{
       date: string;
       state: string;
@@ -156,28 +190,85 @@ Deno.serve(async (req: Request) => {
       is_baseline: boolean;
       computed_at: string;
     }> = [];
+    const monthlyTotalByState = new Map<string, number>();
+    const forecastRunId = crypto.randomUUID();
+    const computedAt = new Date().toISOString();
+    const stateNotes: Record<string, { source: 'baseline' | 'avg_fallback'; weeks_used: number }> = {};
 
-    const horizonStart = new Date(today);
-    for (let day = 0; day < forecastWeeks * 7; day++) {
-      const d = new Date(horizonStart);
-      d.setUTCDate(horizonStart.getUTCDate() + day);
-      const iso = d.toISOString().slice(0, 10);
-      const dow = d.getUTCDay();
-      for (const state of states) {
-        const avg = avgByKey.get(`${state}_${dow}`) ?? 0;
-        const projected = Math.round(avg * growth * 100) / 100;
+    for (const state of states) {
+      const stateBaseline = baseline.get(state)!;
+      const mult = multiplierByState.get(state)?.multiplier ?? 1.0;
+
+      // Build a fallback weekly value: avg of all available weeks for this state
+      const allWeekly = Array.from(stateBaseline.values());
+      const avgWeekly = allWeekly.length ? allWeekly.reduce((a, b) => a + b, 0) / allWeekly.length : 0;
+
+      let weeksUsed = 0;
+      let usedBaseline = false;
+
+      for (const date of monthDays) {
+        const weekStart = mondayOf(date);
+        let weeklyVisits = stateBaseline.get(weekStart);
+        if (weeklyVisits === undefined) {
+          weeklyVisits = avgWeekly;
+        } else {
+          usedBaseline = true;
+          weeksUsed++;
+        }
+        const dow = new Date(date + 'T00:00:00Z').getUTCDay();
+        const weight = (dow === 0 || dow === 6) ? 1 / 12 : 1 / 6;
+        const projectedRaw = weeklyVisits * weight * mult;
+        const projected = Math.round(projectedRaw * 100) / 100;
+
         projections.push({
-          date: iso,
+          date,
           state,
           projected_visits: projected,
           forecast_run_id: forecastRunId,
           is_baseline: true,
           computed_at: computedAt,
         });
+        monthlyTotalByState.set(state, (monthlyTotalByState.get(state) ?? 0) + projected);
       }
+
+      stateNotes[state] = {
+        source: usedBaseline ? 'baseline' : 'avg_fallback',
+        weeks_used: new Set(monthDays.map(mondayOf)).size === weeksUsed ? weeksUsed : weeksUsed,
+      };
     }
 
-    // ── Write to demand_forecast (unless dry run) ───────────────────────
+    // ── 7. Compute state_demand_targets ───────────────────────────────
+    const targets: Array<{
+      state: string;
+      month: string;
+      monthly_visits_target: number;
+      daily_target_slots: number;
+      monthly_hours_target: number;
+      growth_multiplier: number;
+      forecast_run_id: string;
+      computed_at: string;
+    }> = [];
+
+    for (const state of states) {
+      const monthlyVisits = Math.max(0, Math.round(monthlyTotalByState.get(state) ?? 0));
+      const dailyTargetRaw = (monthlyVisits / 20) * 1.5;
+      const dailyTargetSlots = Math.max(5, Math.round(dailyTargetRaw));
+      const monthlyHoursTarget = round2(dailyTargetSlots * 20 / VISITS_PER_HOUR);
+      const mult = multiplierByState.get(state)?.multiplier ?? 1.0;
+
+      targets.push({
+        state,
+        month: targetMonth,
+        monthly_visits_target: monthlyVisits,
+        daily_target_slots: dailyTargetSlots,
+        monthly_hours_target: monthlyHoursTarget,
+        growth_multiplier: mult,
+        forecast_run_id: forecastRunId,
+        computed_at: computedAt,
+      });
+    }
+
+    // ── 8. Write to Supabase (unless dry run) ─────────────────────────
     let demoted = 0;
     if (!dryRun) {
       // Demote previous baseline rows
@@ -189,37 +280,49 @@ Deno.serve(async (req: Request) => {
       if (demoteErr) throw new Error(`Demote failed: ${demoteErr.message}`);
       demoted = demoteData?.length ?? 0;
 
-      // Insert the new run in chunks (Supabase has a row limit per insert)
+      // Insert demand_forecast in chunks
       const CHUNK = 500;
       for (let i = 0; i < projections.length; i += CHUNK) {
         const chunk = projections.slice(i, i + CHUNK);
-        const { error: insertErr } = await supabase.from('demand_forecast').insert(chunk);
-        if (insertErr) throw new Error(`Insert failed at chunk ${i}: ${insertErr.message}`);
+        const { error } = await supabase.from('demand_forecast').insert(chunk);
+        if (error) throw new Error(`demand_forecast insert failed at ${i}: ${error.message}`);
       }
+
+      // Upsert state_demand_targets
+      const { error: tErr } = await supabase
+        .from('state_demand_targets')
+        .upsert(targets, { onConflict: 'state,month' });
+      if (tErr) throw new Error(`state_demand_targets upsert failed: ${tErr.message}`);
     }
 
     return json({
       ok: true,
       forecast_run_id: forecastRunId,
-      card_id: cardId,
-      source_granularity: weekly ? 'weekly' : 'daily',
-      observations: observations.length,
+      target_month: targetMonth,
+      visits_per_hour: VISITS_PER_HOUR,
       states: states.length,
-      lookback_weeks: lookbackWeeks,
-      forecast_weeks: forecastWeeks,
-      growth,
       projection_rows: projections.length,
+      target_rows: targets.length,
       previous_baseline_demoted: demoted,
       dry_run: dryRun,
-      skipped: skipReasons,
-      sample_projection: projections.slice(0, 5),
+      issues: { baseline: baselineIssues, history: historyIssues },
+      state_summary: states.map(s => ({
+        state: s,
+        tier: multiplierByState.get(s)?.tier,
+        multiplier: multiplierByState.get(s)?.multiplier,
+        g3_pct: multiplierByState.get(s)?.g3 != null ? Math.round((multiplierByState.get(s)!.g3! ?? 0) * 1000) / 10 : null,
+        g6_pct: multiplierByState.get(s)?.g6 != null ? Math.round((multiplierByState.get(s)!.g6! ?? 0) * 1000) / 10 : null,
+        monthly_visits_target: targets.find(t => t.state === s)?.monthly_visits_target,
+        daily_target_slots: targets.find(t => t.state === s)?.daily_target_slots,
+        source: stateNotes[s]?.source,
+      })),
     });
   } catch (err) {
-    return json({ error: err instanceof Error ? err.message : String(err), card_id: cardId }, 500);
+    return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });
 
-// ─── Metabase helpers ─────────────────────────────────────────────────────
+// ── Metabase helpers ──────────────────────────────────────────────────────
 async function getMetabaseToken(username: string, password: string): Promise<string> {
   const res = await fetch(`${METABASE_URL}/api/session`, {
     method: 'POST',
@@ -237,11 +340,11 @@ async function downloadCardCsv(token: string, cardId: number): Promise<string> {
     headers: { 'X-Metabase-Session': token, 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
   });
-  if (!res.ok) throw new Error(`CSV download ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`CSV download (card ${cardId}) ${res.status}: ${await res.text()}`);
   return res.text();
 }
 
-// ─── CSV parsing ──────────────────────────────────────────────────────────
+// ── CSV ───────────────────────────────────────────────────────────────────
 function parseCSV(text: string): Row[] {
   const lines = text.trim().split('\n');
   if (lines.length < 2) return [];
@@ -283,6 +386,7 @@ function col(row: Row, ...candidates: string[]): string {
   return '';
 }
 
+// ── Date helpers ──────────────────────────────────────────────────────────
 function parseDate(raw: string): string | null {
   if (!raw) return null;
   const s = raw.trim();
@@ -294,19 +398,56 @@ function parseDate(raw: string): string | null {
   return null;
 }
 
-// ─── Param helpers ────────────────────────────────────────────────────────
-function clampInt(raw: string | null, min: number, max: number, dflt: number): number {
-  if (!raw) return dflt;
-  const n = parseInt(raw, 10);
-  if (!Number.isFinite(n)) return dflt;
-  return Math.max(min, Math.min(max, n));
+function toMonday(iso: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return null;
+  const day = d.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0, 10);
 }
 
-function clampFloat(raw: string | null, min: number, max: number, dflt: number): number {
-  if (!raw) return dflt;
-  const n = parseFloat(raw);
-  if (!Number.isFinite(n)) return dflt;
-  return Math.max(min, Math.min(max, n));
+function mondayOf(dateISO: string): string {
+  return toMonday(dateISO) ?? dateISO;
+}
+
+function toFirstOfMonth(iso: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return null;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function defaultNextMonth(): string {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth() + 1; // 1..12, current month
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, '0')}-01`;
+}
+
+function monthOffset(monthISO: string, delta: number): string {
+  const [y, m] = monthISO.split('-').map(Number);
+  const total = y * 12 + (m - 1) + delta;
+  const ny = Math.floor(total / 12);
+  const nm = (total % 12 + 12) % 12 + 1;
+  return `${ny}-${String(nm).padStart(2, '0')}-01`;
+}
+
+function listMonthDays(monthISO: string): string[] {
+  const [y, m] = monthISO.split('-').map(Number);
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const out: string[] = [];
+  for (let d = 1; d <= days; d++) {
+    out.push(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function bump(map: Record<string, number>, key: string) {
