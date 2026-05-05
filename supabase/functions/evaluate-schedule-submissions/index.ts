@@ -14,26 +14,33 @@
  *   'superseded' so the audit trail stays intact.
  *
  * Decision math (per group of submissions for the same provider + month):
- *   1. Expand every submission's parsed_shifts into concrete slots
- *      (date, startMin, endMin). Recurring entries expand into one slot
- *      per matching weekday in the target month. One-off and in-home
- *      entries become one slot each.
- *   2. Walk slots chronologically (by submitted_at). For each new slot,
- *      trim or remove any existing timeline slot it overlaps. Add the new
- *      slot.
- *   3. effective_hours = sum of (endMin - startMin)/60 for all merged
- *      slots in the timeline.
- *   4. eligible_states = provider's licensed states, filtered by the
+ *   1. Run every submission's parsed_shifts through the validation /
+ *      normalization pipeline (`_shared/availabilityValidation.ts`):
+ *        - Apply provider-specific overrides (e.g. AM/PM corrections)
+ *        - Apply default deterministic AM/PM corrections
+ *        - Flag implausibly long shifts, full-day recurring availability,
+ *          12 AM start/end paired with daytime end/start, etc.
+ *        - Expand recurring entries to weekday occurrences in the month;
+ *          one-off + in-home become single-date slots.
+ *        - Reconcile across submissions: later submissions overwrite
+ *          overlapping slots from earlier ones; duplicates collapse.
+ *        - Subtract unavailable_dates the provider listed.
+ *      The raw submission stays untouched on the row (raw_answers and the
+ *      raw widget values inside parsed_shifts are preserved); only the
+ *      *normalized* timeline drives the forecast decision.
+ *   2. effective_hours = summary.final_approvable_hours from the pipeline
+ *      (normalized + deduped + minus unavailable).
+ *   3. eligible_states = provider's licensed states, filtered by the
  *      MD-only state rule: AL/IN/GA/MS/MO/SC/TN/LA can only be allocated
  *      to providers whose profession is MD or DO.
- *   5. For each eligible state, demand_hours = sum of demand_forecast
+ *   4. For each eligible state, demand_hours = sum of demand_forecast
  *      values over the target month, minus committed hours from decisions
  *      made in prior runs for OTHER providers in same state+month.
  *      Note: demand_forecast.projected_visits stores hours of provider
  *      availability (not visits); column name is legacy. See
  *      compute-demand-forecast for the canonical methodology.
- *   6. total_gap = sum of demand_hours across eligible states (clipped 0).
- *   7. Decision:
+ *   5. total_gap = sum of demand_hours across eligible states (clipped 0).
+ *   6. Decision:
  *        total_gap >= effective_hours       → accepted (all of it)
  *        0 < total_gap < effective_hours    → partial  (accept = total_gap,
  *                                                      decline = remainder)
@@ -50,6 +57,13 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  buildSubmissionTimeline,
+  buildShiftRecommendationRows,
+  emailFromParsedShifts,
+  type BuildTimelineResult,
+  type ShiftRecommendationRow,
+} from '../_shared/submissionTimeline.ts';
 
 // States that can only be served by MDs/DOs per Vitable scope-of-practice rules.
 // NPs licensed in these states cannot be allocated demand hours here.
@@ -66,6 +80,8 @@ type ParsedShifts = {
   recurring_virtual?: unknown;
   one_off_virtual?: unknown;
   in_home_clinic?: unknown;
+  unavailable_dates?: unknown;
+  email?: string;
   [k: string]: unknown;
 };
 
@@ -77,16 +93,6 @@ type Submission = {
   parsed_shifts: ParsedShifts | null;
   decision_status: string;
   submitted_at: string;
-};
-
-type ShiftType = 'virtual_recurring' | 'virtual_oneoff' | 'in_home_clinic';
-
-type Slot = {
-  date: string;        // YYYY-MM-DD
-  startMin: number;    // 0..1440
-  endMin: number;      // > startMin (we pre-split midnight crossings)
-  sourceSubmissionId: string;
-  shiftType: ShiftType;
 };
 
 Deno.serve(async (req: Request) => {
@@ -107,6 +113,7 @@ Deno.serve(async (req: Request) => {
     accepted: 0,
     partial: 0,
     declined: 0,
+    needs_review: 0,
     superseded: 0,
     skipped_unmatched_provider: 0,
     skipped_no_hours: 0,
@@ -124,7 +131,9 @@ Deno.serve(async (req: Request) => {
     if (monthFilter) pendingQuery = pendingQuery.eq('target_month', monthFilter);
     if (providerFilter) pendingQuery = pendingQuery.eq('provider_id', providerFilter);
     if (!monthFilter && !providerFilter) {
-      pendingQuery = pendingQuery.eq('decision_status', 'pending');
+      // Pick up new pending rows AND previously-flagged needs_review rows so
+      // a re-run after fixing the override config or raw entry decides them.
+      pendingQuery = pendingQuery.in('decision_status', ['pending', 'needs_review']);
     }
     pendingQuery = pendingQuery.range(0, 49999);
 
@@ -299,18 +308,81 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        // Build merged slot timeline
-        let timeline: Slot[] = [];
-        for (const sub of groupSubs) {
-          const slots = expandSubmissionSlots(sub.id, sub.parsed_shifts, targetMonth);
-          for (const slot of slots) {
-            timeline = mergeSlot(timeline, slot);
-          }
+        // Build merged slot timeline via the shared validation/normalization
+        // pipeline. emit-shift-recommendations runs the SAME function with
+        // the SAME inputs, so timelines match.
+        // Raw submission data on the row is preserved verbatim — we only
+        // read it here.
+        const validation: BuildTimelineResult = buildSubmissionTimeline(
+          groupSubs.map(s => ({
+            id: s.id,
+            submitted_at: s.submitted_at,
+            parsed_shifts: s.parsed_shifts ?? null,
+          })),
+          {
+            providerId,
+            email: emailFromParsedShifts(latest.parsed_shifts),
+            name: latest.provider_name,
+          },
+          targetMonth,
+        );
+        const fullTimeline = validation.timeline;
+        const forecastTimeline = validation.forecastTimeline;
+        const effectiveHours = validation.summary.final_approvable_hours;
+
+        if (validation.report.length > 0) {
+          console.log(`[validation] ${latest.provider_name} ${targetMonth}`,
+            JSON.stringify({
+              summary: validation.summary,
+              report: validation.report,
+            }));
         }
 
-        const effectiveHours = round2(timeline.reduce(
-          (sum, s) => sum + (s.endMin - s.startMin) / 60, 0,
-        ));
+        // ── needs_review short-circuit ────────────────────────────────────
+        // If validation surfaced intervals that need a human eyeball, do NOT
+        // auto-decide the group. The latest submission gets decision_status
+        // 'needs_review' with accepted=0 and declined=0; older submissions
+        // are still superseded so the audit trail is intact. ClinOps can
+        // re-run after the override config or raw entry is fixed.
+        const needsReview = validation.summary.intervals_needing_review > 0
+          || validation.summary.intervals_rejected > 0;
+        if (needsReview) {
+          if (olderIds.length) {
+            await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
+            counters.superseded += olderIds.length;
+          }
+          const reviewReasons = validation.report
+            .filter(r => r.needs_manual_review)
+            .map(r => `${r.day_of_week ?? r.date ?? ''} ${r.raw_time_range}: ${r.warnings.join('; ')}`)
+            .slice(0, 8);
+          const notes = [
+            `decision=needs_review`,
+            `intervals_needing_review=${validation.summary.intervals_needing_review}`,
+            `intervals_rejected=${validation.summary.intervals_rejected}`,
+            `raw_hours=${validation.summary.raw_total_hours}h`,
+            `forecastable_hours=${effectiveHours}h`,
+            `reasons=${reviewReasons.join(' | ') || '(see validation_report)'}`,
+          ].join('; ');
+          await writeDecision(supabase, latest.id, {
+            status: 'needs_review',
+            accepted_hours: 0,
+            declined_hours: 0,
+            notes,
+            decision_run_id: decisionRunId,
+            validation,
+          });
+          counters.needs_review++;
+          decisions.push({
+            group: key,
+            provider: latest.provider_name,
+            target_month: targetMonth,
+            status: 'needs_review',
+            superseded: olderIds.length,
+            validation_summary: validation.summary,
+            validation_report: validation.report,
+          });
+          continue;
+        }
 
         if (effectiveHours <= 0) {
           counters.skipped_no_hours++;
@@ -322,6 +394,7 @@ Deno.serve(async (req: Request) => {
             declined_hours: 0,
             notes: 'No effective hours in any submission for this provider+month',
             decision_run_id: decisionRunId,
+            validation,
           });
           counters.declined++;
           counters.superseded += olderIds.length;
@@ -340,6 +413,7 @@ Deno.serve(async (req: Request) => {
             declined_hours: effectiveHours,
             notes: 'Provider has no active licenses on file',
             decision_run_id: decisionRunId,
+            validation,
           });
           counters.declined++;
           counters.superseded += olderIds.length;
@@ -404,6 +478,22 @@ Deno.serve(async (req: Request) => {
         const noteParts: string[] = [];
         noteParts.push(`group_size=${groupSubs.length}`);
         noteParts.push(`effective_hours=${effectiveHours}h`);
+        noteParts.push(`raw_hours=${validation.summary.raw_total_hours}h`);
+        if (validation.summary.intervals_auto_corrected > 0) {
+          noteParts.push(`auto_corrected=${validation.summary.intervals_auto_corrected}`);
+        }
+        if (validation.summary.intervals_needing_review > 0) {
+          noteParts.push(`needs_review=${validation.summary.intervals_needing_review}`);
+        }
+        if (validation.summary.intervals_rejected > 0) {
+          noteParts.push(`rejected=${validation.summary.intervals_rejected}`);
+        }
+        if (validation.summary.hours_removed_for_unavailability > 0) {
+          noteParts.push(`hours_removed_unavailable=${validation.summary.hours_removed_for_unavailability}h`);
+        }
+        if (validation.summary.hours_removed_for_duplicates > 0) {
+          noteParts.push(`hours_removed_dup=${validation.summary.hours_removed_for_duplicates}h`);
+        }
         noteParts.push(`total_gap=${totalGap}h`);
         noteParts.push(
           'state_gaps=' + gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : round2(g.gapHours) + 'h'}`).join(','),
@@ -428,23 +518,25 @@ Deno.serve(async (req: Request) => {
           declined_hours: declined,
           notes: noteParts.join('; '),
           decision_run_id: decisionRunId,
+          validation,
         });
 
-        // Emit per-shift recommendations: one row per slot in the merged
-        // timeline with a publish/cut decision. The scheduling team executes
-        // by entering 'publish' rows into Homebase. Cut rows are documented
-        // in case a provider asks why their submitted shift wasn't scheduled.
-        await writeShiftRecommendations(supabase, {
-          submissionIds: groupSubs.map(s => s.id),
+        // Emit per-shift recommendations using the SAME shared row builder
+        // that emit-shift-recommendations uses. This guarantees the rows
+        // produced here match what a subsequent emit run would produce for
+        // the same (provider, target_month).
+        const recRows = buildShiftRecommendationRows({
           providerId,
           providerName: latest.provider_name,
           targetMonth,
-          timeline,
+          timeline: fullTimeline,
+          forecastTimeline,
           declinedHours: declined,
+          declineAll: status === 'declined',
           allocations,
           decisionRunId,
-          decisionStatus: status,
         });
+        await writeShiftRecommendations(supabase, groupSubs.map(s => s.id), recRows);
 
         if (status === 'accepted') counters.accepted++;
         else if (status === 'partial') counters.partial++;
@@ -462,6 +554,8 @@ Deno.serve(async (req: Request) => {
           accepted_hours: accepted,
           declined_hours: declined,
           allocations,
+          validation_summary: validation.summary,
+          validation_report: validation.report,
         });
 
         // Update committed map so subsequent groups in this run see this allocation
@@ -485,179 +579,34 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// ── Slot expansion ────────────────────────────────────────────────────────
-function expandSubmissionSlots(
-  submissionId: string,
-  parsed: ParsedShifts | null,
-  targetMonth: string,
-): Slot[] {
-  if (!parsed) return [];
-  const slots: Slot[] = [];
-
-  // Recurring weekly: expand to every matching weekday in target month
-  for (const e of parseWidgetArray(parsed.recurring_virtual)) {
-    const dayName = e['Day of Week'];
-    const range = parseTimeRange(e['Start Time (ET)'], e['End Time (ET)']);
-    if (!range || !dayName) continue;
-    for (const date of weekdayDatesInMonth(dayName, targetMonth)) {
-      pushSlot(slots, submissionId, date, range, 'virtual_recurring');
-    }
-  }
-
-  // One-off virtual + in-home: each entry is one date
-  const widgets: Array<{ raw: unknown; type: ShiftType }> = [
-    { raw: parsed.one_off_virtual, type: 'virtual_oneoff' },
-    { raw: parsed.in_home_clinic, type: 'in_home_clinic' },
-  ];
-  for (const w of widgets) {
-    for (const e of parseWidgetArray(w.raw)) {
-      const date = parseFormDate(e['Date']);
-      const range = parseTimeRange(e['Start Time (ET)'], e['End Time (ET)']);
-      if (!date || !range) continue;
-      if (!isInMonth(date, targetMonth)) continue;
-      pushSlot(slots, submissionId, date, range, w.type);
-    }
-  }
-
-  return slots;
-}
-
-function pushSlot(
-  out: Slot[],
-  sourceSubmissionId: string,
-  date: string,
-  range: { startMin: number; endMin: number },
-  shiftType: ShiftType,
-) {
-  // If endMin <= startMin (crosses midnight), split into two slots
-  if (range.endMin <= range.startMin) {
-    out.push({ date, startMin: range.startMin, endMin: 1440, sourceSubmissionId, shiftType });
-    const next = nextDate(date);
-    if (next) out.push({ date: next, startMin: 0, endMin: range.endMin, sourceSubmissionId, shiftType });
-  } else {
-    out.push({ date, startMin: range.startMin, endMin: range.endMin, sourceSubmissionId, shiftType });
-  }
-}
-
-// ── Slot merging: new slot wins over overlapping existing ─────────────────
-function mergeSlot(timeline: Slot[], incoming: Slot): Slot[] {
-  const out: Slot[] = [];
-  for (const existing of timeline) {
-    if (existing.date !== incoming.date || !overlaps(existing, incoming)) {
-      out.push(existing);
-      continue;
-    }
-    // Trim existing to non-overlapping portions
-    if (existing.startMin < incoming.startMin) {
-      out.push({ ...existing, endMin: incoming.startMin });
-    }
-    if (existing.endMin > incoming.endMin) {
-      out.push({ ...existing, startMin: incoming.endMin });
-    }
-    // Drop the part that fully overlaps with incoming
-  }
-  out.push(incoming);
-  return out;
-}
-
-function overlaps(a: Slot, b: Slot): boolean {
-  return a.startMin < b.endMin && b.startMin < a.endMin;
-}
-
-// ── Time / date helpers ───────────────────────────────────────────────────
-function parseWidgetArray(raw: unknown): Record<string, string>[] {
-  if (raw == null) return [];
-  let parsed: unknown = raw;
-  if (typeof raw === 'string') {
-    try { parsed = JSON.parse(raw); } catch { return []; }
-  }
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((e): e is Record<string, string> => e != null && typeof e === 'object');
-}
-
-function parseTimeRange(start: string | undefined, end: string | undefined): { startMin: number; endMin: number } | null {
-  if (!start || !end) return null;
-  const s = parseTimeOfDay(start);
-  const e = parseTimeOfDay(end);
-  if (s == null || e == null) return null;
-  return { startMin: s, endMin: e };
-}
-
-/** "09:00 AM" / "5:00 PM" / "13:00" → minutes from midnight (0..1440). */
-function parseTimeOfDay(t: string): number | null {
-  const m = String(t).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?\s*$/i);
-  if (!m) return null;
-  let h = Number(m[1]);
-  const min = Number(m[2]);
-  const ampm = (m[3] ?? '').toUpperCase();
-  if (ampm === 'AM') {
-    if (h === 12) h = 0;
-  } else if (ampm === 'PM') {
-    if (h !== 12) h += 12;
-  }
-  if (h < 0 || h > 24 || min < 0 || min >= 60) return null;
-  return h * 60 + min;
-}
-
-const DAY_TO_INDEX: Record<string, number> = {
-  sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
-  thursday: 4, friday: 5, saturday: 6,
-};
-
-function weekdayDatesInMonth(dayName: string, monthISO: string): string[] {
-  const dayIdx = DAY_TO_INDEX[String(dayName).trim().toLowerCase()];
-  if (dayIdx === undefined) return [];
-  const [y, m] = monthISO.split('-').map(Number);
-  const firstWeekday = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
-  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const offset = (dayIdx - firstWeekday + 7) % 7;
-  const dates: string[] = [];
-  for (let day = 1 + offset; day <= daysInMonth; day += 7) {
-    dates.push(`${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
-  }
-  return dates;
-}
-
-/** Form sends "MM-DD-YYYY" (e.g. "06-04-2026"). */
-function parseFormDate(raw: unknown): string | null {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  const mdy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (mdy) return `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  return null;
-}
-
-function isInMonth(dateISO: string, monthISO: string): boolean {
-  return dateISO >= monthISO && dateISO < nextMonth(monthISO);
-}
-
-function nextMonth(monthISO: string): string {
-  const [y, m] = monthISO.split('-').map(Number);
-  const ny = m === 12 ? y + 1 : y;
-  const nm = m === 12 ? 1 : m + 1;
-  return `${ny}-${String(nm).padStart(2, '0')}-01`;
-}
-
-function nextDate(dateISO: string): string | null {
-  const d = new Date(dateISO + 'T00:00:00Z');
-  if (isNaN(d.getTime())) return null;
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
-
 // ── DB writes ─────────────────────────────────────────────────────────────
 async function writeDecision(
   supabase: ReturnType<typeof createClient>,
   submissionId: string,
   decision: {
-    status: 'accepted' | 'partial' | 'declined';
+    status: 'accepted' | 'partial' | 'declined' | 'needs_review';
     accepted_hours: number;
     declined_hours: number;
     notes: string;
     decision_run_id: string;
+    validation: BuildTimelineResult;
   },
 ) {
+  const { summary } = decision.validation;
+  const normalizedSlots = decision.validation.timeline.map(s => ({
+    date: s.date,
+    start_min: s.startMin,
+    end_min: s.endMin,
+    hours: round2((s.endMin - s.startMin) / 60),
+    kind: s.source.kind,
+    source_submission_id: s.source.submissionId ?? null,
+    correction_reason: s.source.correction_reason,
+    validation_status: s.source.validation_status,
+  }));
+  const validationWarnings = Array.from(new Set(
+    decision.validation.report.flatMap(r => r.warnings),
+  ));
+
   const { error } = await supabase
     .from('schedule_submissions')
     .update({
@@ -667,109 +616,45 @@ async function writeDecision(
       decision_notes: decision.notes,
       decided_at: new Date().toISOString(),
       decision_run_id: decision.decision_run_id,
+      validation_status: validationStatusForGroup(decision.status, summary),
+      raw_requested_hours: summary.raw_total_hours,
+      normalized_requested_hours: summary.normalized_total_hours,
+      effective_hours_used_for_forecast: summary.final_approvable_hours,
+      validation_warnings: validationWarnings,
+      normalized_slots: normalizedSlots,
+      intervals_auto_corrected: summary.intervals_auto_corrected,
+      intervals_needing_review: summary.intervals_needing_review,
+      hours_removed_for_unavailability: summary.hours_removed_for_unavailability,
+      hours_removed_for_duplicates: summary.hours_removed_for_duplicates,
+      hours_changed_by_validation: summary.hours_changed_by_validation,
+      validation_summary: summary,
     })
     .eq('id', submissionId);
   if (error) throw new Error(error.message);
 }
 
+function validationStatusForGroup(
+  decisionStatus: 'accepted' | 'partial' | 'declined' | 'needs_review',
+  summary: BuildTimelineResult['summary'],
+): string {
+  if (decisionStatus === 'needs_review') return 'needs_review';
+  if (summary.intervals_rejected > 0) return 'partially_rejected';
+  if (summary.intervals_auto_corrected > 0) return 'auto_corrected';
+  return 'valid';
+}
+
 async function writeShiftRecommendations(
   supabase: ReturnType<typeof createClient>,
-  args: {
-    submissionIds: string[];
-    providerId: string;
-    providerName: string;
-    targetMonth: string;
-    timeline: Slot[];
-    declinedHours: number;
-    allocations: Array<{ state: string; hours: number }>;
-    decisionRunId: string;
-    decisionStatus: 'accepted' | 'partial' | 'declined';
-  },
+  submissionIds: string[],
+  rows: ShiftRecommendationRow[],
 ) {
   // Wipe any prior recommendations for this group so re-runs are idempotent.
-  // CASCADE on submission_id FK isn't automatic on rerun; do it explicitly.
   await supabase
     .from('shift_recommendations')
     .delete()
-    .in('submission_id', args.submissionIds);
-
-  if (args.timeline.length === 0) return;
-
-  // Cut budget walks the timeline from the END of the month, latest slot first.
-  // This preserves earlier-month commitments — providers expect to work the
-  // hours they submitted at the start of the month and lose later flexibility
-  // if oversupplied.
-  const sortedDesc = [...args.timeline].sort((a, b) =>
-    b.date.localeCompare(a.date) || b.startMin - a.startMin,
-  );
-  let cutBudget = round2(args.declinedHours);
-  const cutSlots = new Set<Slot>();
-  for (const slot of sortedDesc) {
-    if (cutBudget <= 0.001) break;
-    const slotHours = round2((slot.endMin - slot.startMin) / 60);
-    cutSlots.add(slot);
-    cutBudget = round2(cutBudget - slotHours);
-  }
-
-  // For publish slots, assign a state from the allocation buckets.
-  // Walk slots in chronological order; each slot consumes hours from the
-  // state with the largest remaining bucket. This naturally distributes
-  // shifts across multi-state providers' allocations.
-  const sortedAsc = [...args.timeline].sort((a, b) =>
-    a.date.localeCompare(b.date) || a.startMin - b.startMin,
-  );
-  const buckets = new Map<string, number>(args.allocations.map(a => [a.state, a.hours]));
-
-  const rows = sortedAsc.map(slot => {
-    const slotHours = round2((slot.endMin - slot.startMin) / 60);
-    const isCut = cutSlots.has(slot);
-    let assignedState: string | null = null;
-    let reason: string;
-
-    if (isCut) {
-      reason = args.decisionStatus === 'declined'
-        ? 'Provider has no remaining demand-hour gap in any licensed state'
-        : 'Trimmed as oversupply — accepted hours capped at network demand';
-    } else {
-      // Pick the bucket with largest remaining hours
-      let bestState: string | null = null;
-      let bestRemaining = -1;
-      for (const [state, remaining] of buckets) {
-        if (remaining > bestRemaining) {
-          bestState = state;
-          bestRemaining = remaining;
-        }
-      }
-      assignedState = bestState;
-      if (bestState) {
-        buckets.set(bestState, round2((buckets.get(bestState) ?? 0) - slotHours));
-      }
-      reason = bestState
-        ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
-        : 'Publish (no state allocation; review manually)';
-    }
-
-    return {
-      submission_id: slot.sourceSubmissionId,
-      provider_id: args.providerId,
-      provider_name: args.providerName,
-      target_month: args.targetMonth,
-      shift_date: slot.date,
-      start_min: slot.startMin,
-      end_min: slot.endMin,
-      hours: slotHours,
-      shift_type: slot.shiftType,
-      assigned_state: assignedState,
-      recommendation: isCut ? 'cut' : 'publish',
-      recommendation_reason: reason,
-      decision_run_id: args.decisionRunId,
-      publish_status: 'pending',
-    };
-  });
+    .in('submission_id', submissionIds);
 
   if (rows.length === 0) return;
-
-  // Insert in chunks to stay under PostgREST limits
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const chunk = rows.slice(i, i + CHUNK);

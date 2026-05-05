@@ -1,0 +1,325 @@
+/**
+ * Shared pipeline that turns a group of `schedule_submissions` rows
+ * (provider + target_month) into:
+ *   - the canonical normalized slot timeline (post override / AM-PM
+ *     correction, dedup, unavailable subtraction)
+ *   - a forecast-only sub-timeline (telehealth kinds by default)
+ *   - a deterministic set of shift_recommendations rows
+ *
+ * Both `evaluate-schedule-submissions` and `emit-shift-recommendations`
+ * MUST call this module so the two stages produce the exact same slots
+ * and shift rec rows. Drift between them previously caused decisions to
+ * cite hours that didn't match what was emitted to Homebase.
+ *
+ * IMPORTANT: This file is mirrored at
+ *   supabase/functions/_shared/submissionTimeline.ts
+ * for Deno edge-function consumption. Keep the two in sync.
+ */
+
+import {
+  normalizeProviderAvailability,
+  type ExpandedSlot,
+  type IntervalKind,
+  type NormalizationInput,
+  type NormalizationResult,
+  type RawInterval,
+  type ProviderIdentity,
+} from './availabilityValidation.ts';
+
+/** Shape of `schedule_submissions.parsed_shifts` produced by sync-jotform-submissions. */
+export interface ParsedShiftsBlob {
+  recurring_virtual?: unknown;
+  one_off_virtual?: unknown;
+  in_home_clinic?: unknown;
+  unavailable_dates?: unknown;
+  email?: string;
+  [k: string]: unknown;
+}
+
+export interface SubmissionRow {
+  id: string;
+  submitted_at: string;
+  parsed_shifts: ParsedShiftsBlob | null;
+}
+
+/**
+ * Default kinds counted toward `final_approvable_hours`. In-home/clinic
+ * shifts are staffed under a separate scope and capacity model, so they
+ * do not consume telehealth demand-hour gaps. Override via
+ * `forecastKinds` when the caller knows otherwise.
+ */
+export const TELEHEALTH_FORECAST_KINDS: IntervalKind[] = ['recurring', 'one_off'];
+
+export type ShiftType = 'virtual_recurring' | 'virtual_oneoff' | 'in_home_clinic';
+
+export interface ShiftRecommendationRow {
+  submission_id: string;
+  provider_id: string;
+  provider_name: string;
+  target_month: string;
+  shift_date: string;
+  start_min: number;
+  end_min: number;
+  hours: number;
+  shift_type: ShiftType;
+  assigned_state: string | null;
+  recommendation: 'publish' | 'cut';
+  recommendation_reason: string;
+  decision_run_id: string;
+  publish_status: 'pending';
+}
+
+export interface BuildTimelineOptions {
+  forecastKinds?: IntervalKind[];
+}
+
+export interface BuildTimelineResult extends NormalizationResult {
+  /** Subset of `timeline` filtered by forecastKinds (default = telehealth). */
+  forecastTimeline: ExpandedSlot[];
+}
+
+/**
+ * Run a group of submissions through the validation/normalization pipeline.
+ * Both consumers must use this so the timelines match.
+ */
+export function buildSubmissionTimeline(
+  submissions: SubmissionRow[],
+  identity: ProviderIdentity,
+  targetMonth: string,
+  options: BuildTimelineOptions = {},
+): BuildTimelineResult {
+  const forecastKinds = options.forecastKinds ?? TELEHEALTH_FORECAST_KINDS;
+
+  // Sort chronologically (later wins on overlap inside the validator).
+  const ordered = [...submissions].sort((a, b) =>
+    a.submitted_at.localeCompare(b.submitted_at),
+  );
+
+  const unavailableDates = collectUnavailableDates(ordered);
+
+  const input: NormalizationInput = {
+    identity,
+    submissions: ordered.map(s => ({
+      submissionId: s.id,
+      submittedAt: s.submitted_at,
+      intervals: extractRawIntervalsFromParsedShifts(s.parsed_shifts),
+    })),
+    targetMonth,
+    unavailableDates,
+    forecastKinds,
+  };
+
+  const result = normalizeProviderAvailability(input);
+  const forecastSet = new Set(forecastKinds);
+  const forecastTimeline = result.timeline.filter(s => forecastSet.has(s.source.kind));
+  return { ...result, forecastTimeline };
+}
+
+export function extractRawIntervalsFromParsedShifts(parsed: ParsedShiftsBlob | null): RawInterval[] {
+  if (!parsed) return [];
+  const out: RawInterval[] = [];
+  for (const e of parseWidgetArray(parsed.recurring_virtual)) {
+    if (!e['Start Time (ET)'] || !e['End Time (ET)']) continue;
+    out.push({
+      kind: 'recurring',
+      dayOfWeek: e['Day of Week'],
+      rawStart: e['Start Time (ET)'],
+      rawEnd: e['End Time (ET)'],
+    });
+  }
+  for (const e of parseWidgetArray(parsed.one_off_virtual)) {
+    const date = parseFormDate(e['Date']);
+    if (!date || !e['Start Time (ET)'] || !e['End Time (ET)']) continue;
+    out.push({
+      kind: 'one_off',
+      date,
+      rawStart: e['Start Time (ET)'],
+      rawEnd: e['End Time (ET)'],
+    });
+  }
+  for (const e of parseWidgetArray(parsed.in_home_clinic)) {
+    const date = parseFormDate(e['Date']);
+    if (!date || !e['Start Time (ET)'] || !e['End Time (ET)']) continue;
+    out.push({
+      kind: 'in_home',
+      date,
+      rawStart: e['Start Time (ET)'],
+      rawEnd: e['End Time (ET)'],
+    });
+  }
+  return out;
+}
+
+export function emailFromParsedShifts(parsed: ParsedShiftsBlob | null): string | null {
+  if (!parsed) return null;
+  const e = parsed.email;
+  return typeof e === 'string' && e.trim() ? e.trim() : null;
+}
+
+export function collectUnavailableDates(submissions: SubmissionRow[]): string[] {
+  // We take the union of all listed unavailable dates across submissions in
+  // the group: a provider who lists 6/15 off in their first submission and
+  // forgets to re-list it in a resubmission still shouldn't be scheduled
+  // there. ClinOps confirmed this is the desired behavior.
+  const out = new Set<string>();
+  for (const sub of submissions) {
+    const parsed = sub.parsed_shifts;
+    if (!parsed) continue;
+    for (const e of parseWidgetArray(parsed.unavailable_dates)) {
+      const d = parseFormDate(e['Date']);
+      if (d) out.add(d);
+    }
+  }
+  return Array.from(out);
+}
+
+export function parseAllocationsFromNotes(notes: string): Array<{ state: string; hours: number }> {
+  const allocStr = notes.match(/alloc=([^;]+)/);
+  if (!allocStr) return [];
+  const out: Array<{ state: string; hours: number }> = [];
+  const re = /([A-Z]{2}):([0-9.]+)h/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(allocStr[1])) !== null) {
+    const hours = Number(m[2]);
+    if (Number.isFinite(hours) && hours > 0) out.push({ state: m[1], hours });
+  }
+  return out;
+}
+
+export interface BuildShiftRecommendationsArgs {
+  providerId: string;
+  providerName: string;
+  targetMonth: string;
+  /** Full normalized timeline (all kinds). */
+  timeline: ExpandedSlot[];
+  /** Subset of timeline that participates in forecast cut budget. */
+  forecastTimeline: ExpandedSlot[];
+  declinedHours: number;
+  /** True if the entire forecast timeline should be cut (declined decision). */
+  declineAll: boolean;
+  allocations: Array<{ state: string; hours: number }>;
+  decisionRunId: string;
+}
+
+/**
+ * Cut/publish row generator shared by evaluator and emitter.
+ *
+ * Forecast slots (recurring_virtual / virtual_oneoff) participate in the
+ * cut budget: latest-first, cut until `declinedHours` is satisfied.
+ * In-home/clinic slots are not in the forecast scope, so they are always
+ * `publish` and don't consume the cut budget.
+ */
+export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs): ShiftRecommendationRow[] {
+  if (args.timeline.length === 0) return [];
+
+  const forecastSlots = new Set(args.forecastTimeline);
+  const cutBudgetTotal = args.declineAll
+    ? sumHours(args.forecastTimeline)
+    : Math.max(0, args.declinedHours);
+
+  // Walk forecast slots latest-first to allocate cuts.
+  const sortedDesc = [...args.forecastTimeline].sort((a, b) =>
+    b.date.localeCompare(a.date) || b.startMin - a.startMin,
+  );
+  const cutSet = new Set<ExpandedSlot>();
+  let remainingCut = round2(cutBudgetTotal);
+  for (const slot of sortedDesc) {
+    if (remainingCut <= 0.001) break;
+    cutSet.add(slot);
+    remainingCut = round2(remainingCut - (slot.endMin - slot.startMin) / 60);
+  }
+
+  // Buckets for state assignment, only consumed by published forecast slots.
+  const buckets = new Map<string, number>(args.allocations.map(a => [a.state, a.hours]));
+
+  // Publish all slots in chronological order.
+  const sortedAsc = [...args.timeline].sort((a, b) =>
+    a.date.localeCompare(b.date) || a.startMin - b.startMin,
+  );
+
+  return sortedAsc.map(slot => {
+    const slotHours = round2((slot.endMin - slot.startMin) / 60);
+    const isForecastSlot = forecastSlots.has(slot);
+    const isCut = isForecastSlot && cutSet.has(slot);
+
+    let assignedState: string | null = null;
+    let reason: string;
+
+    if (isCut) {
+      reason = args.declineAll
+        ? 'Declined — no demand-hour gap remained in any licensed state when allocator processed this provider'
+        : 'Trimmed as oversupply — accepted hours capped at network demand';
+    } else if (!isForecastSlot) {
+      // In-home / clinic shifts: not part of the telehealth forecast.
+      reason = 'Publish (in-home/clinic — not part of telehealth forecast scope)';
+    } else {
+      let bestState: string | null = null;
+      let bestRemaining = -1;
+      for (const [state, remaining] of buckets) {
+        if (remaining > bestRemaining) {
+          bestState = state;
+          bestRemaining = remaining;
+        }
+      }
+      assignedState = bestState;
+      if (bestState) {
+        buckets.set(bestState, round2((buckets.get(bestState) ?? 0) - slotHours));
+      }
+      reason = bestState
+        ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
+        : 'Publish (no state allocation; review manually)';
+    }
+
+    return {
+      submission_id: slot.source.submissionId ?? '',
+      provider_id: args.providerId,
+      provider_name: args.providerName,
+      target_month: args.targetMonth,
+      shift_date: slot.date,
+      start_min: slot.startMin,
+      end_min: slot.endMin,
+      hours: slotHours,
+      shift_type: kindToShiftType(slot.source.kind),
+      assigned_state: assignedState,
+      recommendation: isCut ? 'cut' : 'publish',
+      recommendation_reason: reason,
+      decision_run_id: args.decisionRunId,
+      publish_status: 'pending',
+    };
+  });
+}
+
+export function kindToShiftType(kind: IntervalKind): ShiftType {
+  if (kind === 'recurring') return 'virtual_recurring';
+  if (kind === 'in_home') return 'in_home_clinic';
+  return 'virtual_oneoff';
+}
+
+// ─── Local widget helpers ────────────────────────────────────────────────
+
+function parseWidgetArray(raw: unknown): Record<string, string>[] {
+  if (raw == null) return [];
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((e): e is Record<string, string> => e != null && typeof e === 'object');
+}
+
+function parseFormDate(raw: unknown): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  const mdy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (mdy) return `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return null;
+}
+
+function sumHours(slots: ExpandedSlot[]): number {
+  return slots.reduce((s, x) => s + (x.endMin - x.startMin) / 60, 0);
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}

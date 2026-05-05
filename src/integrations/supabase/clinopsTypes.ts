@@ -416,15 +416,27 @@ export type ClinOpsDatabase = {
           decision_run_id: string | null
           decision_status: string
           declined_hours: number | null
+          effective_hours_used_for_forecast: number | null
+          hours_changed_by_validation: number | null
+          hours_removed_for_duplicates: number | null
+          hours_removed_for_unavailability: number | null
           id: string
+          intervals_auto_corrected: number | null
+          intervals_needing_review: number | null
           jotform_submission_id: string
+          normalized_requested_hours: number | null
+          normalized_slots: Json | null
           parsed_shifts: Json | null
           provider_id: string | null
           provider_name: string
           raw_answers: Json
+          raw_requested_hours: number | null
           submitted_at: string
           target_month: string
           updated_at: string
+          validation_status: string | null
+          validation_summary: Json | null
+          validation_warnings: Json | null
         }
         Insert: {
           accepted_hours?: number | null
@@ -434,15 +446,27 @@ export type ClinOpsDatabase = {
           decision_run_id?: string | null
           decision_status?: string
           declined_hours?: number | null
+          effective_hours_used_for_forecast?: number | null
+          hours_changed_by_validation?: number | null
+          hours_removed_for_duplicates?: number | null
+          hours_removed_for_unavailability?: number | null
           id?: string
+          intervals_auto_corrected?: number | null
+          intervals_needing_review?: number | null
           jotform_submission_id: string
+          normalized_requested_hours?: number | null
+          normalized_slots?: Json | null
           parsed_shifts?: Json | null
           provider_id?: string | null
           provider_name: string
           raw_answers: Json
+          raw_requested_hours?: number | null
           submitted_at: string
           target_month: string
           updated_at?: string
+          validation_status?: string | null
+          validation_summary?: Json | null
+          validation_warnings?: Json | null
         }
         Update: {
           accepted_hours?: number | null
@@ -452,15 +476,27 @@ export type ClinOpsDatabase = {
           decision_run_id?: string | null
           decision_status?: string
           declined_hours?: number | null
+          effective_hours_used_for_forecast?: number | null
+          hours_changed_by_validation?: number | null
+          hours_removed_for_duplicates?: number | null
+          hours_removed_for_unavailability?: number | null
           id?: string
+          intervals_auto_corrected?: number | null
+          intervals_needing_review?: number | null
           jotform_submission_id?: string
+          normalized_requested_hours?: number | null
+          normalized_slots?: Json | null
           parsed_shifts?: Json | null
           provider_id?: string | null
           provider_name?: string
           raw_answers?: Json
+          raw_requested_hours?: number | null
           submitted_at?: string
           target_month?: string
           updated_at?: string
+          validation_status?: string | null
+          validation_summary?: Json | null
+          validation_warnings?: Json | null
         }
         Relationships: []
       }
