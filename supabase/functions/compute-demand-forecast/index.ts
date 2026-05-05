@@ -82,6 +82,7 @@ Deno.serve(async (req: Request) => {
     url.searchParams.get('history_card_id') ?? Deno.env.get('METABASE_HISTORY_CARD_ID') ?? '3011',
   );
   const dryRun = url.searchParams.get('dry_run') === '1';
+  const inspect = url.searchParams.get('inspect') === '1';
   const targetMonth = url.searchParams.get('target_month') ?? defaultNextMonth();
 
   if (!/^\d{4}-\d{2}-01$/.test(targetMonth)) {
@@ -91,6 +92,30 @@ Deno.serve(async (req: Request) => {
   try {
     // ── 1. Auth ───────────────────────────────────────────────────────
     const token = await getMetabaseToken(username, password);
+
+    // ── inspect mode: dump column headers + first rows, no parsing ────
+    if (inspect) {
+      const baselineCsv = await downloadCardCsv(token, baselineCardId);
+      const historyCsv = await downloadCardCsv(token, historyCardId);
+      const baselineRows = parseCSV(baselineCsv);
+      const historyRows = parseCSV(historyCsv);
+      return json({
+        ok: true,
+        mode: 'inspect',
+        baseline: {
+          card_id: baselineCardId,
+          row_count: baselineRows.length,
+          columns: baselineRows[0] ? Object.keys(baselineRows[0]) : [],
+          first_3: baselineRows.slice(0, 3),
+        },
+        history: {
+          card_id: historyCardId,
+          row_count: historyRows.length,
+          columns: historyRows[0] ? Object.keys(historyRows[0]) : [],
+          first_3: historyRows.slice(0, 3),
+        },
+      });
+    }
 
     // ── 2. Pull baseline (weekly demand forecast) ─────────────────────
     const baselineCsv = await downloadCardCsv(token, baselineCardId);
