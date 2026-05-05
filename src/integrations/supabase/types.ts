@@ -3925,6 +3925,95 @@ export type Database = {
         }
         Relationships: []
       }
+      schedule_submissions: {
+        Row: {
+          created_at: string
+          evaluated_at: string | null
+          id: string
+          jotform_form_id: string
+          jotform_submission_id: string
+          match_confidence: string | null
+          override_at: string | null
+          override_by: string | null
+          override_hours: number | null
+          override_status: string | null
+          provider_email_raw: string | null
+          provider_name_raw: string | null
+          provider_profile_id: string | null
+          raw_payload: Json
+          recommendation_notes: string | null
+          recommendation_status: string
+          recommended_hours: number | null
+          recommended_states: string[] | null
+          requested_hours_total: number | null
+          requested_shifts: Json | null
+          requested_states: string[] | null
+          submitted_at: string
+          updated_at: string
+          week_start: string | null
+        }
+        Insert: {
+          created_at?: string
+          evaluated_at?: string | null
+          id?: string
+          jotform_form_id: string
+          jotform_submission_id: string
+          match_confidence?: string | null
+          override_at?: string | null
+          override_by?: string | null
+          override_hours?: number | null
+          override_status?: string | null
+          provider_email_raw?: string | null
+          provider_name_raw?: string | null
+          provider_profile_id?: string | null
+          raw_payload: Json
+          recommendation_notes?: string | null
+          recommendation_status?: string
+          recommended_hours?: number | null
+          recommended_states?: string[] | null
+          requested_hours_total?: number | null
+          requested_shifts?: Json | null
+          requested_states?: string[] | null
+          submitted_at: string
+          updated_at?: string
+          week_start?: string | null
+        }
+        Update: {
+          created_at?: string
+          evaluated_at?: string | null
+          id?: string
+          jotform_form_id?: string
+          jotform_submission_id?: string
+          match_confidence?: string | null
+          override_at?: string | null
+          override_by?: string | null
+          override_hours?: number | null
+          override_status?: string | null
+          provider_email_raw?: string | null
+          provider_name_raw?: string | null
+          provider_profile_id?: string | null
+          raw_payload?: Json
+          recommendation_notes?: string | null
+          recommendation_status?: string
+          recommended_hours?: number | null
+          recommended_states?: string[] | null
+          requested_hours_total?: number | null
+          requested_shifts?: Json | null
+          requested_states?: string[] | null
+          submitted_at?: string
+          updated_at?: string
+          week_start?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_submissions_provider_profile_id_fkey"
+            columns: ["provider_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sla_attainment_aggregate: {
         Row: {
           avg_sla_pct: number
