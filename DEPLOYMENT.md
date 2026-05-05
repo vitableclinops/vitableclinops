@@ -1,5 +1,27 @@
 # Deployment
 
+## Current deployment state
+
+As of this change, the live Supabase Edge Functions in project `bbquooftytwprllipcsb`
+may not be byte-identical to the source files in this repository.
+
+During the initial validation rollout, the functions were deployed through an MCP
+tool using manually bundled code, and synthetic threshold-warning audit rows were
+removed to fit the deploy payload size. The core forecast math and validation
+logic were verified in production, but the deployed artifacts are not considered
+source-faithful.
+
+To restore source fidelity, redeploy the functions from this repository using:
+
+```bash
+export SUPABASE_ACCESS_TOKEN=<token>
+supabase link --project-ref bbquooftytwprllipcsb
+./scripts/deploy-edge-functions.sh
+```
+
+After that redeploy, `main` should be treated as the source of truth for the
+deployed edge function behavior.
+
 ## Edge functions
 
 The repo is the source of truth for what gets deployed. Two paths exist; the first is the standard one, the second is a fallback:
