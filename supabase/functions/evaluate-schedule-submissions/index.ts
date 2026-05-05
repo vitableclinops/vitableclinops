@@ -186,27 +186,22 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Preload baseline demand per (state, month) ──────────────────────
+    // Reads from v_monthly_demand which pre-aggregates demand_forecast to one
+    // row per (state, month). Querying the raw demand_forecast directly hits
+    // PostgREST's silent row truncation at ~1,000 rows (a full month is 1,410
+    // rows), which previously dropped PA from the result set entirely.
     const demandByKey = new Map<string, number>(); // `${state}_${month}` → total visits
     if (months.length > 0) {
-      // For each month, sum projected_visits across all dates in the month
-      // using the rows where is_baseline=true. Use .range() to bypass
-      // PostgREST's default 1000-row cap (a full month is 47 states × ~30
-      // days = 1,410 rows; without an explicit range we silently truncate).
-      for (const month of months) {
-        const next = nextMonth(month);
-        const { data: rows, error: dErr } = await supabase
-          .from('demand_forecast')
-          .select('state, projected_visits')
-          .gte('date', month)
-          .lt('date', next)
-          .eq('is_baseline', true)
-          .range(0, 49999);
-        if (dErr) throw new Error(`Demand load failed for ${month}: ${dErr.message}`);
-        for (const r of rows ?? []) {
-          const st = String(r.state).trim().toUpperCase();
-          const k = `${st}_${month}`;
-          demandByKey.set(k, (demandByKey.get(k) ?? 0) + Number(r.projected_visits ?? 0));
-        }
+      const { data: rows, error: dErr } = await supabase
+        .from('v_monthly_demand')
+        .select('state, month, total_visits')
+        .in('month', months);
+      if (dErr) throw new Error(`Demand load failed: ${dErr.message}`);
+      for (const r of rows ?? []) {
+        const st = String(r.state).trim().toUpperCase();
+        const month = String(r.month);
+        const k = `${st}_${month}`;
+        demandByKey.set(k, Number(r.total_visits ?? 0));
       }
     }
 
