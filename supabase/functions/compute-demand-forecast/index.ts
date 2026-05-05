@@ -440,7 +440,7 @@ function parseStateHours(csv: string, issues: Record<string, number>): Map<strin
   if (!csv) return result;
   const rows = parseCSV(csv);
   for (const r of rows) {
-    const stateRaw = col(r, 'State', 'state', 'service_state');
+    const stateRaw = col(r, 'State', 'state', 'service_state', 'Appointment State', 'appointment_state');
     const hoursRaw = col(
       r,
       'Target Hrs', 'target_hrs', 'target hours', 'TargetHrs',
