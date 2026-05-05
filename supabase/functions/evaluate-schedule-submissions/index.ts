@@ -26,10 +26,12 @@
  *   4. eligible_states = provider's licensed states, filtered by the
  *      MD-only state rule: AL/IN/GA/MS/MO/SC/TN/LA can only be allocated
  *      to providers whose profession is MD or DO.
- *   5. For each eligible state, demand_hours = sum_of_demand_visits /
- *      VISITS_PER_HOUR over the target month (default 2 — two slots per
- *      clinical hour), minus committed hours from decisions made in prior
- *      runs for OTHER providers in same state+month.
+ *   5. For each eligible state, demand_hours = sum of demand_forecast
+ *      values over the target month, minus committed hours from decisions
+ *      made in prior runs for OTHER providers in same state+month.
+ *      Note: demand_forecast.projected_visits stores hours of provider
+ *      availability (not visits); column name is legacy. See
+ *      compute-demand-forecast for the canonical methodology.
  *   6. total_gap = sum of demand_hours across eligible states (clipped 0).
  *   7. Decision:
  *        total_gap >= effective_hours       → accepted (all of it)
@@ -48,8 +50,6 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const VISITS_PER_HOUR = Number(Deno.env.get('VISITS_PER_HOUR') ?? '2');
 
 // States that can only be served by MDs/DOs per Vitable scope-of-practice rules.
 // NPs licensed in these states cannot be allocated demand hours here.
@@ -356,7 +356,10 @@ Deno.serve(async (req: Request) => {
             gapByState.push({ state: st, gapHours: 0, missingDemand: true });
             continue;
           }
-          const demandHours = visits / VISITS_PER_HOUR;
+          // demand_forecast.projected_visits stores hours of provider
+          // availability (column name is legacy/misleading), so the value
+          // already IS the demand hour figure — no conversion.
+          const demandHours = visits;
           const committed = committedByKey.get(dKey) ?? 0;
           gapByState.push({
             state: st,
@@ -412,7 +415,6 @@ Deno.serve(async (req: Request) => {
           noteParts.push(`missing_demand=${missingDemandStates.join(',')}`);
         }
         if (olderIds.length) noteParts.push(`supersedes=${olderIds.length}`);
-        noteParts.push(`vph=${VISITS_PER_HOUR}`);
 
         // Mark older as superseded
         if (olderIds.length) {

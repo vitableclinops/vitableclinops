@@ -101,6 +101,35 @@ shadcn-ui primitives live in `src/components/ui/`. New primitive components shou
 | StateDetailPage | ops coverage card (active status, today's slots, SLA %) in sidebar |
 | AdminDashboard | coverage health pill (ok/low/critical/zero/noData), ops quick-links grid |
 
+### Demand methodology (canonical, set in May 2026 by ClinOps)
+
+The demand forecast (`supabase/functions/compute-demand-forecast`) drives
+`state_demand_targets`, `demand_forecast`, the Monthly Forecast UI and the
+`evaluate-schedule-submissions` allocator. Methodology:
+
+- **Card values are weekly hours of provider availability**, not visits.
+  Metabase cards 2974/2973/2971/2972 return `State` + `Target Hrs`. The
+  same value is numerically equivalent to "visits/week" because a
+  Vitable appointment is 30 min and same/next-day SLA requires roughly
+  1:1 unbooked buffer (1 visit ≈ 1 hour of availability).
+- **Cohort buffers** (flat percentages, not per-state growth multipliers):
+  Core (PA, NJ) +17.5%; Growth (TX, OH, FL) +20%; MD-Only
+  (GA, IN, MO, TN, SC, MS, AL) +20%; DMV (DC, MD, VA) +15%;
+  DE +15%; 021 (everything else) +15%.
+- **Service lines:** Telehealth (2974, cohort buffer); MH Coaching
+  (2973, +15% network sum); Therapy (2971, +15% active states);
+  In-Home (2972 + fixed Sara Kamara DE Thu 9-12 = 3 hrs/wk + 4 NJ/IL/OH/TX
+  one 2-hr-shift/month each, no buffer).
+- **Storage convention:** `state_demand_targets.monthly_visits_target`
+  and `monthly_hours_target` both store the same value — monthly hours
+  of provider availability (= adjusted_weekly × 4.33). The "visits"
+  column name is legacy; do not divide by 2 or any other conversion.
+  `state_demand_targets` and `demand_forecast` hold telehealth only;
+  the other service lines are staffed separately.
+- **MD-only state enforcement:** the evaluator filters out NPs from
+  AL/IN/GA/MS/MO/SC/TN/LA at preload time (only MD/DO providers
+  receive demand-hour allocation in those states).
+
 ### Key Provider Types
 
 `NP` (Nurse Practitioner) — requires collaborative agreement and prescriptive authority per state  

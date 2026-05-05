@@ -1,61 +1,127 @@
 /**
- * compute-demand-forecast edge function (Tier 1: deterministic math)
+ * compute-demand-forecast edge function
  *
- * Implements the deterministic core of the demand-forecast skill so it can
- * run on a cron without a human in the loop. The qualitative pieces of the
- * skill (Notion Demand Alerts, Slack signals, leadership summary, manual
- * overrides) belong in a Tier 2 GitHub Action that invokes the Claude Agent
- * SDK against the same Supabase tables.
+ * Demand methodology (canonical, set in May 2026 by ClinOps):
+ *
+ *   Metabase cards 2974/2973/2971/2972 return one row per state with
+ *   columns "State" and "Target Hrs". The value is **weekly hours of
+ *   provider availability needed**, not visits. (Vitable appointments
+ *   are 30 min and same/next-day SLA requires roughly 1:1 buffer of
+ *   unbooked availability, so 1 visit ≈ 1 hour of availability and the
+ *   card values are denominated in hours.)
+ *
+ *   For telehealth (card 2974) we apply a flat per-cohort buffer:
+ *
+ *     Cohort   States                            Buffer
+ *     Core     PA, NJ                            17.5%
+ *     Growth   TX, OH, FL                        20.0%
+ *     MD-Only  GA, IN, MO, TN, SC, MS, AL        20.0%
+ *     DMV      DC, MD, VA                        15.0%
+ *     DE       DE                                15.0%
+ *     021      everything else                   15.0%
+ *
+ *   For the other service lines:
+ *
+ *     MH Coaching (2973) - 15% buffer on the network-pool sum
+ *     Therapy     (2971) - 15% buffer on the active-state sum
+ *     In-Home     (2972 + fixed)  - no buffer (mostly fixed schedule)
+ *
+ *   In-Home includes hard-coded recurring shifts that aren't in the
+ *   Metabase card:
+ *
+ *     DE - Sara Kamara recurring Thu 9-12 = 3.0 hrs/wk
+ *     NJ - one 2-hr shift/month         ≈ 0.46 hrs/wk
+ *     IL - one 2-hr shift/month         ≈ 0.46 hrs/wk
+ *     OH - one 2-hr shift/month         ≈ 0.46 hrs/wk
+ *     TX - one 2-hr shift/month         ≈ 0.46 hrs/wk
+ *
+ *   Per-state distribution of telehealth across days uses the
+ *   established 1/6 weekday, 1/12 weekend rule (so the daily values
+ *   sum to roughly 4.25 weeks/month for June, ~4.33 over a year).
+ *
+ *   For Supabase writes:
+ *     monthly_hours_target  = adjusted_weekly_hours × 4.33
+ *     monthly_visits_target = monthly_hours_target  (column name is
+ *                             legacy/misleading: stores hours)
+ *     daily_target_slots    = max(5, round(monthly_hours_target / 20 * 1.5))
  *
  * Pipeline:
- *   1. Auth to Metabase (METABASE_USERNAME / METABASE_PASSWORD).
- *   2. Pull card 2974 (Weekly demand forecast by state)  → baseline.
- *   3. Pull card 3011 (Monthly completed visits by state) → history.
- *   4. Per state: compute trailing 3-month and 6-month growth from history.
- *      multiplier =
- *        1.25  if max(g3, g6) > 30%      (explosive)
- *        1.125 if max(g3, g6) > 10%      (growing)
- *        1.00  otherwise                 (stable)
- *      (overridable per-state via Metabase 2974's own forecast already
- *      including growth — when 2974's forecast is materially higher than
- *      the trailing average we trust 2974 and clamp the multiplier toward 1.)
- *   5. For the target month, distribute weekly forecasts across days using
- *      the skill's rule: each weekday = 1/6 of weekly, weekend days share
- *      1/6 (so each weekend day = 1/12).
- *   6. Apply per-state growth multiplier.
- *   7. Compute state_demand_targets per the formula:
- *        monthly_visits_target = adjusted_monthly_demand
- *        daily_target_slots    = max(5, round(monthly_visits / 20 * 1.5))
- *        monthly_hours_target  = monthly_visits_target / VISITS_PER_HOUR
- *      VISITS_PER_HOUR is the operational rule that one clinical hour
- *      contains two appointment slots (default 2). monthly_hours_target
- *      is the demand-side hours figure used for fill-rate math; the
- *      separate daily_target_slots is the SLA capacity floor.
- *   8. Write demand_forecast (per-day rows, is_baseline=true, fresh
- *      forecast_run_id; demote prior baseline first) and upsert
- *      state_demand_targets keyed on (state, month).
+ *   1. Auth to Metabase.
+ *   2. Pull cards 2974 (telehealth), 2973 (MH coach), 2971 (therapy),
+ *      2972 (in-home).
+ *   3. Apply cohort buffer to telehealth per-state.
+ *   4. Apply flat 15% buffer to coaching and therapy network sums.
+ *   5. Add fixed recurring shifts to In-Home.
+ *   6. Distribute telehealth weekly hours across days of target month
+ *      (weekday = 1/6, weekend = 1/12).
+ *   7. Write demand_forecast per-day per-state (telehealth only) and
+ *      state_demand_targets per (state, month) (telehealth only).
+ *   8. Return service-line totals + cohort rollup in response payload
+ *      so the leadership-facing forecast can be built directly.
  *
- * Required secrets:
- *   METABASE_USERNAME
- *   METABASE_PASSWORD
+ * Note: state_demand_targets and demand_forecast hold telehealth only,
+ * because the other service lines are staffed by separate provider pools
+ * and don't compete for the same Jotform-submitted availability.
  *
- * Optional secrets / env:
- *   METABASE_BASELINE_CARD_ID  default 2974
- *   METABASE_HISTORY_CARD_ID   default 3011
- *   VISITS_PER_HOUR            default 2 (two appointment slots per clinical hour)
+ * Required secrets: METABASE_USERNAME, METABASE_PASSWORD
+ *
+ * Optional env: METABASE_BASELINE_CARD_ID (default 2974)
  *
  * Query params:
  *   ?target_month=YYYY-MM-01    default = first day of next calendar month
- *   ?baseline_card_id=N
- *   ?history_card_id=N
  *   ?dry_run=1                  compute without writing
+ *   ?inspect=1                  dump CSV column headers + first rows
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { toAbbreviation } from '../_shared/stateNormalization.ts';
 
 const METABASE_URL = 'https://metabase.vitablehealth.com';
-const VISITS_PER_HOUR = Number(Deno.env.get('VISITS_PER_HOUR') ?? '2');
+
+const TELEHEALTH_CARD = Number(Deno.env.get('METABASE_BASELINE_CARD_ID') ?? '2974');
+const COACHING_CARD = Number(Deno.env.get('METABASE_COACHING_CARD_ID') ?? '2973');
+const THERAPY_CARD = Number(Deno.env.get('METABASE_THERAPY_CARD_ID') ?? '2971');
+const INHOME_CARD = Number(Deno.env.get('METABASE_INHOME_CARD_ID') ?? '2972');
+
+// Telehealth cohort assignments and buffers
+const COHORT_STATES: Record<string, Set<string>> = {
+  Core:      new Set(['PA', 'NJ']),
+  Growth:    new Set(['TX', 'OH', 'FL']),
+  'MD-Only': new Set(['GA', 'IN', 'MO', 'TN', 'SC', 'MS', 'AL']),
+  DMV:       new Set(['DC', 'MD', 'VA']),
+  DE:        new Set(['DE']),
+};
+
+const COHORT_BUFFER: Record<string, number> = {
+  Core:      0.175,
+  Growth:    0.20,
+  'MD-Only': 0.20,
+  DMV:       0.15,
+  DE:        0.15,
+  '021':     0.15,
+};
+
+const COACHING_BUFFER = 0.15;
+const THERAPY_BUFFER = 0.15;
+const IN_HOME_BUFFER = 0.0;
+
+// In-Home recurring shifts not tracked in Metabase (weekly hours)
+const IN_HOME_FIXED: Record<string, number> = {
+  DE: 3.0,        // Sara Kamara recurring Thu 9-12
+  NJ: 2 / 4.33,   // one 2-hr shift/month
+  IL: 2 / 4.33,
+  OH: 2 / 4.33,
+  TX: 2 / 4.33,
+};
+
+const WEEKS_PER_MONTH = 4.33;
+
+function cohortFor(state: string): string {
+  for (const [name, members] of Object.entries(COHORT_STATES)) {
+    if (members.has(state)) return name;
+  }
+  return '021';
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -79,12 +145,6 @@ Deno.serve(async (req: Request) => {
   }
 
   const url = new URL(req.url);
-  const baselineCardId = Number(
-    url.searchParams.get('baseline_card_id') ?? Deno.env.get('METABASE_BASELINE_CARD_ID') ?? '2974',
-  );
-  const historyCardId = Number(
-    url.searchParams.get('history_card_id') ?? Deno.env.get('METABASE_HISTORY_CARD_ID') ?? '3011',
-  );
   const dryRun = url.searchParams.get('dry_run') === '1';
   const inspect = url.searchParams.get('inspect') === '1';
   const targetMonth = url.searchParams.get('target_month') ?? defaultNextMonth();
@@ -94,157 +154,155 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // ── 1. Auth ───────────────────────────────────────────────────────
     const token = await getMetabaseToken(username, password);
 
-    // ── inspect mode: dump column headers + first rows, no parsing ────
+    // Pull all four service-line cards in parallel
+    const [teleCsv, coachCsv, therapyCsv, inHomeCsv] = await Promise.all([
+      downloadCardCsv(token, TELEHEALTH_CARD),
+      downloadCardCsvSafe(token, COACHING_CARD),
+      downloadCardCsvSafe(token, THERAPY_CARD),
+      downloadCardCsvSafe(token, INHOME_CARD),
+    ]);
+
     if (inspect) {
-      const baselineCsv = await downloadCardCsv(token, baselineCardId);
-      const historyCsv = await downloadCardCsv(token, historyCardId);
-      const baselineRows = parseCSV(baselineCsv);
-      const historyRows = parseCSV(historyCsv);
       return json({
         ok: true,
         mode: 'inspect',
-        baseline: {
-          card_id: baselineCardId,
-          row_count: baselineRows.length,
-          columns: baselineRows[0] ? Object.keys(baselineRows[0]) : [],
-          first_3: baselineRows.slice(0, 3),
-        },
-        history: {
-          card_id: historyCardId,
-          row_count: historyRows.length,
-          columns: historyRows[0] ? Object.keys(historyRows[0]) : [],
-          first_3: historyRows.slice(0, 3),
+        cards: {
+          telehealth: cardSnapshot(TELEHEALTH_CARD, teleCsv),
+          coaching:   cardSnapshot(COACHING_CARD, coachCsv),
+          therapy:    cardSnapshot(THERAPY_CARD, therapyCsv),
+          in_home:    cardSnapshot(INHOME_CARD, inHomeCsv),
         },
       });
     }
 
-    // ── 2. Pull baseline (weekly demand forecast) ─────────────────────
-    // Card 2974 returns ONE row per state with current weekly demand. There
-    // is no week column — it's a snapshot. We treat that weekly demand as
-    // constant across all weeks of the target month.
-    const baselineCsv = await downloadCardCsv(token, baselineCardId);
-    const baselineRows = parseCSV(baselineCsv);
-    if (baselineRows.length === 0) {
-      return json({ error: `Card ${baselineCardId} returned no rows` }, 422);
+    const issues: Record<string, Record<string, number>> = {
+      telehealth: {}, coaching: {}, therapy: {}, in_home: {},
+    };
+
+    // Parse each card. Card values are weekly hours of provider availability.
+    const teleByState   = parseStateHours(teleCsv,    issues.telehealth);
+    const coachByState  = parseStateHours(coachCsv,   issues.coaching);
+    const therapyByState= parseStateHours(therapyCsv, issues.therapy);
+    const inHomeByState = parseStateHours(inHomeCsv,  issues.in_home);
+
+    if (teleByState.size === 0) {
+      return json({ error: `Telehealth card ${TELEHEALTH_CARD} returned no rows` }, 422);
     }
 
-    const weeklyDemandByState = new Map<string, number>(); // state → weekly visits
-    const activeMembersByState = new Map<string, number>(); // state → active members
-    const baselineIssues: Record<string, number> = {};
-    for (const r of baselineRows) {
-      const stateRaw = col(r, 'state', 'State', 'service_state');
-      const visitsRaw = col(
-        r,
-        'weekly_demand', 'Weekly Demand',
-        'projected_visits', 'forecasted_visits', 'forecast',
-        'visits', 'Visits', 'count', 'Count', 'sum', 'Sum',
-      );
-      const membersRaw = col(
-        r,
-        'active_members', 'Active Members',
-        'Active Members Count by Active State - Appointment State → Distinct values of Member ID',
-        'distinct values of member id',
-      );
-      if (!stateRaw || !visitsRaw) { bump(baselineIssues, 'missing_field'); continue; }
-      const abbr = toAbbreviation(stateRaw);
-      if (!abbr) { bump(baselineIssues, 'unknown_state'); continue; }
-      const v = Number(visitsRaw.replace(/[^0-9.\-]/g, ''));
-      if (!Number.isFinite(v) || v < 0) { bump(baselineIssues, 'unparseable_visits'); continue; }
-      weeklyDemandByState.set(abbr, v);
-      const m = Number(String(membersRaw).replace(/[^0-9.\-]/g, ''));
-      if (Number.isFinite(m)) activeMembersByState.set(abbr, m);
+    // ── Telehealth: apply cohort buffer per state ─────────────────────
+    type TelehealthRow = {
+      raw: number;
+      adjusted: number;
+      cohort: string;
+      buffer: number;
+    };
+    const teleAdjusted = new Map<string, TelehealthRow>();
+    for (const [state, raw] of teleByState) {
+      const cohort = cohortFor(state);
+      const buffer = COHORT_BUFFER[cohort];
+      teleAdjusted.set(state, {
+        raw,
+        adjusted: raw * (1 + buffer),
+        cohort,
+        buffer,
+      });
     }
 
-    // ── 3. Pull history (current-period visit count) ──────────────────
-    // Card 3011 currently returns ONE row per state with a count, no month
-    // column. Without month-over-month data we can't compute CAGR — leave
-    // the multiplier at 1.0 unless the caller supplies overrides via
-    // ?multipliers=CA:1.25,TX:1.10.
-    const historyCsv = await downloadCardCsv(token, historyCardId);
-    const historyRows = parseCSV(historyCsv);
-    const historicalCountByState = new Map<string, number>();
-    const historyIssues: Record<string, number> = {};
-    for (const r of historyRows) {
-      const stateRaw = col(r, 'state', 'State', 'service_state');
-      const countRaw = col(
-        r, 'count', 'Count', 'completed_visits', 'Completed Visits',
-        'visits', 'Visits', 'sum', 'Sum',
-      );
-      if (!stateRaw || !countRaw) { bump(historyIssues, 'missing_field'); continue; }
-      const abbr = toAbbreviation(stateRaw);
-      if (!abbr) { bump(historyIssues, 'unknown_state'); continue; }
-      const v = Number(countRaw.replace(/[^0-9.\-]/g, ''));
-      if (!Number.isFinite(v) || v < 0) { bump(historyIssues, 'unparseable_count'); continue; }
-      historicalCountByState.set(abbr, v);
+    // ── Cohort rollup ─────────────────────────────────────────────────
+    type CohortAggregate = {
+      raw_weekly_hrs: number;
+      adjusted_weekly_hrs: number;
+      daily_target_hrs: number;
+      buffer_pct: number;
+      states: string[];
+    };
+    const cohortNames = Object.keys(COHORT_BUFFER);
+    const cohortRollup: Record<string, CohortAggregate> = {};
+    for (const c of cohortNames) {
+      cohortRollup[c] = {
+        raw_weekly_hrs: 0,
+        adjusted_weekly_hrs: 0,
+        daily_target_hrs: 0,
+        buffer_pct: COHORT_BUFFER[c],
+        states: [],
+      };
+    }
+    for (const [state, t] of teleAdjusted) {
+      cohortRollup[t.cohort].raw_weekly_hrs += t.raw;
+      cohortRollup[t.cohort].adjusted_weekly_hrs += t.adjusted;
+      cohortRollup[t.cohort].states.push(state);
+    }
+    for (const c of cohortNames) {
+      cohortRollup[c].raw_weekly_hrs = round2(cohortRollup[c].raw_weekly_hrs);
+      cohortRollup[c].adjusted_weekly_hrs = round2(cohortRollup[c].adjusted_weekly_hrs);
+      // Daily target uses the documented divisor of 6 (weekday=1/6, weekend day=1/12)
+      cohortRollup[c].daily_target_hrs = round2(cohortRollup[c].adjusted_weekly_hrs / 6);
+      cohortRollup[c].states.sort();
     }
 
-    // ── 4. Per-state growth multipliers ───────────────────────────────
-    // Without time-series history we default to 1.0 across the board and
-    // accept manual overrides via ?multipliers=AA:1.25,BB:1.125,...
-    const overrideRaw = url.searchParams.get('multipliers') ?? '';
-    const overrideMap = new Map<string, number>();
-    for (const part of overrideRaw.split(',')) {
-      const m = part.match(/^([A-Z]{2}):([0-9.]+)$/);
-      if (m) {
-        const n = Number(m[2]);
-        if (Number.isFinite(n) && n > 0) overrideMap.set(m[1].toUpperCase(), n);
-      }
-    }
+    // ── Service-line totals ───────────────────────────────────────────
+    const telehealthRaw = sumValues(teleByState);
+    const telehealthAdj = sumMapBy(teleAdjusted, t => t.adjusted);
 
-    const multiplierByState = new Map<string, { multiplier: number; tier: string }>();
-    for (const state of weeklyDemandByState.keys()) {
-      if (overrideMap.has(state)) {
-        const m = overrideMap.get(state)!;
-        const tier = m > 1.20 ? 'explosive_override'
-                  : m > 1.05 ? 'growing_override'
-                  : 'override';
-        multiplierByState.set(state, { multiplier: m, tier });
-      } else {
-        multiplierByState.set(state, { multiplier: 1.0, tier: 'default_no_history' });
-      }
-    }
+    const coachingRaw = sumValues(coachByState);
+    const coachingAdj = coachingRaw * (1 + COACHING_BUFFER);
 
-    // ── 5+6. Distribute weekly forecast over target month days ────────
-    const states = Array.from(weeklyDemandByState.keys()).sort();
+    const therapyRaw = sumValues(therapyByState);
+    const therapyAdj = therapyRaw * (1 + THERAPY_BUFFER);
+
+    // In-Home: card values + fixed recurring shifts (no buffer)
+    const inHomeMerged = new Map<string, number>(inHomeByState);
+    for (const [state, fixed] of Object.entries(IN_HOME_FIXED)) {
+      inHomeMerged.set(state, (inHomeMerged.get(state) ?? 0) + fixed);
+    }
+    const inHomeRaw = sumValues(inHomeMerged);
+    const inHomeAdj = inHomeRaw * (1 + IN_HOME_BUFFER);
+
+    const totalRaw = telehealthRaw + coachingRaw + therapyRaw + inHomeRaw;
+    const totalAdj = telehealthAdj + coachingAdj + therapyAdj + inHomeAdj;
+
+    const serviceLines = {
+      telehealth:  { raw_weekly_hrs: round2(telehealthRaw), adjusted_weekly_hrs: round2(telehealthAdj), buffer: 'cohort' },
+      mh_coaching: { raw_weekly_hrs: round2(coachingRaw),   adjusted_weekly_hrs: round2(coachingAdj),   buffer: COACHING_BUFFER },
+      therapy:     { raw_weekly_hrs: round2(therapyRaw),    adjusted_weekly_hrs: round2(therapyAdj),    buffer: THERAPY_BUFFER },
+      in_home:     { raw_weekly_hrs: round2(inHomeRaw),     adjusted_weekly_hrs: round2(inHomeAdj),     buffer: IN_HOME_BUFFER, by_state: Array.from(inHomeMerged.entries()).map(([s, h]) => ({ state: s, weekly_hrs: round2(h) })) },
+      total:       { raw_weekly_hrs: round2(totalRaw),      adjusted_weekly_hrs: round2(totalAdj) },
+    };
+
+    // ── Distribute telehealth weekly hours across target month days ───
+    const states = Array.from(teleAdjusted.keys()).sort();
     const monthDays = listMonthDays(targetMonth);
     const projections: Array<{
       date: string;
       state: string;
-      projected_visits: number;
+      projected_visits: number;  // legacy column name; stores hours of availability
       forecast_run_id: string;
       is_baseline: boolean;
       computed_at: string;
     }> = [];
-    const monthlyTotalByState = new Map<string, number>();
     const forecastRunId = crypto.randomUUID();
     const computedAt = new Date().toISOString();
 
     for (const state of states) {
-      const weeklyVisits = weeklyDemandByState.get(state) ?? 0;
-      const mult = multiplierByState.get(state)?.multiplier ?? 1.0;
-
+      const adj = teleAdjusted.get(state)!.adjusted;
       for (const date of monthDays) {
         const dow = new Date(date + 'T00:00:00Z').getUTCDay();
         const weight = (dow === 0 || dow === 6) ? 1 / 12 : 1 / 6;
-        const projected = round2(weeklyVisits * weight * mult);
-
         projections.push({
           date,
           state,
-          projected_visits: projected,
+          projected_visits: round2(adj * weight),
           forecast_run_id: forecastRunId,
           is_baseline: true,
           computed_at: computedAt,
         });
-        monthlyTotalByState.set(state, (monthlyTotalByState.get(state) ?? 0) + projected);
       }
     }
 
-    // ── 7. Compute state_demand_targets ───────────────────────────────
-    const targets: Array<{
+    // ── state_demand_targets (telehealth only) ────────────────────────
+    type Target = {
       state: string;
       month: string;
       monthly_visits_target: number;
@@ -253,34 +311,32 @@ Deno.serve(async (req: Request) => {
       growth_multiplier: number;
       forecast_run_id: string;
       computed_at: string;
-    }> = [];
-
+    };
+    const targets: Target[] = [];
     for (const state of states) {
-      const monthlyVisits = Math.max(0, Math.round(monthlyTotalByState.get(state) ?? 0));
-      const dailyTargetRaw = (monthlyVisits / 20) * 1.5;
-      const dailyTargetSlots = Math.max(5, Math.round(dailyTargetRaw));
-      // Demand hours = visits / VISITS_PER_HOUR (2 slots per clinical hour).
-      // This is the demand-side figure for fill-rate; daily_target_slots
-      // remains the SLA capacity floor and is independent.
-      const monthlyHoursTarget = round2(monthlyVisits / VISITS_PER_HOUR);
-      const mult = multiplierByState.get(state)?.multiplier ?? 1.0;
-
+      const t = teleAdjusted.get(state)!;
+      // monthly_hours_target = adjusted_weekly_hours × 4.33 (weeks/month).
+      // monthly_visits_target stores the SAME value (column name is legacy:
+      // both fields denote monthly hours of provider availability).
+      const monthlyHours = round2(t.adjusted * WEEKS_PER_MONTH);
+      const dailyTargetSlots = Math.max(5, Math.round((monthlyHours / 20) * 1.5));
       targets.push({
         state,
         month: targetMonth,
-        monthly_visits_target: monthlyVisits,
+        monthly_visits_target: Math.round(monthlyHours),
+        monthly_hours_target: monthlyHours,
         daily_target_slots: dailyTargetSlots,
-        monthly_hours_target: monthlyHoursTarget,
-        growth_multiplier: mult,
+        // We keep the growth_multiplier column populated with the cohort
+        // buffer (1 + buffer_pct) so callers can see what was applied.
+        growth_multiplier: 1 + t.buffer,
         forecast_run_id: forecastRunId,
         computed_at: computedAt,
       });
     }
 
-    // ── 8. Write to Supabase (unless dry run) ─────────────────────────
+    // ── Write to Supabase ─────────────────────────────────────────────
     let demoted = 0;
     if (!dryRun) {
-      // Demote previous baseline rows
       const { data: demoteData, error: demoteErr } = await supabase
         .from('demand_forecast')
         .update({ is_baseline: false })
@@ -289,7 +345,6 @@ Deno.serve(async (req: Request) => {
       if (demoteErr) throw new Error(`Demote failed: ${demoteErr.message}`);
       demoted = demoteData?.length ?? 0;
 
-      // Insert demand_forecast in chunks
       const CHUNK = 500;
       for (let i = 0; i < projections.length; i += CHUNK) {
         const chunk = projections.slice(i, i + CHUNK);
@@ -297,7 +352,6 @@ Deno.serve(async (req: Request) => {
         if (error) throw new Error(`demand_forecast insert failed at ${i}: ${error.message}`);
       }
 
-      // Upsert state_demand_targets
       const { error: tErr } = await supabase
         .from('state_demand_targets')
         .upsert(targets, { onConflict: 'state,month' });
@@ -308,30 +362,34 @@ Deno.serve(async (req: Request) => {
       ok: true,
       forecast_run_id: forecastRunId,
       target_month: targetMonth,
-      visits_per_hour: VISITS_PER_HOUR,
+      service_lines: serviceLines,
+      telehealth_cohort_rollup: cohortNames.map(c => ({ cohort: c, ...cohortRollup[c] })),
       states: states.length,
       projection_rows: projections.length,
       target_rows: targets.length,
       previous_baseline_demoted: demoted,
       dry_run: dryRun,
-      issues: { baseline: baselineIssues, history: historyIssues },
-      state_summary: states.map(s => ({
-        state: s,
-        tier: multiplierByState.get(s)?.tier,
-        multiplier: multiplierByState.get(s)?.multiplier,
-        weekly_demand: weeklyDemandByState.get(s),
-        active_members: activeMembersByState.get(s),
-        historical_count: historicalCountByState.get(s) ?? null,
-        monthly_visits_target: targets.find(t => t.state === s)?.monthly_visits_target,
-        daily_target_slots: targets.find(t => t.state === s)?.daily_target_slots,
-      })),
+      issues,
+      state_summary: states.map(s => {
+        const t = teleAdjusted.get(s)!;
+        const target = targets.find(x => x.state === s)!;
+        return {
+          state: s,
+          cohort: t.cohort,
+          buffer_pct: t.buffer,
+          raw_weekly_hrs: round2(t.raw),
+          adjusted_weekly_hrs: round2(t.adjusted),
+          monthly_hours_target: target.monthly_hours_target,
+          daily_target_slots: target.daily_target_slots,
+        };
+      }),
     });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });
 
-// ── Metabase helpers ──────────────────────────────────────────────────────
+// ── Card helpers ──────────────────────────────────────────────────────────
 async function getMetabaseToken(username: string, password: string): Promise<string> {
   const res = await fetch(`${METABASE_URL}/api/session`, {
     method: 'POST',
@@ -351,6 +409,65 @@ async function downloadCardCsv(token: string, cardId: number): Promise<string> {
   });
   if (!res.ok) throw new Error(`CSV download (card ${cardId}) ${res.status}: ${await res.text()}`);
   return res.text();
+}
+
+async function downloadCardCsvSafe(token: string, cardId: number): Promise<string> {
+  try {
+    return await downloadCardCsv(token, cardId);
+  } catch (e) {
+    console.warn(`Card ${cardId} pull failed:`, e instanceof Error ? e.message : String(e));
+    return '';
+  }
+}
+
+function cardSnapshot(cardId: number, csv: string) {
+  const rows = parseCSV(csv);
+  return {
+    card_id: cardId,
+    row_count: rows.length,
+    columns: rows[0] ? Object.keys(rows[0]) : [],
+    first_3: rows.slice(0, 3),
+  };
+}
+
+/**
+ * Parse a Metabase card CSV into a Map<state-abbr, weekly_hours>. Cards
+ * use the column "Target Hrs" (or backwards-compat "Weekly Demand"). The
+ * value is weekly hours of provider availability, NOT visits.
+ */
+function parseStateHours(csv: string, issues: Record<string, number>): Map<string, number> {
+  const result = new Map<string, number>();
+  if (!csv) return result;
+  const rows = parseCSV(csv);
+  for (const r of rows) {
+    const stateRaw = col(r, 'State', 'state', 'service_state');
+    const hoursRaw = col(
+      r,
+      'Target Hrs', 'target_hrs', 'target hours', 'TargetHrs',
+      'Weekly Demand', 'weekly_demand', 'weekly_hours',
+      'projected_visits', 'forecasted_visits', 'forecast',
+      'visits', 'Visits', 'count', 'Count', 'sum', 'Sum',
+    );
+    if (!stateRaw || !hoursRaw) { bump(issues, 'missing_field'); continue; }
+    const abbr = toAbbreviation(stateRaw);
+    if (!abbr) { bump(issues, 'unknown_state'); continue; }
+    const v = Number(hoursRaw.replace(/[^0-9.\-]/g, ''));
+    if (!Number.isFinite(v) || v < 0) { bump(issues, 'unparseable_value'); continue; }
+    result.set(abbr, v);
+  }
+  return result;
+}
+
+function sumValues(map: Map<string, number>): number {
+  let s = 0;
+  for (const v of map.values()) s += v;
+  return s;
+}
+
+function sumMapBy<T>(map: Map<string, T>, picker: (t: T) => number): number {
+  let s = 0;
+  for (const v of map.values()) s += picker(v);
+  return s;
 }
 
 // ── CSV ───────────────────────────────────────────────────────────────────
@@ -399,7 +516,7 @@ function col(row: Row, ...candidates: string[]): string {
 function defaultNextMonth(): string {
   const now = new Date();
   const y = now.getUTCFullYear();
-  const m = now.getUTCMonth() + 1; // 1..12, current month
+  const m = now.getUTCMonth() + 1;
   const ny = m === 12 ? y + 1 : y;
   const nm = m === 12 ? 1 : m + 1;
   return `${ny}-${String(nm).padStart(2, '0')}-01`;

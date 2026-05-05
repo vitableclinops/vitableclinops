@@ -2,6 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import type { ClinOpsTables } from '@/integrations/supabase/clinopsTypes';
 
+// NOTE on units: state_demand_targets.monthly_visits_target and
+// monthly_hours_target both store the SAME number — monthly hours of
+// provider availability needed (= adjusted_weekly_hours × 4.33). The
+// "visits" name is legacy. Per ClinOps methodology, 1 appointment ≈
+// 1 hour of provider availability (30-min appt + 30-min SLA buffer),
+// so the values are numerically equivalent.
 export type StateDemandRow = ClinOpsTables<'state_demand_targets'>;
 
 export interface ScheduleDecisionRow {
@@ -111,8 +117,10 @@ export function useMonthlyForecastSummary(month: string): {
 
   if (!demand.data || !decisions.data) return { summary: null, loading };
 
-  const totalDemandVisits = demand.data.reduce((s, r) => s + (r.monthly_visits_target ?? 0), 0);
+  // Both columns hold the same value (hours of provider availability); we
+  // use monthly_hours_target as the canonical figure.
   const totalDemandHours = demand.data.reduce((s, r) => s + Number(r.monthly_hours_target ?? 0), 0);
+  const totalDemandVisits = totalDemandHours;
 
   let totalAcceptedHours = 0;
   let totalDeclinedHours = 0;

@@ -81,10 +81,10 @@ const MonthlyForecastPage = () => {
     downloadCSV(
       sortedDemand.map(r => ({
         state: r.state,
-        monthly_visits_target: r.monthly_visits_target,
         monthly_hours_target: Number(r.monthly_hours_target).toFixed(1),
+        weekly_hours_target: (Number(r.monthly_hours_target) / 4.33).toFixed(1),
         daily_target_slots: r.daily_target_slots,
-        growth_multiplier: Number(r.growth_multiplier).toFixed(2),
+        cohort_buffer_pct: ((Number(r.growth_multiplier) - 1) * 100).toFixed(1),
       })),
       `demand_forecast_${month}.csv`,
     );
@@ -143,22 +143,25 @@ const MonthlyForecastPage = () => {
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              Reading from the scheduling Supabase project (<code>bbquooftytwprllipcsb</code>).
-              Demand from <code>state_demand_targets</code>; recommended hours from
-              <code> schedule_submissions</code> after the evaluator run.
+              Demand values are <strong>monthly hours of provider availability</strong> needed
+              (≈ adjusted weekly hours × 4.33). Cohort buffers are applied in
+              <code> compute-demand-forecast</code>: Core 17.5%, Growth 20%, MD-Only 20%, DMV/DE/021 15%.
+              Recommended hours come from <code>schedule_submissions</code> after the evaluator run.
             </AlertDescription>
           </Alert>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KpiCard
-              label="Network demand (visits)"
-              value={summary ? formatNumber(summary.totalDemandVisits) : '—'}
-              loading={loading}
-            />
-            <KpiCard
-              label="Demand hours target"
+              label="Network demand hours"
               value={summary ? formatNumber(summary.totalDemandHours, 0) : '—'}
               loading={loading}
+              footer={summary ? `≈ ${(summary.totalDemandHours / 4.33).toFixed(0)} hrs/wk` : undefined}
+            />
+            <KpiCard
+              label="Weekly target hrs"
+              value={summary ? `${(summary.totalDemandHours / 4.33).toFixed(0)}` : '—'}
+              loading={loading}
+              footer="provider availability needed"
             />
             <KpiCard
               label="Accepted hours"
@@ -255,27 +258,28 @@ const MonthlyForecastPage = () => {
                         <thead className="text-xs uppercase text-muted-foreground border-b">
                           <tr>
                             <th className="text-left py-2 px-2 font-medium">State</th>
-                            <th className="text-right py-2 px-2 font-medium">Monthly visits</th>
-                            <th className="text-right py-2 px-2 font-medium">Hours target</th>
+                            <th className="text-right py-2 px-2 font-medium">Monthly hrs</th>
+                            <th className="text-right py-2 px-2 font-medium">Weekly hrs</th>
                             <th className="text-right py-2 px-2 font-medium">Daily slots</th>
-                            <th className="text-right py-2 px-2 font-medium">Growth ×</th>
+                            <th className="text-right py-2 px-2 font-medium">Cohort buffer</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y">
-                          {sortedDemand.map(row => (
-                            <tr key={`${row.state}-${row.month}`} className="hover:bg-muted/30">
-                              <td className="py-2 px-2 font-medium">{row.state}</td>
-                              <td className="py-2 px-2 text-right tabular-nums">{formatNumber(row.monthly_visits_target)}</td>
-                              <td className="py-2 px-2 text-right tabular-nums">{formatNumber(Number(row.monthly_hours_target), 0)}</td>
-                              <td className="py-2 px-2 text-right tabular-nums">{row.daily_target_slots}</td>
-                              <td className="py-2 px-2 text-right tabular-nums">
-                                {Number(row.growth_multiplier).toFixed(2)}
-                                {Number(row.growth_multiplier) !== 1 && (
-                                  <span className="text-xs text-muted-foreground ml-1">×</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                          {sortedDemand.map(row => {
+                            const buffer = Number(row.growth_multiplier);
+                            const bufferPct = ((buffer - 1) * 100).toFixed(1);
+                            return (
+                              <tr key={`${row.state}-${row.month}`} className="hover:bg-muted/30">
+                                <td className="py-2 px-2 font-medium">{row.state}</td>
+                                <td className="py-2 px-2 text-right tabular-nums">{formatNumber(Number(row.monthly_hours_target), 0)}</td>
+                                <td className="py-2 px-2 text-right tabular-nums">{(Number(row.monthly_hours_target) / 4.33).toFixed(1)}</td>
+                                <td className="py-2 px-2 text-right tabular-nums">{row.daily_target_slots}</td>
+                                <td className="py-2 px-2 text-right tabular-nums">
+                                  +{bufferPct}%
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
