@@ -145,7 +145,8 @@ Deno.serve(async (req: Request) => {
 
       for (const sub of subs) {
         try {
-          const parsed = parseSubmission(sub);
+          const submittedDate = new Date(jotformDateToIso(sub.created_at));
+          const parsed = parseSubmission(sub, submittedDate);
 
           if (!parsed.targetMonth) {
             counters.skipped_no_target_month++;
@@ -195,11 +196,22 @@ Deno.serve(async (req: Request) => {
 
           // The schedule_submissions schema has no first-class columns for
           // requested_states / requested_hours / email / match_confidence, so
-          // we stuff them into parsed_shifts alongside the per-day shifts.
+          // we stuff them into parsed_shifts alongside the per-widget data.
           const parsedShiftsPayload = {
             requested_states: parsed.states,
             requested_hours_total: parsed.totalHours,
-            shifts: parsed.shifts,
+            shift_types: parsed.shiftTypes,
+            recurring_virtual: parsed.recurringVirtual,
+            one_off_virtual: parsed.oneOffVirtual,
+            in_home_clinic: parsed.inHomeClinic,
+            unavailable_dates: parsed.unavailableDates,
+            time_off_category: parsed.timeOffCategory,
+            last_minute_ok: parsed.lastMinuteOk,
+            travel_miles: parsed.travelMiles,
+            comments: parsed.comments,
+            feedback: parsed.feedback,
+            nps: parsed.nps,
+            attestations: parsed.attestations,
             email: parsed.email,
             match_confidence: confidence,
           };
@@ -258,88 +270,108 @@ type ParsedSubmission = {
   targetMonth: string | null; // YYYY-MM-01
   totalHours: number | null;
   states: string[];
-  shifts: Array<Record<string, unknown>>;
+  shiftTypes: string[];
+  recurringVirtual: unknown;
+  oneOffVirtual: unknown;
+  inHomeClinic: unknown;
+  unavailableDates: unknown;
+  timeOffCategory: string | null;
+  lastMinuteOk: boolean | null;
+  travelMiles: number | null;
+  comments: string | null;
+  feedback: string | null;
+  nps: number | null;
+  attestations: string[];
 };
 
 /**
- * Heuristic field mapper. Looks at each answer's name/text to figure out
- * which field it represents. Run with ?discover=1 once to see the actual
- * names and tighten this if needed.
+ * Field mapper for Jotform 252224341308043 (Vitable Monthly Availability).
+ * Routes by exact field `name` discovered via ?discover=1.
  */
-function parseSubmission(sub: JotformSubmission): ParsedSubmission {
+function parseSubmission(sub: JotformSubmission, submittedAt: Date): ParsedSubmission {
   const out: ParsedSubmission = {
     name: null,
     email: null,
     targetMonth: null,
     totalHours: null,
     states: [],
-    shifts: [],
+    shiftTypes: [],
+    recurringVirtual: null,
+    oneOffVirtual: null,
+    inHomeClinic: null,
+    unavailableDates: null,
+    timeOffCategory: null,
+    lastMinuteOk: null,
+    travelMiles: null,
+    comments: null,
+    feedback: null,
+    nps: null,
+    attestations: [],
   };
 
   for (const ans of Object.values(sub.answers || {})) {
-    const key = `${ans.name ?? ''} ${ans.text ?? ''}`.toLowerCase();
+    const name = (ans.name ?? '').trim();
     const raw = ans.answer;
     if (raw === undefined || raw === null || raw === '') continue;
 
-    if (out.name === null && /(provider.*name|full.*name|^name$|your name)/.test(key)) {
-      out.name = composeNameAnswer(raw);
-      continue;
-    }
-
-    if (out.email === null && /email/.test(key)) {
-      out.email = typeof raw === 'string' ? raw : String(raw);
-      continue;
-    }
-
-    if (out.targetMonth === null && /(month|target.*month|availability.*month|schedule.*month|for.*month)/.test(key)) {
-      out.targetMonth = composeMonthAnswer(raw);
-      continue;
-    }
-
-    if (/state/.test(key) && !/zip|address|status/.test(key)) {
-      const vals = toArray(raw).map(v => String(v).trim().toUpperCase()).filter(Boolean);
-      out.states.push(...vals);
-      continue;
-    }
-
-    if (out.totalHours === null && /(total.*hour|hours.*requested|hours.*available|hours.*total)/.test(key)) {
-      const n = parseNumber(raw);
-      if (n !== null) out.totalHours = n;
-      continue;
-    }
-
-    if (/(monday|tuesday|wednesday|thursday|friday|saturday|sunday|shift|availability|schedule|day)/.test(key)) {
-      out.shifts.push({
-        field: ans.name ?? ans.text ?? null,
-        label: ans.text ?? null,
-        type: ans.type ?? null,
-        answer: raw,
-        pretty: ans.prettyFormat ?? null,
-      });
-    }
-  }
-
-  // If totalHours wasn't an explicit field, sum any numeric shift answers
-  if (out.totalHours === null && out.shifts.length > 0) {
-    let sum = 0;
-    let hadAny = false;
-    for (const s of out.shifts) {
-      const n = parseNumber(s.answer);
-      if (n !== null) { sum += n; hadAny = true; }
-    }
-    if (hadAny) out.totalHours = sum;
-  }
-
-  // Fallback: if we never found a target month but we did find dated shifts,
-  // use the earliest shift date's month.
-  if (out.targetMonth === null) {
-    for (const s of out.shifts) {
-      const d = composeMonthAnswer(s.answer);
-      if (d) { out.targetMonth = d; break; }
+    switch (name) {
+      case 'fullName':
+        out.name = composeNameAnswer(raw);
+        break;
+      case 'email':
+        out.email = typeof raw === 'string' ? raw : String(raw);
+        break;
+      case 'forWhich':
+        out.targetMonth = monthNameToISO(raw, submittedAt);
+        break;
+      case 'whatType':
+        out.shiftTypes = toArray(raw).map(v => String(v).trim()).filter(Boolean);
+        break;
+      case 'typeA':
+        out.recurringVirtual = raw;
+        break;
+      case 'whatDates':
+        out.oneOffVirtual = raw;
+        break;
+      case 'whatDates45':
+        out.inHomeClinic = raw;
+        break;
+      case 'whenWill':
+        out.unavailableDates = raw;
+        break;
+      case 'areThere55':
+        out.timeOffCategory = Array.isArray(raw) ? raw.join(', ') : String(raw);
+        break;
+      case 'areYou35':
+        out.lastMinuteOk = String(raw).trim().toLowerCase().startsWith('y');
+        break;
+      case 'howMany':
+        out.travelMiles = parseNumber(raw);
+        break;
+      case 'pleaseShare':
+        out.comments = String(raw);
+        break;
+      case 'pleaseShare39':
+        out.feedback = String(raw);
+        break;
+      case 'howLikely44':
+        out.nps = parseNumber(raw);
+        break;
+      case 'pleaseAttest':
+        out.attestations = toArray(raw).map(v => String(v).trim()).filter(Boolean);
+        break;
+      default:
+        break;
     }
   }
 
-  out.states = Array.from(new Set(out.states));
+  // Best-effort total hours: scan time ranges across the three shift widgets.
+  out.totalHours = computeTotalHours([
+    out.recurringVirtual,
+    out.oneOffVirtual,
+    out.inHomeClinic,
+  ]);
+
   return out;
 }
 
@@ -354,36 +386,103 @@ function composeNameAnswer(raw: unknown): string | null {
   return String(raw);
 }
 
-/** Returns first-of-month ISO date (YYYY-MM-01) or null. */
-function composeMonthAnswer(raw: unknown): string | null {
+const MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+];
+
+/**
+ * Resolves a month name (e.g. "October") to YYYY-MM-01.
+ * Year inference: pick the soonest occurrence of that month >= the submission
+ * month. So "October" submitted in May 2026 → "2026-10-01"; submitted in
+ * November 2026 → "2027-10-01".
+ */
+function monthNameToISO(raw: unknown, submittedAt: Date): string | null {
   if (raw == null) return null;
-  let d: Date | null = null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
 
-  if (typeof raw === 'string') {
-    // Handle "2026-06", "June 2026", "06/01/2026", etc.
-    const ym = raw.match(/^(\d{4})-(\d{1,2})$/);
-    if (ym) {
-      const y = ym[1];
-      const m = ym[2].padStart(2, '0');
-      return `${y}-${m}-01`;
-    }
-    const parsed = new Date(raw);
-    if (!isNaN(parsed.getTime())) d = parsed;
-  } else if (typeof raw === 'object') {
-    const r = raw as Record<string, unknown>;
-    if (r.year && r.month) {
-      const y = String(r.year).padStart(4, '0');
-      const m = String(r.month).padStart(2, '0');
-      return `${y}-${m}-01`;
-    }
-  }
-
-  if (d) {
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  // Already ISO-ish?
+  const ym = s.match(/^(\d{4})-(\d{1,2})/);
+  if (ym) {
+    const y = ym[1];
+    const m = ym[2].padStart(2, '0');
     return `${y}-${m}-01`;
   }
-  return null;
+
+  // Bare month name (or with year somewhere)
+  let monthIdx = -1;
+  for (let i = 0; i < MONTH_NAMES.length; i++) {
+    if (s.startsWith(MONTH_NAMES[i].slice(0, 3))) { monthIdx = i; break; }
+    if (s.includes(MONTH_NAMES[i])) { monthIdx = i; break; }
+  }
+  if (monthIdx === -1) return null;
+
+  // Year embedded in the answer?
+  const yMatch = s.match(/(20\d{2})/);
+  let year: number;
+  if (yMatch) {
+    year = Number(yMatch[1]);
+  } else {
+    const subYear = submittedAt.getUTCFullYear();
+    const subMonth = submittedAt.getUTCMonth(); // 0-indexed
+    year = monthIdx >= subMonth ? subYear : subYear + 1;
+  }
+  const m = String(monthIdx + 1).padStart(2, '0');
+  return `${year}-${m}-01`;
+}
+
+/**
+ * Best-effort hours calculation by scanning widget answers for time ranges
+ * like "9:00 AM - 1:00 PM", "09:00-13:00", "9am-1pm", etc.
+ * Returns null if no ranges are found.
+ */
+function computeTotalHours(widgetAnswers: unknown[]): number | null {
+  let total = 0;
+  let any = false;
+
+  const text = widgetAnswers
+    .map(a => (a == null ? '' : typeof a === 'string' ? a : JSON.stringify(a)))
+    .join(' \n ')
+    .toLowerCase();
+
+  // Match "H[:MM] [am|pm]? - H[:MM] [am|pm]?"
+  const re = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*[-–—to]+\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const startH = Number(m[1]);
+    const startMin = m[2] ? Number(m[2]) : 0;
+    const startAmPm = m[3];
+    const endH = Number(m[4]);
+    const endMin = m[5] ? Number(m[5]) : 0;
+    const endAmPm = m[6];
+    const start = to24(startH, startMin, startAmPm, endAmPm);
+    const end = to24(endH, endMin, endAmPm, startAmPm);
+    let diff = end - start;
+    if (diff < 0) diff += 24; // crosses midnight
+    if (diff > 0 && diff <= 24) {
+      total += diff;
+      any = true;
+    }
+  }
+
+  return any ? Math.round(total * 100) / 100 : null;
+}
+
+/**
+ * Convert (hour, min, ownAmPm, otherAmPm) to a 24h decimal hour.
+ * If ownAmPm is missing, infer from other side or default to AM for hours
+ * 1-7 (likely PM) — actually just default to AM and let the diff math handle
+ * the wrap.
+ */
+function to24(h: number, min: number, own: string | undefined, other: string | undefined): number {
+  let ampm = own ?? other ?? '';
+  ampm = ampm.toLowerCase();
+  let hh = h % 12;
+  if (ampm === 'pm') hh += 12;
+  if (ampm === 'am' && h === 12) hh = 0;
+  if (ampm === '' && h === 12) hh = 12; // treat bare "12" as noon
+  return hh + min / 60;
 }
 
 function toArray(raw: unknown): unknown[] {
