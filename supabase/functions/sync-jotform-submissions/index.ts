@@ -365,12 +365,14 @@ function parseSubmission(sub: JotformSubmission, submittedAt: Date): ParsedSubmi
     }
   }
 
-  // Best-effort total hours: scan time ranges across the three shift widgets.
-  out.totalHours = computeTotalHours([
+  // Total hours: parse the widget JSON. Recurring entries get expanded by
+  // counting that weekday's occurrences in the target month.
+  out.totalHours = computeTotalHours(
     out.recurringVirtual,
     out.oneOffVirtual,
     out.inHomeClinic,
-  ]);
+    out.targetMonth,
+  );
 
   return out;
 }
@@ -433,35 +435,46 @@ function monthNameToISO(raw: unknown, submittedAt: Date): string | null {
 }
 
 /**
- * Best-effort hours calculation by scanning widget answers for time ranges
- * like "9:00 AM - 1:00 PM", "09:00-13:00", "9am-1pm", etc.
- * Returns null if no ranges are found.
+ * Hours calculator for the Vitable Monthly Availability form.
+ *
+ * Widget answer shapes (each is a JSON string in jotform's response):
+ *   recurring (typeA):    [{"Day of Week":"Monday","Start Time (ET)":"09:00 AM","End Time (ET)":"12:00 PM"}, ...]
+ *   one-off  (whatDates): [{"Date":"06-04-2026","Start Time (ET)":"09:00 AM","End Time (ET)":"05:00 PM"}, ...]
+ *   in-home  (whatDates45): same shape as one-off
+ *
+ * Recurring entries are weekly — we multiply by the number of times that
+ * weekday occurs in the target month. One-off entries are summed directly.
  */
-function computeTotalHours(widgetAnswers: unknown[]): number | null {
+function computeTotalHours(
+  recurring: unknown,
+  oneOff: unknown,
+  inHome: unknown,
+  targetMonth: string | null,
+): number | null {
   let total = 0;
   let any = false;
 
-  const text = widgetAnswers
-    .map(a => (a == null ? '' : typeof a === 'string' ? a : JSON.stringify(a)))
-    .join(' \n ')
-    .toLowerCase();
+  // Recurring weekly → expand across the target month
+  const recurringEntries = parseWidgetArray(recurring);
+  if (recurringEntries.length && targetMonth) {
+    for (const e of recurringEntries) {
+      const dayName = e['Day of Week'];
+      const hours = timeRangeHours(e['Start Time (ET)'], e['End Time (ET)']);
+      if (hours == null || !dayName) continue;
+      const occurrences = weekdayOccurrencesInMonth(dayName, targetMonth);
+      if (occurrences > 0) {
+        total += hours * occurrences;
+        any = true;
+      }
+    }
+  }
 
-  // Match "H[:MM] [am|pm]? - H[:MM] [am|pm]?"
-  const re = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*[-–—to]+\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const startH = Number(m[1]);
-    const startMin = m[2] ? Number(m[2]) : 0;
-    const startAmPm = m[3];
-    const endH = Number(m[4]);
-    const endMin = m[5] ? Number(m[5]) : 0;
-    const endAmPm = m[6];
-    const start = to24(startH, startMin, startAmPm, endAmPm);
-    const end = to24(endH, endMin, endAmPm, startAmPm);
-    let diff = end - start;
-    if (diff < 0) diff += 24; // crosses midnight
-    if (diff > 0 && diff <= 24) {
-      total += diff;
+  // One-off & in-home → sum directly
+  for (const widgetData of [oneOff, inHome]) {
+    for (const e of parseWidgetArray(widgetData)) {
+      const hours = timeRangeHours(e['Start Time (ET)'], e['End Time (ET)']);
+      if (hours == null) continue;
+      total += hours;
       any = true;
     }
   }
@@ -469,20 +482,60 @@ function computeTotalHours(widgetAnswers: unknown[]): number | null {
   return any ? Math.round(total * 100) / 100 : null;
 }
 
-/**
- * Convert (hour, min, ownAmPm, otherAmPm) to a 24h decimal hour.
- * If ownAmPm is missing, infer from other side or default to AM for hours
- * 1-7 (likely PM) — actually just default to AM and let the diff math handle
- * the wrap.
- */
-function to24(h: number, min: number, own: string | undefined, other: string | undefined): number {
-  let ampm = own ?? other ?? '';
-  ampm = ampm.toLowerCase();
-  let hh = h % 12;
-  if (ampm === 'pm') hh += 12;
-  if (ampm === 'am' && h === 12) hh = 0;
-  if (ampm === '' && h === 12) hh = 12; // treat bare "12" as noon
-  return hh + min / 60;
+function parseWidgetArray(raw: unknown): Record<string, string>[] {
+  if (raw == null) return [];
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (e): e is Record<string, string> => e != null && typeof e === 'object',
+  );
+}
+
+function timeRangeHours(start: string | undefined, end: string | undefined): number | null {
+  if (!start || !end) return null;
+  const s = parseTimeOfDay(start);
+  const e = parseTimeOfDay(end);
+  if (s == null || e == null) return null;
+  let diff = e - s;
+  if (diff < 0) diff += 24; // crosses midnight
+  return diff > 0 && diff <= 24 ? diff : null;
+}
+
+/** Parses "09:00 AM", "5:00 PM", "13:00" → decimal hour (0–24). */
+function parseTimeOfDay(t: string): number | null {
+  const m = String(t).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?\s*$/i);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = Number(m[2]);
+  const ampm = (m[3] ?? '').toUpperCase();
+  if (ampm === 'AM') {
+    if (h === 12) h = 0;
+  } else if (ampm === 'PM') {
+    if (h !== 12) h += 12;
+  }
+  if (h < 0 || h > 24 || min < 0 || min >= 60) return null;
+  return h + min / 60;
+}
+
+const DAY_TO_INDEX: Record<string, number> = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
+  thursday: 4, friday: 5, saturday: 6,
+};
+
+/** Counts how many times a given weekday occurs in a calendar month. */
+function weekdayOccurrencesInMonth(dayName: string, monthISO: string): number {
+  const dayIdx = DAY_TO_INDEX[String(dayName).trim().toLowerCase()];
+  if (dayIdx === undefined) return 0;
+  const [y, m] = monthISO.split('-').map(Number);
+  const firstWeekday = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const offset = (dayIdx - firstWeekday + 7) % 7;
+  const firstOccurrence = 1 + offset;
+  if (firstOccurrence > daysInMonth) return 0;
+  return Math.floor((daysInMonth - firstOccurrence) / 7) + 1;
 }
 
 function toArray(raw: unknown): unknown[] {
