@@ -61,9 +61,25 @@ for fn in "${FUNCTIONS[@]}"; do
   fi
   echo ""
   echo "==> Deploying $fn from $fn_dir"
-  # --no-verify-jwt is intentionally NOT passed; verify_jwt=true is the default.
-  # If a function legitimately needs to be public, configure it in supabase/config.toml.
-  supabase functions deploy "$fn" --project-ref "$PROJECT_REF"
+  # Some CLI versions ignore [functions.<name>] verify_jwt blocks in
+  # supabase/config.toml when deploying a single function, leaving JWT
+  # verification on (the default) and breaking callers that invoke with the
+  # anon key. Detect the per-function setting from config.toml ourselves and
+  # pass --no-verify-jwt explicitly when it's declared false there.
+  jwt_flag=()
+  if awk -v fn="$fn" '
+    BEGIN { in_block = 0 }
+    /^\[functions\./ {
+      in_block = ($0 == "[functions." fn "]") ? 1 : 0
+      next
+    }
+    in_block && /^[[:space:]]*verify_jwt[[:space:]]*=[[:space:]]*false/ { found = 1; exit }
+    END { exit (found ? 0 : 1) }
+  ' supabase/config.toml; then
+    jwt_flag=(--no-verify-jwt)
+    echo "    (verify_jwt=false per supabase/config.toml)"
+  fi
+  supabase functions deploy "$fn" --project-ref "$PROJECT_REF" "${jwt_flag[@]}"
 done
 
 echo ""
