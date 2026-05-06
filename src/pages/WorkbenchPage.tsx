@@ -25,6 +25,11 @@ import { Progress } from '@/components/ui/progress';
 import { downloadCSV } from '@/lib/utils';
 import { useStateCoverage } from '@/hooks/useStateCoverage';
 import {
+  useShiftRecommendations,
+  formatTime,
+  SHIFT_TYPE_LABEL,
+} from '@/hooks/useShiftRecommendations';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -43,7 +48,6 @@ import {
   useOverrideDecision,
   type DecisionStatus,
   type ProviderPublishView,
-  type ParsedShift,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
 
@@ -66,6 +70,53 @@ const formatDateTime = (iso: string | null) => {
     hour: 'numeric',
     minute: '2-digit',
   });
+};
+
+const formatShiftDate = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+};
+
+const formatDayOfWeek = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', {
+    weekday: 'short',
+    timeZone: 'UTC',
+  });
+};
+
+type CopyShift = {
+  shift_date: string;
+  start_min: number;
+  end_min: number;
+  hours: number | null;
+  shift_type: string;
+  assigned_state: string | null;
+  provider_name?: string | null;
+};
+
+const copyShiftsToClipboard = (shifts: CopyShift[]) => {
+  const lines = shifts.map(s => {
+    const day = formatDayOfWeek(s.shift_date);
+    const date = formatShiftDate(s.shift_date);
+    const start = formatTime(s.start_min);
+    const end = formatTime(s.end_min);
+    const state = s.assigned_state ?? '';
+    const type = SHIFT_TYPE_LABEL[s.shift_type] ?? s.shift_type;
+    const prefix = s.provider_name ? `${s.provider_name}\t` : '';
+    return `${prefix}${day} ${date}\t${start}\t${end}\t${type}\t${state}`;
+  });
+  const text = lines.join('\n');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(
+      () => toast.success(`Copied ${shifts.length} shift${shifts.length === 1 ? '' : 's'}`),
+      () => toast.error('Could not copy to clipboard'),
+    );
+  }
 };
 
 const formatHours = (n: number | null | undefined) =>
@@ -242,11 +293,10 @@ const WorkbenchPage = () => {
     });
   };
 
-  const drillShifts: ParsedShift[] = useMemo(() => {
-    if (!drillRow?.submission?.parsed_shifts) return [];
-    const raw = drillRow.submission.parsed_shifts;
-    return Array.isArray(raw) ? raw : [];
-  }, [drillRow]);
+  const { data: drillShifts = [] } = useShiftRecommendations(
+    month,
+    drillRow?.provider_id ?? null,
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -302,6 +352,7 @@ const WorkbenchPage = () => {
           <Tabs defaultValue="publish">
             <TabsList>
               <TabsTrigger value="publish">Monthly Publish</TabsTrigger>
+              <TabsTrigger value="shifts">All Shifts</TabsTrigger>
               <TabsTrigger value="state">State Coverage</TabsTrigger>
             </TabsList>
 
@@ -519,6 +570,10 @@ const WorkbenchPage = () => {
           </Card>
             </TabsContent>
 
+            <TabsContent value="shifts" className="space-y-6 mt-4">
+              <AllShiftsPanel month={month} />
+            </TabsContent>
+
             <TabsContent value="state" className="space-y-6 mt-4">
               <StateCoveragePanel month={month} />
             </TabsContent>
@@ -565,34 +620,59 @@ const WorkbenchPage = () => {
               )}
 
               <div>
-                <div className="text-xs font-medium text-muted-foreground mb-2">
-                  Submitted shifts ({drillShifts.length})
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    Shifts to publish ({drillShifts.length}) — times in ET
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={!drillShifts.length}
+                    onClick={() => copyShiftsToClipboard(drillShifts)}
+                  >
+                    Copy
+                  </Button>
                 </div>
                 {drillShifts.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No parsed shifts.</div>
+                  <div className="text-sm text-muted-foreground">
+                    No shifts proposed for this provider yet.
+                  </div>
                 ) : (
-                  <div className="border rounded-md max-h-64 overflow-y-auto">
+                  <div className="border rounded-md max-h-72 overflow-y-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Date</TableHead>
-                          <TableHead>Time</TableHead>
+                          <TableHead>Day</TableHead>
+                          <TableHead>Start (ET)</TableHead>
+                          <TableHead>End (ET)</TableHead>
                           <TableHead>Type</TableHead>
                           <TableHead>State</TableHead>
-                          <TableHead className="text-right">Hours</TableHead>
+                          <TableHead className="text-right">Hrs</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {drillShifts.map((s, i) => (
-                          <TableRow key={i}>
-                            <TableCell className="text-xs">{s.date ?? '—'}</TableCell>
-                            <TableCell className="text-xs">
-                              {s.start_time ?? '—'} – {s.end_time ?? '—'}
+                        {drillShifts.map(s => (
+                          <TableRow key={s.id}>
+                            <TableCell className="text-xs whitespace-nowrap">
+                              {formatShiftDate(s.shift_date)}
                             </TableCell>
-                            <TableCell className="text-xs">{s.shift_type ?? '—'}</TableCell>
-                            <TableCell className="text-xs">{s.state ?? '—'}</TableCell>
+                            <TableCell className="text-xs">
+                              {formatDayOfWeek(s.shift_date)}
+                            </TableCell>
+                            <TableCell className="text-xs whitespace-nowrap tabular-nums">
+                              {formatTime(s.start_min)}
+                            </TableCell>
+                            <TableCell className="text-xs whitespace-nowrap tabular-nums">
+                              {formatTime(s.end_min)}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {SHIFT_TYPE_LABEL[s.shift_type] ?? s.shift_type}
+                            </TableCell>
+                            <TableCell className="text-xs">{s.assigned_state ?? '—'}</TableCell>
                             <TableCell className="text-right text-xs tabular-nums">
-                              {s.hours ?? '—'}
+                              {Number(s.hours ?? 0).toFixed(1)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -634,6 +714,189 @@ const WorkbenchPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+};
+
+const AllShiftsPanel = ({ month }: { month: string }) => {
+  const { data: shifts = [], isLoading } = useShiftRecommendations(month);
+  const [providerFilter, setProviderFilter] = useState('');
+  const [stateFilter, setStateFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+
+  const publishedOnly = useMemo(
+    () => shifts.filter(s => s.recommendation === 'publish'),
+    [shifts],
+  );
+
+  const states = useMemo(() => {
+    const set = new Set<string>();
+    publishedOnly.forEach(s => s.assigned_state && set.add(s.assigned_state));
+    return Array.from(set).sort();
+  }, [publishedOnly]);
+
+  const types = useMemo(() => {
+    const set = new Set<string>();
+    publishedOnly.forEach(s => s.shift_type && set.add(s.shift_type));
+    return Array.from(set).sort();
+  }, [publishedOnly]);
+
+  const filtered = useMemo(() => {
+    const q = providerFilter.trim().toLowerCase();
+    return publishedOnly.filter(s => {
+      if (q && !(s.provider_name ?? '').toLowerCase().includes(q)) return false;
+      if (stateFilter !== 'all' && s.assigned_state !== stateFilter) return false;
+      if (stateFilter === '__none__' && s.assigned_state) return false;
+      if (typeFilter !== 'all' && s.shift_type !== typeFilter) return false;
+      return true;
+    });
+  }, [publishedOnly, providerFilter, stateFilter, typeFilter]);
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort(
+      (a, b) =>
+        a.shift_date.localeCompare(b.shift_date) ||
+        (a.provider_name ?? '').localeCompare(b.provider_name ?? '') ||
+        a.start_min - b.start_min,
+    );
+  }, [filtered]);
+
+  const totalHours = useMemo(
+    () => sorted.reduce((acc, s) => acc + Number(s.hours ?? 0), 0),
+    [sorted],
+  );
+
+  const exportCsv = () => {
+    downloadCSV(
+      sorted.map(s => ({
+        provider: s.provider_name ?? '',
+        date: s.shift_date,
+        day: formatDayOfWeek(s.shift_date),
+        start_et: formatTime(s.start_min),
+        end_et: formatTime(s.end_min),
+        hours: Number(s.hours ?? 0).toFixed(2),
+        shift_type: SHIFT_TYPE_LABEL[s.shift_type] ?? s.shift_type,
+        state: s.assigned_state ?? '',
+      })),
+      `all-shifts-${month}.csv`,
+    );
+  };
+
+  const copyAll = () => copyShiftsToClipboard(sorted);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="text-base">
+                Accepted shifts for {formatMonthLabel(month)}
+              </CardTitle>
+              <div className="text-xs text-muted-foreground mt-1">
+                {sorted.length} shifts · {totalHours.toFixed(0)} hours · times in Eastern Time
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={copyAll} disabled={!sorted.length}>
+                Copy
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportCsv} disabled={!sorted.length}>
+                <Download className="h-4 w-4 mr-1" />
+                CSV
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 md:flex-row mt-3">
+            <Input
+              placeholder="Filter by provider"
+              value={providerFilter}
+              onChange={e => setProviderFilter(e.target.value)}
+              className="md:w-64"
+            />
+            <Select value={stateFilter} onValueChange={setStateFilter}>
+              <SelectTrigger className="md:w-40">
+                <SelectValue placeholder="All states" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All states</SelectItem>
+                <SelectItem value="__none__">No state (in-home)</SelectItem>
+                {states.map(s => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="md:w-48">
+                <SelectValue placeholder="All shift types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All shift types</SelectItem>
+                {types.map(t => (
+                  <SelectItem key={t} value={t}>
+                    {SHIFT_TYPE_LABEL[t] ?? t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2" />
+              Loading shifts
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">No shifts match.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Day</TableHead>
+                  <TableHead>Start (ET)</TableHead>
+                  <TableHead>End (ET)</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead className="text-right">Hrs</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sorted.map(s => (
+                  <TableRow key={s.id}>
+                    <TableCell className="font-medium text-sm">
+                      {s.provider_name ?? '—'}
+                    </TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">
+                      {formatShiftDate(s.shift_date)}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {formatDayOfWeek(s.shift_date)}
+                    </TableCell>
+                    <TableCell className="text-xs whitespace-nowrap tabular-nums">
+                      {formatTime(s.start_min)}
+                    </TableCell>
+                    <TableCell className="text-xs whitespace-nowrap tabular-nums">
+                      {formatTime(s.end_min)}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {SHIFT_TYPE_LABEL[s.shift_type] ?? s.shift_type}
+                    </TableCell>
+                    <TableCell className="text-xs">{s.assigned_state ?? '—'}</TableCell>
+                    <TableCell className="text-right text-xs tabular-nums">
+                      {Number(s.hours ?? 0).toFixed(1)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
