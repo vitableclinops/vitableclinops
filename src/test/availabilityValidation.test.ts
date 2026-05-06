@@ -311,6 +311,39 @@ describe('Operating hours window (9 AM-9 PM weekday, 9 AM-12 PM weekend)', () =>
     expect(result.timeline[0].startMin).toBe(960);
     expect(result.timeline[0].endMin).toBe(1080);
     expect(result.summary.hours_removed_for_operating_hours).toBe(0);
+    expect(result.outOfHoursTimeline).toHaveLength(0);
+  });
+
+  it('reports the original out-of-hours fragment for a clamped shift', () => {
+    const result = normalizeProviderAvailability({
+      identity: { name: 'Window Test' },
+      submissions: [{
+        submissionId: 'S1',
+        submittedAt: '2026-05-01T00:00:00Z',
+        intervals: [{ kind: 'one_off', date: '2026-06-01', rawStart: '8:30 AM', rawEnd: '8:30 PM' }],
+      }],
+      targetMonth: '2026-06-01',
+    });
+    expect(result.outOfHoursTimeline).toHaveLength(1);
+    expect(result.outOfHoursTimeline[0].date).toBe('2026-06-01');
+    expect(result.outOfHoursTimeline[0].startMin).toBe(510); // 8:30 AM
+    expect(result.outOfHoursTimeline[0].endMin).toBe(540);   // 9:00 AM
+  });
+
+  it('reports the entire shift as out-of-hours when fully outside the window', () => {
+    const result = normalizeProviderAvailability({
+      identity: { name: 'Window Test' },
+      submissions: [{
+        submissionId: 'S1',
+        submittedAt: '2026-05-01T00:00:00Z',
+        intervals: [{ kind: 'one_off', date: '2026-06-01', rawStart: '7:00 AM', rawEnd: '8:00 AM' }],
+      }],
+      targetMonth: '2026-06-01',
+    });
+    expect(result.timeline).toHaveLength(0);
+    expect(result.outOfHoursTimeline).toHaveLength(1);
+    expect(result.outOfHoursTimeline[0].startMin).toBe(420); // 7:00 AM
+    expect(result.outOfHoursTimeline[0].endMin).toBe(480);   // 8:00 AM
   });
 });
 
