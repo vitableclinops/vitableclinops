@@ -274,8 +274,23 @@ export default function SchedulingWorkbenchPage() {
     [telehealthRows],
   );
 
+  // Include any provider with declined hours, not just status='declined'.
+  // Partial accepts (oversupply trims, out-of-business-hours cuts) leave a
+  // submission as 'accepted' or 'partial' but still have declined_hours > 0,
+  // and ClinOps wants to see those alongside fully-declined submissions.
   const declinedRows = useMemo(
-    () => telehealthRows.filter(r => r.submission?.decision_status === 'declined'),
+    () =>
+      telehealthRows
+        .filter(
+          r =>
+            r.submission?.decision_status === 'declined' ||
+            Number(r.submission?.declined_hours ?? 0) > 0,
+        )
+        .sort(
+          (a, b) =>
+            Number(b.submission?.declined_hours ?? 0) -
+              Number(a.submission?.declined_hours ?? 0),
+        ),
     [telehealthRows],
   );
 
@@ -1688,7 +1703,7 @@ function DeclinedPanel({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No declined submissions for {formatMonthLabel(month)}.
+          No declined hours for {formatMonthLabel(month)}.
         </AlertDescription>
       </Alert>
     );
@@ -1699,14 +1714,22 @@ function DeclinedPanel({
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <CalendarX className="h-4 w-4 text-red-600" />
-          Declined submissions · {formatMonthLabel(month)}
+          Declined hours · {formatMonthLabel(month)}
         </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Every submission with declined hours — fully declined, oversupply
+          trimmed, or hours dropped for being outside operating hours
+          (9a–9p ET weekdays / 9a–12p ET weekends). The decision_notes
+          column spells out the reason.
+        </p>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Provider</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Accepted hrs</TableHead>
               <TableHead className="text-right">Declined hrs</TableHead>
               <TableHead>Submitted</TableHead>
               <TableHead>Reason</TableHead>
@@ -1720,6 +1743,12 @@ function DeclinedPanel({
                   <TableCell>
                     <div className="font-medium">{r.provider_name}</div>
                     <div className="text-xs text-muted-foreground">{r.profession ?? '—'}</div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={sub.decision_status} />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatHours(sub.accepted_hours)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatHours(sub.declined_hours)}
