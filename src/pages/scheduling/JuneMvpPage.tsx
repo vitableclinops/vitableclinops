@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import SchedulingShell from './SchedulingShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ import {
 import {
   CalendarCheck,
   CheckCircle2,
+  ChevronDown,
   CircleX,
   FileSpreadsheet,
   Loader2,
@@ -72,6 +73,7 @@ export default function JuneMvpPage() {
   const [slots, setSlots] = useState<Partial<Record<SlotKey, SlotData>>>({});
   const [parsing, setParsing] = useState<SlotKey | null>(null);
   const [filter, setFilter] = useState('');
+  const [uploadOpen, setUploadOpen] = useState(true);
   const publish = useJunePublishLocal(TARGET_MONTH);
 
   const handleFile = useCallback(async (key: SlotKey, file: File) => {
@@ -183,6 +185,10 @@ export default function JuneMvpPage() {
 
   const allReady = Boolean(slots.demand && slots.jotform);
 
+  useEffect(() => {
+    if (allReady) setUploadOpen(false);
+  }, [allReady]);
+
   return (
     <SchedulingShell>
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -207,12 +213,24 @@ export default function JuneMvpPage() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Upload className="h-4 w-4" />
-            Upload data
+        <CardHeader
+          className="cursor-pointer select-none"
+          onClick={() => setUploadOpen(o => !o)}
+        >
+          <CardTitle className="text-base flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <Upload className="h-4 w-4" />
+              Upload data
+              <span className="text-xs font-normal text-muted-foreground">
+                {Object.keys(slots).length}/{SLOT_DEFS.length} loaded
+              </span>
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${uploadOpen ? '' : '-rotate-90'}`}
+            />
           </CardTitle>
         </CardHeader>
+        {uploadOpen && (
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {SLOT_DEFS.map(def => {
@@ -257,6 +275,7 @@ export default function JuneMvpPage() {
             sources combine as a union — bring as many as you have.
           </div>
         </CardContent>
+        )}
       </Card>
 
       {!allReady && (
