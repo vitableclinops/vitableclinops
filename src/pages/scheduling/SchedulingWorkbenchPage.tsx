@@ -324,6 +324,48 @@ export default function SchedulingWorkbenchPage() {
         <SummaryCard label="Declined" value={summary.declinedCount.toString()} />
       </div>
 
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="text-sm">Shifts source</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                {override
+                  ? `Using uploaded file: ${override.fileName} · ${override.totalShifts} shift${override.totalShifts === 1 ? '' : 's'} matched to ${override.matchedProviders} provider${override.matchedProviders === 1 ? '' : 's'}`
+                  : 'Using shifts from the database. Optionally upload a Jotform availability export to view shifts directly from the submission file.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="jotform-upload"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUpload(f);
+                  e.currentTarget.value = '';
+                }}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => document.getElementById('jotform-upload')?.click()}
+              >
+                <Upload className="h-4 w-4 mr-1" />
+                {override ? 'Replace file' : 'Upload Jotform file'}
+              </Button>
+              {override && (
+                <Button size="sm" variant="ghost" onClick={() => setOverride(null)}>
+                  <X className="h-4 w-4 mr-1" />
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+
       {!isLoading && rows.length === 0 && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
