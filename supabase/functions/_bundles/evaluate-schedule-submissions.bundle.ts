@@ -1284,13 +1284,21 @@ export function collectUnavailableDates(submissions: SubmissionRow[]): string[] 
   // the group: a provider who lists 6/15 off in their first submission and
   // forgets to re-list it in a resubmission still shouldn't be scheduled
   // there. ClinOps confirmed this is the desired behavior.
+  //
+  // The Jotform "When will you be unavailable to work?" widget stores rows
+  // with `Start Date` / `End Date` columns and supports inclusive date
+  // ranges (e.g. 06-06-2026 → 06-08-2026 means three off days). We expand
+  // each range and also accept a single `Date` value as a fallback for any
+  // legacy entry shape.
   const out = new Set<string>();
   for (const sub of submissions) {
     const parsed = sub.parsed_shifts;
     if (!parsed) continue;
     for (const e of parseWidgetArray(parsed.unavailable_dates)) {
-      const d = parseFormDate(e['Date']);
-      if (d) out.add(d);
+      const start = parseFormDate(e['Start Date'] ?? e['Date']);
+      const end = parseFormDate(e['End Date']) ?? start;
+      if (!start) continue;
+      for (const d of expandDateRange(start, end ?? start)) out.add(d);
     }
   }
   return Array.from(out);
@@ -1439,6 +1447,27 @@ function parseFormDate(raw: unknown): string | null {
   return null;
 }
 
+function expandDateRange(startISO: string, endISO: string): string[] {
+  // Inclusive expansion in UTC to avoid DST drift.
+  const [sy, sm, sd] = startISO.split('-').map(Number);
+  const [ey, em, ed] = endISO.split('-').map(Number);
+  let cur = Date.UTC(sy, sm - 1, sd);
+  const last = Date.UTC(ey, em - 1, ed);
+  if (!Number.isFinite(cur) || !Number.isFinite(last) || last < cur) {
+    return [startISO];
+  }
+  const out: string[] = [];
+  const DAY = 86_400_000;
+  while (cur <= last) {
+    const d = new Date(cur);
+    out.push(
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`,
+    );
+    cur += DAY;
+  }
+  return out;
+}
+
 function sumHours(slots: ExpandedSlot[]): number {
   return slots.reduce((s, x) => s + (x.endMin - x.startMin) / 60, 0);
 }
@@ -1510,6 +1539,24 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // NPs licensed in these states cannot be allocated demand hours here.
 const MD_ONLY_STATES = new Set(['AL', 'IN', 'GA', 'MS', 'MO', 'SC', 'TN', 'LA']);
 const MD_PROFESSIONS = new Set(['MD', 'DO']);
+
+// Mental health professions use a weekly SLA across all 50 states (no per-state
+// demand allocation). They bypass the demand-gap math entirely: every parsed
+// hour becomes accepted unless validation flags it. The "demand" for MH is
+// staffed separately (Metabase 2973), so running them through the telehealth
+// state allocator just produces false declines.
+const MH_PROFESSIONS = new Set([
+  'MENTAL_HEALTH_COACH',
+  'MH_COACH',
+  'LPC',
+  'THERAPIST',
+  'HEALTH_COACH',
+]);
+const isMentalHealthProfession = (p: string | null | undefined) => {
+  if (!p) return false;
+  const norm = p.toUpperCase().replace(/\s+/g, '_');
+  return MH_PROFESSIONS.has(norm);
+};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1840,6 +1887,45 @@ Deno.serve(async (req: Request) => {
           counters.declined++;
           counters.superseded += olderIds.length;
           decisions.push({ group: key, provider: latest.provider_name, target_month: targetMonth, status: 'declined', reason: 'no_hours', superseded: olderIds.length });
+          continue;
+        }
+
+        // ── Mental health bypass ────────────────────────────────────────────
+        // MH coaches/LPCs serve all 50 states with a weekly SLA, separate from
+        // the telehealth state-demand pipeline. Accept every validated hour
+        // and skip the licensed-states + state-gap math.
+        const profession = professionByProvider.get(providerId);
+        if (isMentalHealthProfession(profession)) {
+          if (olderIds.length) {
+            await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
+            counters.superseded += olderIds.length;
+          }
+          const mhNotes = [
+            `decision=accepted (mental_health_bypass)`,
+            `profession=${profession}`,
+            `effective_hours=${effectiveHours}h`,
+            `raw_hours=${validation.summary.raw_total_hours}h`,
+            'note=MH uses weekly SLA across 50 states; bypasses state demand allocator',
+          ].join('; ');
+          await writeDecision(supabase, latest.id, {
+            status: 'accepted',
+            accepted_hours: effectiveHours,
+            declined_hours: 0,
+            notes: mhNotes,
+            decision_run_id: decisionRunId,
+            validation,
+          });
+          counters.accepted++;
+          decisions.push({
+            group: key,
+            provider: latest.provider_name,
+            target_month: targetMonth,
+            status: 'accepted',
+            accepted_hours: effectiveHours,
+            declined_hours: 0,
+            mh_bypass: true,
+            superseded: olderIds.length,
+          });
           continue;
         }
 
