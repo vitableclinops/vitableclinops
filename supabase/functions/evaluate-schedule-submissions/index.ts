@@ -70,6 +70,24 @@ import {
 const MD_ONLY_STATES = new Set(['AL', 'IN', 'GA', 'MS', 'MO', 'SC', 'TN', 'LA']);
 const MD_PROFESSIONS = new Set(['MD', 'DO']);
 
+// Mental health professions use a weekly SLA across all 50 states (no per-state
+// demand allocation). They bypass the demand-gap math entirely: every parsed
+// hour becomes accepted unless validation flags it. The "demand" for MH is
+// staffed separately (Metabase 2973), so running them through the telehealth
+// state allocator just produces false declines.
+const MH_PROFESSIONS = new Set([
+  'MENTAL_HEALTH_COACH',
+  'MH_COACH',
+  'LPC',
+  'THERAPIST',
+  'HEALTH_COACH',
+]);
+const isMentalHealthProfession = (p: string | null | undefined) => {
+  if (!p) return false;
+  const norm = p.toUpperCase().replace(/\s+/g, '_');
+  return MH_PROFESSIONS.has(norm);
+};
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -399,6 +417,45 @@ Deno.serve(async (req: Request) => {
           counters.declined++;
           counters.superseded += olderIds.length;
           decisions.push({ group: key, provider: latest.provider_name, target_month: targetMonth, status: 'declined', reason: 'no_hours', superseded: olderIds.length });
+          continue;
+        }
+
+        // ── Mental health bypass ────────────────────────────────────────────
+        // MH coaches/LPCs serve all 50 states with a weekly SLA, separate from
+        // the telehealth state-demand pipeline. Accept every validated hour
+        // and skip the licensed-states + state-gap math.
+        const profession = professionByProvider.get(providerId);
+        if (isMentalHealthProfession(profession)) {
+          if (olderIds.length) {
+            await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
+            counters.superseded += olderIds.length;
+          }
+          const mhNotes = [
+            `decision=accepted (mental_health_bypass)`,
+            `profession=${profession}`,
+            `effective_hours=${effectiveHours}h`,
+            `raw_hours=${validation.summary.raw_total_hours}h`,
+            'note=MH uses weekly SLA across 50 states; bypasses state demand allocator',
+          ].join('; ');
+          await writeDecision(supabase, latest.id, {
+            status: 'accepted',
+            accepted_hours: effectiveHours,
+            declined_hours: 0,
+            notes: mhNotes,
+            decision_run_id: decisionRunId,
+            validation,
+          });
+          counters.accepted++;
+          decisions.push({
+            group: key,
+            provider: latest.provider_name,
+            target_month: targetMonth,
+            status: 'accepted',
+            accepted_hours: effectiveHours,
+            declined_hours: 0,
+            mh_bypass: true,
+            superseded: olderIds.length,
+          });
           continue;
         }
 
