@@ -913,7 +913,6 @@ function ShiftListInline({
           <TableHead className="w-32">Time</TableHead>
           <TableHead className="text-right w-16">Hrs</TableHead>
           <TableHead>Type</TableHead>
-          <TableHead>State</TableHead>
           <TableHead className="text-center w-28">Homebase</TableHead>
           <TableHead className="text-center w-28">EHR</TableHead>
         </TableRow>
@@ -932,7 +931,6 @@ function ShiftListInline({
                 {formatHours(s.hours)}
               </TableCell>
               <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
-              <TableCell className="text-xs">{s.assigned_state ?? '—'}</TableCell>
               <TableCell className="text-center">
                 <Checkbox
                   checked={hbDone}
@@ -1101,7 +1099,6 @@ function PublishingQueue({
               <TableHead>Provider</TableHead>
               <TableHead>Time</TableHead>
               <TableHead className="text-right">Hrs</TableHead>
-              <TableHead>State</TableHead>
               <TableHead>Type</TableHead>
               <TableHead className="text-center w-24">HB</TableHead>
               <TableHead className="text-center w-24">EHR</TableHead>
@@ -1121,7 +1118,6 @@ function PublishingQueue({
                   <TableCell className="text-right text-xs tabular-nums">
                     {formatHours(s.hours)}
                   </TableCell>
-                  <TableCell className="text-xs">{s.assigned_state ?? '—'}</TableCell>
                   <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
                   <TableCell className="text-center">
                     <Checkbox
@@ -1141,7 +1137,7 @@ function PublishingQueue({
             })}
             {sorted.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                   No shifts match the current filters.
                 </TableCell>
               </TableRow>
@@ -1224,7 +1220,6 @@ function ByDayPanel({
                     <TableHead>Provider</TableHead>
                     <TableHead>Time</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>State</TableHead>
                     <TableHead className="text-right">Hrs</TableHead>
                     <TableHead className="text-center">Homebase</TableHead>
                     <TableHead className="text-center">EHR</TableHead>
@@ -1241,7 +1236,6 @@ function ByDayPanel({
                           {formatShiftTime(s.start_min)}–{formatShiftTime(s.end_min)}
                         </TableCell>
                         <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
-                        <TableCell className="text-xs">{s.assigned_state ?? '—'}</TableCell>
                         <TableCell className="text-right text-xs tabular-nums">
                           {formatHours(s.hours)}
                         </TableCell>
