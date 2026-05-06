@@ -87,9 +87,8 @@ export function useMonthlyPublishView(month: string) {
         clinopsSupabase
           .from('providers')
           .select('id, name, email, profession, employment_type, employment_status, active'),
-        (clinopsSupabase.from('publish_status' as never) as ReturnType<
-          typeof clinopsSupabase.from
-        >)
+        (clinopsSupabase as unknown as { from: (t: string) => any })
+          .from('publish_status')
           .select('*')
           .eq('target_month', monthStart),
       ]);
@@ -168,11 +167,9 @@ export function useTogglePublishStep() {
         patch.ehr_posted_at = args.done ? nowIso : null;
         patch.ehr_posted_by = args.done ? actorId : null;
       }
-      const { error } = await (
-        clinopsSupabase.from('publish_status' as never) as ReturnType<
-          typeof clinopsSupabase.from
-        >
-      ).upsert(patch, { onConflict: 'provider_id,target_month' });
+      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('publish_status')
+        .upsert(patch, { onConflict: 'provider_id,target_month' });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -190,18 +187,16 @@ export function useUpdatePublishNotes() {
       notes: string | null;
     }) => {
       const monthStart = monthIso(args.target_month);
-      const { error } = await (
-        clinopsSupabase.from('publish_status' as never) as ReturnType<
-          typeof clinopsSupabase.from
-        >
-      ).upsert(
-        {
-          provider_id: args.provider_id,
-          target_month: monthStart,
-          notes: args.notes,
-        },
-        { onConflict: 'provider_id,target_month' },
-      );
+      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('publish_status')
+        .upsert(
+          {
+            provider_id: args.provider_id,
+            target_month: monthStart,
+            notes: args.notes,
+          },
+          { onConflict: 'provider_id,target_month' },
+        );
       if (error) throw error;
     },
     onSuccess: () => {
