@@ -73,6 +73,7 @@ export default function JuneMvpPage() {
   const [slots, setSlots] = useState<Partial<Record<SlotKey, SlotData>>>({});
   const [parsing, setParsing] = useState<SlotKey | null>(null);
   const [filter, setFilter] = useState('');
+  const [uploadOpen, setUploadOpen] = useState(true);
   const publish = useJunePublishLocal(TARGET_MONTH);
 
   const handleFile = useCallback(async (key: SlotKey, file: File) => {
