@@ -31,6 +31,8 @@ import {
   RefreshCw,
   ChevronRight,
   ChevronDown,
+  Upload,
+  X,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
@@ -42,6 +44,9 @@ import {
   type ParsedShift,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
+import { parseJotformCsv, buildShiftCandidates } from '@/lib/juneSchedule/parseJotform';
+import { normName, normEmail } from '@/lib/juneSchedule/normalize';
 
 const MONTH_OPTIONS = ['2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01'];
 
@@ -98,10 +103,96 @@ export default function SchedulingWorkbenchPage() {
   const toggleExpanded = (id: string) =>
     setExpanded(p => ({ ...p, [id]: !p[id] }));
 
-  const { data: rows = [], isLoading, refetch } = useMonthlyPublishView(month);
+  const { data: dbRows = [], isLoading, refetch } = useMonthlyPublishView(month);
   const toggle = useTogglePublishStep();
   const bulk = useBulkMarkPublishStep();
   const reevaluate = useReevaluateMonth();
+
+  // Optional: override parsed_shifts from an uploaded Jotform availability file.
+  const [override, setOverride] = useState<{
+    fileName: string;
+    byKey: Map<string, ParsedShift[]>;
+    matchedProviders: number;
+    totalShifts: number;
+  } | null>(null);
+
+  const handleUpload = async (file: File) => {
+    try {
+      let csvText: string;
+      if (/\.(xlsx|xls)$/i.test(file.name)) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        csvText = XLSX.utils.sheet_to_csv(ws);
+      } else {
+        csvText = await file.text();
+      }
+      const submissions = parseJotformCsv(csvText);
+      const candidates = buildShiftCandidates(submissions, month);
+      const byKey = new Map<string, ParsedShift[]>();
+      for (const c of candidates) {
+        const arr = byKey.get(c.providerKey) ?? [];
+        arr.push({
+          date: c.date,
+          start_time: c.rawStart,
+          end_time: c.rawEnd,
+          hours: c.hours,
+          shift_type: c.source,
+        });
+        byKey.set(c.providerKey, arr);
+      }
+      setOverride({
+        fileName: file.name,
+        byKey,
+        matchedProviders: byKey.size,
+        totalShifts: candidates.length,
+      });
+      toast.success(
+        `Parsed ${candidates.length} shift${candidates.length === 1 ? '' : 's'} for ${byKey.size} provider${byKey.size === 1 ? '' : 's'} from ${file.name}`,
+      );
+    } catch (e) {
+      toast.error(`Could not parse file: ${(e as Error).message}`);
+    }
+  };
+
+  // Apply override (if any) by replacing parsed_shifts for providers whose
+  // name or email matches a key in the uploaded file.
+  const rows: ProviderPublishView[] = useMemo(() => {
+    if (!override) return dbRows;
+    return dbRows.map(r => {
+      const sub = r.submission;
+      const emailKey = normEmail((sub as unknown as { provider_email?: string })?.provider_email ?? null);
+      const nameKey = normName(r.provider_name);
+      const shifts =
+        (emailKey && override.byKey.get(emailKey)) ||
+        override.byKey.get(nameKey) ||
+        null;
+      if (!shifts) return r;
+      const accepted_hours = shifts.reduce((acc, s) => acc + (s.hours ?? 0), 0);
+      return {
+        ...r,
+        submission: sub
+          ? { ...sub, parsed_shifts: shifts, accepted_hours }
+          : ({
+              id: `override-${r.provider_id}`,
+              provider_id: r.provider_id,
+              provider_name: r.provider_name,
+              target_month: month,
+              decision_status: 'accepted',
+              accepted_hours,
+              declined_hours: 0,
+              decision_notes: `From uploaded file: ${override.fileName}`,
+              parsed_shifts: shifts,
+              submitted_at: new Date().toISOString(),
+              decided_at: null,
+              validation_status: null,
+              validation_warnings: null,
+              raw_requested_hours: accepted_hours,
+              normalized_requested_hours: accepted_hours,
+            } as unknown as ProviderPublishView['submission']),
+      };
+    });
+  }, [dbRows, override, month]);
 
   const acceptedRows = useMemo(
     () =>
@@ -232,6 +323,48 @@ export default function SchedulingWorkbenchPage() {
         />
         <SummaryCard label="Declined" value={summary.declinedCount.toString()} />
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="text-sm">Shifts source</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                {override
+                  ? `Using uploaded file: ${override.fileName} · ${override.totalShifts} shift${override.totalShifts === 1 ? '' : 's'} matched to ${override.matchedProviders} provider${override.matchedProviders === 1 ? '' : 's'}`
+                  : 'Using shifts from the database. Optionally upload a Jotform availability export to view shifts directly from the submission file.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="jotform-upload"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUpload(f);
+                  e.currentTarget.value = '';
+                }}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => document.getElementById('jotform-upload')?.click()}
+              >
+                <Upload className="h-4 w-4 mr-1" />
+                {override ? 'Replace file' : 'Upload Jotform file'}
+              </Button>
+              {override && (
+                <Button size="sm" variant="ghost" onClick={() => setOverride(null)}>
+                  <X className="h-4 w-4 mr-1" />
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
 
       {!isLoading && rows.length === 0 && (
         <Alert>
