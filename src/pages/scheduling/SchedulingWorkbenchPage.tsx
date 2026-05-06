@@ -301,7 +301,7 @@ export default function SchedulingWorkbenchPage() {
                       const sub = row.submission!;
                       const homebaseDone = !!row.publish?.homebase_posted_at;
                       const ehrDone = !!row.publish?.ehr_posted_at;
-                      const shiftCount = (sub.parsed_shifts ?? []).length;
+                      const shiftCount = Array.isArray(sub.parsed_shifts) ? sub.parsed_shifts.length : 0;
                       return (
                         <TableRow key={row.provider_id}>
                           <TableCell>
