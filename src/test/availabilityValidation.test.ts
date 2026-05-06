@@ -198,6 +198,16 @@ describe('Threshold flags', () => {
   });
 
   it('weekly hours > max_weekly_hours generates a synthetic report row', () => {
+    // Disable the operating-hours window so the test exercises the weekly
+    // threshold path on its own. With the default 9-9 weekday / 9-12 weekend
+    // window applied, weekend hours past noon would be clamped.
+    const config: ValidationConfig = {
+      ...DEFAULT_VALIDATION_CONFIG,
+      weekday_window_start_min: 0,
+      weekday_window_end_min: 1440,
+      weekend_window_start_min: 0,
+      weekend_window_end_min: 1440,
+    };
     const intervals: RawInterval[] = [];
     for (const day of ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']) {
       intervals.push({ kind: 'recurring', dayOfWeek: day, rawStart: '9:00 AM', rawEnd: '7:00 PM' });
@@ -206,6 +216,7 @@ describe('Threshold flags', () => {
       identity: { name: 'Test Provider' },
       submissions: [{ submissionId: 'S1', submittedAt: '2026-05-01T00:00:00Z', intervals }],
       targetMonth: '2026-06-01',
+      config,
     });
     const synth = result.report.find(r => r.warnings.some(w => /Weekly hours exceed/.test(w)));
     expect(synth).toBeDefined();
@@ -234,6 +245,72 @@ describe('Malformed times are rejected', () => {
     expect(result.validation_status).toBe('rejected_or_unusable');
     expect(result.used_in_forecast).toBe(false);
     expect(result.needs_manual_review).toBe(true);
+  });
+});
+
+describe('Operating hours window (9 AM-9 PM weekday, 9 AM-12 PM weekend)', () => {
+  it('clamps a weekday shift that runs past 9 PM', () => {
+    // Use 8:30 AM - 8:30 PM (12h, at the max_single_shift threshold) so the
+    // shift validates and we exercise the operating-hours clamp.
+    const result = normalizeProviderAvailability({
+      identity: { name: 'Window Test' },
+      submissions: [{
+        submissionId: 'S1',
+        submittedAt: '2026-05-01T00:00:00Z',
+        intervals: [{ kind: 'one_off', date: '2026-06-01', rawStart: '8:30 AM', rawEnd: '8:30 PM' }],
+      }],
+      targetMonth: '2026-06-01',
+    });
+    expect(result.timeline).toHaveLength(1);
+    expect(result.timeline[0].startMin).toBe(540);
+    expect(result.timeline[0].endMin).toBe(1230);
+    // Trim hours: 8:30-9:00 = 0.5
+    expect(result.summary.hours_removed_for_operating_hours).toBe(0.5);
+  });
+
+  it('cuts a weekday shift that ends before 9 AM', () => {
+    const result = normalizeProviderAvailability({
+      identity: { name: 'Window Test' },
+      submissions: [{
+        submissionId: 'S1',
+        submittedAt: '2026-05-01T00:00:00Z',
+        intervals: [{ kind: 'one_off', date: '2026-06-01', rawStart: '7:00 AM', rawEnd: '8:00 AM' }],
+      }],
+      targetMonth: '2026-06-01',
+    });
+    expect(result.timeline).toHaveLength(0);
+    expect(result.summary.hours_removed_for_operating_hours).toBe(1);
+  });
+
+  it('clamps a weekend shift to the 9 AM-12 PM window', () => {
+    const result = normalizeProviderAvailability({
+      identity: { name: 'Window Test' },
+      submissions: [{
+        submissionId: 'S1',
+        submittedAt: '2026-05-01T00:00:00Z',
+        intervals: [{ kind: 'one_off', date: '2026-06-06', rawStart: '9:00 AM', rawEnd: '1:30 PM' }],
+      }],
+      targetMonth: '2026-06-01',
+    });
+    expect(result.timeline).toHaveLength(1);
+    expect(result.timeline[0].endMin).toBe(720);
+    expect(result.summary.hours_removed_for_operating_hours).toBe(1.5);
+  });
+
+  it('does not apply window to in-home shifts', () => {
+    const result = normalizeProviderAvailability({
+      identity: { name: 'Window Test' },
+      submissions: [{
+        submissionId: 'S1',
+        submittedAt: '2026-05-01T00:00:00Z',
+        intervals: [{ kind: 'in_home', date: '2026-06-04', rawStart: '4:00 PM', rawEnd: '6:00 PM' }],
+      }],
+      targetMonth: '2026-06-01',
+    });
+    expect(result.timeline).toHaveLength(1);
+    expect(result.timeline[0].startMin).toBe(960);
+    expect(result.timeline[0].endMin).toBe(1080);
+    expect(result.summary.hours_removed_for_operating_hours).toBe(0);
   });
 });
 

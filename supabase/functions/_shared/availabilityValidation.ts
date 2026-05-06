@@ -82,6 +82,10 @@ export interface NormalizationSummary {
   normalized_total_hours: number;
   hours_removed_for_unavailability: number;
   hours_removed_for_duplicates: number;
+  /** Hours dropped or trimmed because the slot fell outside the configured
+   *  operating-hours window (default 9 AM - 9 PM ET weekdays, 9 AM - 12 PM ET
+   *  weekends). */
+  hours_removed_for_operating_hours: number;
   hours_changed_by_validation: number;
   intervals_auto_corrected: number;
   intervals_needing_review: number;
@@ -586,6 +590,50 @@ export function expandNormalizedToSlots(
   return slots;
 }
 
+/** Apply the operating-hours window to a stream of expanded slots, clamping
+ *  partial overlaps and dropping fully out-of-window slots. Returns the
+ *  surviving slots (possibly clamped) plus the total hours removed. The
+ *  source NormalizedInterval is preserved for downstream linkage; in-home /
+ *  clinic shifts are NOT subject to this filter (their location is fixed
+ *  outside the telehealth ops window). */
+export function applyOperatingHoursWindow(
+  slots: ExpandedSlot[],
+  config: ValidationConfig,
+): { slots: ExpandedSlot[]; hoursRemoved: number } {
+  const out: ExpandedSlot[] = [];
+  let removed = 0;
+  for (const s of slots) {
+    if (s.source.kind === 'in_home') {
+      out.push(s);
+      continue;
+    }
+    const d = new Date(s.date + 'T00:00:00Z');
+    const dow = d.getUTCDay();
+    const isWeekend = dow === 0 || dow === 6;
+    const winStart = isWeekend ? config.weekend_window_start_min : config.weekday_window_start_min;
+    const winEnd = isWeekend ? config.weekend_window_end_min : config.weekday_window_end_min;
+
+    const rawHours = (s.endMin - s.startMin) / 60;
+    if (s.endMin <= winStart || s.startMin >= winEnd) {
+      removed += rawHours;
+      continue;
+    }
+    const newStart = Math.max(s.startMin, winStart);
+    const newEnd = Math.min(s.endMin, winEnd);
+    if (newEnd <= newStart) {
+      removed += rawHours;
+      continue;
+    }
+    if (newStart === s.startMin && newEnd === s.endMin) {
+      out.push(s);
+    } else {
+      removed += ((newStart - s.startMin) + (s.endMin - newEnd)) / 60;
+      out.push({ ...s, startMin: newStart, endMin: newEnd });
+    }
+  }
+  return { slots: out, hoursRemoved: round2(removed) };
+}
+
 function isInMonth(dateISO: string, monthISO: string): boolean {
   return dateISO >= monthISO && dateISO < nextMonth(monthISO);
 }
@@ -765,7 +813,14 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     }
   }
 
-  const reconciled = reconcileTimeline(slotInputs, input.unavailableDates ?? []);
+  const windowed = applyOperatingHoursWindow(slotInputs, config);
+  const windowedSlotInputs: DatedSlotInput[] = windowed.slots.map(s => {
+    const orig = slotInputs.find(
+      o => o.date === s.date && o.source === s.source,
+    );
+    return { ...s, submittedAt: orig?.submittedAt };
+  });
+  const reconciled = reconcileTimeline(windowedSlotInputs, input.unavailableDates ?? []);
 
   const normalizedTotal = normalized.reduce(
     (sum, n) => sum + (n.normalized_duration_hours ?? 0),
@@ -792,6 +847,7 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     normalized_total_hours: round2(normalizedTotal),
     hours_removed_for_unavailability: reconciled.hours_removed_for_unavailability,
     hours_removed_for_duplicates: reconciled.hours_removed_for_duplicates,
+    hours_removed_for_operating_hours: windowed.hoursRemoved,
     hours_changed_by_validation: round2(hoursChanged),
     intervals_auto_corrected: normalized.filter(n => n.validation_status === 'auto_corrected').length,
     intervals_needing_review: normalized.filter(n => n.validation_status === 'needs_review').length,

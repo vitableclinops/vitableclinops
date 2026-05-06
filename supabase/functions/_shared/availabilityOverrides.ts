@@ -14,6 +14,13 @@ export interface ValidationConfig {
   flag_midnight_start: boolean;
   /** Surface a warning when a recurring window covers ~the entire day. */
   flag_full_day_availability: boolean;
+  /** Operating-hours window in minutes from midnight (ET). Shifts outside the
+   *  window are clamped (partial overlap) or cut entirely (no overlap).
+   *  Tracked in `hours_removed_for_operating_hours`. */
+  weekday_window_start_min: number;
+  weekday_window_end_min: number;
+  weekend_window_start_min: number;
+  weekend_window_end_min: number;
 }
 
 export const DEFAULT_VALIDATION_CONFIG: ValidationConfig = {
@@ -23,6 +30,11 @@ export const DEFAULT_VALIDATION_CONFIG: ValidationConfig = {
   allow_overnight_shifts: false,
   flag_midnight_start: true,
   flag_full_day_availability: true,
+  // 9:00 AM - 9:00 PM ET on weekdays, 9:00 AM - 12:00 PM ET on weekends.
+  weekday_window_start_min: 540,
+  weekday_window_end_min: 1260,
+  weekend_window_start_min: 540,
+  weekend_window_end_min: 720,
 };
 
 export interface ProviderOverrideRule {
