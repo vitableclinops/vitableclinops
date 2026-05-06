@@ -36,9 +36,9 @@ import {
   Loader2,
   Calendar,
   AlertCircle,
-  CalendarCheck,
   CalendarX,
   RefreshCw,
+  CalendarOff,
   ChevronRight,
   ChevronDown,
   Upload,
@@ -50,8 +50,8 @@ import {
 import {
   useMonthlyPublishView,
   useTogglePublishStep,
-  useBulkMarkPublishStep,
   useReevaluateMonth,
+  extractUnavailableRanges,
   useShiftRecommendationsForMonth,
   useTogglePublishShift,
   useBulkMarkPublishShifts,
@@ -151,7 +151,6 @@ export default function SchedulingWorkbenchPage() {
   const { data: shiftRows = [], isLoading: shiftsLoading, refetch: refetchShifts } =
     useShiftRecommendationsForMonth(month);
   const togglePerProvider = useTogglePublishStep();
-  const bulkPerProvider = useBulkMarkPublishStep();
   const togglePerShift = useTogglePublishShift();
   const bulkPerShift = useBulkMarkPublishShifts();
   const resolveReview = useResolveNeedsReview();
@@ -304,13 +303,40 @@ export default function SchedulingWorkbenchPage() {
     [rows],
   );
 
+  // Providers who listed off-days for this month — Lindsay's request so MSS can
+  // see at-a-glance who's unavailable when sourcing a licensed provider.
+  type TimeOffEntry = {
+    row: ProviderPublishView;
+    ranges: ReturnType<typeof extractUnavailableRanges>;
+    totalDays: number;
+  };
+  const timeOffRows: TimeOffEntry[] = useMemo(() => {
+    const out: TimeOffEntry[] = [];
+    for (const r of rows) {
+      const sub = r.submission;
+      if (!sub) continue;
+      const ranges = extractUnavailableRanges(sub.parsed_shifts, month);
+      if (ranges.length === 0) continue;
+      const allDates = new Set<string>();
+      for (const range of ranges) for (const d of range.dates) allDates.add(d);
+      out.push({ row: r, ranges, totalDays: allDates.size });
+    }
+    return out.sort((a, b) =>
+      a.row.provider_name.localeCompare(b.row.provider_name, undefined, { sensitivity: 'base' }),
+    );
+  }, [rows, month]);
+
   const filteredAccepted = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return acceptedRows;
-    return acceptedRows.filter(
-      r =>
-        r.provider_name.toLowerCase().includes(q) ||
-        (r.profession ?? '').toLowerCase().includes(q),
+    const base = q
+      ? acceptedRows.filter(
+          r =>
+            r.provider_name.toLowerCase().includes(q) ||
+            (r.profession ?? '').toLowerCase().includes(q),
+        )
+      : acceptedRows;
+    return [...base].sort((a, b) =>
+      a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
     );
   }, [acceptedRows, filter]);
 
@@ -361,81 +387,37 @@ export default function SchedulingWorkbenchPage() {
   const handleBulkAllProviderShifts = (
     row: ProviderPublishView,
     step: ShiftPublishStep,
+    done: boolean = true,
   ) => {
     const shifts = shiftsByProvider.get(row.provider_id) ?? [];
     if (shifts.length === 0) {
       // Fallback for providers with no shift_recommendations rows yet (eg.
       // submission hasn't been evaluated). Use the aggregate-level mark so the
       // page is still actionable.
-      handleToggleProvider(row, step, true);
+      handleToggleProvider(row, step, done);
       return;
     }
-    const target = step === 'homebase'
-      ? shifts.filter(s => !isHomebaseDone(s))
-      : shifts.filter(s => isHomebaseDone(s) && !isEhrDone(s));
+    const target = done
+      ? step === 'homebase'
+        ? shifts.filter(s => !isHomebaseDone(s))
+        : shifts.filter(s => isHomebaseDone(s) && !isEhrDone(s))
+      : step === 'homebase'
+        ? shifts.filter(s => isHomebaseDone(s))
+        : shifts.filter(s => isEhrDone(s));
     if (target.length === 0) {
-      toast.info(`Nothing left to mark for ${row.provider_name}.`);
+      toast.info(`Nothing left to ${done ? 'mark' : 'revert'} for ${row.provider_name}.`);
       return;
     }
     bulkPerShift.mutate(
-      { ids: target.map(s => s.id), step, done: true },
+      { ids: target.map(s => s.id), step, done },
       {
         onSuccess: () => {
-          handleToggleProvider(row, step, true);
+          if (done) handleToggleProvider(row, step, true);
           toast.success(
-            `Marked ${target.length} shift${target.length === 1 ? '' : 's'} for ${row.provider_name}`,
+            `${done ? 'Marked' : 'Reverted'} ${target.length} shift${target.length === 1 ? '' : 's'} for ${row.provider_name}`,
           );
         },
-        onError: e => toast.error(`Bulk mark failed: ${(e as Error).message}`),
-      },
-    );
-  };
-
-  const handleBulkAll = (step: ShiftPublishStep) => {
-    const acceptedIds = new Set(filteredAccepted.map(r => r.provider_id));
-    const target = (step === 'homebase'
-      ? allFlatAccepted.filter(s => !isHomebaseDone(s))
-      : allFlatAccepted.filter(s => isHomebaseDone(s) && !isEhrDone(s))
-    ).filter(s => s.provider_id && acceptedIds.has(s.provider_id));
-    if (target.length === 0) {
-      const ids = filteredAccepted.map(r => r.provider_id);
-      if (ids.length === 0) {
-        toast.info('No providers to mark.');
-        return;
-      }
-      bulkPerProvider.mutate(
-        { provider_ids: ids, target_month: month, step, done: true },
-        {
-          onSuccess: () =>
-            toast.success(
-              `Marked ${ids.length} provider${ids.length === 1 ? '' : 's'} as posted to ${
-                step === 'homebase' ? 'Homebase' : 'the EHR'
-              }`,
-            ),
-          onError: e => toast.error(`Bulk mark failed: ${(e as Error).message}`),
-        },
-      );
-      return;
-    }
-    bulkPerShift.mutate(
-      { ids: target.map(s => s.id), step, done: true },
-      {
-        onSuccess: () => {
-          // Roll up to provider-level too
-          const ids = Array.from(new Set(target.map(s => s.provider_id!).filter(Boolean)));
-          bulkPerProvider.mutate({
-            provider_ids: ids,
-            target_month: month,
-            step,
-            done: true,
-          });
-          toast.success(
-            `Marked ${target.length} shift${target.length === 1 ? '' : 's'} as posted to ${
-              step === 'homebase' ? 'Homebase' : 'the EHR'
-            }`,
-          );
-        },
-        onError: e => toast.error(`Bulk mark failed: ${(e as Error).message}`),
+        onError: e => toast.error(`Bulk ${done ? 'mark' : 'revert'} failed: ${(e as Error).message}`),
       },
     );
   };
@@ -612,15 +594,27 @@ export default function SchedulingWorkbenchPage() {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="timeoff">
+            <CalendarOff className="h-3.5 w-3.5 mr-1" /> Time Off
+            {timeOffRows.length > 0 && (
+              <span className="ml-1 text-xs">({timeOffRows.length})</span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="provider" className="mt-4 space-y-4">
           <Card>
             <CardHeader>
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <CardTitle className="text-base">
-                  Approved providers · {formatMonthLabel(month)}
-                </CardTitle>
+                <div>
+                  <CardTitle className="text-base">
+                    Approved providers · {formatMonthLabel(month)}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Sorted alphabetically. Use the per-row HB / EHR buttons to mark or
+                    revert all shifts for a provider at once.
+                  </p>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Input
                     placeholder="Filter by name or profession"
@@ -628,24 +622,6 @@ export default function SchedulingWorkbenchPage() {
                     onChange={e => setFilter(e.target.value)}
                     className="md:w-64"
                   />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={bulkPerShift.isPending || filteredAccepted.length === 0}
-                    onClick={() => handleBulkAll('homebase')}
-                  >
-                    <CalendarCheck className="h-4 w-4 mr-1" />
-                    Mark all Homebase
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={bulkPerShift.isPending || filteredAccepted.length === 0}
-                    onClick={() => handleBulkAll('ehr')}
-                  >
-                    <CalendarCheck className="h-4 w-4 mr-1" />
-                    Mark all EHR
-                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -709,24 +685,37 @@ export default function SchedulingWorkbenchPage() {
                             </TableCell>
                             <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex justify-end gap-1">
-                                {hbDone < totalShifts && (
+                                {totalShifts > 0 && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
                                     className="h-7 text-xs"
-                                    onClick={() => handleBulkAllProviderShifts(row, 'homebase')}
+                                    onClick={() =>
+                                      handleBulkAllProviderShifts(
+                                        row,
+                                        'homebase',
+                                        hbDone < totalShifts,
+                                      )
+                                    }
                                   >
-                                    HB all
+                                    {hbDone < totalShifts ? 'HB all' : 'Revert HB'}
                                   </Button>
                                 )}
-                                {ehrDone < totalShifts && (
+                                {totalShifts > 0 && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
                                     className="h-7 text-xs"
-                                    onClick={() => handleBulkAllProviderShifts(row, 'ehr')}
+                                    disabled={ehrDone === 0 && hbDone < totalShifts}
+                                    onClick={() =>
+                                      handleBulkAllProviderShifts(
+                                        row,
+                                        'ehr',
+                                        ehrDone < totalShifts,
+                                      )
+                                    }
                                   >
-                                    EHR all
+                                    {ehrDone < totalShifts ? 'EHR all' : 'Revert EHR'}
                                   </Button>
                                 )}
                               </div>
@@ -837,6 +826,14 @@ export default function SchedulingWorkbenchPage() {
           <MissingSubmissionsPanel
             month={month}
             rows={missingRows}
+            isLoading={isLoading}
+          />
+        </TabsContent>
+
+        <TabsContent value="timeoff" className="mt-4 space-y-4">
+          <TimeOffPanel
+            month={month}
+            entries={timeOffRows}
             isLoading={isLoading}
           />
         </TabsContent>
@@ -1598,17 +1595,48 @@ function MissingSubmissionsPanel({
   const reminderTemplate = (name: string) =>
     `Hi ${name.split(' ')[0]}, gentle reminder to submit your ${monthLabel} availability when you have a moment. Thanks!`;
 
+  const sortedRows = useMemo(
+    () =>
+      [...rows].sort((a, b) =>
+        a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
+      ),
+    [rows],
+  );
+
+  const emailsWithAddress = useMemo(
+    () => sortedRows.filter(r => r.provider_email && r.provider_email.includes('@')),
+    [sortedRows],
+  );
+
   const copyAll = async () => {
-    const text = rows
+    const text = sortedRows
       .map(r => `${r.provider_name}: ${reminderTemplate(r.provider_name)}`)
       .join('\n\n');
     try {
       await navigator.clipboard.writeText(text);
-      toast.success(`Copied reminder for ${rows.length} provider${rows.length === 1 ? '' : 's'}`);
+      toast.success(`Copied reminder for ${sortedRows.length} provider${sortedRows.length === 1 ? '' : 's'}`);
     } catch {
       toast.error('Could not copy to clipboard');
     }
   };
+
+  const copyAllEmails = async () => {
+    if (emailsWithAddress.length === 0) {
+      toast.error('No email addresses on file for these providers.');
+      return;
+    }
+    const text = emailsWithAddress.map(r => r.provider_email!).join(', ');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(
+        `Copied ${emailsWithAddress.length} email${emailsWithAddress.length === 1 ? '' : 's'} — paste into BCC`,
+      );
+    } catch {
+      toast.error('Could not copy to clipboard');
+    }
+  };
+
+  const missingEmailCount = sortedRows.length - emailsWithAddress.length;
 
   return (
     <Card>
@@ -1619,14 +1647,32 @@ function MissingSubmissionsPanel({
               Missing submissions · {formatMonthLabel(month)}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Active providers with no Jotform submission for this month. Send each a nudge or
-              copy them all at once.
+              Active providers with no Jotform submission for this month. Copy all
+              emails at once to BCC a reminder, or grab the reminder text per provider.
+              {missingEmailCount > 0 && (
+                <span className="text-amber-700">
+                  {' '}
+                  ({missingEmailCount} provider{missingEmailCount === 1 ? '' : 's'} without
+                  an email on file.)
+                </span>
+              )}
             </p>
           </div>
-          <Button size="sm" variant="outline" onClick={copyAll}>
-            <Copy className="h-4 w-4 mr-1" />
-            Copy all reminders
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={copyAllEmails}
+              disabled={emailsWithAddress.length === 0}
+            >
+              <Copy className="h-4 w-4 mr-1" />
+              Copy all emails ({emailsWithAddress.length})
+            </Button>
+            <Button size="sm" variant="outline" onClick={copyAll}>
+              <Copy className="h-4 w-4 mr-1" />
+              Copy all reminders
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">
@@ -1634,15 +1680,19 @@ function MissingSubmissionsPanel({
           <TableHeader>
             <TableRow>
               <TableHead>Provider</TableHead>
+              <TableHead>Email</TableHead>
               <TableHead>Profession</TableHead>
               <TableHead>Employment</TableHead>
               <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map(r => (
+            {sortedRows.map(r => (
               <TableRow key={r.provider_id}>
                 <TableCell className="font-medium">{r.provider_name}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {r.provider_email ?? <span className="italic">no email on file</span>}
+                </TableCell>
                 <TableCell className="text-xs">{r.profession ?? '—'}</TableCell>
                 <TableCell className="text-xs">{r.employment_type ?? '—'}</TableCell>
                 <TableCell className="text-right">
@@ -1759,6 +1809,112 @@ function DeclinedPanel({
                 </TableRow>
               );
             })}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+type TimeOffPanelEntry = {
+  row: ProviderPublishView;
+  ranges: ReturnType<typeof extractUnavailableRanges>;
+  totalDays: number;
+};
+
+function TimeOffPanel({
+  month,
+  entries,
+  isLoading,
+}: {
+  month: string;
+  entries: TimeOffPanelEntry[];
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent>
+          <LoadingRow label="Loading time off" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          No providers listed any time off for {formatMonthLabel(month)}.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  const formatRange = (startIso: string, endIso: string) => {
+    const start = formatDateLabel(startIso);
+    if (startIso === endIso) return start;
+    return `${start} – ${formatDateLabel(endIso)}`;
+  };
+
+  const totalDays = entries.reduce((acc, e) => acc + e.totalDays, 0);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <CalendarOff className="h-4 w-4 text-amber-600" />
+          Time off · {formatMonthLabel(month)}
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Days providers listed as unavailable on their Jotform submission.
+          {' '}
+          {entries.length} provider{entries.length === 1 ? '' : 's'} · {totalDays} day
+          {totalDays === 1 ? '' : 's'} off this month. Use this when MSS asks who's
+          licensed in a state — check here first to see if the provider is on leave.
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Provider</TableHead>
+              <TableHead>Profession</TableHead>
+              <TableHead className="text-right w-24">Days off</TableHead>
+              <TableHead>Dates</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.map(({ row, ranges, totalDays }) => (
+              <TableRow key={row.provider_id}>
+                <TableCell>
+                  <div className="font-medium">{row.provider_name}</div>
+                  {row.provider_email && (
+                    <div className="text-xs text-muted-foreground">
+                      {row.provider_email}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell className="text-xs">{row.profession ?? '—'}</TableCell>
+                <TableCell className="text-right tabular-nums text-sm font-medium">
+                  {totalDays}
+                </TableCell>
+                <TableCell className="text-xs">
+                  <div className="flex flex-wrap gap-1">
+                    {ranges.map((range, i) => (
+                      <Badge
+                        key={`${range.startIso}-${range.endIso}-${i}`}
+                        variant="outline"
+                        className="bg-amber-50 border-amber-200 text-amber-900 font-normal"
+                      >
+                        {formatRange(range.startIso, range.endIso)}
+                      </Badge>
+                    ))}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </CardContent>
