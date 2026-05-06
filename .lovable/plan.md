@@ -1,56 +1,129 @@
-## What's actually wrong
+## MVP Goal
 
-The Mandy / May 1 answer is incorrect for two independent reasons:
+Get a VA publishing the **June 2026** schedule into Homebase and the EHR in the next hour. Keep all changes scoped to the existing scheduling data so nothing else in the app moves.
 
-**Bug A — Provider mode silently has no demand data, so every gap looks like zero.**
-Provider mode only loads `demand_forecast` rows for `week_start = getMonday(date)`. For May 1, that's `2026-04-27`, but the database only has forecast rows for weeks `2026-04-13` and `2026-04-20`. Result: `forecastByState` is empty, every state gets `target_slots = null`, no gap can ever be computed, and `total_network_gap_hours_in_eligible_states` shows 0. Network mode already handles this with a "fall back to most recent forecast week" path; provider mode doesn't.
+## What's already built (we reuse it)
 
-**Bug B — Misleading "active in 44 states" label.**
-The fact `active_state_count` is computed as `eligible_to_practice && state_activation.is_active` — i.e. *the state is in our network*, not *Amanda is EHR-active in that state*. Amanda has zero `provider_state_status` rows so she isn't EHR-active anywhere. The AI parrots "active in 44 states" and concludes she's all set, when really the right framing is "licensed in 45 network states, EHR-active in 0 of them."
+- `schedule_submissions` (per-provider monthly availability, parsed shifts, accepted/declined hours, decision_status)
+- `publish_status` (per provider × month, with `homebase_posted_at` / `ehr_posted_at`)
+- `useMonthlyPublishView`, `useTogglePublishStep`, `useShiftRecommendations` — already wire the provider view + Homebase/EHR checkboxes
+- Existing **Workbench** page (`/admin/workbench`) has the Provider tab and an All Shifts tab
 
-Net effect today: provider mode reports zero gap and zero activation opportunities → AI declines → user (correctly) doesn't trust it because network mode shows 75.9h of gap on the same date with PA / NJ / TX leading.
+The MVP is a slim re-shell of these hooks plus two new views. No new business logic, no schema changes beyond the role enum.
 
-## Fix plan
+---
 
-### 1. Mirror network mode's forecast fallback in provider mode
-In `supabase/functions/coverage-copilot/index.ts`, after the existing `demand_forecast` load (around line 255), if the result is empty, run the same fallback the network function uses (lines ~640–655):
+## 1. New `scheduling` role
 
-- Query `demand_forecast` ordered by `week_start desc limit 200`.
-- Take the most recent `week_start`, build a per-state map from those rows.
-- Use it as the source for `forecastByState`.
-- Record the fallback week (e.g. `forecast_source: "fallback from week 2026-04-20"`) on the facts object so the AI and the plain-English narrative can mention it and lower confidence.
+- Add `'scheduling'` to the `app_role` enum (migration).
+- `AppSidebar` and `ProtectedRoute` already use `hasRole`. Treat `scheduling` as having access only to the new `/scheduling/*` routes. Admins keep full access (the role check is OR-based).
+- Provision via existing User Roles page — no new admin UI needed.
 
-### 2. Split "active" into two honest counts
-Keep `currently_active` on `stateFacts` (it correctly means "state is in the network"), but rename and add fields on the top-level `facts`:
+## 2. New `/scheduling` shell
 
-- `licensed_state_count` → states where she's licensed AND legally eligible (replaces today's `eligible_state_count`, same value, clearer name).
-- `network_state_count` → of those, states where `state_activation.is_active = true` (replaces today's misleading `active_state_count`).
-- `ehr_active_state_count` → of those, states where `provider_state_status.ehr_activation_status = 'active'`.
-- `ehr_active_states` → array of the actual abbreviations, so the AI can name them.
+A dedicated landing page + slim sidebar so the VA never sees licensure/agreements/etc.
 
-Update the plain-English narrative to read like:
-> "Amanda Clement is licensed in 45 network state(s) where she can legally practice, but EHR-active in only 0 of them. Hours can only be approved in EHR-active states without an activation step."
+```text
+/scheduling                 → redirects to /scheduling/workbench
+/scheduling/workbench       → Provider · By-Day · Declined · All Shifts (tabs)
+/scheduling/forecast        → existing MonthlyForecastPage (read-only, reused)
+```
 
-### 3. Tighten the synth system prompt
-- Make the AI distinguish "licensed", "in network", and "EHR-active" using the new fields.
-- When `ehr_active_state_count = 0`, the only path to approval is conditional activation — never claim she's "ready to take hours" off licensure alone.
-- When `forecast_source` indicates a fallback was used, include a sentence noting the forecast week used and lower confidence to medium.
+Slim sidebar (`SchedulingSidebar.tsx`, new file): logo, "Workbench", "Forecast", user avatar. Nothing else. Admins navigating to `/scheduling/*` see the same slim shell (we don't show the full admin sidebar here — keeps the VA experience identical to what an admin can QA).
 
-### 4. Sanity-check the resulting facts against network mode
-After the fix, for the Mandy / May 1 case the provider-mode facts should show:
-- `licensed_state_count`: 45, `network_state_count`: 44, `ehr_active_state_count`: 0
-- `forecast_source`: fallback from week 2026-04-20
-- `total_network_gap_hours_in_eligible_states` ≈ 75.9 (matches network mode)
-- `activation_opportunities` populated with PA (29.2h), TX (7.7h), NJ (5.7h), DE, OH, etc. — exactly the states the user expected.
-- The AI summary becomes a conditional yes: "Yes, but only if we activate her in PA / NJ / TX — gaps are preliminary, expect them to shrink."
+A small "Back to admin" link appears for users who also have the `admin` role.
 
-### 5. Update the data-freshness memory note
-`mem://features/coverage-copilot-data-freshness` should mention that provider mode now uses the same forecast fallback as network mode, so the two answers stay in sync.
+## 3. Workbench tabs (the actual work surface)
 
-## Out of scope
-- No schema changes; no new triggers; no UI changes to `CoverageCopilotPage.tsx` (the JSON facts panel will simply show the corrected/renamed fields).
-- Not touching the `SLOTS_PER_HOUR` mismatch with `compute-coverage-bridge` (that's a separate rounding question).
+Single page, four tabs, all bound to the same month picker (default **June 2026**) and all reading from the same hooks so checkboxes stay in sync across views.
 
-## Files to edit
-- `supabase/functions/coverage-copilot/index.ts` — provider-mode fact assembly, plain-English narrative, synth system prompt.
-- `mem://features/coverage-copilot-data-freshness` — note the fallback parity.
+### Tab A — By Provider (already exists, +1 button)
+
+Reuse the current Monthly Publish table. Add at the top of the table:
+
+```text
+[ Mark all visible as posted to Homebase ]   [ Mark all visible as posted to EHR ]
+```
+
+- Operates on the currently filtered + accepted/partial rows
+- Calls `useTogglePublishStep` in a loop (or a small batch wrapper) with `done: true`
+- Toast shows count: "Marked 14 providers as posted to Homebase"
+- Each individual checkbox still works for one-off corrections
+
+### Tab B — By Day (new)
+
+Pivots the same `parsed_shifts` data by date instead of by provider.
+
+```text
+Tue, Jun 3        12 shifts · 38 hrs       [ Homebase: 8/12 ✓ ]  [ EHR: 0/12 ]
+  ▸ Jasmine Smith    9:00–13:00  NP Tele  PA   ☐ HB  ☐ EHR
+  ▸ Daniyel Patel   10:00–14:00  NP Tele  TX   ☑ HB  ☐ EHR
+  ...
+Wed, Jun 4        9 shifts · 32 hrs        [ Mark all HB ]  [ Mark all EHR ]
+  ...
+```
+
+- One collapsible card per date
+- Per-row HB/EHR checkboxes are **provider-scoped** (toggling here flips the same `publish_status` row used by the Provider tab — that's the "linked across views" requirement)
+- Per-day "Mark all HB / Mark all EHR" buttons act on every provider with a shift on that day
+- Source data: `useShiftRecommendations(month)` (already returns provider+date+state+type) joined client-side with `publish_status` from `useMonthlyPublishView`
+
+### Tab C — Declined (new, global)
+
+Flat table of every shift inside `parsed_shifts` whose `status === 'declined'` (or rows where `decision_status === 'declined'`), across all providers for the selected month.
+
+Columns: Provider · Date · Day · Start · End · Hours · State · Shift type · Reason (from `decision_notes`).
+
+Read-only, sortable, CSV export. No publish checkboxes — declined shifts don't go to Homebase.
+
+### Tab D — All Shifts (already exists)
+
+Keep as-is. It's the flat sanity-check view.
+
+## 4. Cross-view linking (the non-negotiable)
+
+All four tabs read/write the **same** `publish_status` row keyed by `(provider_id, target_month)`. The Provider Homebase checkbox, the By-Day per-row checkbox, and the bulk buttons all hit `useTogglePublishStep`. React Query's `['workbench','monthly-publish']` invalidation already broadcasts updates to every mounted view. No new tables, no new sync logic.
+
+> **Caveat to confirm:** publish status is currently per-provider-per-month, not per-shift. So if Provider X has 8 shifts and you check "HB done" for one shift in the By-Day view, it marks the whole provider as HB-done (the same row updates everywhere). That matches your "single Mark all HB / Mark all EHR" answer and avoids a schema change. Flag if you want per-shift granularity instead — that would be a bigger build (new `shift_publish_status` table).
+
+## 5. Out of scope for this MVP
+
+- Inbox, Forecast overrides, Build grid, Coverage triage from the v2 brief
+- Per-shift publish tracking
+- Jotform → submissions sync changes (uses what's already there)
+- Any licensure / agreements / hiring surfaces
+
+---
+
+## Technical details
+
+**Files added**
+- `supabase/migrations/<ts>_add_scheduling_role.sql` — `ALTER TYPE app_role ADD VALUE 'scheduling';`
+- `src/components/scheduling/SchedulingSidebar.tsx` — slim 2-link nav
+- `src/components/scheduling/SchedulingShell.tsx` — layout wrapper
+- `src/pages/scheduling/SchedulingWorkbenchPage.tsx` — 4-tab page (lifts current Workbench logic, adds bulk buttons + By-Day + Declined)
+- `src/components/scheduling/ByDayPanel.tsx`
+- `src/components/scheduling/DeclinedPanel.tsx`
+
+**Files edited**
+- `src/App.tsx` — add 3 routes under `/scheduling/*`, gated by `requiredRoles={['admin','scheduling']}`
+- `src/hooks/useMonthlyPublish.ts` — add `useBulkTogglePublishStep` (loops over `useTogglePublishStep` server-side via a single upsert array)
+- `src/components/AppSidebar.tsx` — no change (admins still see Monthly Forecast etc.)
+- `src/components/ProtectedRoute.tsx` — no change (already supports role list)
+
+**Data flow**
+- All views: `useMonthlyPublishView(month)` + `useShiftRecommendations(month)` (already exist)
+- Bulk action: single `upsert` to `publish_status` with array of `(provider_id, target_month, homebase_posted_at|ehr_posted_at)` rows; one toast, one query invalidation
+
+**Defaults**
+- Month picker defaults to `2026-06-01`
+- "Declined" tab pulls `parsed_shifts[*].status === 'declined'` + any submission with `decision_status='declined'`
+
+## Acceptance check (do these in order after implementation)
+
+1. Sign in as admin, visit `/scheduling/workbench` — slim sidebar, June 2026 selected.
+2. Click "Mark all visible as posted to Homebase" on the Provider tab — all checkboxes flip, toast confirms count.
+3. Switch to By Day tab — same providers show ☑ HB on every date they appear.
+4. Uncheck one provider's HB on a day card — Provider tab reflects the change immediately.
+5. Declined tab shows declined shifts only, with reason.
+6. Create a test user with the `scheduling` role — they can reach `/scheduling/*` but get redirected away from `/admin/*`.
