@@ -213,15 +213,25 @@ export default function JuneMvpPage() {
             Upload the five files, review the allocation, and check off what you've posted to Homebase and the EHR.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setSlots({})}
-          disabled={Object.keys(slots).length === 0}
-        >
-          <RefreshCw className="h-4 w-4 mr-1" />
-          Clear uploads
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { setSlots({}); setComputed(false); }}
+            disabled={Object.keys(slots).length === 0}
+          >
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Clear uploads
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleCalculate}
+            disabled={!allReady || parsing !== null}
+          >
+            {parsing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CalendarCheck className="h-4 w-4 mr-1" />}
+            {computed ? 'Recalculate' : 'Calculate'}
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -293,12 +303,20 @@ export default function JuneMvpPage() {
       {!allReady && (
         <Alert>
           <AlertDescription>
-            Upload the demand CSV and the Jotform availability CSV to compute the schedule.
+            Upload the demand CSV and the Jotform availability CSV, then click <strong>Calculate</strong>.
           </AlertDescription>
         </Alert>
       )}
 
-      {allReady && result && (
+      {allReady && !computed && (
+        <Alert>
+          <AlertDescription>
+            All required files loaded. Click <strong>Calculate</strong> to build the schedule.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {computed && result && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Kpi label="Demand hours" value={summary.demand.toFixed(0)} />
