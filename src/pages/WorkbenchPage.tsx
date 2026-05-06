@@ -570,7 +570,9 @@ const WorkbenchPage = () => {
 const StateCoveragePanel = ({ month }: { month: string }) => {
   const { data, isLoading } = useStateCoverage(month);
   const rows = data?.rows ?? [];
-  const unassigned = data?.unassignedHours ?? 0;
+  const inHomeHours = data?.inHomeHours ?? 0;
+  const inHomeBreakdown = data?.inHomeBreakdown ?? [];
+  const otherUnassigned = data?.otherUnassignedHours ?? 0;
 
   const totals = rows.reduce(
     (acc, r) => {
@@ -646,17 +648,58 @@ const StateCoveragePanel = ({ month }: { month: string }) => {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground">
-              Unassigned shifts
+              In-home / clinic
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{unassigned.toFixed(0)}</div>
+            <div className="text-2xl font-bold">{inHomeHours.toFixed(0)}</div>
             <div className="text-xs text-muted-foreground mt-1">
-              hours of accepted shifts with no state tag
+              hours, scheduled outside telehealth forecast
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {(inHomeBreakdown.length > 0 || otherUnassigned > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">In-home / clinic shifts</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead className="text-right">Shifts</TableHead>
+                  <TableHead className="text-right">Hours</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inHomeBreakdown.map(p => (
+                  <TableRow key={p.provider_name}>
+                    <TableCell className="font-medium">{p.provider_name}</TableCell>
+                    <TableCell className="text-right tabular-nums">{p.shifts}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {p.hours.toFixed(1)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {otherUnassigned > 0 && (
+                  <TableRow>
+                    <TableCell className="text-muted-foreground italic">
+                      Other unassigned (data gap, please review)
+                    </TableCell>
+                    <TableCell></TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {otherUnassigned.toFixed(1)}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
