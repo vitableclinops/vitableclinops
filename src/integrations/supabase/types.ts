@@ -3746,6 +3746,45 @@ export type Database = {
         }
         Relationships: []
       }
+      publish_status: {
+        Row: {
+          created_at: string
+          ehr_posted_at: string | null
+          ehr_posted_by: string | null
+          homebase_posted_at: string | null
+          homebase_posted_by: string | null
+          id: string
+          notes: string | null
+          provider_id: string
+          target_month: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          ehr_posted_at?: string | null
+          ehr_posted_by?: string | null
+          homebase_posted_at?: string | null
+          homebase_posted_by?: string | null
+          id?: string
+          notes?: string | null
+          provider_id: string
+          target_month: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          ehr_posted_at?: string | null
+          ehr_posted_by?: string | null
+          homebase_posted_at?: string | null
+          homebase_posted_by?: string | null
+          id?: string
+          notes?: string | null
+          provider_id?: string
+          target_month?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       reimbursement_requests: {
         Row: {
           admin_hours_spent: number | null
@@ -5129,7 +5168,7 @@ export type Database = {
         | "in_progress"
         | "cancelled"
         | "archived"
-      app_role: "admin" | "provider" | "physician" | "pod_lead"
+      app_role: "admin" | "provider" | "physician" | "pod_lead" | "scheduling"
       attestation_status: "pending" | "completed" | "overdue" | "excused"
       collab_requirement_type:
         | "never"
@@ -5342,7 +5381,7 @@ export const Constants = {
         "cancelled",
         "archived",
       ],
-      app_role: ["admin", "provider", "physician", "pod_lead"],
+      app_role: ["admin", "provider", "physician", "pod_lead", "scheduling"],
       attestation_status: ["pending", "completed", "overdue", "excused"],
       collab_requirement_type: [
         "never",

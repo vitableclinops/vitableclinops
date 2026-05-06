@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -58,6 +58,8 @@ import ProviderAppointmentsPage from "./pages/ProviderAppointmentsPage";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
 import UsabilityGuidePage from "./pages/UsabilityGuidePage";
 import NotFound from "./pages/NotFound";
+import SchedulingWorkbenchPage from "./pages/scheduling/SchedulingWorkbenchPage";
+import SchedulingForecastPage from "./pages/scheduling/SchedulingForecastPage";
 
 const queryClient = new QueryClient();
 
@@ -88,6 +90,8 @@ const ROUTE_TITLES: Array<{ match: (p: string) => boolean; title: string }> = [
   { match: p => p === '/admin/monthly-forecast', title: 'Monthly Forecast' },
   { match: p => p === '/admin/shift-plan', title: 'Shift Plan' },
   { match: p => p === '/admin/workbench', title: 'Workbench' },
+  { match: p => p === '/scheduling' || p === '/scheduling/workbench', title: 'Scheduling Workbench' },
+  { match: p => p === '/scheduling/forecast', title: 'Scheduling Forecast' },
   { match: p => p === '/admin/contractor-strategy', title: 'Contractor Strategy' },
   { match: p => p === '/admin/sla-aggregate', title: 'SLA Aggregate' },
   { match: p => p === '/admin/tasks', title: 'Task Repository' },
@@ -386,6 +390,17 @@ const App = () => (
             <Route path="/guide" element={
               <ProtectedRoute>
                 <UsabilityGuidePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/scheduling" element={<Navigate to="/scheduling/workbench" replace />} />
+            <Route path="/scheduling/workbench" element={
+              <ProtectedRoute requiredRoles={['admin', 'scheduling']}>
+                <SchedulingWorkbenchPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/scheduling/forecast" element={
+              <ProtectedRoute requiredRoles={['admin', 'scheduling']}>
+                <SchedulingForecastPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

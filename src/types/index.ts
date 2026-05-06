@@ -1,6 +1,6 @@
 // Core domain types for the licensure platform
 
-export type UserRole = 'provider' | 'admin' | 'physician' | 'pod_lead';
+export type UserRole = 'provider' | 'admin' | 'physician' | 'pod_lead' | 'scheduling';
 
 // Provider type defines the credential/license category
 export type ProviderType = 
