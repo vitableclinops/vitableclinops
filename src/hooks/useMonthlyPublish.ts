@@ -178,6 +178,45 @@ export function useTogglePublishStep() {
   });
 }
 
+export function useBulkMarkPublishStep() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (args: {
+      provider_ids: string[];
+      target_month: string;
+      step: 'homebase' | 'ehr';
+      done: boolean;
+    }) => {
+      const monthStart = monthIso(args.target_month);
+      const nowIso = new Date().toISOString();
+      const actorId = user?.id ?? null;
+      const rows = args.provider_ids.map(pid => {
+        const base: Record<string, unknown> = {
+          provider_id: pid,
+          target_month: monthStart,
+        };
+        if (args.step === 'homebase') {
+          base.homebase_posted_at = args.done ? nowIso : null;
+          base.homebase_posted_by = args.done ? actorId : null;
+        } else {
+          base.ehr_posted_at = args.done ? nowIso : null;
+          base.ehr_posted_by = args.done ? actorId : null;
+        }
+        return base;
+      });
+      if (rows.length === 0) return;
+      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('publish_status')
+        .upsert(rows, { onConflict: 'provider_id,target_month' });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+    },
+  });
+}
+
 export function useUpdatePublishNotes() {
   const queryClient = useQueryClient();
   return useMutation({
