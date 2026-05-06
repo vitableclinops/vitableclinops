@@ -35,6 +35,8 @@ export type SubmissionRow = {
   decided_at: string | null;
   validation_status: string | null;
   validation_warnings: unknown;
+  raw_requested_hours: number | null;
+  normalized_requested_hours: number | null;
 };
 
 export type ProviderRow = {
@@ -78,7 +80,7 @@ export function useMonthlyPublishView(month: string) {
         clinopsSupabase
           .from('schedule_submissions')
           .select(
-            'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, validation_status, validation_warnings',
+            'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours',
           )
           .eq('target_month', monthStart)
           .order('submitted_at', { ascending: false }),
@@ -204,6 +206,44 @@ export function useUpdatePublishNotes() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+    },
+  });
+}
+
+export function useOverrideDecision() {
+  const queryClient = useQueryClient();
+  const { profile } = useAuth();
+  return useMutation({
+    mutationFn: async (args: {
+      submission_id: string;
+      decision: 'accepted' | 'declined';
+      hours_basis: number | null;
+      actor_label: string;
+      existing_notes: string | null;
+    }) => {
+      const nowIso = new Date().toISOString();
+      const actor = args.actor_label || profile?.full_name || profile?.email || 'ClinOps';
+      const auditLine = `Manual override: ${args.decision} by ${actor} at ${nowIso}`;
+      const newNotes = args.existing_notes
+        ? `${args.existing_notes}\n${auditLine}`
+        : auditLine;
+      const hours = args.hours_basis ?? 0;
+      const patch: Record<string, unknown> = {
+        decision_status: args.decision,
+        accepted_hours: args.decision === 'accepted' ? hours : 0,
+        declined_hours: args.decision === 'declined' ? hours : 0,
+        decided_at: nowIso,
+        decision_notes: newNotes,
+      };
+      const { error } = await clinopsSupabase
+        .from('schedule_submissions')
+        .update(patch)
+        .eq('id', args.submission_id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'state-coverage'] });
     },
   });
 }

@@ -40,6 +40,7 @@ import {
   useTogglePublishStep,
   useUpdatePublishNotes,
   useReevaluateMonth,
+  useOverrideDecision,
   type DecisionStatus,
   type ProviderPublishView,
   type ParsedShift,
@@ -113,6 +114,8 @@ const WorkbenchPage = () => {
   const toggle = useTogglePublishStep();
   const updateNotes = useUpdatePublishNotes();
   const reevaluate = useReevaluateMonth();
+  const override = useOverrideDecision();
+  const [confirmingOverride, setConfirmingOverride] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -192,6 +195,39 @@ const WorkbenchPage = () => {
       {
         onSuccess: () => toast.success('Notes saved'),
         onError: e => toast.error(`Could not save notes: ${(e as Error).message}`),
+      },
+    );
+  };
+
+  const handleOverride = (
+    submissionId: string,
+    decision: 'accepted' | 'declined',
+    hoursBasis: number | null,
+    existingNotes: string | null,
+  ) => {
+    const key = `${submissionId}-${decision}`;
+    if (confirmingOverride !== key) {
+      setConfirmingOverride(key);
+      window.setTimeout(() => {
+        setConfirmingOverride(prev => (prev === key ? null : prev));
+      }, 4000);
+      return;
+    }
+    setConfirmingOverride(null);
+    override.mutate(
+      {
+        submission_id: submissionId,
+        decision,
+        hours_basis: hoursBasis,
+        actor_label: profile?.full_name || profile?.email || 'ClinOps',
+        existing_notes: existingNotes,
+      },
+      {
+        onSuccess: () =>
+          toast.success(
+            decision === 'accepted' ? 'Marked accepted' : 'Marked declined',
+          ),
+        onError: e => toast.error(`Override failed: ${(e as Error).message}`),
       },
     );
   };
@@ -393,8 +429,43 @@ const WorkbenchPage = () => {
                           <TableCell className="text-right tabular-nums text-muted-foreground">
                             {formatHours(sub?.declined_hours)}
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {sub ? formatDateTime(sub.submitted_at) : '—'}
+                          <TableCell className="text-xs text-muted-foreground align-top">
+                            <div>{sub ? formatDateTime(sub.submitted_at) : '—'}</div>
+                            {sub &&
+                              (sub.decision_status === 'pending' ||
+                                sub.decision_status === 'needs_review') && (
+                                <div className="flex gap-1 mt-1">
+                                  {(['accepted', 'declined'] as const).map(d => {
+                                    const k = `${sub.id}-${d}`;
+                                    const isConfirming = confirmingOverride === k;
+                                    return (
+                                      <Button
+                                        key={d}
+                                        variant={isConfirming ? 'default' : 'outline'}
+                                        size="sm"
+                                        className="h-6 px-2 text-[10px]"
+                                        disabled={override.isPending}
+                                        onClick={() =>
+                                          handleOverride(
+                                            sub.id,
+                                            d,
+                                            sub.normalized_requested_hours ??
+                                              sub.raw_requested_hours ??
+                                              null,
+                                            sub.decision_notes,
+                                          )
+                                        }
+                                      >
+                                        {isConfirming
+                                          ? 'Click again to confirm'
+                                          : d === 'accepted'
+                                          ? 'Mark accepted'
+                                          : 'Mark declined'}
+                                      </Button>
+                                    );
+                                  })}
+                                </div>
+                              )}
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex flex-col items-center gap-1">
