@@ -110,6 +110,38 @@ export default function JuneMvpPage() {
     }
   }, []);
 
+  // Auto-preload the bundled June Jotform sample on first mount so the user
+  // can start with one less upload step.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/sample-data/jotform-availability-june.csv');
+        if (!res.ok) return;
+        const text = await res.text();
+        const rows = parseJotformCsv(text);
+        if (cancelled) return;
+        setSlots(prev =>
+          prev.jotform
+            ? prev
+            : {
+                ...prev,
+                jotform: {
+                  fileName: 'Monthly_Availability (preloaded)',
+                  parsedCount: rows.length,
+                  payload: rows,
+                },
+              },
+        );
+      } catch {
+        /* silent — user can upload manually */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const result: AllocationResult | null = useMemo(() => {
     if (!computed) return null;
     if (!slots.demand || !slots.jotform) return null;
