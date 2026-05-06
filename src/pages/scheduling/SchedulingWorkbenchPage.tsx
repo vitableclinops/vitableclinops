@@ -433,7 +433,8 @@ function ByDayPanel({
   const days = useMemo<DayBucket[]>(() => {
     const map = new Map<string, DayBucket>();
     for (const row of acceptedRows) {
-      const shifts = row.submission?.parsed_shifts ?? [];
+      const raw = row.submission?.parsed_shifts;
+      const shifts = Array.isArray(raw) ? raw : [];
       for (const s of shifts) {
         if (!s.date) continue;
         if (!map.has(s.date)) map.set(s.date, { date: s.date, entries: [] });
