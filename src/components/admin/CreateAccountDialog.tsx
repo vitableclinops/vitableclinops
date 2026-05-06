@@ -64,15 +64,18 @@ export function CreateAccountDialog({ trigger }: CreateAccountDialogProps) {
       if (error) throw new Error(error.message);
       if (result?.error) throw new Error(result.error);
 
-      return { password, userId: result.userId };
+      return { password, userId: result.userId, emailSent: !!result.emailSent, emailError: result.emailError as string | undefined };
     },
     onSuccess: (data) => {
       setTempPassword(data.password);
       setAccountCreated(true);
       queryClient.invalidateQueries({ queryKey: ['users-with-roles'] });
       toast({
-        title: 'Account Created',
-        description: `Account for ${email} has been created successfully.`,
+        title: data.emailSent ? 'Account Created & Email Sent' : 'Account Created',
+        description: data.emailSent
+          ? `Welcome email with login link sent to ${email}.`
+          : `Account created for ${email}. Email failed${data.emailError ? `: ${data.emailError}` : ''} — share password manually.`,
+        variant: data.emailSent ? 'default' : 'destructive',
       });
     },
     onError: (error: Error) => {

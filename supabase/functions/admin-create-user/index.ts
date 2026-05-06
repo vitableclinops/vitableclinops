@@ -1,4 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { Resend } from 'npm:resend@2.0.0';
+
+const LOGIN_URL = 'https://vitableclinops.lovable.app/auth';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -133,12 +136,61 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Send welcome email with temporary password and login link
+    let emailSent = false;
+    let emailError: string | null = null;
+    try {
+      const resendKey = Deno.env.get('RESEND_API_KEY');
+      if (resendKey) {
+        const resend = new Resend(resendKey);
+        const fromAddress = Deno.env.get('EMAIL_FROM_ADDRESS') || 'Vitable Health <onboarding@resend.dev>';
+        const greetingName = (fullName && fullName.trim()) || email.split('@')[0];
+        const html = `
+          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.6;color:#1a1a1a;max-width:600px;margin:0 auto;padding:24px;">
+            <h1 style="color:#0f766e;margin:0 0 16px;">Welcome to Vitable ClinOps</h1>
+            <p>Hi ${greetingName},</p>
+            <p>An account has been created for you. Use the temporary password below to sign in. You'll be asked to set a new password on first login.</p>
+            <div style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:20px 0;">
+              <p style="margin:0 0 8px;"><strong>Email:</strong> ${email}</p>
+              <p style="margin:0;"><strong>Temporary password:</strong> <code style="background:#fff;padding:4px 8px;border-radius:4px;border:1px solid #e5e7eb;font-size:14px;">${password}</code></p>
+            </div>
+            <p style="margin:24px 0;">
+              <a href="${LOGIN_URL}" style="display:inline-block;background:#0f766e;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Log in to Vitable ClinOps</a>
+            </p>
+            <p style="color:#6b7280;font-size:13px;">Or open this link directly: <a href="${LOGIN_URL}" style="color:#0f766e;">${LOGIN_URL}</a></p>
+            <p style="color:#6b7280;font-size:12px;margin-top:32px;">For security, please change your password immediately after signing in.</p>
+          </div>
+        `;
+        const { error: sendErr } = await resend.emails.send({
+          from: fromAddress,
+          to: [email],
+          subject: 'Your Vitable ClinOps account — temporary password inside',
+          html,
+        });
+        if (sendErr) {
+          emailError = sendErr.message || String(sendErr);
+          console.error('Welcome email failed:', sendErr);
+        } else {
+          emailSent = true;
+        }
+      } else {
+        emailError = 'RESEND_API_KEY not configured';
+      }
+    } catch (e) {
+      emailError = (e as Error).message;
+      console.error('Welcome email exception:', e);
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
         userId: newUser.user?.id,
         password,
-        message: 'Account created successfully' 
+        emailSent,
+        emailError,
+        message: emailSent
+          ? 'Account created and welcome email sent'
+          : 'Account created (welcome email failed — share password manually)'
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
