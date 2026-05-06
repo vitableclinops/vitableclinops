@@ -2,7 +2,7 @@ name: ClinOps — Jotform sync + evaluate
 
 # Pulls new Jotform availability submissions into the ClinOps DB and runs
 # the evaluator so the Scheduling Workbench shows new providers and shifts
-# without manual intervention. Runs every 30 minutes.
+# without manual intervention. Runs every 10 minutes.
 #
 # Pipeline:
 #   1. POST sync-jotform-submissions  → upserts new rows into
@@ -18,7 +18,7 @@ name: ClinOps — Jotform sync + evaluate
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # every 30 minutes
+    - cron: '*/10 * * * *'   # every 10 minutes
   workflow_dispatch:
 
 permissions:
