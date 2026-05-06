@@ -348,7 +348,7 @@ export default function JuneMvpPage() {
 
             <TabsContent value="provider" className="mt-4">
               <ByProvider
-                rows={acceptedProviderRows}
+                rows={providerRows}
                 filter={filter}
                 setFilter={setFilter}
                 publish={publish}
