@@ -59,3 +59,9 @@ verify_jwt = false
 
 [functions.backfill-slack-user-ids]
 verify_jwt = false
+
+# Invoked from the workbench "Re-run evaluator" button via the clinops anon
+# client (no user JWT). The function uses the service role internally for
+# all DB writes, so JWT verification at the gateway is unnecessary.
+[functions.evaluate-schedule-submissions]
+verify_jwt = false
