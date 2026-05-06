@@ -213,12 +213,24 @@ export default function JuneMvpPage() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Upload className="h-4 w-4" />
-            Upload data
+        <CardHeader
+          className="cursor-pointer select-none"
+          onClick={() => setUploadOpen(o => !o)}
+        >
+          <CardTitle className="text-base flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <Upload className="h-4 w-4" />
+              Upload data
+              <span className="text-xs font-normal text-muted-foreground">
+                {Object.keys(slots).length}/{SLOT_DEFS.length} loaded
+              </span>
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${uploadOpen ? '' : '-rotate-90'}`}
+            />
           </CardTitle>
         </CardHeader>
+        {uploadOpen && (
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {SLOT_DEFS.map(def => {
@@ -263,6 +275,7 @@ export default function JuneMvpPage() {
             sources combine as a union — bring as many as you have.
           </div>
         </CardContent>
+        )}
       </Card>
 
       {!allReady && (
