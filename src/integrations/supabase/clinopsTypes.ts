@@ -350,6 +350,8 @@ export type ClinOpsDatabase = {
           publish_status: string
           published_at: string | null
           published_by: string | null
+          ehr_posted_at: string | null
+          ehr_posted_by: string | null
           recommendation: string
           recommendation_reason: string | null
           shift_date: string
@@ -396,6 +398,8 @@ export type ClinOpsDatabase = {
           publish_status?: string
           published_at?: string | null
           published_by?: string | null
+          ehr_posted_at?: string | null
+          ehr_posted_by?: string | null
           recommendation?: string
           recommendation_reason?: string | null
           shift_date?: string
