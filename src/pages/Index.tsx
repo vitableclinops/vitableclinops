@@ -112,6 +112,8 @@ const Index = () => {
         navigate('/provider', { replace: true });
       } else if (userRoles.includes('physician')) {
         navigate('/physician', { replace: true });
+      } else if ((userRoles as string[]).includes('scheduling')) {
+        navigate('/scheduling/workbench', { replace: true });
       }
     }
   }, [userRoles, navigate]);
