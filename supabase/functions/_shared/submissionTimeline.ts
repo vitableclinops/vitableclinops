@@ -161,13 +161,21 @@ export function collectUnavailableDates(submissions: SubmissionRow[]): string[] 
   // the group: a provider who lists 6/15 off in their first submission and
   // forgets to re-list it in a resubmission still shouldn't be scheduled
   // there. ClinOps confirmed this is the desired behavior.
+  //
+  // The Jotform "When will you be unavailable to work?" widget stores rows
+  // with `Start Date` / `End Date` columns and supports inclusive date
+  // ranges (e.g. 06-06-2026 → 06-08-2026 means three off days). We expand
+  // each range and also accept a single `Date` value as a fallback for any
+  // legacy entry shape.
   const out = new Set<string>();
   for (const sub of submissions) {
     const parsed = sub.parsed_shifts;
     if (!parsed) continue;
     for (const e of parseWidgetArray(parsed.unavailable_dates)) {
-      const d = parseFormDate(e['Date']);
-      if (d) out.add(d);
+      const start = parseFormDate(e['Start Date'] ?? e['Date']);
+      const end = parseFormDate(e['End Date']) ?? start;
+      if (!start) continue;
+      for (const d of expandDateRange(start, end ?? start)) out.add(d);
     }
   }
   return Array.from(out);
@@ -314,6 +322,27 @@ function parseFormDate(raw: unknown): string | null {
   if (mdy) return `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`;
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   return null;
+}
+
+function expandDateRange(startISO: string, endISO: string): string[] {
+  // Inclusive expansion in UTC to avoid DST drift.
+  const [sy, sm, sd] = startISO.split('-').map(Number);
+  const [ey, em, ed] = endISO.split('-').map(Number);
+  let cur = Date.UTC(sy, sm - 1, sd);
+  const last = Date.UTC(ey, em - 1, ed);
+  if (!Number.isFinite(cur) || !Number.isFinite(last) || last < cur) {
+    return [startISO];
+  }
+  const out: string[] = [];
+  const DAY = 86_400_000;
+  while (cur <= last) {
+    const d = new Date(cur);
+    out.push(
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`,
+    );
+    cur += DAY;
+  }
+  return out;
 }
 
 function sumHours(slots: ExpandedSlot[]): number {

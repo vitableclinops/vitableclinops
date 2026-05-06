@@ -219,6 +219,112 @@ describe('Evaluator/emitter parity (full pipeline)', () => {
   });
 });
 
+describe('unavailable_dates filtering', () => {
+  it('removes recurring slots that fall on a Start Date / End Date entry (single day)', () => {
+    // Akosua's case: recurring Mon 9-12, off on 6/1 (a Monday).
+    const submission: SubmissionRow = {
+      id: 'sub-akosua-1',
+      submitted_at: '2026-05-01T00:00:00Z',
+      parsed_shifts: {
+        recurring_virtual: JSON.stringify([
+          { 'Day of Week': 'Monday', 'Start Time (ET)': '9:00 AM', 'End Time (ET)': '12:00 PM' },
+        ]),
+        unavailable_dates: JSON.stringify([
+          { 'Start Date': '06-01-2026', 'End Date': '06-01-2026' },
+        ]),
+      } as ParsedShiftsBlob,
+    };
+    const result = buildSubmissionTimeline(
+      [submission],
+      { name: 'Akosua' },
+      FIXTURE_TARGET_MONTH,
+    );
+    const dates = result.timeline.map(s => s.date);
+    expect(dates).not.toContain('2026-06-01');
+    // Other Mondays in June 2026: 6/8, 6/15, 6/22, 6/29 → 4 remaining.
+    expect(dates.filter(d => /^2026-06-\d{2}$/.test(d))).toHaveLength(4);
+  });
+
+  it('expands a Start Date → End Date range into all inclusive days', () => {
+    // Off 6/6 through 6/8 (Sat–Mon); recurring Mon 9-12 should drop 6/8.
+    const submission: SubmissionRow = {
+      id: 'sub-akosua-2',
+      submitted_at: '2026-05-01T00:00:00Z',
+      parsed_shifts: {
+        recurring_virtual: JSON.stringify([
+          { 'Day of Week': 'Monday', 'Start Time (ET)': '9:00 AM', 'End Time (ET)': '12:00 PM' },
+        ]),
+        unavailable_dates: JSON.stringify([
+          { 'Start Date': '06-06-2026', 'End Date': '06-08-2026' },
+        ]),
+      } as ParsedShiftsBlob,
+    };
+    const result = buildSubmissionTimeline(
+      [submission],
+      { name: 'Akosua' },
+      FIXTURE_TARGET_MONTH,
+    );
+    const dates = result.timeline.map(s => s.date);
+    expect(dates).not.toContain('2026-06-08');
+    // 5 Mondays in June 2026, minus 6/8 = 4.
+    expect(dates).toHaveLength(4);
+  });
+
+  it("filters Akosua's full off-shift list against her recurring Mon 9-12", () => {
+    const submission: SubmissionRow = {
+      id: 'sub-akosua-full',
+      submitted_at: '2026-05-01T00:00:00Z',
+      parsed_shifts: {
+        recurring_virtual: JSON.stringify([
+          { 'Day of Week': 'Monday', 'Start Time (ET)': '9:00 AM', 'End Time (ET)': '12:00 PM' },
+        ]),
+        unavailable_dates: JSON.stringify([
+          { 'Start Date': '06-01-2026', 'End Date': '06-01-2026' },
+          { 'Start Date': '06-03-2026', 'End Date': '06-03-2026' },
+          { 'Start Date': '06-06-2026', 'End Date': '06-08-2026' },
+          { 'Start Date': '06-12-2026', 'End Date': '06-14-2026' },
+          { 'Start Date': '06-16-2026', 'End Date': '06-16-2026' },
+          { 'Start Date': '06-18-2026', 'End Date': '06-18-2026' },
+          { 'Start Date': '06-20-2026', 'End Date': '06-20-2026' },
+          { 'Start Date': '06-23-2026', 'End Date': '06-23-2026' },
+          { 'Start Date': '06-26-2026', 'End Date': '06-27-2026' },
+          { 'Start Date': '06-29-2026', 'End Date': '06-29-2026' },
+        ]),
+      } as ParsedShiftsBlob,
+    };
+    const result = buildSubmissionTimeline(
+      [submission],
+      { name: 'Akosua' },
+      FIXTURE_TARGET_MONTH,
+    );
+    // June 2026 Mondays: 1, 8, 15, 22, 29.
+    // Off list covers: 1 (single), 8 (range 6-8), 29 (single). 15 and 22 remain.
+    const dates = result.timeline.map(s => s.date).sort();
+    expect(dates).toEqual(['2026-06-15', '2026-06-22']);
+  });
+
+  it('legacy { Date } entries still work as a fallback', () => {
+    const submission: SubmissionRow = {
+      id: 'sub-legacy',
+      submitted_at: '2026-05-01T00:00:00Z',
+      parsed_shifts: {
+        recurring_virtual: JSON.stringify([
+          { 'Day of Week': 'Monday', 'Start Time (ET)': '9:00 AM', 'End Time (ET)': '12:00 PM' },
+        ]),
+        unavailable_dates: JSON.stringify([
+          { 'Date': '06-01-2026' },
+        ]),
+      } as ParsedShiftsBlob,
+    };
+    const result = buildSubmissionTimeline(
+      [submission],
+      { name: 'Akosua' },
+      FIXTURE_TARGET_MONTH,
+    );
+    expect(result.timeline.map(s => s.date)).not.toContain('2026-06-01');
+  });
+});
+
 describe('needs_review scenarios (no auto-decision)', () => {
   it('a submission with an 8 AM–11:59 PM recurring entry without an override is flagged needs_review', () => {
     const submission: SubmissionRow = {
