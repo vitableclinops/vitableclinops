@@ -52,15 +52,17 @@ import {
   useTogglePublishStep,
   useBulkMarkPublishStep,
   useReevaluateMonth,
-  usePublishedShifts,
+  useShiftRecommendationsForMonth,
   useTogglePublishShift,
   useBulkMarkPublishShifts,
   useResolveNeedsReview,
-  shiftKey,
+  formatShiftTime,
+  isHomebaseDone,
+  isEhrDone,
   type ProviderPublishView,
   type DecisionStatus,
   type ParsedShift,
-  type PublishedShiftRow,
+  type ShiftRow,
   type ShiftPublishStep,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
@@ -127,61 +129,15 @@ const StatusBadge = ({ status }: { status: DecisionStatus | null | undefined }) 
   return <Badge className={s.className}>{s.label}</Badge>;
 };
 
-// Lift each provider's parsed_shifts JSON into a flat list of trackable shifts.
-// We only emit entries that have a real date + start + end since those are the
-// only ones we can match against published_shifts on the round trip.
-type FlatShift = {
-  submission_id: string;
-  provider_id: string;
-  provider_name: string;
-  profession: string | null;
-  target_month: string;
-  shift_date: string;
-  start_time: string;
-  end_time: string;
-  hours: number;
-  state: string | null;
-  shift_type: string | null;
+const SHIFT_TYPE_LABEL: Record<string, string> = {
+  virtual_recurring: 'Recurring virtual',
+  virtual_oneoff: 'One-off virtual',
+  in_home_clinic: 'In-home / clinic',
 };
 
-function flattenShifts(rows: ProviderPublishView[], month: string): FlatShift[] {
-  const out: FlatShift[] = [];
-  for (const r of rows) {
-    const sub = r.submission;
-    if (!sub) continue;
-    const arr = Array.isArray(sub.parsed_shifts) ? sub.parsed_shifts : [];
-    for (const s of arr) {
-      if (!s.date || !s.start_time || !s.end_time) continue;
-      out.push({
-        submission_id: sub.id,
-        provider_id: r.provider_id,
-        provider_name: r.provider_name,
-        profession: r.profession,
-        target_month: month,
-        shift_date: s.date,
-        start_time: s.start_time,
-        end_time: s.end_time,
-        hours: s.hours ?? 0,
-        state: s.state ?? null,
-        shift_type: s.shift_type ?? null,
-      });
-    }
-  }
-  return out;
-}
-
-const isShiftDone = (
-  s: { submission_id: string; shift_date: string; start_time: string; end_time: string },
-  step: ShiftPublishStep,
-  publishedByKey: Map<string, PublishedShiftRow>,
-) => {
-  const row = publishedByKey.get(
-    shiftKey(s.submission_id, s.shift_date, s.start_time, s.end_time),
-  );
-  if (!row) return false;
-  return step === 'homebase'
-    ? !!row.homebase_posted_at
-    : !!row.ehr_posted_at;
+const labelShiftType = (t: string | null | undefined) => {
+  if (!t) return '—';
+  return SHIFT_TYPE_LABEL[t] ?? t;
 };
 
 export default function SchedulingWorkbenchPage() {
@@ -192,8 +148,8 @@ export default function SchedulingWorkbenchPage() {
     setExpanded(p => ({ ...p, [id]: !p[id] }));
 
   const { data: dbRows = [], isLoading, refetch } = useMonthlyPublishView(month);
-  const { data: publishedShifts = new Map<string, PublishedShiftRow>() } =
-    usePublishedShifts(month);
+  const { data: shiftRows = [], isLoading: shiftsLoading, refetch: refetchShifts } =
+    useShiftRecommendationsForMonth(month);
   const togglePerProvider = useTogglePublishStep();
   const bulkPerProvider = useBulkMarkPublishStep();
   const togglePerShift = useTogglePublishShift();
@@ -287,6 +243,17 @@ export default function SchedulingWorkbenchPage() {
     });
   }, [dbRows, override, month]);
 
+  // Group shift_recommendations rows by provider for the per-provider view.
+  const shiftsByProvider = useMemo(() => {
+    const map = new Map<string, ShiftRow[]>();
+    for (const s of shiftRows) {
+      if (!s.provider_id) continue;
+      if (!map.has(s.provider_id)) map.set(s.provider_id, []);
+      map.get(s.provider_id)!.push(s);
+    }
+    return map;
+  }, [shiftRows]);
+
   // Telehealth-only set drives the main publishing flow. MH gets its own tab.
   const telehealthRows = useMemo(
     () => rows.filter(r => !isMentalHealth(r.profession)),
@@ -334,19 +301,15 @@ export default function SchedulingWorkbenchPage() {
 
   // Aggregate progress: count individual shifts so the headline reflects
   // Sarabjeet's actual workload, not just per-provider check-marks.
-  const allFlatAccepted = useMemo(
-    () => flattenShifts(acceptedRows, month),
-    [acceptedRows, month],
-  );
+  const allFlatAccepted = useMemo(() => {
+    const acceptedProviderIds = new Set(acceptedRows.map(r => r.provider_id));
+    return shiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
+  }, [acceptedRows, shiftRows]);
 
   const summary = useMemo(() => {
     const totalShifts = allFlatAccepted.length;
-    const homebaseShifts = allFlatAccepted.filter(s =>
-      isShiftDone(s, 'homebase', publishedShifts),
-    ).length;
-    const ehrShifts = allFlatAccepted.filter(s =>
-      isShiftDone(s, 'ehr', publishedShifts),
-    ).length;
+    const homebaseShifts = allFlatAccepted.filter(isHomebaseDone).length;
+    const ehrShifts = allFlatAccepted.filter(isEhrDone).length;
     return {
       totalProviders: acceptedRows.length,
       totalShifts,
@@ -356,7 +319,7 @@ export default function SchedulingWorkbenchPage() {
       needsReviewCount: needsReviewRows.length,
       missingCount: missingRows.length,
     };
-  }, [acceptedRows, allFlatAccepted, declinedRows, needsReviewRows, missingRows, publishedShifts]);
+  }, [acceptedRows, allFlatAccepted, declinedRows, needsReviewRows, missingRows]);
 
   const handleToggleProvider = (
     row: ProviderPublishView,
@@ -370,12 +333,12 @@ export default function SchedulingWorkbenchPage() {
   };
 
   const handleToggleShift = (
-    flat: FlatShift,
+    shift: ShiftRow,
     step: ShiftPublishStep,
     done: boolean,
   ) => {
     togglePerShift.mutate(
-      { ...flat, step, done },
+      { id: shift.id, step, done },
       { onError: e => toast.error(`Could not save: ${(e as Error).message}`) },
     );
   };
@@ -384,31 +347,42 @@ export default function SchedulingWorkbenchPage() {
     row: ProviderPublishView,
     step: ShiftPublishStep,
   ) => {
-    const flats = flattenShifts([row], month);
-    if (flats.length === 0) {
-      // Fallback: aggregate-level mark for old submissions without per-shift
-      // data. This keeps providers with the legacy parsed_shifts JSON usable.
+    const shifts = shiftsByProvider.get(row.provider_id) ?? [];
+    if (shifts.length === 0) {
+      // Fallback for providers with no shift_recommendations rows yet (eg.
+      // submission hasn't been evaluated). Use the aggregate-level mark so the
+      // page is still actionable.
       handleToggleProvider(row, step, true);
       return;
     }
+    const target = step === 'homebase'
+      ? shifts.filter(s => !isHomebaseDone(s))
+      : shifts.filter(s => isHomebaseDone(s) && !isEhrDone(s));
+    if (target.length === 0) {
+      toast.info(`Nothing left to mark for ${row.provider_name}.`);
+      return;
+    }
     bulkPerShift.mutate(
-      { shifts: flats, step, done: true },
+      { ids: target.map(s => s.id), step, done: true },
       {
         onSuccess: () => {
-          // Auto-rollup so existing aggregate views still light up.
           handleToggleProvider(row, step, true);
           toast.success(
-            `Marked ${flats.length} shift${flats.length === 1 ? '' : 's'} for ${row.provider_name}`,
+            `Marked ${target.length} shift${target.length === 1 ? '' : 's'} for ${row.provider_name}`,
           );
         },
-        onError: e => toast.error(`Bulk shift mark failed: ${(e as Error).message}`),
+        onError: e => toast.error(`Bulk mark failed: ${(e as Error).message}`),
       },
     );
   };
 
   const handleBulkAll = (step: ShiftPublishStep) => {
-    const flats = flattenShifts(filteredAccepted, month);
-    if (flats.length === 0) {
+    const acceptedIds = new Set(filteredAccepted.map(r => r.provider_id));
+    const target = (step === 'homebase'
+      ? allFlatAccepted.filter(s => !isHomebaseDone(s))
+      : allFlatAccepted.filter(s => isHomebaseDone(s) && !isEhrDone(s))
+    ).filter(s => s.provider_id && acceptedIds.has(s.provider_id));
+    if (target.length === 0) {
       const ids = filteredAccepted.map(r => r.provider_id);
       if (ids.length === 0) {
         toast.info('No providers to mark.');
@@ -429,11 +403,11 @@ export default function SchedulingWorkbenchPage() {
       return;
     }
     bulkPerShift.mutate(
-      { shifts: flats, step, done: true },
+      { ids: target.map(s => s.id), step, done: true },
       {
         onSuccess: () => {
           // Roll up to provider-level too
-          const ids = Array.from(new Set(flats.map(f => f.provider_id)));
+          const ids = Array.from(new Set(target.map(s => s.provider_id!).filter(Boolean)));
           bulkPerProvider.mutate({
             provider_ids: ids,
             target_month: month,
@@ -441,7 +415,7 @@ export default function SchedulingWorkbenchPage() {
             done: true,
           });
           toast.success(
-            `Marked ${flats.length} shift${flats.length === 1 ? '' : 's'} as posted to ${
+            `Marked ${target.length} shift${target.length === 1 ? '' : 's'} as posted to ${
               step === 'homebase' ? 'Homebase' : 'the EHR'
             }`,
           );
@@ -456,6 +430,7 @@ export default function SchedulingWorkbenchPage() {
       onSuccess: () => {
         toast.success(`Re-evaluated ${formatMonthLabel(month)}`);
         refetch();
+        refetchShifts();
       },
       onError: e => toast.error(`Re-evaluation failed: ${(e as Error).message}`),
     });
@@ -524,6 +499,17 @@ export default function SchedulingWorkbenchPage() {
         <SummaryCard label="Declined" value={summary.declinedCount.toString()} />
       </div>
 
+      {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            No per-shift recommendations have been generated for{' '}
+            {formatMonthLabel(month)}. Click "Re-run evaluator" to expand the Jotform
+            submissions into individual shifts.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -532,7 +518,7 @@ export default function SchedulingWorkbenchPage() {
               <p className="text-xs text-muted-foreground mt-1">
                 {override
                   ? `Using uploaded file: ${override.fileName} · ${override.totalShifts} shift${override.totalShifts === 1 ? '' : 's'} matched to ${override.matchedProviders} provider${override.matchedProviders === 1 ? '' : 's'}`
-                  : 'Using shifts from the database. Upload a Jotform export only if you need to preview a not-yet-imported file.'}
+                  : `Showing ${shiftRows.length} shift${shiftRows.length === 1 ? '' : 's'} from the evaluator. Upload a Jotform export only if you need to preview a not-yet-imported file.`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -667,13 +653,9 @@ export default function SchedulingWorkbenchPage() {
                   <TableBody>
                     {filteredAccepted.map(row => {
                       const sub = row.submission!;
-                      const flats = flattenShifts([row], month);
-                      const hbDone = flats.filter(s =>
-                        isShiftDone(s, 'homebase', publishedShifts),
-                      ).length;
-                      const ehrDone = flats.filter(s =>
-                        isShiftDone(s, 'ehr', publishedShifts),
-                      ).length;
+                      const flats = shiftsByProvider.get(row.provider_id) ?? [];
+                      const hbDone = flats.filter(isHomebaseDone).length;
+                      const ehrDone = flats.filter(isEhrDone).length;
                       const isOpen = !!expanded[row.provider_id];
                       const totalShifts = flats.length;
                       return (
@@ -741,13 +723,12 @@ export default function SchedulingWorkbenchPage() {
                               <TableCell colSpan={6} className="py-2">
                                 {flats.length === 0 ? (
                                   <div className="text-xs text-muted-foreground italic">
-                                    No per-shift data parsed for this submission. Use the row-level
-                                    HB/EHR buttons instead.
+                                    No per-shift data — submission hasn't been expanded yet.
+                                    Click "Re-run evaluator" above to generate the shift list.
                                   </div>
                                 ) : (
                                   <ShiftListInline
-                                    flats={flats}
-                                    publishedByKey={publishedShifts}
+                                    shifts={flats}
                                     onToggle={handleToggleShift}
                                   />
                                 )}
@@ -774,16 +755,16 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="queue" className="mt-4 space-y-4">
           <PublishingQueue
             month={month}
-            flats={allFlatAccepted}
-            publishedByKey={publishedShifts}
+            shifts={allFlatAccepted}
+            isLoading={shiftsLoading}
             onToggleShift={handleToggleShift}
-            onBulkShifts={(shifts, step, done) =>
+            onBulkShifts={(ids, step, done) =>
               bulkPerShift.mutate(
-                { shifts, step, done },
+                { ids, step, done },
                 {
                   onSuccess: () =>
                     toast.success(
-                      `Marked ${shifts.length} shift${shifts.length === 1 ? '' : 's'} ${
+                      `Marked ${ids.length} shift${ids.length === 1 ? '' : 's'} ${
                         done ? 'posted' : 'unposted'
                       }`,
                     ),
@@ -797,9 +778,8 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="day" className="mt-4 space-y-4">
           <ByDayPanel
             month={month}
-            flats={allFlatAccepted}
-            publishedByKey={publishedShifts}
-            isLoading={isLoading}
+            shifts={allFlatAccepted}
+            isLoading={shiftsLoading}
             onToggleShift={handleToggleShift}
           />
         </TabsContent>
@@ -814,6 +794,7 @@ export default function SchedulingWorkbenchPage() {
                 onSuccess: () => {
                   toast.success(`Marked ${args.decision} for ${args.provider_name}`);
                   refetch();
+                  refetchShifts();
                 },
                 onError: e => toast.error(`Could not resolve: ${(e as Error).message}`),
               })
@@ -830,7 +811,7 @@ export default function SchedulingWorkbenchPage() {
           <MentalHealthPanel
             month={month}
             rows={mentalHealthRows}
-            publishedByKey={publishedShifts}
+            shiftsByProvider={shiftsByProvider}
             isLoading={isLoading}
             onToggleShift={handleToggleShift}
             onToggleProvider={handleToggleProvider}
@@ -895,22 +876,19 @@ function ShiftProgress({ done, total }: { done: number; total: number }) {
 }
 
 function ShiftListInline({
-  flats,
-  publishedByKey,
+  shifts,
   onToggle,
 }: {
-  flats: FlatShift[];
-  publishedByKey: Map<string, PublishedShiftRow>;
-  onToggle: (s: FlatShift, step: ShiftPublishStep, done: boolean) => void;
+  shifts: ShiftRow[];
+  onToggle: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
 }) {
   const sorted = useMemo(
     () =>
-      [...flats].sort(
+      [...shifts].sort(
         (a, b) =>
-          a.shift_date.localeCompare(b.shift_date) ||
-          a.start_time.localeCompare(b.start_time),
+          a.shift_date.localeCompare(b.shift_date) || a.start_min - b.start_min,
       ),
-    [flats],
+    [shifts],
   );
   return (
     <Table>
@@ -926,20 +904,20 @@ function ShiftListInline({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {sorted.map((s, i) => {
-          const hbDone = isShiftDone(s, 'homebase', publishedByKey);
-          const ehrDone = isShiftDone(s, 'ehr', publishedByKey);
+        {sorted.map(s => {
+          const hbDone = isHomebaseDone(s);
+          const ehrDone = isEhrDone(s);
           return (
-            <TableRow key={`${s.submission_id}-${s.shift_date}-${s.start_time}-${i}`}>
+            <TableRow key={s.id}>
               <TableCell className="text-xs">{formatDateLabel(s.shift_date)}</TableCell>
               <TableCell className="text-xs tabular-nums">
-                {s.start_time}–{s.end_time}
+                {formatShiftTime(s.start_min)}–{formatShiftTime(s.end_min)}
               </TableCell>
               <TableCell className="text-xs text-right tabular-nums">
                 {formatHours(s.hours)}
               </TableCell>
-              <TableCell className="text-xs">{s.shift_type ?? '—'}</TableCell>
-              <TableCell className="text-xs">{s.state ?? '—'}</TableCell>
+              <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
+              <TableCell className="text-xs">{s.assigned_state ?? '—'}</TableCell>
               <TableCell className="text-center">
                 <Checkbox
                   checked={hbDone}
@@ -986,16 +964,16 @@ function LoadingRow({ label }: { label: string }) {
 
 function PublishingQueue({
   month,
-  flats,
-  publishedByKey,
+  shifts,
+  isLoading,
   onToggleShift,
   onBulkShifts,
 }: {
   month: string;
-  flats: FlatShift[];
-  publishedByKey: Map<string, PublishedShiftRow>;
-  onToggleShift: (s: FlatShift, step: ShiftPublishStep, done: boolean) => void;
-  onBulkShifts: (shifts: FlatShift[], step: ShiftPublishStep, done: boolean) => void;
+  shifts: ShiftRow[];
+  isLoading: boolean;
+  onToggleShift: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
+  onBulkShifts: (ids: string[], step: ShiftPublishStep, done: boolean) => void;
 }) {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_hb' | 'pending_ehr' | 'done'>(
     'pending_hb',
@@ -1004,16 +982,16 @@ function PublishingQueue({
 
   const filtered = useMemo(() => {
     const q = providerFilter.trim().toLowerCase();
-    return flats.filter(s => {
-      const hbDone = isShiftDone(s, 'homebase', publishedByKey);
-      const ehrDone = isShiftDone(s, 'ehr', publishedByKey);
+    return shifts.filter(s => {
+      const hbDone = isHomebaseDone(s);
+      const ehrDone = isEhrDone(s);
       if (statusFilter === 'pending_hb' && hbDone) return false;
       if (statusFilter === 'pending_ehr' && (!hbDone || ehrDone)) return false;
       if (statusFilter === 'done' && !ehrDone) return false;
       if (q && !s.provider_name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [flats, publishedByKey, statusFilter, providerFilter]);
+  }, [shifts, statusFilter, providerFilter]);
 
   const sorted = useMemo(
     () =>
@@ -1021,18 +999,27 @@ function PublishingQueue({
         (a, b) =>
           a.shift_date.localeCompare(b.shift_date) ||
           a.provider_name.localeCompare(b.provider_name) ||
-          a.start_time.localeCompare(b.start_time),
+          a.start_min - b.start_min,
       ),
     [filtered],
   );
 
-  if (flats.length === 0) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent>
+          <LoadingRow label="Loading shifts" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (shifts.length === 0) {
     return (
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No per-shift data for {formatMonthLabel(month)}. Run the evaluator first or check the
-          By Provider tab.
+          No shift recommendations for {formatMonthLabel(month)}. Run the evaluator first.
         </AlertDescription>
       </Alert>
     );
@@ -1070,7 +1057,7 @@ function PublishingQueue({
               size="sm"
               variant="outline"
               disabled={sorted.length === 0}
-              onClick={() => onBulkShifts(sorted, 'homebase', true)}
+              onClick={() => onBulkShifts(sorted.map(s => s.id), 'homebase', true)}
             >
               Mark filtered HB
             </Button>
@@ -1078,7 +1065,13 @@ function PublishingQueue({
               size="sm"
               variant="outline"
               disabled={sorted.length === 0}
-              onClick={() => onBulkShifts(sorted, 'ehr', true)}
+              onClick={() =>
+                onBulkShifts(
+                  sorted.filter(isHomebaseDone).map(s => s.id),
+                  'ehr',
+                  true,
+                )
+              }
             >
               Mark filtered EHR
             </Button>
@@ -1100,21 +1093,21 @@ function PublishingQueue({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sorted.map((s, i) => {
-              const hbDone = isShiftDone(s, 'homebase', publishedByKey);
-              const ehrDone = isShiftDone(s, 'ehr', publishedByKey);
+            {sorted.map(s => {
+              const hbDone = isHomebaseDone(s);
+              const ehrDone = isEhrDone(s);
               return (
-                <TableRow key={`${s.submission_id}-${s.shift_date}-${s.start_time}-${i}`}>
+                <TableRow key={s.id}>
                   <TableCell className="text-xs">{formatDateLabel(s.shift_date)}</TableCell>
                   <TableCell className="font-medium">{s.provider_name}</TableCell>
                   <TableCell className="text-xs tabular-nums">
-                    {s.start_time}–{s.end_time}
+                    {formatShiftTime(s.start_min)}–{formatShiftTime(s.end_min)}
                   </TableCell>
                   <TableCell className="text-right text-xs tabular-nums">
                     {formatHours(s.hours)}
                   </TableCell>
-                  <TableCell className="text-xs">{s.state ?? '—'}</TableCell>
-                  <TableCell className="text-xs">{s.shift_type ?? '—'}</TableCell>
+                  <TableCell className="text-xs">{s.assigned_state ?? '—'}</TableCell>
+                  <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
                   <TableCell className="text-center">
                     <Checkbox
                       checked={hbDone}
@@ -1147,27 +1140,28 @@ function PublishingQueue({
 
 function ByDayPanel({
   month,
-  flats,
-  publishedByKey,
+  shifts,
   isLoading,
   onToggleShift,
 }: {
   month: string;
-  flats: FlatShift[];
-  publishedByKey: Map<string, PublishedShiftRow>;
+  shifts: ShiftRow[];
   isLoading: boolean;
-  onToggleShift: (s: FlatShift, step: ShiftPublishStep, done: boolean) => void;
+  onToggleShift: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
 }) {
   const days = useMemo(() => {
-    const map = new Map<string, FlatShift[]>();
-    for (const s of flats) {
+    const map = new Map<string, ShiftRow[]>();
+    for (const s of shifts) {
       if (!map.has(s.shift_date)) map.set(s.shift_date, []);
       map.get(s.shift_date)!.push(s);
     }
     return Array.from(map.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, entries]) => ({ date, entries }));
-  }, [flats]);
+      .map(([date, entries]) => ({
+        date,
+        entries: entries.sort((a, b) => a.start_min - b.start_min),
+      }));
+  }, [shifts]);
 
   if (isLoading) {
     return (
@@ -1184,7 +1178,7 @@ function ByDayPanel({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No accepted shifts have a date set for {formatMonthLabel(month)}.
+          No accepted shifts for {formatMonthLabel(month)}.
         </AlertDescription>
       </Alert>
     );
@@ -1193,10 +1187,8 @@ function ByDayPanel({
   return (
     <div className="space-y-4">
       {days.map(day => {
-        const hbLeft = day.entries.filter(s => !isShiftDone(s, 'homebase', publishedByKey)).length;
-        const ehrLeft = day.entries.filter(
-          s => isShiftDone(s, 'homebase', publishedByKey) && !isShiftDone(s, 'ehr', publishedByKey),
-        ).length;
+        const hbLeft = day.entries.filter(s => !isHomebaseDone(s)).length;
+        const ehrLeft = day.entries.filter(s => isHomebaseDone(s) && !isEhrDone(s)).length;
         return (
           <Card key={day.date}>
             <CardHeader>
@@ -1224,17 +1216,17 @@ function ByDayPanel({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {day.entries.map((s, idx) => {
-                    const hbDone = isShiftDone(s, 'homebase', publishedByKey);
-                    const ehrDone = isShiftDone(s, 'ehr', publishedByKey);
+                  {day.entries.map(s => {
+                    const hbDone = isHomebaseDone(s);
+                    const ehrDone = isEhrDone(s);
                     return (
-                      <TableRow key={`${s.submission_id}-${idx}`}>
+                      <TableRow key={s.id}>
                         <TableCell className="font-medium">{s.provider_name}</TableCell>
                         <TableCell className="text-xs">
-                          {s.start_time}–{s.end_time}
+                          {formatShiftTime(s.start_min)}–{formatShiftTime(s.end_min)}
                         </TableCell>
-                        <TableCell className="text-xs">{s.shift_type ?? '—'}</TableCell>
-                        <TableCell className="text-xs">{s.state ?? '—'}</TableCell>
+                        <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
+                        <TableCell className="text-xs">{s.assigned_state ?? '—'}</TableCell>
                         <TableCell className="text-right text-xs tabular-nums">
                           {formatHours(s.hours)}
                         </TableCell>
@@ -1446,16 +1438,16 @@ function NeedsReviewPanel({
 function MentalHealthPanel({
   month,
   rows,
-  publishedByKey,
+  shiftsByProvider,
   isLoading,
   onToggleShift,
   onToggleProvider,
 }: {
   month: string;
   rows: ProviderPublishView[];
-  publishedByKey: Map<string, PublishedShiftRow>;
+  shiftsByProvider: Map<string, ShiftRow[]>;
   isLoading: boolean;
-  onToggleShift: (s: FlatShift, step: ShiftPublishStep, done: boolean) => void;
+  onToggleShift: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
   onToggleProvider: (row: ProviderPublishView, step: ShiftPublishStep, done: boolean) => void;
 }) {
   if (isLoading) {
@@ -1506,47 +1498,54 @@ function MentalHealthPanel({
           <TableBody>
             {rows.map(r => {
               const sub = r.submission;
-              const flats = sub
-                ? flattenShifts([r], month)
-                : ([] as FlatShift[]);
-              const hbShiftDone = flats.filter(s => isShiftDone(s, 'homebase', publishedByKey)).length;
-              const ehrShiftDone = flats.filter(s => isShiftDone(s, 'ehr', publishedByKey)).length;
+              const flats = shiftsByProvider.get(r.provider_id) ?? [];
+              const hbShiftDone = flats.filter(isHomebaseDone).length;
+              const ehrShiftDone = flats.filter(isEhrDone).length;
               const hbAggregate = !!r.publish?.homebase_posted_at;
               const ehrAggregate = !!r.publish?.ehr_posted_at;
               return (
-                <TableRow key={r.provider_id}>
-                  <TableCell>
-                    <div className="font-medium">{r.provider_name}</div>
-                    <div className="text-xs text-muted-foreground">{r.profession ?? '—'}</div>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={sub?.decision_status} />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatHours(sub?.accepted_hours)}
-                  </TableCell>
-                  <TableCell>
-                    {flats.length > 0 ? (
-                      <ShiftProgress done={hbShiftDone} total={flats.length} />
-                    ) : (
-                      <Checkbox
-                        checked={hbAggregate}
-                        onCheckedChange={c => onToggleProvider(r, 'homebase', !!c)}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {flats.length > 0 ? (
-                      <ShiftProgress done={ehrShiftDone} total={flats.length} />
-                    ) : (
-                      <Checkbox
-                        checked={ehrAggregate}
-                        disabled={!hbAggregate}
-                        onCheckedChange={c => onToggleProvider(r, 'ehr', !!c)}
-                      />
-                    )}
-                  </TableCell>
-                </TableRow>
+                <Fragment key={r.provider_id}>
+                  <TableRow>
+                    <TableCell>
+                      <div className="font-medium">{r.provider_name}</div>
+                      <div className="text-xs text-muted-foreground">{r.profession ?? '—'}</div>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={sub?.decision_status} />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatHours(sub?.accepted_hours)}
+                    </TableCell>
+                    <TableCell>
+                      {flats.length > 0 ? (
+                        <ShiftProgress done={hbShiftDone} total={flats.length} />
+                      ) : (
+                        <Checkbox
+                          checked={hbAggregate}
+                          onCheckedChange={c => onToggleProvider(r, 'homebase', !!c)}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {flats.length > 0 ? (
+                        <ShiftProgress done={ehrShiftDone} total={flats.length} />
+                      ) : (
+                        <Checkbox
+                          checked={ehrAggregate}
+                          disabled={!hbAggregate}
+                          onCheckedChange={c => onToggleProvider(r, 'ehr', !!c)}
+                        />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                  {flats.length > 0 && (
+                    <TableRow className="bg-muted/30 hover:bg-muted/30">
+                      <TableCell colSpan={5} className="py-2">
+                        <ShiftListInline shifts={flats} onToggle={onToggleShift} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
               );
             })}
           </TableBody>

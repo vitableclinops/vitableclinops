@@ -283,120 +283,125 @@ export function useOverrideDecision() {
 }
 
 // ── Per-shift publishing ──────────────────────────────────────────────────
-// Sarabjeet's resumable workflow: each shift can be marked Homebase-posted,
-// then EHR-posted. We key on (submission_id, shift_date, start_time, end_time)
-// so we can match against the parsed_shifts JSON without an explicit index.
+// Backed by `shift_recommendations`, the canonical post-evaluation per-shift
+// table the evaluator already populates with shift_date / start_min / end_min /
+// hours / assigned_state / recommendation. We filter to recommendation='publish'
+// so Sarabjeet sees exactly the shifts that need to land in Homebase + EHR.
+//
+// Linear status flow per shift, tracked on the same row:
+//   publish_status='pending'                → not started
+//   publish_status='published_to_homebase'  → Homebase done, EHR pending
+//   publish_status='confirmed'              → Homebase + EHR both done
+// EHR timestamps go in ehr_posted_at / ehr_posted_by (added in the
+// 20260506200000 migration).
 
-export type PublishedShiftRow = {
+export type ShiftRow = {
   id: string;
   submission_id: string;
-  provider_id: string;
+  provider_id: string | null;
+  provider_name: string;
   target_month: string;
   shift_date: string;
-  start_time: string;
-  end_time: string;
-  hours: number | null;
-  state: string | null;
-  shift_type: string | null;
-  homebase_posted_at: string | null;
-  homebase_posted_by: string | null;
+  start_min: number;
+  end_min: number;
+  hours: number;
+  shift_type: string;
+  assigned_state: string | null;
+  recommendation: string;
+  publish_status: string;
+  published_at: string | null;
+  published_by: string | null;
   ehr_posted_at: string | null;
   ehr_posted_by: string | null;
-  notes: string | null;
 };
 
 export type ShiftPublishStep = 'homebase' | 'ehr';
 
-export const shiftKey = (
-  submission_id: string,
-  shift_date: string,
-  start_time: string,
-  end_time: string,
-) => `${submission_id}|${shift_date}|${start_time}|${end_time}`;
+const padMin = (mins: number) => {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
 
-export function usePublishedShifts(month: string) {
+export const formatShiftTime = (mins: number) => padMin(mins);
+
+export const isHomebaseDone = (row: { publish_status: string }) =>
+  row.publish_status === 'published_to_homebase' || row.publish_status === 'confirmed';
+
+export const isEhrDone = (row: { publish_status: string; ehr_posted_at?: string | null }) =>
+  row.publish_status === 'confirmed' || !!row.ehr_posted_at;
+
+export function useShiftRecommendationsForMonth(month: string) {
   const monthStart = monthIso(month);
   return useQuery({
-    queryKey: ['workbench', 'published-shifts', monthStart],
-    queryFn: async (): Promise<Map<string, PublishedShiftRow>> => {
+    queryKey: ['workbench', 'shift-recommendations', monthStart],
+    queryFn: async (): Promise<ShiftRow[]> => {
       const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
-        .from('published_shifts')
-        .select('*')
-        .eq('target_month', monthStart);
+        .from('shift_recommendations')
+        .select(
+          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
+        )
+        .eq('target_month', monthStart)
+        .eq('recommendation', 'publish')
+        .order('shift_date', { ascending: true })
+        .order('start_min', { ascending: true })
+        .range(0, 9999);
       if (error) throw error;
-      const rows = (data ?? []) as PublishedShiftRow[];
-      const byKey = new Map<string, PublishedShiftRow>();
-      for (const r of rows) {
-        byKey.set(shiftKey(r.submission_id, r.shift_date, r.start_time, r.end_time), r);
-      }
-      return byKey;
+      return (data ?? []) as ShiftRow[];
     },
     staleTime: 30_000,
     enabled: Boolean(monthStart),
   });
 }
 
-type ShiftIdent = {
-  submission_id: string;
-  provider_id: string;
-  target_month: string;
-  shift_date: string;
-  start_time: string;
-  end_time: string;
-  hours?: number | null;
-  state?: string | null;
-  shift_type?: string | null;
-};
+const homebasePatch = (done: boolean, actorId: string | null, nowIso: string) =>
+  done
+    ? {
+        publish_status: 'published_to_homebase',
+        published_at: nowIso,
+        published_by: actorId,
+      }
+    : {
+        publish_status: 'pending',
+        published_at: null,
+        published_by: null,
+        ehr_posted_at: null,
+        ehr_posted_by: null,
+      };
 
-const buildShiftPatch = (
-  ident: ShiftIdent,
-  step: ShiftPublishStep,
-  done: boolean,
-  actorId: string | null,
-  nowIso: string,
-) => {
-  const monthStart = monthIso(ident.target_month);
-  const base: Record<string, unknown> = {
-    submission_id: ident.submission_id,
-    provider_id: ident.provider_id,
-    target_month: monthStart,
-    shift_date: ident.shift_date,
-    start_time: ident.start_time,
-    end_time: ident.end_time,
-    hours: ident.hours ?? null,
-    state: ident.state ?? null,
-    shift_type: ident.shift_type ?? null,
-  };
-  if (step === 'homebase') {
-    base.homebase_posted_at = done ? nowIso : null;
-    base.homebase_posted_by = done ? actorId : null;
-    if (!done) {
-      // Unchecking Homebase also clears EHR — EHR can't precede Homebase.
-      base.ehr_posted_at = null;
-      base.ehr_posted_by = null;
-    }
-  } else {
-    base.ehr_posted_at = done ? nowIso : null;
-    base.ehr_posted_by = done ? actorId : null;
-  }
-  return base;
-};
+const ehrPatch = (done: boolean, actorId: string | null, nowIso: string) =>
+  done
+    ? {
+        publish_status: 'confirmed',
+        ehr_posted_at: nowIso,
+        ehr_posted_by: actorId,
+      }
+    : {
+        publish_status: 'published_to_homebase',
+        ehr_posted_at: null,
+        ehr_posted_by: null,
+      };
 
 export function useTogglePublishShift() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   return useMutation({
-    mutationFn: async (args: ShiftIdent & { step: ShiftPublishStep; done: boolean }) => {
+    mutationFn: async (args: { id: string; step: ShiftPublishStep; done: boolean }) => {
       const nowIso = new Date().toISOString();
-      const patch = buildShiftPatch(args, args.step, args.done, user?.id ?? null, nowIso);
+      const patch =
+        args.step === 'homebase'
+          ? homebasePatch(args.done, user?.id ?? null, nowIso)
+          : ehrPatch(args.done, user?.id ?? null, nowIso);
       const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
-        .from('published_shifts')
-        .upsert(patch, { onConflict: 'submission_id,shift_date,start_time,end_time' });
+        .from('shift_recommendations')
+        .update(patch)
+        .eq('id', args.id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workbench', 'published-shifts'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['clinops', 'shift_recommendations'] });
     },
   });
 }
@@ -406,23 +411,26 @@ export function useBulkMarkPublishShifts() {
   const { user } = useAuth();
   return useMutation({
     mutationFn: async (args: {
-      shifts: ShiftIdent[];
+      ids: string[];
       step: ShiftPublishStep;
       done: boolean;
     }) => {
-      if (args.shifts.length === 0) return;
+      if (args.ids.length === 0) return;
       const nowIso = new Date().toISOString();
-      const rows = args.shifts.map(s =>
-        buildShiftPatch(s, args.step, args.done, user?.id ?? null, nowIso),
-      );
+      const patch =
+        args.step === 'homebase'
+          ? homebasePatch(args.done, user?.id ?? null, nowIso)
+          : ehrPatch(args.done, user?.id ?? null, nowIso);
       const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
-        .from('published_shifts')
-        .upsert(rows, { onConflict: 'submission_id,shift_date,start_time,end_time' });
+        .from('shift_recommendations')
+        .update(patch)
+        .in('id', args.ids);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workbench', 'published-shifts'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['clinops', 'shift_recommendations'] });
     },
   });
 }

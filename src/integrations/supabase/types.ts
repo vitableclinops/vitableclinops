@@ -3785,66 +3785,6 @@ export type Database = {
         }
         Relationships: []
       }
-      published_shifts: {
-        Row: {
-          created_at: string
-          ehr_posted_at: string | null
-          ehr_posted_by: string | null
-          end_time: string
-          homebase_posted_at: string | null
-          homebase_posted_by: string | null
-          hours: number | null
-          id: string
-          notes: string | null
-          provider_id: string
-          shift_date: string
-          shift_type: string | null
-          start_time: string
-          state: string | null
-          submission_id: string
-          target_month: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          ehr_posted_at?: string | null
-          ehr_posted_by?: string | null
-          end_time: string
-          homebase_posted_at?: string | null
-          homebase_posted_by?: string | null
-          hours?: number | null
-          id?: string
-          notes?: string | null
-          provider_id: string
-          shift_date: string
-          shift_type?: string | null
-          start_time: string
-          state?: string | null
-          submission_id: string
-          target_month: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          ehr_posted_at?: string | null
-          ehr_posted_by?: string | null
-          end_time?: string
-          homebase_posted_at?: string | null
-          homebase_posted_by?: string | null
-          hours?: number | null
-          id?: string
-          notes?: string | null
-          provider_id?: string
-          shift_date?: string
-          shift_type?: string | null
-          start_time?: string
-          state?: string | null
-          submission_id?: string
-          target_month?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       submission_override_log: {
         Row: {
           actor_id: string | null
