@@ -111,6 +111,24 @@ export type UnavailableRange = {
  * Start Date / End Date and supports inclusive ranges; legacy rows may store
  * only `Date`.
  */
+/** Mirrors the edge-function `parseWidgetArray`: the Jotform widget often
+ *  arrives as a JSON-encoded string rather than a true array. */
+const parseWidgetArray = (raw: unknown): Record<string, unknown>[] => {
+  if (raw == null) return [];
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (e): e is Record<string, unknown> => e != null && typeof e === 'object',
+  );
+};
+
 export function extractUnavailableRanges(
   parsedShifts: unknown,
   monthIso?: string,
@@ -119,13 +137,11 @@ export function extractUnavailableRanges(
     return [];
   }
   const blob = parsedShifts as { unavailable_dates?: unknown };
-  const raw = blob.unavailable_dates;
-  if (!Array.isArray(raw)) return [];
+  const widgetRows = parseWidgetArray(blob.unavailable_dates);
+  if (widgetRows.length === 0) return [];
   const monthPrefix = monthIso ? monthIso.slice(0, 7) : null;
   const ranges: UnavailableRange[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== 'object') continue;
-    const e = entry as Record<string, unknown>;
+  for (const e of widgetRows) {
     const startIso =
       parseFormDateToIso(e['Start Date']) ?? parseFormDateToIso(e['Date']);
     const endIso =
