@@ -16,6 +16,9 @@ dist-ssr
 .env.metabase
 exports/
 
+# Supabase CLI local scratch
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
