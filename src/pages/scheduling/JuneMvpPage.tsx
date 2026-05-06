@@ -74,6 +74,7 @@ export default function JuneMvpPage() {
   const [parsing, setParsing] = useState<SlotKey | null>(null);
   const [filter, setFilter] = useState('');
   const [uploadOpen, setUploadOpen] = useState(true);
+  const [computed, setComputed] = useState(false);
   const publish = useJunePublishLocal(TARGET_MONTH);
 
   const handleFile = useCallback(async (key: SlotKey, file: File) => {
@@ -110,6 +111,7 @@ export default function JuneMvpPage() {
   }, []);
 
   const result: AllocationResult | null = useMemo(() => {
+    if (!computed) return null;
     if (!slots.demand || !slots.jotform) return null;
     const demand = slots.demand.payload as DemandRow[];
     const submissions = slots.jotform.payload as ReturnType<typeof parseJotformCsv>;
@@ -135,7 +137,7 @@ export default function JuneMvpPage() {
     const providers = mergeProviders(sources);
     const candidates = buildShiftCandidates(submissions, TARGET_MONTH);
     return allocate(candidates, providers, demand);
-  }, [slots]);
+  }, [slots, computed]);
 
   const providerRows = useMemo(() => {
     if (!result) return [];
@@ -185,9 +187,19 @@ export default function JuneMvpPage() {
 
   const allReady = Boolean(slots.demand && slots.jotform);
 
+  // Re-uploading any file invalidates the computed result.
   useEffect(() => {
-    if (allReady) setUploadOpen(false);
-  }, [allReady]);
+    setComputed(false);
+  }, [slots]);
+
+  const handleCalculate = () => {
+    if (!allReady) {
+      toast.error('Upload Demand + Jotform first.');
+      return;
+    }
+    setComputed(true);
+    setUploadOpen(false);
+  };
 
   return (
     <SchedulingShell>
