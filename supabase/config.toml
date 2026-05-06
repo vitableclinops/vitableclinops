@@ -65,3 +65,9 @@ verify_jwt = false
 # all DB writes, so JWT verification at the gateway is unnecessary.
 [functions.evaluate-schedule-submissions]
 verify_jwt = false
+
+# Invoked on a schedule by clinops-jotform-sync.yml (no user JWT). Pulls
+# new Jotform submissions into schedule_submissions; uses the service role
+# internally.
+[functions.sync-jotform-submissions]
+verify_jwt = false
