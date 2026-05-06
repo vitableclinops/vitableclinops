@@ -33,12 +33,19 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   Loader2,
   Calendar,
   AlertCircle,
   CalendarX,
   RefreshCw,
   CalendarOff,
+  History,
   ChevronRight,
   ChevronDown,
   Upload,
@@ -52,6 +59,8 @@ import {
   useTogglePublishStep,
   useReevaluateMonth,
   extractUnavailableRanges,
+  usePublishAuditLog,
+  type PublishAuditEntry,
   useShiftRecommendationsForMonth,
   useTogglePublishShift,
   useBulkMarkPublishShifts,
@@ -94,6 +103,31 @@ const formatMonthLabel = (iso: string) => {
 
 const formatHours = (n: number | null | undefined) =>
   n === null || n === undefined ? '—' : Number(n).toFixed(1);
+
+const formatRelativeTime = (iso: string): string => {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return new Date(iso).toLocaleString();
+  const m = Math.floor(ms / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
+const attributionLabel = (entry: PublishAuditEntry | undefined): string => {
+  if (!entry) return '';
+  const who = entry.actor_label || (entry.actor_id ? 'someone' : 'system');
+  const verb =
+    entry.action === 'preserved'
+      ? 'preserved through evaluator re-run'
+      : entry.action === 'reverted'
+        ? 'reverted'
+        : 'marked';
+  return `${verb} by ${who} · ${formatRelativeTime(entry.created_at)}`;
+};
 
 const formatDateLabel = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number);
@@ -150,6 +184,20 @@ export default function SchedulingWorkbenchPage() {
   const { data: dbRows = [], isLoading, refetch } = useMonthlyPublishView(month);
   const { data: shiftRows = [], isLoading: shiftsLoading, refetch: refetchShifts } =
     useShiftRecommendationsForMonth(month);
+  const { data: auditEntries = [] } = usePublishAuditLog(month);
+  // Latest audit entry per (shift_recommendation_id, step). Used by the
+  // attribution tooltips on the per-shift Homebase/EHR checkboxes.
+  const auditByShift = useMemo(() => {
+    const map = new Map<string, { homebase?: PublishAuditEntry; ehr?: PublishAuditEntry }>();
+    for (const entry of auditEntries) {
+      if (!entry.shift_recommendation_id) continue;
+      const slot = map.get(entry.shift_recommendation_id) ?? {};
+      if (entry.step === 'homebase' && !slot.homebase) slot.homebase = entry;
+      if (entry.step === 'ehr' && !slot.ehr) slot.ehr = entry;
+      map.set(entry.shift_recommendation_id, slot);
+    }
+    return map;
+  }, [auditEntries]);
   const togglePerProvider = useTogglePublishStep();
   const togglePerShift = useTogglePublishShift();
   const bulkPerShift = useBulkMarkPublishShifts();
@@ -379,7 +427,7 @@ export default function SchedulingWorkbenchPage() {
     done: boolean,
   ) => {
     togglePerShift.mutate(
-      { id: shift.id, step, done },
+      { shift, step, done },
       { onError: e => toast.error(`Could not save: ${(e as Error).message}`) },
     );
   };
@@ -409,7 +457,7 @@ export default function SchedulingWorkbenchPage() {
       return;
     }
     bulkPerShift.mutate(
-      { ids: target.map(s => s.id), step, done },
+      { shifts: target, step, done },
       {
         onSuccess: () => {
           if (done) handleToggleProvider(row, step, true);
@@ -435,6 +483,7 @@ export default function SchedulingWorkbenchPage() {
 
   return (
     <SchedulingShell>
+    <TooltipProvider delayDuration={200}>
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -443,7 +492,8 @@ export default function SchedulingWorkbenchPage() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Track each shift through Homebase and the EHR. Resume anywhere — every
-            click is recorded with who and when.
+            click is recorded with who and when. Hover any checked box to see who
+            marked it.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -459,19 +509,28 @@ export default function SchedulingWorkbenchPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={reevaluateNow}
-            disabled={reevaluate.isPending}
-          >
-            {reevaluate.isPending ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-1" />
-            )}
-            Re-run evaluator
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={reevaluateNow}
+                disabled={reevaluate.isPending}
+              >
+                {reevaluate.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                )}
+                Re-run evaluator
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              Re-runs the evaluator against the latest Jotform submissions.
+              Already-published shifts keep their Homebase / EHR state — only
+              shifts that change or disappear lose their progress.
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -598,6 +657,12 @@ export default function SchedulingWorkbenchPage() {
             <CalendarOff className="h-3.5 w-3.5 mr-1" /> Time Off
             {timeOffRows.length > 0 && (
               <span className="ml-1 text-xs">({timeOffRows.length})</span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="history">
+            <History className="h-3.5 w-3.5 mr-1" /> History
+            {auditEntries.length > 0 && (
+              <span className="ml-1 text-xs">({auditEntries.length})</span>
             )}
           </TabsTrigger>
         </TabsList>
@@ -734,6 +799,7 @@ export default function SchedulingWorkbenchPage() {
                                   <ShiftListInline
                                     shifts={flats}
                                     onToggle={handleToggleShift}
+                                    auditByShift={auditByShift}
                                   />
                                 )}
                               </TableCell>
@@ -762,13 +828,14 @@ export default function SchedulingWorkbenchPage() {
             shifts={allFlatAccepted}
             isLoading={shiftsLoading}
             onToggleShift={handleToggleShift}
-            onBulkShifts={(ids, step, done) =>
+            auditByShift={auditByShift}
+            onBulkShifts={(shifts, step, done) =>
               bulkPerShift.mutate(
-                { ids, step, done },
+                { shifts, step, done },
                 {
                   onSuccess: () =>
                     toast.success(
-                      `Marked ${ids.length} shift${ids.length === 1 ? '' : 's'} ${
+                      `Marked ${shifts.length} shift${shifts.length === 1 ? '' : 's'} ${
                         done ? 'posted' : 'unposted'
                       }`,
                     ),
@@ -785,6 +852,7 @@ export default function SchedulingWorkbenchPage() {
             shifts={allFlatAccepted}
             isLoading={shiftsLoading}
             onToggleShift={handleToggleShift}
+            auditByShift={auditByShift}
           />
         </TabsContent>
 
@@ -819,6 +887,7 @@ export default function SchedulingWorkbenchPage() {
             isLoading={isLoading}
             onToggleShift={handleToggleShift}
             onToggleProvider={handleToggleProvider}
+            auditByShift={auditByShift}
           />
         </TabsContent>
 
@@ -837,7 +906,12 @@ export default function SchedulingWorkbenchPage() {
             isLoading={isLoading}
           />
         </TabsContent>
+
+        <TabsContent value="history" className="mt-4 space-y-4">
+          <PublishHistoryPanel month={month} entries={auditEntries} />
+        </TabsContent>
       </Tabs>
+    </TooltipProvider>
     </SchedulingShell>
   );
 }
@@ -887,12 +961,49 @@ function ShiftProgress({ done, total }: { done: number; total: number }) {
   );
 }
 
+type ShiftAuditMap = Map<string, { homebase?: PublishAuditEntry; ehr?: PublishAuditEntry }>;
+
+function PublishCheckbox({
+  shift,
+  step,
+  checked,
+  disabled,
+  onToggle,
+  audit,
+}: {
+  shift: ShiftRow;
+  step: ShiftPublishStep;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
+  audit?: PublishAuditEntry;
+}) {
+  const box = (
+    <Checkbox
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={c => onToggle(shift, step, !!c)}
+    />
+  );
+  if (!audit || !checked) return box;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">{box}</span>
+      </TooltipTrigger>
+      <TooltipContent>{attributionLabel(audit)}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function ShiftListInline({
   shifts,
   onToggle,
+  auditByShift,
 }: {
   shifts: ShiftRow[];
   onToggle: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
+  auditByShift?: ShiftAuditMap;
 }) {
   const sorted = useMemo(
     () =>
@@ -918,6 +1029,7 @@ function ShiftListInline({
         {sorted.map(s => {
           const hbDone = isHomebaseDone(s);
           const ehrDone = isEhrDone(s);
+          const audit = auditByShift?.get(s.id);
           return (
             <TableRow key={s.id}>
               <TableCell className="text-xs">{formatDateLabel(s.shift_date)}</TableCell>
@@ -929,16 +1041,22 @@ function ShiftListInline({
               </TableCell>
               <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
               <TableCell className="text-center">
-                <Checkbox
+                <PublishCheckbox
+                  shift={s}
+                  step="homebase"
                   checked={hbDone}
-                  onCheckedChange={c => onToggle(s, 'homebase', !!c)}
+                  audit={audit?.homebase}
+                  onToggle={onToggle}
                 />
               </TableCell>
               <TableCell className="text-center">
-                <Checkbox
+                <PublishCheckbox
+                  shift={s}
+                  step="ehr"
                   checked={ehrDone}
                   disabled={!hbDone}
-                  onCheckedChange={c => onToggle(s, 'ehr', !!c)}
+                  audit={audit?.ehr}
+                  onToggle={onToggle}
                 />
               </TableCell>
             </TableRow>
@@ -978,12 +1096,14 @@ function PublishingQueue({
   isLoading,
   onToggleShift,
   onBulkShifts,
+  auditByShift,
 }: {
   month: string;
   shifts: ShiftRow[];
   isLoading: boolean;
   onToggleShift: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
-  onBulkShifts: (ids: string[], step: ShiftPublishStep, done: boolean) => void;
+  onBulkShifts: (shifts: ShiftRow[], step: ShiftPublishStep, done: boolean) => void;
+  auditByShift?: ShiftAuditMap;
 }) {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_hb' | 'pending_ehr' | 'done'>(
     'pending_hb',
@@ -1067,7 +1187,7 @@ function PublishingQueue({
               size="sm"
               variant="outline"
               disabled={sorted.length === 0}
-              onClick={() => onBulkShifts(sorted.map(s => s.id), 'homebase', true)}
+              onClick={() => onBulkShifts(sorted, 'homebase', true)}
             >
               Mark filtered HB
             </Button>
@@ -1075,13 +1195,7 @@ function PublishingQueue({
               size="sm"
               variant="outline"
               disabled={sorted.length === 0}
-              onClick={() =>
-                onBulkShifts(
-                  sorted.filter(isHomebaseDone).map(s => s.id),
-                  'ehr',
-                  true,
-                )
-              }
+              onClick={() => onBulkShifts(sorted.filter(isHomebaseDone), 'ehr', true)}
             >
               Mark filtered EHR
             </Button>
@@ -1105,6 +1219,7 @@ function PublishingQueue({
             {sorted.map(s => {
               const hbDone = isHomebaseDone(s);
               const ehrDone = isEhrDone(s);
+              const audit = auditByShift?.get(s.id);
               return (
                 <TableRow key={s.id}>
                   <TableCell className="text-xs">{formatDateLabel(s.shift_date)}</TableCell>
@@ -1117,16 +1232,22 @@ function PublishingQueue({
                   </TableCell>
                   <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
                   <TableCell className="text-center">
-                    <Checkbox
+                    <PublishCheckbox
+                      shift={s}
+                      step="homebase"
                       checked={hbDone}
-                      onCheckedChange={c => onToggleShift(s, 'homebase', !!c)}
+                      audit={audit?.homebase}
+                      onToggle={onToggleShift}
                     />
                   </TableCell>
                   <TableCell className="text-center">
-                    <Checkbox
+                    <PublishCheckbox
+                      shift={s}
+                      step="ehr"
                       checked={ehrDone}
                       disabled={!hbDone}
-                      onCheckedChange={c => onToggleShift(s, 'ehr', !!c)}
+                      audit={audit?.ehr}
+                      onToggle={onToggleShift}
                     />
                   </TableCell>
                 </TableRow>
@@ -1151,11 +1272,13 @@ function ByDayPanel({
   shifts,
   isLoading,
   onToggleShift,
+  auditByShift,
 }: {
   month: string;
   shifts: ShiftRow[];
   isLoading: boolean;
   onToggleShift: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
+  auditByShift?: ShiftAuditMap;
 }) {
   const days = useMemo(() => {
     const map = new Map<string, ShiftRow[]>();
@@ -1226,6 +1349,7 @@ function ByDayPanel({
                   {day.entries.map(s => {
                     const hbDone = isHomebaseDone(s);
                     const ehrDone = isEhrDone(s);
+                    const audit = auditByShift?.get(s.id);
                     return (
                       <TableRow key={s.id}>
                         <TableCell className="font-medium">{s.provider_name}</TableCell>
@@ -1237,16 +1361,22 @@ function ByDayPanel({
                           {formatHours(s.hours)}
                         </TableCell>
                         <TableCell className="text-center">
-                          <Checkbox
+                          <PublishCheckbox
+                            shift={s}
+                            step="homebase"
                             checked={hbDone}
-                            onCheckedChange={c => onToggleShift(s, 'homebase', !!c)}
+                            audit={audit?.homebase}
+                            onToggle={onToggleShift}
                           />
                         </TableCell>
                         <TableCell className="text-center">
-                          <Checkbox
+                          <PublishCheckbox
+                            shift={s}
+                            step="ehr"
                             checked={ehrDone}
                             disabled={!hbDone}
-                            onCheckedChange={c => onToggleShift(s, 'ehr', !!c)}
+                            audit={audit?.ehr}
+                            onToggle={onToggleShift}
                           />
                         </TableCell>
                       </TableRow>
@@ -1448,6 +1578,7 @@ function MentalHealthPanel({
   isLoading,
   onToggleShift,
   onToggleProvider,
+  auditByShift,
 }: {
   month: string;
   rows: ProviderPublishView[];
@@ -1455,6 +1586,7 @@ function MentalHealthPanel({
   isLoading: boolean;
   onToggleShift: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
   onToggleProvider: (row: ProviderPublishView, step: ShiftPublishStep, done: boolean) => void;
+  auditByShift?: ShiftAuditMap;
 }) {
   if (isLoading) {
     return (
@@ -1547,7 +1679,11 @@ function MentalHealthPanel({
                   {flats.length > 0 && (
                     <TableRow className="bg-muted/30 hover:bg-muted/30">
                       <TableCell colSpan={5} className="py-2">
-                        <ShiftListInline shifts={flats} onToggle={onToggleShift} />
+                        <ShiftListInline
+                          shifts={flats}
+                          onToggle={onToggleShift}
+                          auditByShift={auditByShift}
+                        />
                       </TableCell>
                     </TableRow>
                   )}
@@ -1915,6 +2051,136 @@ function TimeOffPanel({
                 </TableCell>
               </TableRow>
             ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+const ACTION_STYLE: Record<PublishAuditEntry['action'], string> = {
+  marked: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+  reverted: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+  preserved: 'bg-slate-100 text-slate-700 hover:bg-slate-100',
+};
+
+function PublishHistoryPanel({
+  month,
+  entries,
+}: {
+  month: string;
+  entries: PublishAuditEntry[];
+}) {
+  const [actorFilter, setActorFilter] = useState('');
+  const [actionFilter, setActionFilter] = useState<'all' | PublishAuditEntry['action']>('all');
+
+  const filtered = useMemo(() => {
+    const q = actorFilter.trim().toLowerCase();
+    return entries.filter(e => {
+      if (actionFilter !== 'all' && e.action !== actionFilter) return false;
+      if (q) {
+        const hay = `${e.actor_label ?? ''} ${e.provider_name ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [entries, actorFilter, actionFilter]);
+
+  if (entries.length === 0) {
+    return (
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          No publish history yet for {formatMonthLabel(month)}. As people mark
+          shifts posted to Homebase or the EHR, every action will appear here
+          with who, when, and what changed.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="h-4 w-4 text-blue-600" />
+              Publish history · {formatMonthLabel(month)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Append-only log of every Homebase / EHR mark, revert, and
+              evaluator-driven preservation. {entries.length} event
+              {entries.length === 1 ? '' : 's'} this month.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={actionFilter}
+              onValueChange={v => setActionFilter(v as typeof actionFilter)}
+            >
+              <SelectTrigger className="w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All actions</SelectItem>
+                <SelectItem value="marked">Marked</SelectItem>
+                <SelectItem value="reverted">Reverted</SelectItem>
+                <SelectItem value="preserved">Preserved (re-run)</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Filter by actor or provider"
+              value={actorFilter}
+              onChange={e => setActorFilter(e.target.value)}
+              className="md:w-64"
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-40">When</TableHead>
+              <TableHead>Actor</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead>Provider</TableHead>
+              <TableHead>Shift</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.map(e => (
+              <TableRow key={e.id}>
+                <TableCell className="text-xs text-muted-foreground tabular-nums">
+                  <div>{formatRelativeTime(e.created_at)}</div>
+                  <div className="text-[10px] opacity-70">
+                    {new Date(e.created_at).toLocaleString()}
+                  </div>
+                </TableCell>
+                <TableCell className="text-sm">
+                  {e.actor_label ?? <span className="italic text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell>
+                  <Badge className={ACTION_STYLE[e.action]}>
+                    {e.action} · {e.step === 'homebase' ? 'HB' : 'EHR'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-sm">{e.provider_name ?? '—'}</TableCell>
+                <TableCell className="text-xs tabular-nums text-muted-foreground">
+                  {e.shift_date && e.start_min !== null && e.end_min !== null
+                    ? `${formatDateLabel(e.shift_date)} · ${formatShiftTime(e.start_min)}–${formatShiftTime(e.end_min)}`
+                    : '—'}
+                </TableCell>
+              </TableRow>
+            ))}
+            {filtered.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  No events match these filters.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </CardContent>
