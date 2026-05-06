@@ -6,6 +6,7 @@ import type {
   ProviderInfo,
   ShiftCandidate,
 } from './types';
+import { normName } from './normalize';
 
 const NP_RESTRICTED = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA']);
 
@@ -30,12 +31,22 @@ export function allocate(
   const remaining = new Map<string, number>();
   for (const d of demand) remaining.set(d.state, d.monthlyHours);
 
+  // Build a name-based fallback index so candidates keyed by name still match
+  // providers that were merged under an email key (and vice versa).
+  const byNameIdx = new Map<string, ProviderInfo>();
+  for (const p of providers.values()) {
+    byNameIdx.set(normName(p.name), p);
+  }
+  const lookupProvider = (c: ShiftCandidate): ProviderInfo | undefined => {
+    return providers.get(c.providerKey) ?? byNameIdx.get(normName(c.providerName));
+  };
+
   const allocated: AllocatedShift[] = [];
 
   // Process shifts in deterministic input order; for each, assign greedily to
   // the provider's eligible state with the smallest positive remaining demand.
   for (const c of candidates) {
-    const provider = providers.get(c.providerKey);
+    const provider = lookupProvider(c);
     const window = clipToWindow(c.date, c.startMin, c.endMin);
     const usableHours = (window.endMin - window.startMin) / 60;
 
@@ -124,17 +135,17 @@ export function allocate(
   // Aggregate per provider
   const byProvider: AllocationResult['byProvider'] = new Map();
   for (const sh of allocated) {
-    const info = providers.get(sh.providerKey) ?? {
+    const info = lookupProvider(sh) ?? {
       key: sh.providerKey,
       name: sh.providerName,
       email: null,
       profession: 'Unknown',
       licensedStates: new Set<string>(),
     };
-    let bucket = byProvider.get(sh.providerKey);
+    let bucket = byProvider.get(info.key);
     if (!bucket) {
       bucket = { info, accepted: [], declined: [], acceptedHours: 0, declinedHours: 0 };
-      byProvider.set(sh.providerKey, bucket);
+      byProvider.set(info.key, bucket);
     }
     if (sh.acceptedHours > 0) {
       bucket.accepted.push(sh);
