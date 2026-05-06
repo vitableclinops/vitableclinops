@@ -83,6 +83,7 @@ const navGroups: NavGroup[] = [
       { label: 'Pod Lead Dashboard', icon: LayoutDashboard, href: '/admin', roles: ['pod_lead'] },
       { label: 'My Dashboard', icon: ClipboardList, href: '/provider', roles: ['provider'] },
       { label: 'Physician Portal', icon: Stethoscope, href: '/physician', roles: ['physician'] },
+      { label: 'Scheduling Dashboard', icon: CalendarCheck, href: '/scheduling/workbench', roles: ['admin', 'scheduling'] },
     ],
   },
   {
