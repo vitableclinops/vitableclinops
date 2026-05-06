@@ -60,6 +60,7 @@ import UsabilityGuidePage from "./pages/UsabilityGuidePage";
 import NotFound from "./pages/NotFound";
 import SchedulingWorkbenchPage from "./pages/scheduling/SchedulingWorkbenchPage";
 import SchedulingForecastPage from "./pages/scheduling/SchedulingForecastPage";
+import JuneMvpPage from "./pages/scheduling/JuneMvpPage";
 
 const queryClient = new QueryClient();
 
@@ -92,6 +93,7 @@ const ROUTE_TITLES: Array<{ match: (p: string) => boolean; title: string }> = [
   { match: p => p === '/admin/workbench', title: 'Workbench' },
   { match: p => p === '/scheduling' || p === '/scheduling/workbench', title: 'Scheduling Workbench' },
   { match: p => p === '/scheduling/forecast', title: 'Scheduling Forecast' },
+  { match: p => p === '/scheduling/june-mvp', title: 'June MVP' },
   { match: p => p === '/admin/contractor-strategy', title: 'Contractor Strategy' },
   { match: p => p === '/admin/sla-aggregate', title: 'SLA Aggregate' },
   { match: p => p === '/admin/tasks', title: 'Task Repository' },
@@ -401,6 +403,11 @@ const App = () => (
             <Route path="/scheduling/forecast" element={
               <ProtectedRoute requiredRoles={['admin', 'scheduling']}>
                 <SchedulingForecastPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/scheduling/june-mvp" element={
+              <ProtectedRoute requiredRoles={['admin', 'scheduling']}>
+                <JuneMvpPage />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

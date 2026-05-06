@@ -84,6 +84,7 @@ const navGroups: NavGroup[] = [
       { label: 'My Dashboard', icon: ClipboardList, href: '/provider', roles: ['provider'] },
       { label: 'Physician Portal', icon: Stethoscope, href: '/physician', roles: ['physician'] },
       { label: 'Scheduling Dashboard', icon: CalendarCheck, href: '/scheduling/workbench', roles: ['admin', 'scheduling'] },
+      { label: 'June Schedule MVP', icon: Sparkles, href: '/scheduling/june-mvp', roles: ['admin', 'scheduling'] },
     ],
   },
   {
