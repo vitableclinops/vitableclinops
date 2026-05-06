@@ -782,15 +782,18 @@ export function expandNormalizedToSlots(
 
 /** Apply the operating-hours window to a stream of expanded slots, clamping
  *  partial overlaps and dropping fully out-of-window slots. Returns the
- *  surviving slots (possibly clamped) plus the total hours removed. The
- *  source NormalizedInterval is preserved for downstream linkage; in-home /
+ *  surviving slots (possibly clamped), the original portions that were
+ *  dropped/trimmed (so downstream can emit per-shift "declined: outside
+ *  business hours" rows), and the total hours removed. The source
+ *  NormalizedInterval is preserved for downstream linkage; in-home /
  *  clinic shifts are NOT subject to this filter (their location is fixed
  *  outside the telehealth ops window). */
 export function applyOperatingHoursWindow(
   slots: ExpandedSlot[],
   config: ValidationConfig,
-): { slots: ExpandedSlot[]; hoursRemoved: number } {
+): { slots: ExpandedSlot[]; droppedSlots: ExpandedSlot[]; hoursRemoved: number } {
   const out: ExpandedSlot[] = [];
+  const dropped: ExpandedSlot[] = [];
   let removed = 0;
   for (const s of slots) {
     if (s.source.kind === 'in_home') {
@@ -806,12 +809,14 @@ export function applyOperatingHoursWindow(
     const rawHours = (s.endMin - s.startMin) / 60;
     if (s.endMin <= winStart || s.startMin >= winEnd) {
       removed += rawHours;
+      dropped.push(s);
       continue;
     }
     const newStart = Math.max(s.startMin, winStart);
     const newEnd = Math.min(s.endMin, winEnd);
     if (newEnd <= newStart) {
       removed += rawHours;
+      dropped.push(s);
       continue;
     }
     if (newStart === s.startMin && newEnd === s.endMin) {
@@ -819,9 +824,15 @@ export function applyOperatingHoursWindow(
     } else {
       removed += ((newStart - s.startMin) + (s.endMin - newEnd)) / 60;
       out.push({ ...s, startMin: newStart, endMin: newEnd });
+      if (newStart > s.startMin) {
+        dropped.push({ ...s, startMin: s.startMin, endMin: newStart });
+      }
+      if (newEnd < s.endMin) {
+        dropped.push({ ...s, startMin: newEnd, endMin: s.endMin });
+      }
     }
   }
-  return { slots: out, hoursRemoved: round2(removed) };
+  return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
 }
 
 function isInMonth(dateISO: string, monthISO: string): boolean {
@@ -960,6 +971,12 @@ export interface NormalizationResult {
   targetMonth: string;
   normalized: NormalizedInterval[];
   timeline: ExpandedSlot[];
+  /** Original portions of slots that were dropped/trimmed by the operating-
+   *  hours window (9a-9p ET weekdays, 9a-12p ET weekends). Each entry is
+   *  the original out-of-window fragment with its source NormalizedInterval
+   *  preserved, so downstream can emit "declined: outside business hours"
+   *  per-shift rows. */
+  outOfHoursTimeline: ExpandedSlot[];
   summary: NormalizationSummary;
   report: ValidationReportRow[];
   override_used: ProviderOverride | null;
@@ -1088,6 +1105,7 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     targetMonth: input.targetMonth,
     normalized,
     timeline: reconciled.slots,
+    outOfHoursTimeline: windowed.droppedSlots,
     summary,
     report,
     override_used: override,
@@ -1199,6 +1217,10 @@ export interface BuildTimelineOptions {
 export interface BuildTimelineResult extends NormalizationResult {
   /** Subset of `timeline` filtered by forecastKinds (default = telehealth). */
   forecastTimeline: ExpandedSlot[];
+  /** Subset of `outOfHoursTimeline` filtered by forecastKinds. In-home /
+   *  clinic shifts are not subject to the operating-hours window so they
+   *  never appear here. */
+  forecastOutOfHoursTimeline: ExpandedSlot[];
 }
 
 /**
@@ -1235,7 +1257,10 @@ export function buildSubmissionTimeline(
   const result = normalizeProviderAvailability(input);
   const forecastSet = new Set(forecastKinds);
   const forecastTimeline = result.timeline.filter(s => forecastSet.has(s.source.kind));
-  return { ...result, forecastTimeline };
+  const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
+    forecastSet.has(s.source.kind),
+  );
+  return { ...result, forecastTimeline, forecastOutOfHoursTimeline };
 }
 
 export function extractRawIntervalsFromParsedShifts(parsed: ParsedShiftsBlob | null): RawInterval[] {
@@ -1325,12 +1350,20 @@ export interface BuildShiftRecommendationsArgs {
   timeline: ExpandedSlot[];
   /** Subset of timeline that participates in forecast cut budget. */
   forecastTimeline: ExpandedSlot[];
+  /** Out-of-business-hours fragments (telehealth only). Each is emitted as
+   *  its own `cut` row with reason "outside operating hours". They are
+   *  not part of the forecast cut budget — they were already removed from
+   *  `final_approvable_hours` upstream. */
+  outOfHoursTimeline?: ExpandedSlot[];
   declinedHours: number;
   /** True if the entire forecast timeline should be cut (declined decision). */
   declineAll: boolean;
   allocations: Array<{ state: string; hours: number }>;
   decisionRunId: string;
 }
+
+const OUT_OF_HOURS_REASON =
+  'Cut — outside operating hours window (9a–9p ET weekdays, 9a–12p ET weekends)';
 
 /**
  * Cut/publish row generator shared by evaluator and emitter.
@@ -1339,9 +1372,14 @@ export interface BuildShiftRecommendationsArgs {
  * cut budget: latest-first, cut until `declinedHours` is satisfied.
  * In-home/clinic slots are not in the forecast scope, so they are always
  * `publish` and don't consume the cut budget.
+ *
+ * Out-of-hours fragments (passed via `outOfHoursTimeline`) are emitted as
+ * their own `cut` rows so the workbench surfaces hours declined for being
+ * outside business hours alongside other cuts.
  */
 export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs): ShiftRecommendationRow[] {
-  if (args.timeline.length === 0) return [];
+  const outOfHours = args.outOfHoursTimeline ?? [];
+  if (args.timeline.length === 0 && outOfHours.length === 0) return [];
 
   const forecastSlots = new Set(args.forecastTimeline);
   const cutBudgetTotal = args.declineAll
@@ -1363,12 +1401,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
   // Buckets for state assignment, only consumed by published forecast slots.
   const buckets = new Map<string, number>(args.allocations.map(a => [a.state, a.hours]));
 
-  // Publish all slots in chronological order.
-  const sortedAsc = [...args.timeline].sort((a, b) =>
-    a.date.localeCompare(b.date) || a.startMin - b.startMin,
-  );
-
-  return sortedAsc.map(slot => {
+  const timelineRows = args.timeline.map(slot => {
     const slotHours = round2((slot.endMin - slot.startMin) / 60);
     const isForecastSlot = forecastSlots.has(slot);
     const isCut = isForecastSlot && cutSet.has(slot);
@@ -1412,12 +1445,33 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
       hours: slotHours,
       shift_type: kindToShiftType(slot.source.kind),
       assigned_state: assignedState,
-      recommendation: isCut ? 'cut' : 'publish',
+      recommendation: (isCut ? 'cut' : 'publish') as 'cut' | 'publish',
       recommendation_reason: reason,
       decision_run_id: args.decisionRunId,
-      publish_status: 'pending',
+      publish_status: 'pending' as const,
     };
   });
+
+  const outOfHoursRows: ShiftRecommendationRow[] = outOfHours.map(slot => ({
+    submission_id: slot.source.submissionId ?? '',
+    provider_id: args.providerId,
+    provider_name: args.providerName,
+    target_month: args.targetMonth,
+    shift_date: slot.date,
+    start_min: slot.startMin,
+    end_min: slot.endMin,
+    hours: round2((slot.endMin - slot.startMin) / 60),
+    shift_type: kindToShiftType(slot.source.kind),
+    assigned_state: null,
+    recommendation: 'cut',
+    recommendation_reason: OUT_OF_HOURS_REASON,
+    decision_run_id: args.decisionRunId,
+    publish_status: 'pending',
+  }));
+
+  return [...timelineRows, ...outOfHoursRows].sort((a, b) =>
+    a.shift_date.localeCompare(b.shift_date) || a.start_min - b.start_min,
+  );
 }
 
 export function kindToShiftType(kind: IntervalKind): ShiftType {
@@ -1816,7 +1870,13 @@ Deno.serve(async (req: Request) => {
         );
         const fullTimeline = validation.timeline;
         const forecastTimeline = validation.forecastTimeline;
+        const forecastOutOfHoursTimeline = validation.forecastOutOfHoursTimeline;
         const effectiveHours = validation.summary.final_approvable_hours;
+        // Hours dropped because the slot fell outside the operating-hours
+        // window (9a-9p ET weekdays, 9a-12p ET weekends). They count toward
+        // declined_hours so the provider sees the full reason their submitted
+        // time was not approved.
+        const oohDeclined = round2(validation.summary.hours_removed_for_operating_hours ?? 0);
 
         if (validation.report.length > 0) {
           console.log(`[validation] ${latest.provider_name} ${targetMonth}`,
@@ -1876,14 +1936,32 @@ Deno.serve(async (req: Request) => {
           counters.skipped_no_hours++;
           // Mark older as superseded; latest becomes 'declined' with note
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; group has 0 effective hours`);
+          const noHoursNotes = oohDeclined > 0
+            ? `No effective hours in any submission for this provider+month; hours_removed_outside_business_hours=${oohDeclined}h`
+            : 'No effective hours in any submission for this provider+month';
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
-            declined_hours: 0,
-            notes: 'No effective hours in any submission for this provider+month',
+            declined_hours: oohDeclined,
+            notes: noHoursNotes,
             decision_run_id: decisionRunId,
             validation,
           });
+          if (oohDeclined > 0 || forecastOutOfHoursTimeline.length > 0) {
+            const oohRecRows = buildShiftRecommendationRows({
+              providerId,
+              providerName: latest.provider_name,
+              targetMonth,
+              timeline: [],
+              forecastTimeline: [],
+              outOfHoursTimeline: forecastOutOfHoursTimeline,
+              declinedHours: 0,
+              declineAll: false,
+              allocations: [],
+              decisionRunId,
+            });
+            await writeShiftRecommendations(supabase, groupSubs.map(s => s.id), oohRecRows);
+          }
           counters.declined++;
           counters.superseded += olderIds.length;
           decisions.push({ group: key, provider: latest.provider_name, target_month: targetMonth, status: 'declined', reason: 'no_hours', superseded: olderIds.length });
@@ -1900,18 +1978,21 @@ Deno.serve(async (req: Request) => {
             await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
             counters.superseded += olderIds.length;
           }
-          const mhNotes = [
+          const mhNoteParts = [
             `decision=accepted (mental_health_bypass)`,
             `profession=${profession}`,
             `effective_hours=${effectiveHours}h`,
             `raw_hours=${validation.summary.raw_total_hours}h`,
             'note=MH uses weekly SLA across 50 states; bypasses state demand allocator',
-          ].join('; ');
+          ];
+          if (oohDeclined > 0) {
+            mhNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
+          }
           await writeDecision(supabase, latest.id, {
             status: 'accepted',
             accepted_hours: effectiveHours,
-            declined_hours: 0,
-            notes: mhNotes,
+            declined_hours: oohDeclined,
+            notes: mhNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
           });
@@ -1922,7 +2003,7 @@ Deno.serve(async (req: Request) => {
             target_month: targetMonth,
             status: 'accepted',
             accepted_hours: effectiveHours,
-            declined_hours: 0,
+            declined_hours: oohDeclined,
             mh_bypass: true,
             superseded: olderIds.length,
           });
@@ -1934,11 +2015,15 @@ Deno.serve(async (req: Request) => {
         if (licensed.size === 0) {
           counters.skipped_no_licensed_states++;
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
+          const noLicNoteParts = ['Provider has no active licenses on file'];
+          if (oohDeclined > 0) {
+            noLicNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
+          }
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
-            declined_hours: effectiveHours,
-            notes: 'Provider has no active licenses on file',
+            declined_hours: round2(effectiveHours + oohDeclined),
+            notes: noLicNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
           });
@@ -1972,23 +2057,26 @@ Deno.serve(async (req: Request) => {
         const totalGap = round2(gapByState.reduce((s, g) => s + g.gapHours, 0));
         const missingDemandStates = gapByState.filter(g => g.missingDemand).map(g => g.state);
 
-        // Decide
+        // Decide. `declined` rolls up forecast cuts AND hours dropped for
+        // being outside the operating-hours window so the provider sees
+        // every hour we couldn't approve, not just the demand-driven cuts.
         let status: 'accepted' | 'partial' | 'declined';
         let accepted: number;
-        let declined: number;
+        let forecastDeclined: number;
         if (totalGap <= 0) {
           status = 'declined';
           accepted = 0;
-          declined = effectiveHours;
+          forecastDeclined = effectiveHours;
         } else if (totalGap >= effectiveHours) {
           status = 'accepted';
           accepted = effectiveHours;
-          declined = 0;
+          forecastDeclined = 0;
         } else {
           status = 'partial';
           accepted = totalGap;
-          declined = round2(effectiveHours - accepted);
+          forecastDeclined = round2(effectiveHours - accepted);
         }
+        const declined = round2(forecastDeclined + oohDeclined);
 
         // Allocate accepted hours greedily across states
         const allocations: Array<{ state: string; hours: number }> = [];
@@ -2020,6 +2108,9 @@ Deno.serve(async (req: Request) => {
         }
         if (validation.summary.hours_removed_for_duplicates > 0) {
           noteParts.push(`hours_removed_dup=${validation.summary.hours_removed_for_duplicates}h`);
+        }
+        if (oohDeclined > 0) {
+          noteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
         }
         noteParts.push(`total_gap=${totalGap}h`);
         noteParts.push(
@@ -2058,7 +2149,10 @@ Deno.serve(async (req: Request) => {
           targetMonth,
           timeline: fullTimeline,
           forecastTimeline,
-          declinedHours: declined,
+          outOfHoursTimeline: forecastOutOfHoursTimeline,
+          // Forecast cut budget is the demand-driven decline only — out-of-
+          // hours fragments are handled separately inside the row builder.
+          declinedHours: forecastDeclined,
           declineAll: status === 'declined',
           allocations,
           decisionRunId,
@@ -2170,23 +2264,122 @@ function validationStatusForGroup(
   return 'valid';
 }
 
+type PreservedPublishState = {
+  publish_status: string;
+  published_at: string | null;
+  published_by: string | null;
+  ehr_posted_at: string | null;
+  ehr_posted_by: string | null;
+  homebase_shift_id: string | null;
+};
+
+const shiftKey = (r: {
+  submission_id: string;
+  shift_date: string;
+  start_min: number;
+  end_min: number;
+  shift_type: string;
+}) =>
+  `${r.submission_id}|${r.shift_date}|${r.start_min}|${r.end_min}|${r.shift_type}`;
+
 async function writeShiftRecommendations(
   supabase: ReturnType<typeof createClient>,
   submissionIds: string[],
   rows: ShiftRecommendationRow[],
 ) {
-  // Wipe any prior recommendations for this group so re-runs are idempotent.
+  // Snapshot the existing publish state for this group BEFORE we wipe, so a
+  // re-run of the evaluator doesn't reset Sarabjeet's "Posted to Homebase /
+  // EHR" progress. We carry the state forward onto any freshly emitted shift
+  // whose natural identity (submission + date + start/end + type) matches.
+  // Shifts that no longer exist in the new emission lose their state — that's
+  // intentional: the schedule changed, and Sarabjeet would need to re-publish.
+  const { data: priorRows, error: priorErr } = await supabase
+    .from('shift_recommendations')
+    .select(
+      'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, shift_type, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, homebase_shift_id',
+    )
+    .in('submission_id', submissionIds);
+  if (priorErr) {
+    throw new Error(`failed to read prior shift_recommendations: ${priorErr.message}`);
+  }
+
+  const priorByKey = new Map<string, typeof priorRows[number]>();
+  for (const r of priorRows ?? []) priorByKey.set(shiftKey(r), r);
+
   await supabase
     .from('shift_recommendations')
     .delete()
     .in('submission_id', submissionIds);
 
   if (rows.length === 0) return;
+
+  // Preserve onto matching new rows.
+  const preservedAuditEntries: Record<string, unknown>[] = [];
+  const merged = rows.map(row => {
+    const prior = priorByKey.get(shiftKey(row));
+    if (!prior) return row;
+    const carry: PreservedPublishState = {
+      publish_status: prior.publish_status,
+      published_at: prior.published_at,
+      published_by: prior.published_by,
+      ehr_posted_at: prior.ehr_posted_at,
+      ehr_posted_by: prior.ehr_posted_by,
+      homebase_shift_id: prior.homebase_shift_id,
+    };
+    if (carry.publish_status === 'published_to_homebase' || carry.publish_status === 'confirmed') {
+      preservedAuditEntries.push({
+        submission_id: row.submission_id,
+        provider_id: row.provider_id,
+        provider_name: row.provider_name,
+        target_month: row.target_month,
+        shift_date: row.shift_date,
+        start_min: row.start_min,
+        end_min: row.end_min,
+        shift_type: row.shift_type,
+        step: 'homebase',
+        action: 'preserved',
+        actor_label: 'evaluator re-run',
+        notes: `Carried forward from prior shift ${prior.id}`,
+      });
+    }
+    if (carry.publish_status === 'confirmed' || carry.ehr_posted_at) {
+      preservedAuditEntries.push({
+        submission_id: row.submission_id,
+        provider_id: row.provider_id,
+        provider_name: row.provider_name,
+        target_month: row.target_month,
+        shift_date: row.shift_date,
+        start_min: row.start_min,
+        end_min: row.end_min,
+        shift_type: row.shift_type,
+        step: 'ehr',
+        action: 'preserved',
+        actor_label: 'evaluator re-run',
+        notes: `Carried forward from prior shift ${prior.id}`,
+      });
+    }
+    return { ...row, ...carry };
+  });
+
   const CHUNK = 500;
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    const chunk = rows.slice(i, i + CHUNK);
+  for (let i = 0; i < merged.length; i += CHUNK) {
+    const chunk = merged.slice(i, i + CHUNK);
     const { error } = await supabase.from('shift_recommendations').insert(chunk);
     if (error) throw new Error(`shift_recommendations insert failed: ${error.message}`);
+  }
+
+  // Best-effort audit. We log preservation events so it's traceable when
+  // someone wonders why a published-to-Homebase shift is still checked after
+  // a re-evaluation (or, if it isn't, why not).
+  if (preservedAuditEntries.length > 0) {
+    for (let i = 0; i < preservedAuditEntries.length; i += CHUNK) {
+      const chunk = preservedAuditEntries.slice(i, i + CHUNK);
+      const { error: auditErr } = await supabase.from('publish_audit_log').insert(chunk);
+      if (auditErr) {
+        // Don't fail the whole evaluator on a logging failure.
+        console.warn('publish_audit_log preservation insert failed:', auditErr.message);
+      }
+    }
   }
 }
 

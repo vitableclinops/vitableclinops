@@ -467,25 +467,90 @@ const ehrPatch = (done: boolean, actorId: string | null, nowIso: string) =>
         ehr_posted_by: null,
       };
 
+type AuditableShift = Pick<
+  ShiftRow,
+  | 'id'
+  | 'submission_id'
+  | 'provider_id'
+  | 'provider_name'
+  | 'target_month'
+  | 'shift_date'
+  | 'start_min'
+  | 'end_min'
+  | 'shift_type'
+>;
+
+const buildAuditEntries = (
+  shifts: AuditableShift[],
+  step: ShiftPublishStep,
+  done: boolean,
+  actorId: string | null,
+  actorLabel: string | null,
+): Record<string, unknown>[] =>
+  shifts.map(s => ({
+    shift_recommendation_id: s.id,
+    submission_id: s.submission_id,
+    provider_id: s.provider_id,
+    provider_name: s.provider_name,
+    target_month: s.target_month,
+    shift_date: s.shift_date,
+    start_min: s.start_min,
+    end_min: s.end_min,
+    shift_type: s.shift_type,
+    step,
+    action: done ? 'marked' : 'reverted',
+    actor_id: actorId,
+    actor_label: actorLabel,
+  }));
+
+const writeAuditLog = async (entries: Record<string, unknown>[]) => {
+  if (entries.length === 0) return;
+  const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+    .from('publish_audit_log')
+    .insert(entries);
+  if (error) {
+    // Audit failure is logged but doesn't block the user-facing toggle. The
+    // shift_recommendations row already records the latest state via
+    // published_by / published_at; the audit log is the richer trail.
+    console.warn('publish_audit_log insert failed:', error.message);
+  }
+};
+
+const useActorLabel = () => {
+  const { user, profile } = useAuth();
+  return {
+    actorId: user?.id ?? null,
+    actorLabel: profile?.full_name || profile?.email || user?.email || null,
+  };
+};
+
 export function useTogglePublishShift() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { actorId, actorLabel } = useActorLabel();
   return useMutation({
-    mutationFn: async (args: { id: string; step: ShiftPublishStep; done: boolean }) => {
+    mutationFn: async (args: {
+      shift: AuditableShift;
+      step: ShiftPublishStep;
+      done: boolean;
+    }) => {
       const nowIso = new Date().toISOString();
       const patch =
         args.step === 'homebase'
-          ? homebasePatch(args.done, user?.id ?? null, nowIso)
-          : ehrPatch(args.done, user?.id ?? null, nowIso);
+          ? homebasePatch(args.done, actorId, nowIso)
+          : ehrPatch(args.done, actorId, nowIso);
       const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
         .from('shift_recommendations')
         .update(patch)
-        .eq('id', args.id);
+        .eq('id', args.shift.id);
       if (error) throw error;
+      await writeAuditLog(
+        buildAuditEntries([args.shift], args.step, args.done, actorId, actorLabel),
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'publish-audit-log'] });
       queryClient.invalidateQueries({ queryKey: ['clinops', 'shift_recommendations'] });
     },
   });
@@ -493,30 +558,79 @@ export function useTogglePublishShift() {
 
 export function useBulkMarkPublishShifts() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { actorId, actorLabel } = useActorLabel();
   return useMutation({
     mutationFn: async (args: {
-      ids: string[];
+      shifts: AuditableShift[];
       step: ShiftPublishStep;
       done: boolean;
     }) => {
-      if (args.ids.length === 0) return;
+      if (args.shifts.length === 0) return;
       const nowIso = new Date().toISOString();
       const patch =
         args.step === 'homebase'
-          ? homebasePatch(args.done, user?.id ?? null, nowIso)
-          : ehrPatch(args.done, user?.id ?? null, nowIso);
+          ? homebasePatch(args.done, actorId, nowIso)
+          : ehrPatch(args.done, actorId, nowIso);
       const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
         .from('shift_recommendations')
         .update(patch)
-        .in('id', args.ids);
+        .in('id', args.shifts.map(s => s.id));
       if (error) throw error;
+      await writeAuditLog(
+        buildAuditEntries(args.shifts, args.step, args.done, actorId, actorLabel),
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'publish-audit-log'] });
       queryClient.invalidateQueries({ queryKey: ['clinops', 'shift_recommendations'] });
     },
+  });
+}
+
+// ── Audit log read API ────────────────────────────────────────────────────
+// Reverse-chronological log of every publish/revert/preserve action for a
+// given month. Used by the inline "by X · 2h ago" tooltip and the History
+// page so Sarabjeet (and anyone else) can see who did what.
+
+export type PublishAuditEntry = {
+  id: string;
+  shift_recommendation_id: string | null;
+  submission_id: string | null;
+  provider_id: string | null;
+  provider_name: string | null;
+  target_month: string | null;
+  shift_date: string | null;
+  start_min: number | null;
+  end_min: number | null;
+  shift_type: string | null;
+  step: 'homebase' | 'ehr';
+  action: 'marked' | 'reverted' | 'preserved';
+  actor_id: string | null;
+  actor_label: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export function usePublishAuditLog(month: string | null) {
+  const monthStart = month ? monthIso(month) : null;
+  return useQuery({
+    queryKey: ['workbench', 'publish-audit-log', monthStart ?? 'all'],
+    queryFn: async (): Promise<PublishAuditEntry[]> => {
+      let q = (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('publish_audit_log')
+        .select(
+          'id, shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, shift_type, step, action, actor_id, actor_label, notes, created_at',
+        )
+        .order('created_at', { ascending: false })
+        .range(0, 999);
+      if (monthStart) q = q.eq('target_month', monthStart);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as PublishAuditEntry[];
+    },
+    staleTime: 30_000,
   });
 }
 

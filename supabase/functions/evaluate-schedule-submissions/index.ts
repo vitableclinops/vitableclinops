@@ -740,23 +740,122 @@ function validationStatusForGroup(
   return 'valid';
 }
 
+type PreservedPublishState = {
+  publish_status: string;
+  published_at: string | null;
+  published_by: string | null;
+  ehr_posted_at: string | null;
+  ehr_posted_by: string | null;
+  homebase_shift_id: string | null;
+};
+
+const shiftKey = (r: {
+  submission_id: string;
+  shift_date: string;
+  start_min: number;
+  end_min: number;
+  shift_type: string;
+}) =>
+  `${r.submission_id}|${r.shift_date}|${r.start_min}|${r.end_min}|${r.shift_type}`;
+
 async function writeShiftRecommendations(
   supabase: ReturnType<typeof createClient>,
   submissionIds: string[],
   rows: ShiftRecommendationRow[],
 ) {
-  // Wipe any prior recommendations for this group so re-runs are idempotent.
+  // Snapshot the existing publish state for this group BEFORE we wipe, so a
+  // re-run of the evaluator doesn't reset Sarabjeet's "Posted to Homebase /
+  // EHR" progress. We carry the state forward onto any freshly emitted shift
+  // whose natural identity (submission + date + start/end + type) matches.
+  // Shifts that no longer exist in the new emission lose their state — that's
+  // intentional: the schedule changed, and Sarabjeet would need to re-publish.
+  const { data: priorRows, error: priorErr } = await supabase
+    .from('shift_recommendations')
+    .select(
+      'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, shift_type, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, homebase_shift_id',
+    )
+    .in('submission_id', submissionIds);
+  if (priorErr) {
+    throw new Error(`failed to read prior shift_recommendations: ${priorErr.message}`);
+  }
+
+  const priorByKey = new Map<string, typeof priorRows[number]>();
+  for (const r of priorRows ?? []) priorByKey.set(shiftKey(r), r);
+
   await supabase
     .from('shift_recommendations')
     .delete()
     .in('submission_id', submissionIds);
 
   if (rows.length === 0) return;
+
+  // Preserve onto matching new rows.
+  const preservedAuditEntries: Record<string, unknown>[] = [];
+  const merged = rows.map(row => {
+    const prior = priorByKey.get(shiftKey(row));
+    if (!prior) return row;
+    const carry: PreservedPublishState = {
+      publish_status: prior.publish_status,
+      published_at: prior.published_at,
+      published_by: prior.published_by,
+      ehr_posted_at: prior.ehr_posted_at,
+      ehr_posted_by: prior.ehr_posted_by,
+      homebase_shift_id: prior.homebase_shift_id,
+    };
+    if (carry.publish_status === 'published_to_homebase' || carry.publish_status === 'confirmed') {
+      preservedAuditEntries.push({
+        submission_id: row.submission_id,
+        provider_id: row.provider_id,
+        provider_name: row.provider_name,
+        target_month: row.target_month,
+        shift_date: row.shift_date,
+        start_min: row.start_min,
+        end_min: row.end_min,
+        shift_type: row.shift_type,
+        step: 'homebase',
+        action: 'preserved',
+        actor_label: 'evaluator re-run',
+        notes: `Carried forward from prior shift ${prior.id}`,
+      });
+    }
+    if (carry.publish_status === 'confirmed' || carry.ehr_posted_at) {
+      preservedAuditEntries.push({
+        submission_id: row.submission_id,
+        provider_id: row.provider_id,
+        provider_name: row.provider_name,
+        target_month: row.target_month,
+        shift_date: row.shift_date,
+        start_min: row.start_min,
+        end_min: row.end_min,
+        shift_type: row.shift_type,
+        step: 'ehr',
+        action: 'preserved',
+        actor_label: 'evaluator re-run',
+        notes: `Carried forward from prior shift ${prior.id}`,
+      });
+    }
+    return { ...row, ...carry };
+  });
+
   const CHUNK = 500;
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    const chunk = rows.slice(i, i + CHUNK);
+  for (let i = 0; i < merged.length; i += CHUNK) {
+    const chunk = merged.slice(i, i + CHUNK);
     const { error } = await supabase.from('shift_recommendations').insert(chunk);
     if (error) throw new Error(`shift_recommendations insert failed: ${error.message}`);
+  }
+
+  // Best-effort audit. We log preservation events so it's traceable when
+  // someone wonders why a published-to-Homebase shift is still checked after
+  // a re-evaluation (or, if it isn't, why not).
+  if (preservedAuditEntries.length > 0) {
+    for (let i = 0; i < preservedAuditEntries.length; i += CHUNK) {
+      const chunk = preservedAuditEntries.slice(i, i + CHUNK);
+      const { error: auditErr } = await supabase.from('publish_audit_log').insert(chunk);
+      if (auditErr) {
+        // Don't fail the whole evaluator on a logging failure.
+        console.warn('publish_audit_log preservation insert failed:', auditErr.message);
+      }
+    }
   }
 }
 
