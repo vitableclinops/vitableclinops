@@ -1,129 +1,130 @@
-## MVP Goal
 
-Get a VA publishing the **June 2026** schedule into Homebase and the EHR in the next hour. Keep all changes scoped to the existing scheduling data so nothing else in the app moves.
+# June Scheduling MVP — `/scheduling/june-mvp`
 
-## What's already built (we reuse it)
+A self-contained, upload-driven page that lets you finalize and publish the June schedule today. No new edge functions, no DB ingest of the uploaded data. Only the existing `publish_status` table is reused for cross-view tracking.
 
-- `schedule_submissions` (per-provider monthly availability, parsed shifts, accepted/declined hours, decision_status)
-- `publish_status` (per provider × month, with `homebase_posted_at` / `ehr_posted_at`)
-- `useMonthlyPublishView`, `useTogglePublishStep`, `useShiftRecommendations` — already wire the provider view + Homebase/EHR checkboxes
-- Existing **Workbench** page (`/admin/workbench`) has the Provider tab and an All Shifts tab
+## Goal
 
-The MVP is a slim re-shell of these hooks plus two new views. No new business logic, no schema changes beyond the role enum.
+Within ~1 hour of build time, give VAs a single page where they can:
+1. Drop in 5 files.
+2. See a recommended schedule (accepted vs declined) computed in-browser.
+3. Toggle Homebase / EHR "posted" state per provider — reflected on every view.
 
----
+## Page layout
 
-## 1. New `scheduling` role
-
-- Add `'scheduling'` to the `app_role` enum (migration).
-- `AppSidebar` and `ProtectedRoute` already use `hasRole`. Treat `scheduling` as having access only to the new `/scheduling/*` routes. Admins keep full access (the role check is OR-based).
-- Provision via existing User Roles page — no new admin UI needed.
-
-## 2. New `/scheduling` shell
-
-A dedicated landing page + slim sidebar so the VA never sees licensure/agreements/etc.
+Route: `/scheduling/june-mvp` (sibling of existing workbench, also linked in the Scheduling sidebar). Restricted to `admin` and `scheduling` roles.
 
 ```text
-/scheduling                 → redirects to /scheduling/workbench
-/scheduling/workbench       → Provider · By-Day · Declined · All Shifts (tabs)
-/scheduling/forecast        → existing MonthlyForecastPage (read-only, reused)
+┌─ Header: month picker (defaults June 2026), "Recompute" button ─┐
+│
+│ ┌─ Upload panel (collapsible after first run) ───────────────┐
+│ │ 1. Demand by state (CSV)        [drop / browse]            │
+│ │ 2. Medallion licenses (CSV)     [drop / browse]            │
+│ │ 3. Supervision matrix (XLSX)    [drop / browse]            │
+│ │ 4. EHR state coverage (CSV)     [drop / browse]            │
+│ │ 5. Jotform availability (CSV)   [drop / browse]            │
+│ │ Status pills: parsed rows / providers found / states found │
+│ └────────────────────────────────────────────────────────────┘
+│
+│ KPIs: Demand hrs · Accepted hrs · Declined hrs · Fill % · Providers
+│
+│ Tabs:  [By Provider]  [By Day]  [Declined]
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-Slim sidebar (`SchedulingSidebar.tsx`, new file): logo, "Workbench", "Forecast", user avatar. Nothing else. Admins navigating to `/scheduling/*` see the same slim shell (we don't show the full admin sidebar here — keeps the VA experience identical to what an admin can QA).
+All three tabs share the same in-memory computed result, so checking "Posted to Homebase" on a provider in **By Provider** instantly updates **By Day** and the KPI bar.
 
-A small "Back to admin" link appears for users who also have the `admin` role.
+## Tab details
 
-## 3. Workbench tabs (the actual work surface)
+### By Provider
+- Sortable rows: name · profession · accepted hrs · # shifts · Homebase ☐ · EHR ☐
+- Each row expands (accordion) to show the provider's accepted shifts (date / time / state assigned / hours) and any partially-declined shifts with reason.
+- Per-row "Mark all Homebase" and "Mark all EHR" quick buttons.
+- Page-level "Mark all Homebase" / "Mark all EHR" in toolbar (filtered set).
 
-Single page, four tabs, all bound to the same month picker (default **June 2026**) and all reading from the same hooks so checkboxes stay in sync across views.
+### By Day
+- One accordion per calendar date, sorted ascending.
+- Each day shows: total hours, # providers, list of (provider · time · state).
+- Same Homebase / EHR checkboxes per provider-on-day; toggling here updates the same `publish_status` row used in By Provider (publish status is per-provider-per-month, not per-shift).
 
-### Tab A — By Provider (already exists, +1 button)
+### Declined
+- Flat list grouped by reason: `outside_business_hours`, `state_capacity_full`, `provider_unlicensed_in_needed_states`, `np_state_restricted`, `date_blackout`.
+- Columns: provider · date · time · hours · reason · notes.
+- Read-only — no publish controls (declined hours are not posted).
 
-Reuse the current Monthly Publish table. Add at the top of the table:
+## Allocation algorithm (in-browser, deterministic)
 
-```text
-[ Mark all visible as posted to Homebase ]   [ Mark all visible as posted to EHR ]
-```
+Inputs (all parsed client-side):
+- **Demand**: `state → monthly_hours_needed` (from file 1, "Adjusted Monthly Hours" column).
+- **Eligibility**: `provider → Set<state>` = **union** of:
+  - states in Medallion CSV with `Status: active`,
+  - green-cell states in supervision XLSX,
+  - "1"-marked states in EHR coverage CSV.
+- **Restrictions**: NPs hard-blocked from `AL, GA, IN, MO, MS, SC, TN, LA` (existing core rule). Profession comes from Medallion CSV (`Profession` column) — fallback to "NP" if unknown.
+- **Availability**: latest Jotform submission per provider (by `Submission Date`), parsed into discrete shift candidates:
+  - Recurring weekday rules → expanded to every matching weekday in June.
+  - One-off virtual / in-home dates → used as-is.
+  - Subtract any blackout date ranges.
 
-- Operates on the currently filtered + accepted/partial rows
-- Calls `useTogglePublishStep` in a loop (or a small batch wrapper) with `done: true`
-- Toast shows count: "Marked 14 providers as posted to Homebase"
-- Each individual checkbox still works for one-off corrections
+Pass 1 — Validate each shift:
+- Clip to operating hours (Mon–Fri 09:00–21:00 ET, Sat–Sun 09:00–12:00 ET). If clipped to 0, decline as `outside_business_hours`.
+- If provider has no eligible state with remaining demand, decline as `provider_unlicensed_in_needed_states`.
 
-### Tab B — By Day (new)
+Pass 2 — Greedy fill, smallest-demand-first:
+- Sort states ascending by `remaining_hours` (skip 0 and negative).
+- For each shift (in date/start order):
+  - Find the provider's eligible state with the smallest positive `remaining_hours`.
+  - Assign min(shift_hours, state_remaining) to that state. If shift hours exceed remaining, the leftover gets re-tried against the next smallest eligible state, and any final remainder is declined as `state_capacity_full` (partial accept supported).
 
-Pivots the same `parsed_shifts` data by date instead of by provider.
+Output per shift: `{provider, date, start, end, accepted_hours, assigned_state, declined_hours, decline_reason}`.
 
-```text
-Tue, Jun 3        12 shifts · 38 hrs       [ Homebase: 8/12 ✓ ]  [ EHR: 0/12 ]
-  ▸ Jasmine Smith    9:00–13:00  NP Tele  PA   ☐ HB  ☐ EHR
-  ▸ Daniyel Patel   10:00–14:00  NP Tele  TX   ☑ HB  ☐ EHR
-  ...
-Wed, Jun 4        9 shifts · 32 hrs        [ Mark all HB ]  [ Mark all EHR ]
-  ...
-```
+Output per provider (aggregated): total accepted hours, # shifts, list of accepted/declined shifts.
 
-- One collapsible card per date
-- Per-row HB/EHR checkboxes are **provider-scoped** (toggling here flips the same `publish_status` row used by the Provider tab — that's the "linked across views" requirement)
-- Per-day "Mark all HB / Mark all EHR" buttons act on every provider with a shift on that day
-- Source data: `useShiftRecommendations(month)` (already returns provider+date+state+type) joined client-side with `publish_status` from `useMonthlyPublishView`
+## Cross-view publishing state
 
-### Tab C — Declined (new, global)
+Reuse existing `publish_status` table on the clinops Supabase (`provider_id`, `target_month`, `homebase_posted_at`, `ehr_posted_at`).
 
-Flat table of every shift inside `parsed_shifts` whose `status === 'declined'` (or rows where `decision_status === 'declined'`), across all providers for the selected month.
+- Provider matching to a `provider_id`: try by exact `email` against `providers.email`, fallback to normalized full name. Unmatched providers show a small ⚠ chip and are saved to a local-only state (no DB row, but checkboxes still work for the session).
+- Toggling Homebase/EHR calls existing `useTogglePublishStep` / `useBulkMarkPublishStep`. All three tabs read from the same in-memory `Map<provider_id, PublishRow>` populated from the existing `useMonthlyPublishView`-style query, so updates are reactive everywhere.
 
-Columns: Provider · Date · Day · Start · End · Hours · State · Shift type · Reason (from `decision_notes`).
+## What we're explicitly NOT doing
 
-Read-only, sortable, CSV export. No publish checkboxes — declined shifts don't go to Homebase.
+- No DB tables for uploads. Files live in browser memory; refresh = re-upload.
+- No edge function for allocation. All logic in `src/lib/juneScheduleAllocator.ts`.
+- No editing of individual shift assignments — re-upload + recompute is the override path.
+- No CSV export of the final schedule (can add post-MVP if needed).
+- No changes to existing `/scheduling/workbench` or `/scheduling/forecast`.
 
-### Tab D — All Shifts (already exists)
+## Files to add
 
-Keep as-is. It's the flat sanity-check view.
+- `src/pages/scheduling/JuneMvpPage.tsx` — the page, tabs, KPIs, upload panel.
+- `src/components/scheduling/mvp/UploadPanel.tsx` — 5 file slots with parsed-status pills.
+- `src/components/scheduling/mvp/ByProviderPanel.tsx`
+- `src/components/scheduling/mvp/ByDayPanel.tsx`
+- `src/components/scheduling/mvp/DeclinedPanel.tsx`
+- `src/lib/juneSchedule/parseDemand.ts`
+- `src/lib/juneSchedule/parseLicenses.ts` (Medallion CSV — regex-extract `State : XX` blocks per provider)
+- `src/lib/juneSchedule/parseSupervisionXlsx.ts` (uses `xlsx` lib — already in deps if not, add it)
+- `src/lib/juneSchedule/parseEhrCoverage.ts`
+- `src/lib/juneSchedule/parseJotform.ts` (handles multi-line quoted cells, "Day of Week:" / "Date:" / blackout ranges)
+- `src/lib/juneSchedule/allocator.ts`
+- `src/lib/juneSchedule/businessHours.ts`
+- `src/hooks/useJuneSchedule.ts` (combines uploads → memoized allocation result)
 
-## 4. Cross-view linking (the non-negotiable)
+## Files to edit
 
-All four tabs read/write the **same** `publish_status` row keyed by `(provider_id, target_month)`. The Provider Homebase checkbox, the By-Day per-row checkbox, and the bulk buttons all hit `useTogglePublishStep`. React Query's `['workbench','monthly-publish']` invalidation already broadcasts updates to every mounted view. No new tables, no new sync logic.
+- `src/App.tsx` — add `/scheduling/june-mvp` route (admin + scheduling).
+- `src/components/scheduling/SchedulingSidebar.tsx` — add "June MVP" nav item.
+- `src/components/AppSidebar.tsx` — add link in Home group for admin convenience.
 
-> **Caveat to confirm:** publish status is currently per-provider-per-month, not per-shift. So if Provider X has 8 shifts and you check "HB done" for one shift in the By-Day view, it marks the whole provider as HB-done (the same row updates everywhere). That matches your "single Mark all HB / Mark all EHR" answer and avoids a schema change. Flag if you want per-shift granularity instead — that would be a bigger build (new `shift_publish_status` table).
+## Dependencies
 
-## 5. Out of scope for this MVP
+- `papaparse` (CSV) and `xlsx` (Excel). Add only if not already present.
 
-- Inbox, Forecast overrides, Build grid, Coverage triage from the v2 brief
-- Per-shift publish tracking
-- Jotform → submissions sync changes (uses what's already there)
-- Any licensure / agreements / hiring surfaces
+## Acceptance checks
 
----
-
-## Technical details
-
-**Files added**
-- `supabase/migrations/<ts>_add_scheduling_role.sql` — `ALTER TYPE app_role ADD VALUE 'scheduling';`
-- `src/components/scheduling/SchedulingSidebar.tsx` — slim 2-link nav
-- `src/components/scheduling/SchedulingShell.tsx` — layout wrapper
-- `src/pages/scheduling/SchedulingWorkbenchPage.tsx` — 4-tab page (lifts current Workbench logic, adds bulk buttons + By-Day + Declined)
-- `src/components/scheduling/ByDayPanel.tsx`
-- `src/components/scheduling/DeclinedPanel.tsx`
-
-**Files edited**
-- `src/App.tsx` — add 3 routes under `/scheduling/*`, gated by `requiredRoles={['admin','scheduling']}`
-- `src/hooks/useMonthlyPublish.ts` — add `useBulkTogglePublishStep` (loops over `useTogglePublishStep` server-side via a single upsert array)
-- `src/components/AppSidebar.tsx` — no change (admins still see Monthly Forecast etc.)
-- `src/components/ProtectedRoute.tsx` — no change (already supports role list)
-
-**Data flow**
-- All views: `useMonthlyPublishView(month)` + `useShiftRecommendations(month)` (already exist)
-- Bulk action: single `upsert` to `publish_status` with array of `(provider_id, target_month, homebase_posted_at|ehr_posted_at)` rows; one toast, one query invalidation
-
-**Defaults**
-- Month picker defaults to `2026-06-01`
-- "Declined" tab pulls `parsed_shifts[*].status === 'declined'` + any submission with `decision_status='declined'`
-
-## Acceptance check (do these in order after implementation)
-
-1. Sign in as admin, visit `/scheduling/workbench` — slim sidebar, June 2026 selected.
-2. Click "Mark all visible as posted to Homebase" on the Provider tab — all checkboxes flip, toast confirms count.
-3. Switch to By Day tab — same providers show ☑ HB on every date they appear.
-4. Uncheck one provider's HB on a day card — Provider tab reflects the change immediately.
-5. Declined tab shows declined shifts only, with reason.
-6. Create a test user with the `scheduling` role — they can reach `/scheduling/*` but get redirected away from `/admin/*`.
+1. Upload all 5 files → KPIs populate within ~2s; counts match file row counts.
+2. PA (largest demand) is filled last; small states like WY/HI fill first when an eligible provider exists.
+3. A 7am ET shift gets clipped/declined as `outside_business_hours`.
+4. Toggling Homebase on a provider in **By Provider** flips the corresponding row in **By Day** and updates the % KPI immediately.
+5. Reloading the page preserves Homebase/EHR posted state (persisted in `publish_status`); uploads must be re-dropped.
