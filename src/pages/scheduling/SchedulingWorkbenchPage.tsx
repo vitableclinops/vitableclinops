@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, Fragment } from 'react';
 import SchedulingShell from './SchedulingShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,8 @@ import {
   CalendarCheck,
   CalendarX,
   RefreshCw,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
@@ -92,6 +94,9 @@ const StatusBadge = ({ status }: { status: DecisionStatus | null | undefined }) 
 export default function SchedulingWorkbenchPage() {
   const [month, setMonth] = useState('2026-06-01');
   const [filter, setFilter] = useState('');
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const toggleExpanded = (id: string) =>
+    setExpanded(p => ({ ...p, [id]: !p[id] }));
 
   const { data: rows = [], isLoading, refetch } = useMonthlyPublishView(month);
   const toggle = useTogglePublishStep();
@@ -287,10 +292,10 @@ export default function SchedulingWorkbenchPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-8" />
                       <TableHead>Provider</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Hours</TableHead>
-                      <TableHead className="text-right">Shifts</TableHead>
                       <TableHead className="text-center">Homebase</TableHead>
                       <TableHead className="text-center">EHR</TableHead>
                       <TableHead className="text-right">Confirm</TableHead>
@@ -301,14 +306,28 @@ export default function SchedulingWorkbenchPage() {
                       const sub = row.submission!;
                       const homebaseDone = !!row.publish?.homebase_posted_at;
                       const ehrDone = !!row.publish?.ehr_posted_at;
-                      const shiftCount = Array.isArray(sub.parsed_shifts) ? sub.parsed_shifts.length : 0;
+                      const shifts = Array.isArray(sub.parsed_shifts) ? sub.parsed_shifts : [];
+                      const isOpen = !!expanded[row.provider_id];
                       return (
-                        <TableRow key={row.provider_id}>
+                        <Fragment key={row.provider_id}>
+                        <TableRow
+                          className="cursor-pointer"
+                          onClick={() => toggleExpanded(row.provider_id)}
+                        >
+                          <TableCell className="w-8 align-top">
+                            {isOpen ? (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </TableCell>
                           <TableCell>
                             <div className="font-medium">{row.provider_name}</div>
                             <div className="text-xs text-muted-foreground">
                               {row.profession ?? '—'}
                               {row.employment_type ? ` · ${row.employment_type}` : ''}
+                              {' · '}
+                              {shifts.length} shift{shifts.length === 1 ? '' : 's'}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -317,20 +336,19 @@ export default function SchedulingWorkbenchPage() {
                           <TableCell className="text-right tabular-nums">
                             {formatHours(sub.accepted_hours)}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums">{shiftCount}</TableCell>
-                          <TableCell className="text-center">
+                          <TableCell className="text-center" onClick={e => e.stopPropagation()}>
                             <Checkbox
                               checked={homebaseDone}
                               onCheckedChange={c => handleToggle(row, 'homebase', !!c)}
                             />
                           </TableCell>
-                          <TableCell className="text-center">
+                          <TableCell className="text-center" onClick={e => e.stopPropagation()}>
                             <Checkbox
                               checked={ehrDone}
                               onCheckedChange={c => handleToggle(row, 'ehr', !!c)}
                             />
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                             <div className="flex justify-end gap-1">
                               {!homebaseDone && (
                                 <Button
@@ -355,6 +373,53 @@ export default function SchedulingWorkbenchPage() {
                             </div>
                           </TableCell>
                         </TableRow>
+                        {isOpen && (
+                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                            <TableCell />
+                            <TableCell colSpan={6} className="py-2">
+                              {shifts.length === 0 ? (
+                                <div className="text-xs text-muted-foreground italic">
+                                  No shifts parsed for this submission.
+                                </div>
+                              ) : (
+                                <ul className="text-xs space-y-1">
+                                  {shifts
+                                    .slice()
+                                    .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
+                                    .map((s, i) => (
+                                      <li key={i} className="flex items-center gap-2 tabular-nums">
+                                        <span className="font-medium w-32">
+                                          {s.date ? formatDateLabel(s.date) : '—'}
+                                        </span>
+                                        <span className="text-muted-foreground w-32">
+                                          {(s.start_time ?? '?')}–{(s.end_time ?? '?')}
+                                        </span>
+                                        <span className="w-16 text-right">
+                                          {formatHours(s.hours ?? null)}h
+                                        </span>
+                                        {s.state && (
+                                          <Badge variant="outline" className="text-[10px]">
+                                            {s.state}
+                                          </Badge>
+                                        )}
+                                        {s.shift_type && (
+                                          <span className="text-muted-foreground">
+                                            {s.shift_type}
+                                          </span>
+                                        )}
+                                        {s.notes && (
+                                          <span className="text-muted-foreground italic">
+                                            {s.notes}
+                                          </span>
+                                        )}
+                                      </li>
+                                    ))}
+                                </ul>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        </Fragment>
                       );
                     })}
                     {filteredAccepted.length === 0 && (
