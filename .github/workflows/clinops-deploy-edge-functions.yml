@@ -1,0 +1,67 @@
+name: ClinOps — Deploy edge functions
+
+# Deploys Supabase Edge Functions to the ClinOps project whenever their
+# source or supabase/config.toml changes on main. Closes the gap that caused
+# the "Re-run evaluator" button to return 401 — the verify_jwt=false config
+# was committed to the repo but never reached the deployed function.
+#
+# Setup:
+#   1. Add SUPABASE_ACCESS_TOKEN as a repository secret (same token used by
+#      clinops-db-push.yml; one token works for both).
+#   2. Merge this workflow.
+#
+# Trigger paths:
+#   - Edits to any function source under supabase/functions/
+#   - Edits to supabase/config.toml (verify_jwt and other per-function config)
+#   - Manual runs via workflow_dispatch (optionally limited to one function)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
+      - '.github/workflows/clinops-deploy-edge-functions.yml'
+  workflow_dispatch:
+    inputs:
+      function:
+        description: 'Single function name to deploy. Leave blank to deploy all in scripts/deploy-edge-functions.sh.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clinops-deploy-edge-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: bbquooftytwprllipcsb
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Sanity check — token is present
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Deploy via repo script
+        run: |
+          chmod +x scripts/deploy-edge-functions.sh
+          if [ -n "${{ inputs.function }}" ]; then
+            scripts/deploy-edge-functions.sh "${{ inputs.function }}"
+          else
+            scripts/deploy-edge-functions.sh
+          fi
