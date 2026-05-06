@@ -185,6 +185,10 @@ export default function JuneMvpPage() {
 
   const allReady = Boolean(slots.demand && slots.jotform);
 
+  useEffect(() => {
+    if (allReady) setUploadOpen(false);
+  }, [allReady]);
+
   return (
     <SchedulingShell>
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
