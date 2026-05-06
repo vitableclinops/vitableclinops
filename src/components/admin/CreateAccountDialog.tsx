@@ -23,6 +23,8 @@ type AppRole = Enums<'app_role'>;
 const ALL_ROLES: { value: AppRole; label: string; description: string }[] = [
   { value: 'provider', label: 'Provider', description: 'Can complete onboarding and view their dashboard' },
   { value: 'physician', label: 'Physician', description: 'Can supervise providers and manage agreements' },
+  { value: 'pod_lead', label: 'Pod Lead', description: 'Leads a pod and tracks team compliance' },
+  { value: 'scheduling', label: 'Scheduling', description: 'Manages scheduling workflows and shift planning' },
   { value: 'admin', label: 'Admin', description: 'Full access to all system features' },
 ];
 
