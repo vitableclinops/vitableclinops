@@ -18,7 +18,7 @@ export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps)
     !!user &&
     rolesHydrated &&
     !!requiredRoles?.length &&
-    !requiredRoles.some((role) => roles.includes(role));
+    !requiredRoles.some((role) => (roles as string[]).includes(role));
 
   // Surface an explanation before redirecting — otherwise role-gated links just
   // silently bounce to "/" and users think the link is broken.

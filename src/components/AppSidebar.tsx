@@ -180,7 +180,7 @@ export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: App
   const visibleGroups = navGroups
     .map(group => ({
       ...group,
-      items: group.items.filter(item => item.roles.some(role => roles.includes(role))),
+      items: group.items.filter(item => item.roles.some(role => (roles as string[]).includes(role))),
     }))
     .filter(group => group.items.length > 0);
 
