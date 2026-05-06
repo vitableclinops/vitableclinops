@@ -3785,42 +3785,6 @@ export type Database = {
         }
         Relationships: []
       }
-      submission_override_log: {
-        Row: {
-          actor_id: string | null
-          actor_label: string | null
-          created_at: string
-          hours_basis: number | null
-          id: string
-          new_status: string
-          prior_status: string | null
-          reason: string | null
-          submission_id: string
-        }
-        Insert: {
-          actor_id?: string | null
-          actor_label?: string | null
-          created_at?: string
-          hours_basis?: number | null
-          id?: string
-          new_status: string
-          prior_status?: string | null
-          reason?: string | null
-          submission_id: string
-        }
-        Update: {
-          actor_id?: string | null
-          actor_label?: string | null
-          created_at?: string
-          hours_basis?: number | null
-          id?: string
-          new_status?: string
-          prior_status?: string | null
-          reason?: string | null
-          submission_id?: string
-        }
-        Relationships: []
-      }
       reimbursement_requests: {
         Row: {
           admin_hours_spent: number | null
