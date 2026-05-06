@@ -76,6 +76,10 @@ export interface BuildTimelineOptions {
 export interface BuildTimelineResult extends NormalizationResult {
   /** Subset of `timeline` filtered by forecastKinds (default = telehealth). */
   forecastTimeline: ExpandedSlot[];
+  /** Subset of `outOfHoursTimeline` filtered by forecastKinds. In-home /
+   *  clinic shifts are not subject to the operating-hours window so they
+   *  never appear here. */
+  forecastOutOfHoursTimeline: ExpandedSlot[];
 }
 
 /**
@@ -112,7 +116,10 @@ export function buildSubmissionTimeline(
   const result = normalizeProviderAvailability(input);
   const forecastSet = new Set(forecastKinds);
   const forecastTimeline = result.timeline.filter(s => forecastSet.has(s.source.kind));
-  return { ...result, forecastTimeline };
+  const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
+    forecastSet.has(s.source.kind),
+  );
+  return { ...result, forecastTimeline, forecastOutOfHoursTimeline };
 }
 
 export function extractRawIntervalsFromParsedShifts(parsed: ParsedShiftsBlob | null): RawInterval[] {
@@ -194,12 +201,20 @@ export interface BuildShiftRecommendationsArgs {
   timeline: ExpandedSlot[];
   /** Subset of timeline that participates in forecast cut budget. */
   forecastTimeline: ExpandedSlot[];
+  /** Out-of-business-hours fragments (telehealth only). Each is emitted as
+   *  its own `cut` row with reason "outside operating hours". They are
+   *  not part of the forecast cut budget — they were already removed from
+   *  `final_approvable_hours` upstream. */
+  outOfHoursTimeline?: ExpandedSlot[];
   declinedHours: number;
   /** True if the entire forecast timeline should be cut (declined decision). */
   declineAll: boolean;
   allocations: Array<{ state: string; hours: number }>;
   decisionRunId: string;
 }
+
+const OUT_OF_HOURS_REASON =
+  'Cut — outside operating hours window (9a–9p ET weekdays, 9a–12p ET weekends)';
 
 /**
  * Cut/publish row generator shared by evaluator and emitter.
@@ -208,9 +223,14 @@ export interface BuildShiftRecommendationsArgs {
  * cut budget: latest-first, cut until `declinedHours` is satisfied.
  * In-home/clinic slots are not in the forecast scope, so they are always
  * `publish` and don't consume the cut budget.
+ *
+ * Out-of-hours fragments (passed via `outOfHoursTimeline`) are emitted as
+ * their own `cut` rows so the workbench surfaces hours declined for being
+ * outside business hours alongside other cuts.
  */
 export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs): ShiftRecommendationRow[] {
-  if (args.timeline.length === 0) return [];
+  const outOfHours = args.outOfHoursTimeline ?? [];
+  if (args.timeline.length === 0 && outOfHours.length === 0) return [];
 
   const forecastSlots = new Set(args.forecastTimeline);
   const cutBudgetTotal = args.declineAll
@@ -232,12 +252,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
   // Buckets for state assignment, only consumed by published forecast slots.
   const buckets = new Map<string, number>(args.allocations.map(a => [a.state, a.hours]));
 
-  // Publish all slots in chronological order.
-  const sortedAsc = [...args.timeline].sort((a, b) =>
-    a.date.localeCompare(b.date) || a.startMin - b.startMin,
-  );
-
-  return sortedAsc.map(slot => {
+  const timelineRows = args.timeline.map(slot => {
     const slotHours = round2((slot.endMin - slot.startMin) / 60);
     const isForecastSlot = forecastSlots.has(slot);
     const isCut = isForecastSlot && cutSet.has(slot);
@@ -281,12 +296,33 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
       hours: slotHours,
       shift_type: kindToShiftType(slot.source.kind),
       assigned_state: assignedState,
-      recommendation: isCut ? 'cut' : 'publish',
+      recommendation: (isCut ? 'cut' : 'publish') as 'cut' | 'publish',
       recommendation_reason: reason,
       decision_run_id: args.decisionRunId,
-      publish_status: 'pending',
+      publish_status: 'pending' as const,
     };
   });
+
+  const outOfHoursRows: ShiftRecommendationRow[] = outOfHours.map(slot => ({
+    submission_id: slot.source.submissionId ?? '',
+    provider_id: args.providerId,
+    provider_name: args.providerName,
+    target_month: args.targetMonth,
+    shift_date: slot.date,
+    start_min: slot.startMin,
+    end_min: slot.endMin,
+    hours: round2((slot.endMin - slot.startMin) / 60),
+    shift_type: kindToShiftType(slot.source.kind),
+    assigned_state: null,
+    recommendation: 'cut',
+    recommendation_reason: OUT_OF_HOURS_REASON,
+    decision_run_id: args.decisionRunId,
+    publish_status: 'pending',
+  }));
+
+  return [...timelineRows, ...outOfHoursRows].sort((a, b) =>
+    a.shift_date.localeCompare(b.shift_date) || a.start_min - b.start_min,
+  );
 }
 
 export function kindToShiftType(kind: IntervalKind): ShiftType {

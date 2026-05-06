@@ -592,15 +592,18 @@ export function expandNormalizedToSlots(
 
 /** Apply the operating-hours window to a stream of expanded slots, clamping
  *  partial overlaps and dropping fully out-of-window slots. Returns the
- *  surviving slots (possibly clamped) plus the total hours removed. The
- *  source NormalizedInterval is preserved for downstream linkage; in-home /
+ *  surviving slots (possibly clamped), the original portions that were
+ *  dropped/trimmed (so downstream can emit per-shift "declined: outside
+ *  business hours" rows), and the total hours removed. The source
+ *  NormalizedInterval is preserved for downstream linkage; in-home /
  *  clinic shifts are NOT subject to this filter (their location is fixed
  *  outside the telehealth ops window). */
 export function applyOperatingHoursWindow(
   slots: ExpandedSlot[],
   config: ValidationConfig,
-): { slots: ExpandedSlot[]; hoursRemoved: number } {
+): { slots: ExpandedSlot[]; droppedSlots: ExpandedSlot[]; hoursRemoved: number } {
   const out: ExpandedSlot[] = [];
+  const dropped: ExpandedSlot[] = [];
   let removed = 0;
   for (const s of slots) {
     if (s.source.kind === 'in_home') {
@@ -616,12 +619,14 @@ export function applyOperatingHoursWindow(
     const rawHours = (s.endMin - s.startMin) / 60;
     if (s.endMin <= winStart || s.startMin >= winEnd) {
       removed += rawHours;
+      dropped.push(s);
       continue;
     }
     const newStart = Math.max(s.startMin, winStart);
     const newEnd = Math.min(s.endMin, winEnd);
     if (newEnd <= newStart) {
       removed += rawHours;
+      dropped.push(s);
       continue;
     }
     if (newStart === s.startMin && newEnd === s.endMin) {
@@ -629,9 +634,15 @@ export function applyOperatingHoursWindow(
     } else {
       removed += ((newStart - s.startMin) + (s.endMin - newEnd)) / 60;
       out.push({ ...s, startMin: newStart, endMin: newEnd });
+      if (newStart > s.startMin) {
+        dropped.push({ ...s, startMin: s.startMin, endMin: newStart });
+      }
+      if (newEnd < s.endMin) {
+        dropped.push({ ...s, startMin: newEnd, endMin: s.endMin });
+      }
     }
   }
-  return { slots: out, hoursRemoved: round2(removed) };
+  return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
 }
 
 function isInMonth(dateISO: string, monthISO: string): boolean {
@@ -770,6 +781,12 @@ export interface NormalizationResult {
   targetMonth: string;
   normalized: NormalizedInterval[];
   timeline: ExpandedSlot[];
+  /** Original portions of slots that were dropped/trimmed by the operating-
+   *  hours window (9a-9p ET weekdays, 9a-12p ET weekends). Each entry is
+   *  the original out-of-window fragment with its source NormalizedInterval
+   *  preserved, so downstream can emit "declined: outside business hours"
+   *  per-shift rows. */
+  outOfHoursTimeline: ExpandedSlot[];
   summary: NormalizationSummary;
   report: ValidationReportRow[];
   override_used: ProviderOverride | null;
@@ -898,6 +915,7 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     targetMonth: input.targetMonth,
     normalized,
     timeline: reconciled.slots,
+    outOfHoursTimeline: windowed.droppedSlots,
     summary,
     report,
     override_used: override,

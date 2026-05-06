@@ -163,6 +163,13 @@ Deno.serve(async (req: Request) => {
 
         const declined = Number(decided.declined_hours ?? 0);
         const allocations = parseAllocationsFromNotes(decided.decision_notes ?? '');
+        // declined_hours stored on the row includes both forecast cuts and
+        // hours dropped for being outside operating hours. The latter are
+        // re-emitted by buildShiftRecommendationRows from
+        // forecastOutOfHoursTimeline, so we subtract them here to leave only
+        // the forecast cut budget.
+        const oohHours = Math.round((validation.summary.hours_removed_for_operating_hours ?? 0) * 100) / 100;
+        const forecastDeclined = Math.max(0, Math.round((declined - oohHours) * 100) / 100);
 
         const rows = buildShiftRecommendationRows({
           providerId: decided.provider_id!,
@@ -170,7 +177,8 @@ Deno.serve(async (req: Request) => {
           targetMonth: decided.target_month,
           timeline: validation.timeline,
           forecastTimeline: validation.forecastTimeline,
-          declinedHours: declined,
+          outOfHoursTimeline: validation.forecastOutOfHoursTimeline,
+          declinedHours: forecastDeclined,
           declineAll: decided.decision_status === 'declined',
           allocations,
           decisionRunId: decided.decision_run_id ?? crypto.randomUUID(),

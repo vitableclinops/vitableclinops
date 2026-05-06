@@ -346,7 +346,13 @@ Deno.serve(async (req: Request) => {
         );
         const fullTimeline = validation.timeline;
         const forecastTimeline = validation.forecastTimeline;
+        const forecastOutOfHoursTimeline = validation.forecastOutOfHoursTimeline;
         const effectiveHours = validation.summary.final_approvable_hours;
+        // Hours dropped because the slot fell outside the operating-hours
+        // window (9a-9p ET weekdays, 9a-12p ET weekends). They count toward
+        // declined_hours so the provider sees the full reason their submitted
+        // time was not approved.
+        const oohDeclined = round2(validation.summary.hours_removed_for_operating_hours ?? 0);
 
         if (validation.report.length > 0) {
           console.log(`[validation] ${latest.provider_name} ${targetMonth}`,
@@ -406,14 +412,32 @@ Deno.serve(async (req: Request) => {
           counters.skipped_no_hours++;
           // Mark older as superseded; latest becomes 'declined' with note
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; group has 0 effective hours`);
+          const noHoursNotes = oohDeclined > 0
+            ? `No effective hours in any submission for this provider+month; hours_removed_outside_business_hours=${oohDeclined}h`
+            : 'No effective hours in any submission for this provider+month';
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
-            declined_hours: 0,
-            notes: 'No effective hours in any submission for this provider+month',
+            declined_hours: oohDeclined,
+            notes: noHoursNotes,
             decision_run_id: decisionRunId,
             validation,
           });
+          if (oohDeclined > 0 || forecastOutOfHoursTimeline.length > 0) {
+            const oohRecRows = buildShiftRecommendationRows({
+              providerId,
+              providerName: latest.provider_name,
+              targetMonth,
+              timeline: [],
+              forecastTimeline: [],
+              outOfHoursTimeline: forecastOutOfHoursTimeline,
+              declinedHours: 0,
+              declineAll: false,
+              allocations: [],
+              decisionRunId,
+            });
+            await writeShiftRecommendations(supabase, groupSubs.map(s => s.id), oohRecRows);
+          }
           counters.declined++;
           counters.superseded += olderIds.length;
           decisions.push({ group: key, provider: latest.provider_name, target_month: targetMonth, status: 'declined', reason: 'no_hours', superseded: olderIds.length });
@@ -430,18 +454,21 @@ Deno.serve(async (req: Request) => {
             await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
             counters.superseded += olderIds.length;
           }
-          const mhNotes = [
+          const mhNoteParts = [
             `decision=accepted (mental_health_bypass)`,
             `profession=${profession}`,
             `effective_hours=${effectiveHours}h`,
             `raw_hours=${validation.summary.raw_total_hours}h`,
             'note=MH uses weekly SLA across 50 states; bypasses state demand allocator',
-          ].join('; ');
+          ];
+          if (oohDeclined > 0) {
+            mhNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
+          }
           await writeDecision(supabase, latest.id, {
             status: 'accepted',
             accepted_hours: effectiveHours,
-            declined_hours: 0,
-            notes: mhNotes,
+            declined_hours: oohDeclined,
+            notes: mhNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
           });
@@ -452,7 +479,7 @@ Deno.serve(async (req: Request) => {
             target_month: targetMonth,
             status: 'accepted',
             accepted_hours: effectiveHours,
-            declined_hours: 0,
+            declined_hours: oohDeclined,
             mh_bypass: true,
             superseded: olderIds.length,
           });
@@ -464,11 +491,15 @@ Deno.serve(async (req: Request) => {
         if (licensed.size === 0) {
           counters.skipped_no_licensed_states++;
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
+          const noLicNoteParts = ['Provider has no active licenses on file'];
+          if (oohDeclined > 0) {
+            noLicNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
+          }
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
-            declined_hours: effectiveHours,
-            notes: 'Provider has no active licenses on file',
+            declined_hours: round2(effectiveHours + oohDeclined),
+            notes: noLicNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
           });
@@ -502,23 +533,26 @@ Deno.serve(async (req: Request) => {
         const totalGap = round2(gapByState.reduce((s, g) => s + g.gapHours, 0));
         const missingDemandStates = gapByState.filter(g => g.missingDemand).map(g => g.state);
 
-        // Decide
+        // Decide. `declined` rolls up forecast cuts AND hours dropped for
+        // being outside the operating-hours window so the provider sees
+        // every hour we couldn't approve, not just the demand-driven cuts.
         let status: 'accepted' | 'partial' | 'declined';
         let accepted: number;
-        let declined: number;
+        let forecastDeclined: number;
         if (totalGap <= 0) {
           status = 'declined';
           accepted = 0;
-          declined = effectiveHours;
+          forecastDeclined = effectiveHours;
         } else if (totalGap >= effectiveHours) {
           status = 'accepted';
           accepted = effectiveHours;
-          declined = 0;
+          forecastDeclined = 0;
         } else {
           status = 'partial';
           accepted = totalGap;
-          declined = round2(effectiveHours - accepted);
+          forecastDeclined = round2(effectiveHours - accepted);
         }
+        const declined = round2(forecastDeclined + oohDeclined);
 
         // Allocate accepted hours greedily across states
         const allocations: Array<{ state: string; hours: number }> = [];
@@ -550,6 +584,9 @@ Deno.serve(async (req: Request) => {
         }
         if (validation.summary.hours_removed_for_duplicates > 0) {
           noteParts.push(`hours_removed_dup=${validation.summary.hours_removed_for_duplicates}h`);
+        }
+        if (oohDeclined > 0) {
+          noteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
         }
         noteParts.push(`total_gap=${totalGap}h`);
         noteParts.push(
@@ -588,7 +625,10 @@ Deno.serve(async (req: Request) => {
           targetMonth,
           timeline: fullTimeline,
           forecastTimeline,
-          declinedHours: declined,
+          outOfHoursTimeline: forecastOutOfHoursTimeline,
+          // Forecast cut budget is the demand-driven decline only — out-of-
+          // hours fragments are handled separately inside the row builder.
+          declinedHours: forecastDeclined,
           declineAll: status === 'declined',
           allocations,
           decisionRunId,
