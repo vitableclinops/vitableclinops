@@ -63,6 +63,7 @@ export type PublishStatusRow = {
 export type ProviderPublishView = {
   provider_id: string;
   provider_name: string;
+  provider_email: string | null;
   profession: string | null;
   employment_type: string | null;
   submission: SubmissionRow | null;
@@ -70,6 +71,73 @@ export type ProviderPublishView = {
 };
 
 const monthIso = (m: string) => (m.length === 7 ? `${m}-01` : m);
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** Parse a Jotform widget date string like "06-06-2026" or "2026-06-06" into ISO (YYYY-MM-DD). */
+const parseFormDateToIso = (raw: unknown): string | null => {
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (!s) return null;
+  // 2026-06-06
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // 06-06-2026 or 6/6/2026 (MM-DD-YYYY)
+  m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (m) return `${m[3]}-${pad2(Number(m[1]))}-${pad2(Number(m[2]))}`;
+  return null;
+};
+
+const expandDateRange = (startIso: string, endIso: string): string[] => {
+  const out: string[] = [];
+  const s = new Date(`${startIso}T00:00:00Z`);
+  const e = new Date(`${endIso}T00:00:00Z`);
+  if (isNaN(s.getTime()) || isNaN(e.getTime()) || e < s) return [startIso];
+  for (let d = new Date(s); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
+    out.push(`${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`);
+  }
+  return out;
+};
+
+export type UnavailableRange = {
+  startIso: string;
+  endIso: string;
+  dates: string[];
+};
+
+/**
+ * Extract unavailable date ranges from a submission's `parsed_shifts` blob.
+ * The Jotform "When will you be unavailable to work?" widget stores rows with
+ * Start Date / End Date and supports inclusive ranges; legacy rows may store
+ * only `Date`.
+ */
+export function extractUnavailableRanges(
+  parsedShifts: unknown,
+  monthIso?: string,
+): UnavailableRange[] {
+  if (!parsedShifts || typeof parsedShifts !== 'object' || Array.isArray(parsedShifts)) {
+    return [];
+  }
+  const blob = parsedShifts as { unavailable_dates?: unknown };
+  const raw = blob.unavailable_dates;
+  if (!Array.isArray(raw)) return [];
+  const monthPrefix = monthIso ? monthIso.slice(0, 7) : null;
+  const ranges: UnavailableRange[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as Record<string, unknown>;
+    const startIso =
+      parseFormDateToIso(e['Start Date']) ?? parseFormDateToIso(e['Date']);
+    const endIso =
+      parseFormDateToIso(e['End Date']) ?? startIso;
+    if (!startIso || !endIso) continue;
+    const dates = expandDateRange(startIso, endIso);
+    const filtered = monthPrefix ? dates.filter(d => d.startsWith(monthPrefix)) : dates;
+    if (filtered.length === 0) continue;
+    ranges.push({ startIso, endIso, dates: filtered });
+  }
+  return ranges;
+}
 
 export function useMonthlyPublishView(month: string) {
   const monthStart = monthIso(month);
@@ -118,6 +186,7 @@ export function useMonthlyPublishView(month: string) {
         rows.push({
           provider_id: p.id,
           provider_name: p.name,
+          provider_email: p.email ?? null,
           profession: p.profession,
           employment_type: p.employment_type,
           submission,
