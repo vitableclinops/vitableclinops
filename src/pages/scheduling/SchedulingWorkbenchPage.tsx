@@ -301,7 +301,7 @@ export default function SchedulingWorkbenchPage() {
                       const sub = row.submission!;
                       const homebaseDone = !!row.publish?.homebase_posted_at;
                       const ehrDone = !!row.publish?.ehr_posted_at;
-                      const shiftCount = (sub.parsed_shifts ?? []).length;
+                      const shiftCount = Array.isArray(sub.parsed_shifts) ? sub.parsed_shifts.length : 0;
                       return (
                         <TableRow key={row.provider_id}>
                           <TableCell>
@@ -433,7 +433,8 @@ function ByDayPanel({
   const days = useMemo<DayBucket[]>(() => {
     const map = new Map<string, DayBucket>();
     for (const row of acceptedRows) {
-      const shifts = row.submission?.parsed_shifts ?? [];
+      const raw = row.submission?.parsed_shifts;
+      const shifts = Array.isArray(raw) ? raw : [];
       for (const s of shifts) {
         if (!s.date) continue;
         if (!map.has(s.date)) map.set(s.date, { date: s.date, entries: [] });
