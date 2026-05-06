@@ -3746,6 +3746,51 @@ export type Database = {
         }
         Relationships: []
       }
+      publish_status: {
+        Row: {
+          created_at: string
+          ehr_posted: boolean
+          ehr_posted_at: string | null
+          ehr_posted_by: string | null
+          homebase_posted: boolean
+          homebase_posted_at: string | null
+          homebase_posted_by: string | null
+          id: string
+          month_key: string
+          notes: string | null
+          provider_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          ehr_posted?: boolean
+          ehr_posted_at?: string | null
+          ehr_posted_by?: string | null
+          homebase_posted?: boolean
+          homebase_posted_at?: string | null
+          homebase_posted_by?: string | null
+          id?: string
+          month_key: string
+          notes?: string | null
+          provider_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          ehr_posted?: boolean
+          ehr_posted_at?: string | null
+          ehr_posted_by?: string | null
+          homebase_posted?: boolean
+          homebase_posted_at?: string | null
+          homebase_posted_by?: string | null
+          id?: string
+          month_key?: string
+          notes?: string | null
+          provider_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       reimbursement_requests: {
         Row: {
           admin_hours_spent: number | null
