@@ -20,6 +20,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { downloadCSV } from '@/lib/utils';
+import { useStateCoverage } from '@/hooks/useStateCoverage';
 import {
   Dialog,
   DialogContent,
@@ -29,7 +33,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, RefreshCw, Calendar, AlertCircle } from 'lucide-react';
+import { Loader2, RefreshCw, Calendar, AlertCircle, Download, MapPin } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import {
   useMonthlyPublishView,
@@ -259,6 +263,14 @@ const WorkbenchPage = () => {
             </div>
           </div>
 
+          <Tabs defaultValue="publish">
+            <TabsList>
+              <TabsTrigger value="publish">Monthly Publish</TabsTrigger>
+              <TabsTrigger value="state">State Coverage</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="publish" className="space-y-6 mt-4">
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -434,6 +446,12 @@ const WorkbenchPage = () => {
               )}
             </CardContent>
           </Card>
+            </TabsContent>
+
+            <TabsContent value="state" className="space-y-6 mt-4">
+              <StateCoveragePanel month={month} />
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
 
@@ -545,6 +563,172 @@ const WorkbenchPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+};
+
+const StateCoveragePanel = ({ month }: { month: string }) => {
+  const { data, isLoading } = useStateCoverage(month);
+  const rows = data?.rows ?? [];
+  const unassigned = data?.unassignedHours ?? 0;
+
+  const totals = rows.reduce(
+    (acc, r) => {
+      acc.needed += r.needed;
+      acc.filled += r.filled;
+      acc.leftover += r.leftover;
+      return acc;
+    },
+    { needed: 0, filled: 0, leftover: 0 },
+  );
+
+  const exportCsv = () => {
+    downloadCSV(
+      rows.map(r => ({
+        state: r.state,
+        needed_hours: r.needed.toFixed(1),
+        filled_hours: r.filled.toFixed(1),
+        leftover_hours: r.leftover.toFixed(1),
+        pct_filled: r.pct_filled.toFixed(0),
+      })),
+      `state-coverage-${month}.csv`,
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              Needed (network)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totals.needed.toFixed(0)}</div>
+            <div className="text-xs text-muted-foreground mt-1">hours / month</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              Filled (network)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totals.filled.toFixed(0)}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {totals.needed > 0
+                ? `${Math.round((totals.filled / totals.needed) * 100)}% of need`
+                : '—'}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              Leftover (gap)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div
+              className={`text-2xl font-bold ${
+                totals.leftover > 0 ? 'text-red-600' : 'text-emerald-600'
+              }`}
+            >
+              {totals.leftover.toFixed(0)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {totals.leftover > 0 ? 'hours under target' : 'fully covered'}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              Unassigned shifts
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{unassigned.toFixed(0)}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              hours of accepted shifts with no state tag
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-emerald-600" />
+              Coverage by state
+            </CardTitle>
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length}>
+              <Download className="h-4 w-4 mr-1" />
+              CSV
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2" />
+              Loading
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+              No demand or filled shifts for this month yet.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>State</TableHead>
+                  <TableHead className="text-right">Needed</TableHead>
+                  <TableHead className="text-right">Filled</TableHead>
+                  <TableHead className="text-right">Leftover</TableHead>
+                  <TableHead className="w-[200px]">% filled</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map(r => {
+                  const pct = Math.min(100, r.pct_filled);
+                  const isOver = r.leftover < 0;
+                  const isShort = r.leftover > 0 && r.needed > 0;
+                  return (
+                    <TableRow key={r.state}>
+                      <TableCell className="font-medium">{r.state}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {r.needed.toFixed(0)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {r.filled.toFixed(0)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right tabular-nums ${
+                          isShort ? 'text-red-600' : isOver ? 'text-amber-600' : ''
+                        }`}
+                      >
+                        {r.leftover.toFixed(0)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Progress value={pct} className="h-2 flex-1" />
+                          <span className="text-xs text-muted-foreground tabular-nums w-12 text-right">
+                            {r.pct_filled > 999 ? '999+' : `${Math.round(r.pct_filled)}%`}
+                          </span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
