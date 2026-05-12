@@ -47,6 +47,7 @@ import {
   CalendarOff,
   History,
   Inbox,
+  UserCheck,
   ChevronRight,
   ChevronDown,
   Upload,
@@ -82,7 +83,13 @@ import * as XLSX from 'xlsx';
 import { parseJotformCsv, buildShiftCandidates } from '@/lib/juneSchedule/parseJotform';
 import { normName, normEmail } from '@/lib/juneSchedule/normalize';
 import { ResubmissionInboxPanel } from '@/components/scheduling/ResubmissionInboxPanel';
+import { OnboardingReadinessPanel } from '@/components/scheduling/OnboardingReadinessPanel';
+import { UnmatchedSubmissionsPanel } from '@/components/scheduling/UnmatchedSubmissionsPanel';
 import { diffParsedShifts } from '@/lib/scheduling/submissionDiff';
+import {
+  useOnboardingReadiness,
+  useUnmatchedSubmissions,
+} from '@/hooks/useMonthlyPublish';
 
 const MONTH_OPTIONS = ['2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01'];
 
@@ -192,6 +199,12 @@ export default function SchedulingWorkbenchPage() {
   const { data: auditEntries = [] } = usePublishAuditLog(month);
   const { data: inboxSubmissions = [], isLoading: inboxLoading } =
     useResubmissionInbox(month);
+  const { data: unmatchedSubs = [] } = useUnmatchedSubmissions();
+  const { data: readinessRows = [] } = useOnboardingReadiness(30);
+  const setupIssuesCount = useMemo(
+    () => readinessRows.filter(r => !r.readyForSubmissions).length,
+    [readinessRows],
+  );
   // Latest audit entry per (shift_recommendation_id, step). Used by the
   // attribution tooltips on the per-shift Homebase/EHR checkboxes.
   const auditByShift = useMemo(() => {
@@ -646,6 +659,22 @@ export default function SchedulingWorkbenchPage() {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="unmatched">
+            <AlertCircle className="h-3.5 w-3.5 mr-1" /> Unmatched
+            {unmatchedSubs.length > 0 && (
+              <Badge className="ml-1 bg-amber-100 text-amber-800">
+                {unmatchedSubs.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="setup">
+            <UserCheck className="h-3.5 w-3.5 mr-1" /> Setup
+            {setupIssuesCount > 0 && (
+              <Badge className="ml-1 bg-amber-100 text-amber-800">
+                {setupIssuesCount}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="provider">By Provider</TabsTrigger>
           <TabsTrigger value="queue">
             Publishing Queue
@@ -699,6 +728,14 @@ export default function SchedulingWorkbenchPage() {
             submissions={inboxSubmissions}
             isLoading={inboxLoading}
           />
+        </TabsContent>
+
+        <TabsContent value="unmatched" className="mt-4 space-y-4">
+          <UnmatchedSubmissionsPanel />
+        </TabsContent>
+
+        <TabsContent value="setup" className="mt-4 space-y-4">
+          <OnboardingReadinessPanel />
         </TabsContent>
 
         <TabsContent value="provider" className="mt-4 space-y-4">

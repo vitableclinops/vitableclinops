@@ -858,6 +858,247 @@ export function groupSubmissionsForInbox(
   return out;
 }
 
+// ── Unmatched submissions ─────────────────────────────────────────────────
+// schedule_submissions rows where the sync couldn't resolve a provider via
+// email or fuzzy name match. The submission lives in the DB but is invisible
+// to the evaluator and Workbench. Surfacing them lets ClinOps either link
+// to an existing provider (and re-run the evaluator) or dismiss the row.
+
+export type UnmatchedSubmission = {
+  id: string;
+  provider_name: string;
+  target_month: string;
+  submitted_at: string;
+  parsed_shifts: unknown;
+  raw_answers: unknown;
+  decision_status: string | null;
+  decision_notes: string | null;
+};
+
+export function useUnmatchedSubmissions() {
+  return useQuery({
+    queryKey: ['workbench', 'unmatched-submissions'],
+    queryFn: async (): Promise<UnmatchedSubmission[]> => {
+      const { data, error } = await clinopsSupabase
+        .from('schedule_submissions')
+        .select(
+          'id, provider_name, target_month, submitted_at, parsed_shifts, raw_answers, decision_status, decision_notes',
+        )
+        .is('provider_id', null)
+        .or('decision_status.is.null,decision_status.neq.superseded')
+        .order('submitted_at', { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return (data ?? []) as unknown as UnmatchedSubmission[];
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useLinkUnmatchedSubmission() {
+  const queryClient = useQueryClient();
+  const { user, profile } = useAuth();
+  return useMutation({
+    mutationFn: async (args: {
+      submission_id: string;
+      provider_id: string;
+      provider_name: string;
+      target_month: string;
+    }) => {
+      const nowIso = new Date().toISOString();
+      const actor =
+        profile?.full_name || profile?.email || user?.email || 'ClinOps';
+      const { error } = await clinopsSupabase
+        .from('schedule_submissions')
+        .update({
+          provider_id: args.provider_id,
+          provider_name: args.provider_name,
+          decision_status: 'pending',
+          decision_notes: `Manually linked to provider by ${actor} at ${nowIso}`,
+        })
+        .eq('id', args.submission_id);
+      if (error) throw error;
+      // Evaluate immediately so the submission lands in the workbench.
+      const monthStart = monthIso(args.target_month);
+      const { error: evalErr } = await clinopsSupabase.functions.invoke(
+        `evaluate-schedule-submissions?provider_id=${args.provider_id}&target_month=${monthStart}`,
+        { body: {} },
+      );
+      if (evalErr) console.warn(`Per-group evaluate failed: ${evalErr.message}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'unmatched-submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'resubmission-inbox'] });
+    },
+  });
+}
+
+export function useDismissUnmatchedSubmission() {
+  const queryClient = useQueryClient();
+  const { user, profile } = useAuth();
+  return useMutation({
+    mutationFn: async (args: { submission_id: string; reason?: string }) => {
+      const nowIso = new Date().toISOString();
+      const actor =
+        profile?.full_name || profile?.email || user?.email || 'ClinOps';
+      const note = `Dismissed as unmatched by ${actor} at ${nowIso}${
+        args.reason ? `: ${args.reason}` : ''
+      }`;
+      const { error } = await clinopsSupabase
+        .from('schedule_submissions')
+        .update({
+          decision_status: 'superseded',
+          decided_at: nowIso,
+          decision_notes: note,
+        })
+        .eq('id', args.submission_id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'unmatched-submissions'] });
+    },
+  });
+}
+
+// ── Onboarding readiness ──────────────────────────────────────────────────
+// For each provider added recently, check the prerequisites that have to be
+// true for their first Jotform to flow through the pipeline. Surfaces gaps
+// before a provider's first submission shows up as "missing" or unmatched.
+
+const MENTAL_HEALTH_PROFESSIONS = new Set([
+  'mental_health_coach',
+  'mh_coach',
+  'lpc',
+  'therapist',
+  'health_coach',
+]);
+
+const isMentalHealth = (p: string | null): boolean =>
+  !!p && MENTAL_HEALTH_PROFESSIONS.has(p.toLowerCase().replace(/\s+/g, '_'));
+
+export type ProviderReadiness = {
+  provider_id: string;
+  provider_name: string;
+  email: string | null;
+  profession: string | null;
+  employment_type: string | null;
+  employment_status: string | null;
+  active: boolean | null;
+  created_at: string;
+  license_count: number;
+  // Per-prerequisite flags
+  hasEmail: boolean;
+  isActive: boolean;
+  hasProfession: boolean;
+  hasLicensesIfNeeded: boolean;
+  isMentalHealth: boolean;
+  // Roll-up
+  readyForSubmissions: boolean;
+  issues: string[];
+};
+
+export function useOnboardingReadiness(lookbackDays: number = 30) {
+  return useQuery({
+    queryKey: ['workbench', 'onboarding-readiness', lookbackDays],
+    queryFn: async (): Promise<ProviderReadiness[]> => {
+      const cutoff = new Date(
+        Date.now() - lookbackDays * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const [provRes, licRes] = await Promise.all([
+        clinopsSupabase
+          .from('providers')
+          .select('id, name, email, profession, employment_type, employment_status, active, created_at')
+          .gte('created_at', cutoff)
+          .order('created_at', { ascending: false })
+          .limit(200),
+        clinopsSupabase
+          .from('provider_licenses')
+          .select('provider_id, status'),
+      ]);
+      if (provRes.error) throw provRes.error;
+      if (licRes.error) throw licRes.error;
+      const validStatuses = new Set(['active', 'verified', 'pending_renewal']);
+      const licCount = new Map<string, number>();
+      for (const l of licRes.data ?? []) {
+        if (!l.provider_id) continue;
+        if (l.status && !validStatuses.has(l.status)) continue;
+        licCount.set(l.provider_id, (licCount.get(l.provider_id) ?? 0) + 1);
+      }
+      const out: ProviderReadiness[] = [];
+      for (const p of provRes.data ?? []) {
+        const email = p.email?.trim() || null;
+        const hasEmail = !!email && email.includes('@');
+        const isActive = p.active === true;
+        const hasProfession = !!p.profession && p.profession.trim().length > 0;
+        const isMH = isMentalHealth(p.profession);
+        const licenses = licCount.get(p.id) ?? 0;
+        const hasLicensesIfNeeded = isMH || licenses > 0;
+        const readyForSubmissions =
+          hasEmail && isActive && hasProfession && hasLicensesIfNeeded;
+        const issues: string[] = [];
+        if (!hasEmail) issues.push('No Vitable email on file — Jotform submissions will be unmatched');
+        if (!isActive) issues.push('active = false — provider will not appear in workbench');
+        if (!hasProfession) issues.push('Profession not set — required for state allocation rules');
+        if (!hasLicensesIfNeeded && !isMH)
+          issues.push('No active licenses — evaluator will decline every submission');
+        out.push({
+          provider_id: p.id,
+          provider_name: p.name,
+          email,
+          profession: p.profession ?? null,
+          employment_type: p.employment_type ?? null,
+          employment_status: p.employment_status ?? null,
+          active: p.active ?? null,
+          created_at: p.created_at,
+          license_count: licenses,
+          hasEmail,
+          isActive,
+          hasProfession,
+          hasLicensesIfNeeded,
+          isMentalHealth: isMH,
+          readyForSubmissions,
+          issues,
+        });
+      }
+      return out;
+    },
+    staleTime: 60_000,
+  });
+}
+
+// ── Provider search for the unmatched-submission Link action ──────────────
+// Lightweight name+email contains-search used by the combobox. Returns up
+// to 20 matches; the unmatched-submission card supplies the search query.
+
+export type ProviderSearchHit = {
+  id: string;
+  name: string;
+  email: string | null;
+  profession: string | null;
+};
+
+export function useProviderSearch(query: string) {
+  const trimmed = query.trim();
+  return useQuery({
+    queryKey: ['workbench', 'provider-search', trimmed.toLowerCase()],
+    queryFn: async (): Promise<ProviderSearchHit[]> => {
+      if (trimmed.length < 2) return [];
+      const q = trimmed.replace(/[%,()*]/g, '');
+      const { data, error } = await clinopsSupabase
+        .from('providers')
+        .select('id, name, email, profession')
+        .or(`name.ilike.%${q}%,email.ilike.%${q}%`)
+        .order('name', { ascending: true })
+        .limit(20);
+      if (error) throw error;
+      return (data ?? []) as ProviderSearchHit[];
+    },
+    enabled: trimmed.length >= 2,
+    staleTime: 30_000,
+  });
+}
+
 export function useResolveResubmission() {
   const queryClient = useQueryClient();
   const { user, profile } = useAuth();
