@@ -416,6 +416,33 @@ export const isHomebaseDone = (row: { publish_status: string }) =>
 export const isEhrDone = (row: { publish_status: string; ehr_posted_at?: string | null }) =>
   row.publish_status === 'confirmed' || !!row.ehr_posted_at;
 
+/**
+ * Cross-month shift_recommendations for the inbox's published-shift
+ * collision check. Same window as useResubmissionInbox so the signals
+ * line up with the cards.
+ */
+export function useShiftRecommendationsInboxWindow(anchorMonth: string) {
+  const { fromMonth, toMonth } = inboxWindowBounds(anchorMonth);
+  return useQuery({
+    queryKey: ['workbench', 'shift-recommendations-inbox', fromMonth, toMonth],
+    queryFn: async (): Promise<ShiftRow[]> => {
+      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('shift_recommendations')
+        .select(
+          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
+        )
+        .gte('target_month', fromMonth)
+        .lte('target_month', toMonth)
+        .eq('recommendation', 'publish')
+        .order('shift_date', { ascending: true })
+        .range(0, 19999);
+      if (error) throw error;
+      return (data ?? []) as ShiftRow[];
+    },
+    staleTime: 30_000,
+  });
+}
+
 export function useShiftRecommendationsForMonth(month: string) {
   const monthStart = monthIso(month);
   return useQuery({
@@ -745,23 +772,48 @@ export type ResubmissionGroup = {
   others: SubmissionForInbox[];
 };
 
-export function useResubmissionInbox(month: string) {
-  const monthStart = monthIso(month);
+/**
+ * Inbox spans multiple months: providers can resubmit hours for May while
+ * we're scheduling June. We pull a rolling window — prior month, current
+ * month, and the next ~6 — so intra-month additions and forward planning
+ * both surface. Bounded so the query stays cheap.
+ */
+const INBOX_LOOKBACK_MONTHS = 1;
+const INBOX_LOOKAHEAD_MONTHS = 6;
+
+const shiftMonth = (monthStart: string, delta: number): string => {
+  const [y, m] = monthStart.split('-').map(Number);
+  if (!y || !m) return monthStart;
+  const date = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-01`;
+};
+
+const inboxWindowBounds = (anchorMonth: string) => {
+  const anchor = monthIso(anchorMonth);
+  return {
+    fromMonth: shiftMonth(anchor, -INBOX_LOOKBACK_MONTHS),
+    toMonth: shiftMonth(anchor, INBOX_LOOKAHEAD_MONTHS),
+  };
+};
+
+export function useResubmissionInbox(anchorMonth: string) {
+  const { fromMonth, toMonth } = inboxWindowBounds(anchorMonth);
   return useQuery({
-    queryKey: ['workbench', 'resubmission-inbox', monthStart],
+    queryKey: ['workbench', 'resubmission-inbox', fromMonth, toMonth],
     queryFn: async (): Promise<SubmissionForInbox[]> => {
       const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
         .from('schedule_submissions')
         .select(
           'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, raw_requested_hours, normalized_requested_hours, human_review_state, human_review_resolved_at, human_review_resolved_label, human_review_notes',
         )
-        .eq('target_month', monthStart)
-        .order('submitted_at', { ascending: true });
+        .gte('target_month', fromMonth)
+        .lte('target_month', toMonth)
+        .order('submitted_at', { ascending: true })
+        .range(0, 9999);
       if (error) throw error;
       return (data ?? []) as SubmissionForInbox[];
     },
     staleTime: 30_000,
-    enabled: Boolean(monthStart),
   });
 }
 
@@ -770,25 +822,29 @@ export function useResubmissionInbox(month: string) {
  * submitted_at ascending. Returns only buckets with ≥2 non-parked
  * submissions. The caller filters by hasChanges (from diffParsedShifts) to
  * surface actionable rows.
+ *
+ * Same provider with submissions for May AND June produces TWO groups —
+ * each month is reviewed independently.
  */
 export function groupSubmissionsForInbox(
   rows: SubmissionForInbox[],
 ): ResubmissionGroup[] {
-  const byProvider = new Map<string, SubmissionForInbox[]>();
+  const byKey = new Map<string, SubmissionForInbox[]>();
   for (const r of rows) {
     if (!r.provider_id) continue;
     if (r.human_review_state === 'parked') continue;
-    if (!byProvider.has(r.provider_id)) byProvider.set(r.provider_id, []);
-    byProvider.get(r.provider_id)!.push(r);
+    const key = `${r.provider_id}|${r.target_month}`;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key)!.push(r);
   }
   const out: ResubmissionGroup[] = [];
-  for (const [pid, subs] of byProvider) {
+  for (const [, subs] of byKey) {
     if (subs.length < 2) continue;
     const sorted = [...subs].sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
     const latest = sorted[sorted.length - 1];
     const prior = sorted[sorted.length - 2];
     out.push({
-      provider_id: pid,
+      provider_id: latest.provider_id!,
       provider_name: latest.provider_name,
       target_month: latest.target_month,
       latest,
@@ -796,6 +852,8 @@ export function groupSubmissionsForInbox(
       others: sorted.slice(0, -2),
     });
   }
+  // Most-recent submitted_at first across all months — that's the natural
+  // "new stuff to deal with" ordering for the inbox.
   out.sort((a, b) => b.latest.submitted_at.localeCompare(a.latest.submitted_at));
   return out;
 }
@@ -808,6 +866,12 @@ export function useResolveResubmission() {
       submission_id: string;
       action: 'approved' | 'parked' | 'pending';
       notes?: string;
+      // Required when action === 'approved' so we can re-evaluate the
+      // specific (provider, target_month) group immediately. Without these
+      // the user would have to switch the workbench month selector and hit
+      // Re-run, which defeats the purpose of a cross-month inbox.
+      provider_id?: string | null;
+      target_month?: string;
     }) => {
       const nowIso = new Date().toISOString();
       const actor =
@@ -831,6 +895,23 @@ export function useResolveResubmission() {
         .update(patch)
         .eq('id', args.submission_id);
       if (error) throw error;
+
+      // On Approve, run the evaluator scoped to this provider+month so the
+      // change applies right away (publish_status is preserved across
+      // re-runs by the writeShiftRecommendations preservation logic). The
+      // user doesn't need to leave the inbox.
+      if (args.action === 'approved' && args.provider_id && args.target_month) {
+        const monthStart = monthIso(args.target_month);
+        const { error: evalErr } = await clinopsSupabase.functions.invoke(
+          `evaluate-schedule-submissions?provider_id=${args.provider_id}&target_month=${monthStart}`,
+          { body: {} },
+        );
+        if (evalErr) {
+          // Best-effort — the human_review_state update already landed, so
+          // the next scheduled or manual evaluator run will pick it up.
+          console.warn(`Per-group re-evaluate failed: ${evalErr.message}`);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'resubmission-inbox'] });
