@@ -518,14 +518,27 @@ function ResubmissionDialog({
             <CardContent>
               {group.diff.summary.length === 0 ? (
                 <p className="text-sm text-muted-foreground italic">
-                  No structural changes detected (likely a duplicate submission).
+                  {group.diff.filteredPastCount > 0
+                    ? `Only past-date entries differ (${group.diff.filteredPastCount} ignored as stale). Providers add hours incrementally during the month — past dates not re-listed aren't a real removal. If this provider needs to CANCEL a future date, they should add it to the "When will you be unavailable" section of the form.`
+                    : 'No structural changes detected (likely a duplicate submission).'}
                 </p>
               ) : (
-                <ul className="list-disc pl-5 space-y-1 text-sm">
-                  {group.diff.summary.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
+                <>
+                  <ul className="list-disc pl-5 space-y-1 text-sm">
+                    {group.diff.summary.map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                  {group.diff.filteredPastCount > 0 && (
+                    <p className="text-xs text-muted-foreground italic mt-3">
+                      {group.diff.filteredPastCount} past-date entr
+                      {group.diff.filteredPastCount === 1 ? 'y was' : 'ies were'} ignored —
+                      providers add hours throughout the month and stale past entries aren't
+                      real changes. Future-date cancellations should be entered in the
+                      "unavailable" section instead.
+                    </p>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
