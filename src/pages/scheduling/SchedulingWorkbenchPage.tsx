@@ -85,6 +85,7 @@ import { normName, normEmail } from '@/lib/juneSchedule/normalize';
 import { ResubmissionInboxPanel } from '@/components/scheduling/ResubmissionInboxPanel';
 import { OnboardingReadinessPanel } from '@/components/scheduling/OnboardingReadinessPanel';
 import { UnmatchedSubmissionsPanel } from '@/components/scheduling/UnmatchedSubmissionsPanel';
+import { ProviderNoteIndicator, ProviderNotesCard } from '@/components/scheduling/ProviderNotesCard';
 import { diffParsedShifts } from '@/lib/scheduling/submissionDiff';
 import {
   useOnboardingReadiness,
@@ -799,7 +800,10 @@ export default function SchedulingWorkbenchPage() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <div className="font-medium">{row.provider_name}</div>
+                              <div className="font-medium flex items-center gap-2">
+                                {row.provider_name}
+                                <ProviderNoteIndicator parsedShifts={sub.parsed_shifts} />
+                              </div>
                               <div className="text-xs text-muted-foreground">
                                 {row.profession ?? '—'}
                                 {row.employment_type ? ` · ${row.employment_type}` : ''}
@@ -860,7 +864,11 @@ export default function SchedulingWorkbenchPage() {
                           {isOpen && (
                             <TableRow className="bg-muted/30 hover:bg-muted/30">
                               <TableCell />
-                              <TableCell colSpan={6} className="py-2">
+                              <TableCell colSpan={6} className="py-2 space-y-2">
+                                <ProviderNotesCard
+                                  parsedShifts={sub.parsed_shifts}
+                                  variant="inline"
+                                />
                                 {flats.length === 0 ? (
                                   <div className="text-xs text-muted-foreground italic">
                                     No per-shift data — submission hasn't been expanded yet.
