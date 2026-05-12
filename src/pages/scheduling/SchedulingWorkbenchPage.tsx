@@ -695,11 +695,9 @@ export default function SchedulingWorkbenchPage() {
 
         <TabsContent value="inbox" className="mt-4 space-y-4">
           <ResubmissionInboxPanel
-            month={month}
+            anchorMonth={month}
             submissions={inboxSubmissions}
-            shiftsByProvider={shiftsByProvider}
             isLoading={inboxLoading}
-            monthLabel={formatMonthLabel(month)}
           />
         </TabsContent>
 
