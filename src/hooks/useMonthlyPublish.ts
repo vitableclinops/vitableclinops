@@ -707,3 +707,135 @@ export function useReevaluateMonth() {
     },
   });
 }
+
+// ── Resubmission Inbox ────────────────────────────────────────────────────
+// Surfaces (provider, target_month) groups with multiple non-superseded
+// submissions where the latest differs from the prior decided one, so
+// ClinOps can Approve or Park each change rather than have the evaluator
+// silently overwrite a published schedule.
+
+export type HumanReviewState = 'pending' | 'approved' | 'parked';
+
+export type SubmissionForInbox = {
+  id: string;
+  provider_id: string | null;
+  provider_name: string;
+  target_month: string;
+  decision_status: DecisionStatus | 'superseded' | null;
+  accepted_hours: number | null;
+  declined_hours: number | null;
+  decision_notes: string | null;
+  parsed_shifts: unknown;
+  submitted_at: string;
+  decided_at: string | null;
+  raw_requested_hours: number | null;
+  normalized_requested_hours: number | null;
+  human_review_state: HumanReviewState | null;
+  human_review_resolved_at: string | null;
+  human_review_resolved_label: string | null;
+  human_review_notes: string | null;
+};
+
+export type ResubmissionGroup = {
+  provider_id: string;
+  provider_name: string;
+  target_month: string;
+  latest: SubmissionForInbox;
+  prior: SubmissionForInbox;
+  others: SubmissionForInbox[];
+};
+
+export function useResubmissionInbox(month: string) {
+  const monthStart = monthIso(month);
+  return useQuery({
+    queryKey: ['workbench', 'resubmission-inbox', monthStart],
+    queryFn: async (): Promise<SubmissionForInbox[]> => {
+      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('schedule_submissions')
+        .select(
+          'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, raw_requested_hours, normalized_requested_hours, human_review_state, human_review_resolved_at, human_review_resolved_label, human_review_notes',
+        )
+        .eq('target_month', monthStart)
+        .order('submitted_at', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as SubmissionForInbox[];
+    },
+    staleTime: 30_000,
+    enabled: Boolean(monthStart),
+  });
+}
+
+/**
+ * Group submissions into (provider, target_month) buckets sorted by
+ * submitted_at ascending. Returns only buckets with ≥2 non-parked
+ * submissions. The caller filters by hasChanges (from diffParsedShifts) to
+ * surface actionable rows.
+ */
+export function groupSubmissionsForInbox(
+  rows: SubmissionForInbox[],
+): ResubmissionGroup[] {
+  const byProvider = new Map<string, SubmissionForInbox[]>();
+  for (const r of rows) {
+    if (!r.provider_id) continue;
+    if (r.human_review_state === 'parked') continue;
+    if (!byProvider.has(r.provider_id)) byProvider.set(r.provider_id, []);
+    byProvider.get(r.provider_id)!.push(r);
+  }
+  const out: ResubmissionGroup[] = [];
+  for (const [pid, subs] of byProvider) {
+    if (subs.length < 2) continue;
+    const sorted = [...subs].sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
+    const latest = sorted[sorted.length - 1];
+    const prior = sorted[sorted.length - 2];
+    out.push({
+      provider_id: pid,
+      provider_name: latest.provider_name,
+      target_month: latest.target_month,
+      latest,
+      prior,
+      others: sorted.slice(0, -2),
+    });
+  }
+  out.sort((a, b) => b.latest.submitted_at.localeCompare(a.latest.submitted_at));
+  return out;
+}
+
+export function useResolveResubmission() {
+  const queryClient = useQueryClient();
+  const { user, profile } = useAuth();
+  return useMutation({
+    mutationFn: async (args: {
+      submission_id: string;
+      action: 'approved' | 'parked' | 'pending';
+      notes?: string;
+    }) => {
+      const nowIso = new Date().toISOString();
+      const actor =
+        profile?.full_name || profile?.email || user?.email || 'ClinOps';
+      const patch: Record<string, unknown> = {
+        human_review_state: args.action,
+        human_review_resolved_at: nowIso,
+        human_review_resolved_by: user?.id ?? null,
+        human_review_resolved_label: actor,
+      };
+      if (args.notes !== undefined) patch.human_review_notes = args.notes;
+      // Parked submissions get demoted to 'superseded' so the evaluator
+      // (which already excludes superseded rows from "latest") stops
+      // considering them.
+      if (args.action === 'parked') {
+        patch.decision_status = 'superseded';
+        patch.decided_at = nowIso;
+      }
+      const { error } = await clinopsSupabase
+        .from('schedule_submissions')
+        .update(patch)
+        .eq('id', args.submission_id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'resubmission-inbox'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
+    },
+  });
+}
