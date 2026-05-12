@@ -159,6 +159,14 @@ export type SubmissionDiff = {
     added: string[];
     removed: string[];
   };
+  // Dropped from the active diff because they're in the past relative to
+  // the configured cutoff. Providers commonly add hours incrementally
+  // during a month (May 8-11 listed in the first submission, then May
+  // 12-14 added in a follow-up). The earlier dates aren't a "removal" —
+  // the provider just didn't repeat them in the new submission. We
+  // suppress them so the inbox doesn't flag stale past entries as
+  // changes that need review.
+  filteredPastCount: number;
   summary: string[];
   hasChanges: boolean;
 };
@@ -269,20 +277,72 @@ const summarizeModifiedTimes = (
 export function diffParsedShifts(
   before: unknown,
   after: unknown,
+  options: {
+    /** ISO date (YYYY-MM-DD). Dated changes (one-off, in-home, unavailable)
+     *  whose date is strictly before this are dropped from the diff —
+     *  providers add hours incrementally during a month and we don't want
+     *  past dates that weren't re-listed to flag as removals. Defaults to
+     *  today (UTC). */
+    ignoreDatesBefore?: string;
+  } = {},
 ): SubmissionDiff {
   const a = canonicalizeParsedShifts(before);
   const b = canonicalizeParsedShifts(after);
 
-  const recurring = diffRecurring(a.recurring, b.recurring);
-  const oneOff = diffDated(a.oneOff, b.oneOff);
-  const inHome = diffDated(a.inHome, b.inHome);
+  const today = (() => {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+  })();
+  const cutoff = options.ignoreDatesBefore ?? today;
+  const isPast = (iso: string) => iso < cutoff;
+
+  const rawRecurring = diffRecurring(a.recurring, b.recurring);
+  const rawOneOff = diffDated(a.oneOff, b.oneOff);
+  const rawInHome = diffDated(a.inHome, b.inHome);
+
+  let filteredPastCount = 0;
+
+  const filterDated = (
+    raw: { added: CanonicalDated[]; removed: CanonicalDated[]; modified: Array<{ before: CanonicalDated; after: CanonicalDated }> },
+  ) => {
+    const added: CanonicalDated[] = [];
+    const removed: CanonicalDated[] = [];
+    const modified: Array<{ before: CanonicalDated; after: CanonicalDated }> = [];
+    for (const r of raw.added) {
+      if (isPast(r.date)) filteredPastCount++;
+      else added.push(r);
+    }
+    for (const r of raw.removed) {
+      if (isPast(r.date)) filteredPastCount++;
+      else removed.push(r);
+    }
+    for (const r of raw.modified) {
+      if (isPast(r.before.date) && isPast(r.after.date)) filteredPastCount++;
+      else modified.push(r);
+    }
+    return { added, removed, modified };
+  };
+
+  const recurring = rawRecurring;
+  const oneOff = filterDated(rawOneOff);
+  const inHome = filterDated(rawInHome);
 
   const beforeUnavail = new Set(a.unavailableDates);
   const afterUnavail = new Set(b.unavailableDates);
   const unavailAdded: string[] = [];
   const unavailRemoved: string[] = [];
-  for (const d of afterUnavail) if (!beforeUnavail.has(d)) unavailAdded.push(d);
-  for (const d of beforeUnavail) if (!afterUnavail.has(d)) unavailRemoved.push(d);
+  for (const d of afterUnavail) {
+    if (!beforeUnavail.has(d)) {
+      if (isPast(d)) filteredPastCount++;
+      else unavailAdded.push(d);
+    }
+  }
+  for (const d of beforeUnavail) {
+    if (!afterUnavail.has(d)) {
+      if (isPast(d)) filteredPastCount++;
+      else unavailRemoved.push(d);
+    }
+  }
 
   // Human-readable summary lines, batched by kind.
   const lines: string[] = [];
@@ -350,6 +410,7 @@ export function diffParsedShifts(
     oneOff,
     inHome,
     unavailable: { added: unavailAdded, removed: unavailRemoved },
+    filteredPastCount,
     summary: lines,
     hasChanges,
   };
