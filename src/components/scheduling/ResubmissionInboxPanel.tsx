@@ -45,9 +45,11 @@ import {
   canonicalizeParsedShifts,
   canonicalShiftHours,
   diffParsedShifts,
+  extractProviderNotes,
   type CanonicalSubmission,
   type SubmissionDiff,
 } from '@/lib/scheduling/submissionDiff';
+import { ProviderNoteIndicator, ProviderNotesCard } from '@/components/scheduling/ProviderNotesCard';
 import {
   groupSubmissionsForInbox,
   isHomebaseDone,
@@ -400,6 +402,7 @@ export function ResubmissionInboxPanel({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1 flex-wrap">
+                      <ProviderNoteIndicator parsedShifts={g.latest.parsed_shifts} />
                       {g.signals.publishedShiftHits.length > 0 && (
                         <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
                           {g.signals.publishedShiftHits.length} published
@@ -509,6 +512,14 @@ function ResubmissionDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <ProviderNotesCard
+            parsedShifts={group.latest.parsed_shifts}
+            title="Provider's note on the new submission"
+          />
+          <ProviderNotesCard
+            parsedShifts={group.prior.parsed_shifts}
+            title="Provider's note on the prior submission"
+          />
           <SignalsCard signals={group.signals} />
 
           <Card>

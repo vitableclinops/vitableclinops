@@ -416,6 +416,61 @@ export function diffParsedShifts(
   };
 }
 
+export type ProviderNotes = {
+  comments: string | null;
+  feedback: string | null;
+  hasContent: boolean;
+};
+
+/**
+ * Pull the free-text "comments" and "feedback" fields out of a Jotform
+ * parsed_shifts blob. Treat common placeholder values ("n/a", "none", ".",
+ * "—", empty/whitespace) as no content so the UI doesn't surface noise.
+ *
+ * These fields hold the most operationally-important provider context:
+ *   - "I already have clinics scheduled on 6/9 (Home Care Concepts)…"
+ *   - "Please remove me from the 9-1pm shift on Friday 5/1, available 2-5pm"
+ *   - "This is a resubmission of May schedule"
+ *   - "Changing my recurring schedule to Mondays 930-530 going forward"
+ *   - "Approved by Kate for 30 min time slots…"
+ * Surfacing them is a >10x signal-to-noise win for review.
+ */
+const PLACEHOLDER_PATTERNS = [
+  /^n[\\s/]?\.?\s*a\.?$/i,  // n/a, n.a., na
+  /^none$/i,
+  /^nope$/i,
+  /^nothing$/i,
+  /^no$/i,
+  /^[.\-—]+$/, // ., -, —
+];
+
+const isPlaceholder = (raw: string): boolean => {
+  const s = raw.trim();
+  if (s.length === 0) return true;
+  return PLACEHOLDER_PATTERNS.some(re => re.test(s));
+};
+
+const cleanNote = (raw: unknown): string | null => {
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (!s || isPlaceholder(s)) return null;
+  return s;
+};
+
+export function extractProviderNotes(parsedShifts: unknown): ProviderNotes {
+  if (!parsedShifts || typeof parsedShifts !== 'object' || Array.isArray(parsedShifts)) {
+    return { comments: null, feedback: null, hasContent: false };
+  }
+  const blob = parsedShifts as Record<string, unknown>;
+  const comments = cleanNote(blob.comments);
+  const feedback = cleanNote(blob.feedback);
+  return {
+    comments,
+    feedback,
+    hasContent: !!(comments || feedback),
+  };
+}
+
 // Computes total weekly hours implied by canonical recurring + one-off + in-home
 // for a quick "hours delta" view in the inbox card.
 export function canonicalShiftHours(c: CanonicalSubmission): {
