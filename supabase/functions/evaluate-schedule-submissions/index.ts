@@ -111,7 +111,37 @@ type Submission = {
   parsed_shifts: ParsedShifts | null;
   decision_status: string;
   submitted_at: string;
+  human_review_state: string | null;
 };
+
+// Stable signature of a parsed_shifts blob for "did anything material change
+// vs the prior submission?" gating. We canonicalize the four widget arrays
+// into ordered tuple lists and serialize. JSON-string blobs are tolerated.
+function shiftsSignature(parsed: ParsedShifts | null): string {
+  if (!parsed) return '';
+  const arr = (raw: unknown): Record<string, unknown>[] => {
+    if (raw == null) return [];
+    let v: unknown = raw;
+    if (typeof raw === 'string') {
+      try { v = JSON.parse(raw); } catch { return []; }
+    }
+    return Array.isArray(v)
+      ? v.filter((e): e is Record<string, unknown> => e != null && typeof e === 'object')
+      : [];
+  };
+  const fmt = (label: string, rows: Record<string, unknown>[], keys: string[]) => {
+    const tuples = rows
+      .map(r => keys.map(k => String(r[k] ?? '').trim()).join('|'))
+      .sort();
+    return `${label}:[${tuples.join(';')}]`;
+  };
+  return [
+    fmt('rec', arr(parsed.recurring_virtual), ['Day of Week', 'Start Time (ET)', 'End Time (ET)']),
+    fmt('one', arr(parsed.one_off_virtual), ['Date', 'Start Time (ET)', 'End Time (ET)']),
+    fmt('home', arr(parsed.in_home_clinic), ['Date', 'Start Time (ET)', 'End Time (ET)']),
+    fmt('off', arr(parsed.unavailable_dates), ['Start Date', 'End Date', 'Date']),
+  ].join('||');
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -136,6 +166,7 @@ Deno.serve(async (req: Request) => {
     skipped_unmatched_provider: 0,
     skipped_no_hours: 0,
     skipped_no_licensed_states: 0,
+    skipped_awaiting_review: 0,
     errors: 0,
   };
   const decisions: Array<Record<string, unknown>> = [];
@@ -190,7 +221,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: subsRaw, error: sErr } = await supabase
       .from('schedule_submissions')
-      .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, submitted_at')
+      .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, submitted_at, human_review_state')
       .in('provider_id', providerIds)
       .in('target_month', months);
     if (sErr) throw new Error(`Submissions load failed: ${sErr.message}`);
@@ -310,10 +341,19 @@ Deno.serve(async (req: Request) => {
 
     // ── Evaluate each group ─────────────────────────────────────────────
     for (const key of groupKeysSorted) {
-      const groupSubs = submissionsByGroup.get(key)!;
+      const allGroupSubs = submissionsByGroup.get(key)!;
       try {
         counters.groups++;
         const [providerId, targetMonth] = key.split('|');
+
+        // Parked submissions are user-rejected and should NOT participate in
+        // the "latest wins" computation — they stay superseded and the prior
+        // submission remains authoritative.
+        const groupSubs = allGroupSubs.filter(s => s.human_review_state !== 'parked');
+        if (groupSubs.length === 0) {
+          decisions.push({ group: key, status: 'skipped', reason: 'all_parked' });
+          continue;
+        }
 
         // Sort chronologically; latest is the one that carries the decision
         groupSubs.sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
@@ -324,6 +364,61 @@ Deno.serve(async (req: Request) => {
           counters.skipped_unmatched_provider++;
           decisions.push({ group: key, status: 'skipped', reason: 'unmatched_provider' });
           continue;
+        }
+
+        // ── Resubmission inbox gating ─────────────────────────────────────
+        // If the latest submission is awaiting human review, leave the group's
+        // existing decision + shift_recommendations alone. ClinOps will
+        // Approve or Park it via the Workbench Inbox tab, after which the
+        // next evaluator run picks it up normally.
+        if (latest.human_review_state === 'pending') {
+          counters.skipped_awaiting_review++;
+          decisions.push({
+            group: key,
+            provider: latest.provider_name,
+            target_month: targetMonth,
+            status: 'skipped',
+            reason: 'awaiting_human_review',
+          });
+          continue;
+        }
+
+        // If the latest hasn't been reviewed yet AND it changes content vs the
+        // prior decided submission, flag it for review and skip. The prior
+        // submission's decision (and any Homebase-published shifts) are
+        // preserved untouched.
+        if (
+          latest.human_review_state == null &&
+          olderIds.length > 0
+        ) {
+          const prior = groupSubs[groupSubs.length - 2];
+          const priorWasDecided =
+            prior &&
+            prior.decision_status &&
+            prior.decision_status !== 'pending' &&
+            prior.decision_status !== 'superseded';
+          if (priorWasDecided) {
+            const sigPrior = shiftsSignature(prior.parsed_shifts ?? null);
+            const sigLatest = shiftsSignature(latest.parsed_shifts ?? null);
+            if (sigPrior !== sigLatest) {
+              const { error: flagErr } = await supabase
+                .from('schedule_submissions')
+                .update({ human_review_state: 'pending' })
+                .eq('id', latest.id);
+              if (flagErr) {
+                console.warn(`Failed to flag ${latest.id} as pending: ${flagErr.message}`);
+              }
+              counters.skipped_awaiting_review++;
+              decisions.push({
+                group: key,
+                provider: latest.provider_name,
+                target_month: targetMonth,
+                status: 'skipped',
+                reason: 'flagged_for_review',
+              });
+              continue;
+            }
+          }
         }
 
         // Build merged slot timeline via the shared validation/normalization

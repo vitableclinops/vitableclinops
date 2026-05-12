@@ -46,6 +46,7 @@ import {
   RefreshCw,
   CalendarOff,
   History,
+  Inbox,
   ChevronRight,
   ChevronDown,
   Upload,
@@ -60,6 +61,8 @@ import {
   useReevaluateMonth,
   extractUnavailableRanges,
   usePublishAuditLog,
+  useResubmissionInbox,
+  groupSubmissionsForInbox,
   type PublishAuditEntry,
   useShiftRecommendationsForMonth,
   useTogglePublishShift,
@@ -78,6 +81,8 @@ import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { parseJotformCsv, buildShiftCandidates } from '@/lib/juneSchedule/parseJotform';
 import { normName, normEmail } from '@/lib/juneSchedule/normalize';
+import { ResubmissionInboxPanel } from '@/components/scheduling/ResubmissionInboxPanel';
+import { diffParsedShifts } from '@/lib/scheduling/submissionDiff';
 
 const MONTH_OPTIONS = ['2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01'];
 
@@ -185,6 +190,8 @@ export default function SchedulingWorkbenchPage() {
   const { data: shiftRows = [], isLoading: shiftsLoading, refetch: refetchShifts } =
     useShiftRecommendationsForMonth(month);
   const { data: auditEntries = [] } = usePublishAuditLog(month);
+  const { data: inboxSubmissions = [], isLoading: inboxLoading } =
+    useResubmissionInbox(month);
   // Latest audit entry per (shift_recommendation_id, step). Used by the
   // attribution tooltips on the per-shift Homebase/EHR checkboxes.
   const auditByShift = useMemo(() => {
@@ -350,6 +357,17 @@ export default function SchedulingWorkbenchPage() {
     () => rows.filter(r => !r.submission),
     [rows],
   );
+
+  // Resubmission inbox count — # of groups with a content-changing latest
+  // submission that hasn't been resolved yet. Drives the tab badge.
+  const inboxActionableCount = useMemo(() => {
+    const groups = groupSubmissionsForInbox(inboxSubmissions);
+    return groups.filter(g => {
+      if (g.latest.human_review_state === 'approved') return false;
+      const d = diffParsedShifts(g.prior.parsed_shifts, g.latest.parsed_shifts);
+      return d.hasChanges;
+    }).length;
+  }, [inboxSubmissions]);
 
   // Providers who listed off-days for this month — Lindsay's request so MSS can
   // see at-a-glance who's unavailable when sourcing a licensed provider.
@@ -620,6 +638,14 @@ export default function SchedulingWorkbenchPage() {
 
       <Tabs defaultValue="provider">
         <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="inbox">
+            <Inbox className="h-3.5 w-3.5 mr-1" /> Inbox
+            {inboxActionableCount > 0 && (
+              <Badge className="ml-1 bg-blue-100 text-blue-800">
+                {inboxActionableCount}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="provider">By Provider</TabsTrigger>
           <TabsTrigger value="queue">
             Publishing Queue
@@ -666,6 +692,16 @@ export default function SchedulingWorkbenchPage() {
             )}
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="inbox" className="mt-4 space-y-4">
+          <ResubmissionInboxPanel
+            month={month}
+            submissions={inboxSubmissions}
+            shiftsByProvider={shiftsByProvider}
+            isLoading={inboxLoading}
+            monthLabel={formatMonthLabel(month)}
+          />
+        </TabsContent>
 
         <TabsContent value="provider" className="mt-4 space-y-4">
           <Card>
