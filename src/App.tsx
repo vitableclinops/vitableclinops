@@ -45,6 +45,7 @@ import CoverageCopilotPage from "./pages/CoverageCopilotPage";
 import DemandForecastPage from "./pages/DemandForecastPage";
 import MonthlyForecastPage from "./pages/MonthlyForecastPage";
 import ShiftPlanPage from "./pages/ShiftPlanPage";
+import ScheduledHoursPage from "./pages/ScheduledHoursPage";
 import WorkbenchPage from "./pages/WorkbenchPage";
 import UtilizationPage from "./pages/UtilizationPage";
 import RoutingIntelligencePage from "./pages/RoutingIntelligencePage";
@@ -90,6 +91,7 @@ const ROUTE_TITLES: Array<{ match: (p: string) => boolean; title: string }> = [
   { match: p => p === '/admin/demand-forecast', title: 'Demand Forecast' },
   { match: p => p === '/admin/monthly-forecast', title: 'Monthly Forecast' },
   { match: p => p === '/admin/shift-plan', title: 'Shift Plan' },
+  { match: p => p === '/admin/scheduled-hours', title: 'Scheduled Hours' },
   { match: p => p === '/admin/workbench', title: 'Workbench' },
   { match: p => p === '/scheduling' || p === '/scheduling/workbench', title: 'Scheduling Workbench' },
   { match: p => p === '/scheduling/forecast', title: 'Scheduling Forecast' },
@@ -332,6 +334,11 @@ const App = () => (
             <Route path="/admin/shift-plan" element={
               <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
                 <ShiftPlanPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/scheduled-hours" element={
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
+                <ScheduledHoursPage />
               </ProtectedRoute>
             } />
             <Route path="/admin/workbench" element={

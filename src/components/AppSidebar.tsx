@@ -49,6 +49,7 @@ import {
   CalendarCheck,
   HelpCircle,
   Sparkles,
+  Clock,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 // Pod leads get access to specific admin sections
@@ -118,6 +119,7 @@ const navGroups: NavGroup[] = [
       { label: 'Utilization',            icon: BarChart3,     href: '/admin/utilization',                  roles: ['admin', 'pod_lead'] },
       { label: 'Demand Forecast',        icon: TrendingUp,    href: '/admin/demand-forecast',              roles: ['admin'] },
       { label: 'Monthly Forecast',       icon: Calendar,      href: '/admin/monthly-forecast',             roles: ['admin'] },
+      { label: 'Scheduled Hours',        icon: Clock,         href: '/admin/scheduled-hours',              roles: ['admin', 'pod_lead'] },
       { label: 'SLA Average',            icon: Target,        href: '/admin/sla-aggregate',                roles: ['admin', 'pod_lead'] },
       { label: 'Telemedicine Avail.',    icon: Wifi,          href: '/admin/telemedicine-availability',    roles: ['admin', 'pod_lead'] },
       { label: 'PCP Coverage',           icon: Stethoscope,   href: '/admin/pcp-coverage',                 roles: ['admin', 'pod_lead'] },

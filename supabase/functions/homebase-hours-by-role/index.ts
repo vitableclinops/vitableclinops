@@ -91,9 +91,17 @@ Deno.serve(async (req: Request) => {
   const apiKey = Deno.env.get('HOMEBASE_API_KEY');
   if (!apiKey) return json({ error: 'HOMEBASE_API_KEY secret not set' }, 500);
 
-  const url   = new URL(req.url);
-  const year  = parseInt(url.searchParams.get('year')  ?? '2026', 10);
-  const month = parseInt(url.searchParams.get('month') ?? '6',    10);
+  const url = new URL(req.url);
+  let year  = parseInt(url.searchParams.get('year')  ?? '2026', 10);
+  let month = parseInt(url.searchParams.get('month') ?? '6',    10);
+
+  if (req.method === 'POST') {
+    try {
+      const body = await req.json().catch(() => ({}));
+      if (body.year)  year  = parseInt(body.year,  10);
+      if (body.month) month = parseInt(body.month, 10);
+    } catch { /* ignore parse errors */ }
+  }
 
   if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
     return json({ error: 'Invalid year/month params' }, 400);
