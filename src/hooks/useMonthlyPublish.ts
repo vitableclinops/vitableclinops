@@ -797,17 +797,16 @@ const inboxWindowBounds = (anchorMonth: string) => {
 };
 
 export function useResubmissionInbox(anchorMonth: string) {
-  const { fromMonth, toMonth } = inboxWindowBounds(anchorMonth);
+  const targetMonth = monthIso(anchorMonth);
   return useQuery({
-    queryKey: ['workbench', 'resubmission-inbox', fromMonth, toMonth],
+    queryKey: ['workbench', 'resubmission-inbox', targetMonth],
     queryFn: async (): Promise<SubmissionForInbox[]> => {
       const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
         .from('schedule_submissions')
         .select(
           'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, raw_requested_hours, normalized_requested_hours, human_review_state, human_review_resolved_at, human_review_resolved_label, human_review_notes',
         )
-        .gte('target_month', fromMonth)
-        .lte('target_month', toMonth)
+        .eq('target_month', targetMonth)
         .order('submitted_at', { ascending: true })
         .range(0, 9999);
       if (error) throw error;
