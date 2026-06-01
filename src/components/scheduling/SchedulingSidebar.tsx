@@ -13,13 +13,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   CalendarCheck,
-  TrendingUp,
   ChevronLeft,
   ChevronRight,
   LogOut,
   User,
   ChevronDown,
-  Sparkles,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -30,9 +28,7 @@ interface SchedulingSidebarProps {
 }
 
 const items = [
-  { label: 'Workbench', icon: CalendarCheck, href: '/scheduling/workbench' },
-  { label: 'Monthly Forecast', icon: TrendingUp, href: '/scheduling/forecast' },
-  { label: 'June MVP', icon: Sparkles, href: '/scheduling/june-mvp' },
+  { label: 'July Build', icon: CalendarCheck, href: '/scheduling/workbench' },
 ];
 
 export function SchedulingSidebar({ userName, userEmail, userAvatarUrl }: SchedulingSidebarProps) {
