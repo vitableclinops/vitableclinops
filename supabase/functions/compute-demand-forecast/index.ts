@@ -497,6 +497,7 @@ function parseTelehealthRows(csv: string, issues: Record<string, number>): Map<s
     const membersRaw = col(
       r,
       'Active Members Count', 'active_members_count', 'active members count',
+      'Active Members Count by Active State - Appointment State → Distinct values of Member ID',
       'Active Members', 'active_members', 'members',
     );
     if (!stateRaw || !demandRaw) { bump(issues, 'missing_field'); continue; }
