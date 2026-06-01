@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildSubmissionTimeline,
   buildShiftRecommendationRows,
+  isScarceCoverageSlot,
   TELEHEALTH_FORECAST_KINDS,
   type ParsedShiftsBlob,
   type SubmissionRow,
@@ -152,6 +153,45 @@ describe('buildShiftRecommendationRows', () => {
     expect(teleCut.length).toBeGreaterThan(0);
     const cutHoursSum = teleCut.reduce((s, r) => s + r.hours, 0);
     expect(cutHoursSum).toBeGreaterThanOrEqual(8);
+  });
+
+  it('protects scarce coverage windows from monthly oversupply cuts', () => {
+    const scarceSubmission: SubmissionRow = {
+      id: 'sub-scarce',
+      submitted_at: '2026-05-01T00:00:00Z',
+      parsed_shifts: {
+        one_off_virtual: JSON.stringify([
+          { 'Date': '06-01-2026', 'Start Time (ET)': '9:00 AM', 'End Time (ET)': '12:00 PM' },
+          { 'Date': '06-28-2026', 'Start Time (ET)': '9:00 AM', 'End Time (ET)': '12:00 PM' },
+        ]),
+      } as ParsedShiftsBlob,
+    };
+    const validation = buildSubmissionTimeline(
+      [scarceSubmission],
+      { name: 'Scarce Provider' },
+      FIXTURE_TARGET_MONTH,
+    );
+    const protectedForecastTimeline = validation.forecastTimeline.filter(isScarceCoverageSlot);
+    expect(protectedForecastTimeline.map(s => s.date)).toEqual(['2026-06-28']);
+
+    const rows = buildShiftRecommendationRows({
+      providerId: 'p1',
+      providerName: 'Scarce Provider',
+      targetMonth: FIXTURE_TARGET_MONTH,
+      timeline: validation.timeline,
+      forecastTimeline: validation.forecastTimeline,
+      protectedForecastTimeline,
+      declinedHours: 3,
+      declineAll: false,
+      allocations: [{ state: 'PA', hours: 3 }],
+      decisionRunId: 'run-1',
+    });
+
+    const monday = rows.find(r => r.shift_date === '2026-06-01');
+    const sunday = rows.find(r => r.shift_date === '2026-06-28');
+    expect(monday?.recommendation).toBe('cut');
+    expect(sunday?.recommendation).toBe('publish');
+    expect(sunday?.recommendation_reason).toContain('scarce coverage window');
   });
 });
 

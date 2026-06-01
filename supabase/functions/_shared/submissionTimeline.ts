@@ -209,6 +209,8 @@ export interface BuildShiftRecommendationsArgs {
   timeline: ExpandedSlot[];
   /** Subset of timeline that participates in forecast cut budget. */
   forecastTimeline: ExpandedSlot[];
+  /** Forecast slots protected from monthly oversupply trims. */
+  protectedForecastTimeline?: ExpandedSlot[];
   /** Out-of-business-hours fragments (telehealth only). Each is emitted as
    *  its own `cut` row with reason "outside operating hours". They are
    *  not part of the forecast cut budget — they were already removed from
@@ -224,11 +226,32 @@ export interface BuildShiftRecommendationsArgs {
 const OUT_OF_HOURS_REASON =
   'Cut — outside operating hours window (9a–9p ET weekdays, 9a–12p ET weekends)';
 
+const FRIDAY_SCARCE_START_MIN = 12 * 60;
+
+export function scarceCoverageWindowForSlot(slot: Pick<ExpandedSlot, 'date' | 'endMin'>): string | null {
+  const day = dayOfWeekUtc(slot.date);
+  if (day === 0) return 'sunday';
+  if (day === 6) return 'saturday';
+  if (day === 5 && slot.endMin > FRIDAY_SCARCE_START_MIN) return 'friday_pm';
+  return null;
+}
+
+export function isScarceCoverageSlot(slot: Pick<ExpandedSlot, 'date' | 'endMin'>): boolean {
+  return scarceCoverageWindowForSlot(slot) !== null;
+}
+
+function dayOfWeekUtc(dateIso: string): number {
+  const [y, m, d] = dateIso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
 /**
  * Cut/publish row generator shared by evaluator and emitter.
  *
  * Forecast slots (recurring_virtual / virtual_oneoff) participate in the
- * cut budget: latest-first, cut until `declinedHours` is satisfied.
+ * cut budget: latest-first, cut until `declinedHours` is satisfied. Protected
+ * forecast slots are skipped by monthly oversupply trims, which lets the
+ * evaluator preserve scarce coverage windows before cutting less useful hours.
  * In-home/clinic slots are not in the forecast scope, so they are always
  * `publish` and don't consume the cut budget.
  *
@@ -241,12 +264,17 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
   if (args.timeline.length === 0 && outOfHours.length === 0) return [];
 
   const forecastSlots = new Set(args.forecastTimeline);
+  const protectedForecastSlots = new Set(args.protectedForecastTimeline ?? []);
   const cutBudgetTotal = args.declineAll
     ? sumHours(args.forecastTimeline)
     : Math.max(0, args.declinedHours);
 
-  // Walk forecast slots latest-first to allocate cuts.
-  const sortedDesc = [...args.forecastTimeline].sort((a, b) =>
+  // Walk forecast slots latest-first to allocate cuts. For partial trims,
+  // protected slots are skipped so scarce coverage windows survive the cut.
+  const cutCandidates = args.declineAll
+    ? args.forecastTimeline
+    : args.forecastTimeline.filter(slot => !protectedForecastSlots.has(slot));
+  const sortedDesc = [...cutCandidates].sort((a, b) =>
     b.date.localeCompare(a.date) || b.startMin - a.startMin,
   );
   const cutSet = new Set<ExpandedSlot>();
@@ -264,6 +292,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     const slotHours = round2((slot.endMin - slot.startMin) / 60);
     const isForecastSlot = forecastSlots.has(slot);
     const isCut = isForecastSlot && cutSet.has(slot);
+    const isProtected = isForecastSlot && protectedForecastSlots.has(slot);
 
     let assignedState: string | null = null;
     let reason: string;
@@ -288,9 +317,15 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
       if (bestState) {
         buckets.set(bestState, round2((buckets.get(bestState) ?? 0) - slotHours));
       }
-      reason = bestState
-        ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
-        : 'Publish (no state allocation; review manually)';
+      if (isProtected) {
+        reason = bestState
+          ? `Publish to ${bestState} (scarce coverage window protected before monthly demand trim)`
+          : 'Publish (scarce coverage window; no state allocation, review manually)';
+      } else {
+        reason = bestState
+          ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
+          : 'Publish (no state allocation; review manually)';
+      }
     }
 
     return {

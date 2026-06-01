@@ -782,15 +782,18 @@ export function expandNormalizedToSlots(
 
 /** Apply the operating-hours window to a stream of expanded slots, clamping
  *  partial overlaps and dropping fully out-of-window slots. Returns the
- *  surviving slots (possibly clamped) plus the total hours removed. The
- *  source NormalizedInterval is preserved for downstream linkage; in-home /
+ *  surviving slots (possibly clamped), the original portions that were
+ *  dropped/trimmed (so downstream can emit per-shift "declined: outside
+ *  business hours" rows), and the total hours removed. The source
+ *  NormalizedInterval is preserved for downstream linkage; in-home /
  *  clinic shifts are NOT subject to this filter (their location is fixed
  *  outside the telehealth ops window). */
 export function applyOperatingHoursWindow(
   slots: ExpandedSlot[],
   config: ValidationConfig,
-): { slots: ExpandedSlot[]; hoursRemoved: number } {
+): { slots: ExpandedSlot[]; droppedSlots: ExpandedSlot[]; hoursRemoved: number } {
   const out: ExpandedSlot[] = [];
+  const dropped: ExpandedSlot[] = [];
   let removed = 0;
   for (const s of slots) {
     if (s.source.kind === 'in_home') {
@@ -806,12 +809,14 @@ export function applyOperatingHoursWindow(
     const rawHours = (s.endMin - s.startMin) / 60;
     if (s.endMin <= winStart || s.startMin >= winEnd) {
       removed += rawHours;
+      dropped.push(s);
       continue;
     }
     const newStart = Math.max(s.startMin, winStart);
     const newEnd = Math.min(s.endMin, winEnd);
     if (newEnd <= newStart) {
       removed += rawHours;
+      dropped.push(s);
       continue;
     }
     if (newStart === s.startMin && newEnd === s.endMin) {
@@ -819,9 +824,15 @@ export function applyOperatingHoursWindow(
     } else {
       removed += ((newStart - s.startMin) + (s.endMin - newEnd)) / 60;
       out.push({ ...s, startMin: newStart, endMin: newEnd });
+      if (newStart > s.startMin) {
+        dropped.push({ ...s, startMin: s.startMin, endMin: newStart });
+      }
+      if (newEnd < s.endMin) {
+        dropped.push({ ...s, startMin: newEnd, endMin: s.endMin });
+      }
     }
   }
-  return { slots: out, hoursRemoved: round2(removed) };
+  return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
 }
 
 function isInMonth(dateISO: string, monthISO: string): boolean {
@@ -960,6 +971,12 @@ export interface NormalizationResult {
   targetMonth: string;
   normalized: NormalizedInterval[];
   timeline: ExpandedSlot[];
+  /** Original portions of slots that were dropped/trimmed by the operating-
+   *  hours window (9a-9p ET weekdays, 9a-12p ET weekends). Each entry is
+   *  the original out-of-window fragment with its source NormalizedInterval
+   *  preserved, so downstream can emit "declined: outside business hours"
+   *  per-shift rows. */
+  outOfHoursTimeline: ExpandedSlot[];
   summary: NormalizationSummary;
   report: ValidationReportRow[];
   override_used: ProviderOverride | null;
@@ -1088,6 +1105,7 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     targetMonth: input.targetMonth,
     normalized,
     timeline: reconciled.slots,
+    outOfHoursTimeline: windowed.droppedSlots,
     summary,
     report,
     override_used: override,
@@ -1199,6 +1217,10 @@ export interface BuildTimelineOptions {
 export interface BuildTimelineResult extends NormalizationResult {
   /** Subset of `timeline` filtered by forecastKinds (default = telehealth). */
   forecastTimeline: ExpandedSlot[];
+  /** Subset of `outOfHoursTimeline` filtered by forecastKinds. In-home /
+   *  clinic shifts are not subject to the operating-hours window so they
+   *  never appear here. */
+  forecastOutOfHoursTimeline: ExpandedSlot[];
 }
 
 /**
@@ -1235,7 +1257,10 @@ export function buildSubmissionTimeline(
   const result = normalizeProviderAvailability(input);
   const forecastSet = new Set(forecastKinds);
   const forecastTimeline = result.timeline.filter(s => forecastSet.has(s.source.kind));
-  return { ...result, forecastTimeline };
+  const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
+    forecastSet.has(s.source.kind),
+  );
+  return { ...result, forecastTimeline, forecastOutOfHoursTimeline };
 }
 
 export function extractRawIntervalsFromParsedShifts(parsed: ParsedShiftsBlob | null): RawInterval[] {
@@ -1325,6 +1350,13 @@ export interface BuildShiftRecommendationsArgs {
   timeline: ExpandedSlot[];
   /** Subset of timeline that participates in forecast cut budget. */
   forecastTimeline: ExpandedSlot[];
+  /** Forecast slots protected from monthly oversupply trims. */
+  protectedForecastTimeline?: ExpandedSlot[];
+  /** Out-of-business-hours fragments (telehealth only). Each is emitted as
+   *  its own `cut` row with reason "outside operating hours". They are
+   *  not part of the forecast cut budget — they were already removed from
+   *  `final_approvable_hours` upstream. */
+  outOfHoursTimeline?: ExpandedSlot[];
   declinedHours: number;
   /** True if the entire forecast timeline should be cut (declined decision). */
   declineAll: boolean;
@@ -1332,24 +1364,58 @@ export interface BuildShiftRecommendationsArgs {
   decisionRunId: string;
 }
 
+const OUT_OF_HOURS_REASON =
+  'Cut — outside operating hours window (9a–9p ET weekdays, 9a–12p ET weekends)';
+
+const FRIDAY_SCARCE_START_MIN = 12 * 60;
+
+export function scarceCoverageWindowForSlot(slot: Pick<ExpandedSlot, 'date' | 'endMin'>): string | null {
+  const day = dayOfWeekUtc(slot.date);
+  if (day === 0) return 'sunday';
+  if (day === 6) return 'saturday';
+  if (day === 5 && slot.endMin > FRIDAY_SCARCE_START_MIN) return 'friday_pm';
+  return null;
+}
+
+export function isScarceCoverageSlot(slot: Pick<ExpandedSlot, 'date' | 'endMin'>): boolean {
+  return scarceCoverageWindowForSlot(slot) !== null;
+}
+
+function dayOfWeekUtc(dateIso: string): number {
+  const [y, m, d] = dateIso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
 /**
  * Cut/publish row generator shared by evaluator and emitter.
  *
  * Forecast slots (recurring_virtual / virtual_oneoff) participate in the
- * cut budget: latest-first, cut until `declinedHours` is satisfied.
+ * cut budget: latest-first, cut until `declinedHours` is satisfied. Protected
+ * forecast slots are skipped by monthly oversupply trims, which lets the
+ * evaluator preserve scarce coverage windows before cutting less useful hours.
  * In-home/clinic slots are not in the forecast scope, so they are always
  * `publish` and don't consume the cut budget.
+ *
+ * Out-of-hours fragments (passed via `outOfHoursTimeline`) are emitted as
+ * their own `cut` rows so the workbench surfaces hours declined for being
+ * outside business hours alongside other cuts.
  */
 export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs): ShiftRecommendationRow[] {
-  if (args.timeline.length === 0) return [];
+  const outOfHours = args.outOfHoursTimeline ?? [];
+  if (args.timeline.length === 0 && outOfHours.length === 0) return [];
 
   const forecastSlots = new Set(args.forecastTimeline);
+  const protectedForecastSlots = new Set(args.protectedForecastTimeline ?? []);
   const cutBudgetTotal = args.declineAll
     ? sumHours(args.forecastTimeline)
     : Math.max(0, args.declinedHours);
 
-  // Walk forecast slots latest-first to allocate cuts.
-  const sortedDesc = [...args.forecastTimeline].sort((a, b) =>
+  // Walk forecast slots latest-first to allocate cuts. For partial trims,
+  // protected slots are skipped so scarce coverage windows survive the cut.
+  const cutCandidates = args.declineAll
+    ? args.forecastTimeline
+    : args.forecastTimeline.filter(slot => !protectedForecastSlots.has(slot));
+  const sortedDesc = [...cutCandidates].sort((a, b) =>
     b.date.localeCompare(a.date) || b.startMin - a.startMin,
   );
   const cutSet = new Set<ExpandedSlot>();
@@ -1363,15 +1429,11 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
   // Buckets for state assignment, only consumed by published forecast slots.
   const buckets = new Map<string, number>(args.allocations.map(a => [a.state, a.hours]));
 
-  // Publish all slots in chronological order.
-  const sortedAsc = [...args.timeline].sort((a, b) =>
-    a.date.localeCompare(b.date) || a.startMin - b.startMin,
-  );
-
-  return sortedAsc.map(slot => {
+  const timelineRows = args.timeline.map(slot => {
     const slotHours = round2((slot.endMin - slot.startMin) / 60);
     const isForecastSlot = forecastSlots.has(slot);
     const isCut = isForecastSlot && cutSet.has(slot);
+    const isProtected = isForecastSlot && protectedForecastSlots.has(slot);
 
     let assignedState: string | null = null;
     let reason: string;
@@ -1396,9 +1458,15 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
       if (bestState) {
         buckets.set(bestState, round2((buckets.get(bestState) ?? 0) - slotHours));
       }
-      reason = bestState
-        ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
-        : 'Publish (no state allocation; review manually)';
+      if (isProtected) {
+        reason = bestState
+          ? `Publish to ${bestState} (scarce coverage window protected before monthly demand trim)`
+          : 'Publish (scarce coverage window; no state allocation, review manually)';
+      } else {
+        reason = bestState
+          ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
+          : 'Publish (no state allocation; review manually)';
+      }
     }
 
     return {
@@ -1412,12 +1480,33 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
       hours: slotHours,
       shift_type: kindToShiftType(slot.source.kind),
       assigned_state: assignedState,
-      recommendation: isCut ? 'cut' : 'publish',
+      recommendation: (isCut ? 'cut' : 'publish') as 'cut' | 'publish',
       recommendation_reason: reason,
       decision_run_id: args.decisionRunId,
-      publish_status: 'pending',
+      publish_status: 'pending' as const,
     };
   });
+
+  const outOfHoursRows: ShiftRecommendationRow[] = outOfHours.map(slot => ({
+    submission_id: slot.source.submissionId ?? '',
+    provider_id: args.providerId,
+    provider_name: args.providerName,
+    target_month: args.targetMonth,
+    shift_date: slot.date,
+    start_min: slot.startMin,
+    end_min: slot.endMin,
+    hours: round2((slot.endMin - slot.startMin) / 60),
+    shift_type: kindToShiftType(slot.source.kind),
+    assigned_state: null,
+    recommendation: 'cut',
+    recommendation_reason: OUT_OF_HOURS_REASON,
+    decision_run_id: args.decisionRunId,
+    publish_status: 'pending',
+  }));
+
+  return [...timelineRows, ...outOfHoursRows].sort((a, b) =>
+    a.shift_date.localeCompare(b.shift_date) || a.start_min - b.start_min,
+  );
 }
 
 export function kindToShiftType(kind: IntervalKind): ShiftType {
@@ -1633,6 +1722,18 @@ Deno.serve(async (req: Request) => {
 
         const declined = Number(decided.declined_hours ?? 0);
         const allocations = parseAllocationsFromNotes(decided.decision_notes ?? '');
+        // declined_hours stored on the row includes both forecast cuts and
+        // hours dropped for being outside operating hours. The latter are
+        // re-emitted by buildShiftRecommendationRows from
+        // forecastOutOfHoursTimeline, so we subtract them here to leave only
+        // the forecast cut budget.
+        const oohHours = Math.round((validation.summary.hours_removed_for_operating_hours ?? 0) * 100) / 100;
+        const forecastDeclined = Math.max(0, Math.round((declined - oohHours) * 100) / 100);
+        const protectScarceWindows = (decided.decision_notes ?? '')
+          .includes('scarce_window_policy=protected_before_monthly_trim');
+        const protectedForecastTimeline = protectScarceWindows
+          ? validation.forecastTimeline.filter(isScarceCoverageSlot)
+          : [];
 
         const rows = buildShiftRecommendationRows({
           providerId: decided.provider_id!,
@@ -1640,7 +1741,9 @@ Deno.serve(async (req: Request) => {
           targetMonth: decided.target_month,
           timeline: validation.timeline,
           forecastTimeline: validation.forecastTimeline,
-          declinedHours: declined,
+          outOfHoursTimeline: validation.forecastOutOfHoursTimeline,
+          protectedForecastTimeline,
+          declinedHours: forecastDeclined,
           declineAll: decided.decision_status === 'declined',
           allocations,
           decisionRunId: decided.decision_run_id ?? crypto.randomUUID(),

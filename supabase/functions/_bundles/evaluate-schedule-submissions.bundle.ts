@@ -1350,6 +1350,8 @@ export interface BuildShiftRecommendationsArgs {
   timeline: ExpandedSlot[];
   /** Subset of timeline that participates in forecast cut budget. */
   forecastTimeline: ExpandedSlot[];
+  /** Forecast slots protected from monthly oversupply trims. */
+  protectedForecastTimeline?: ExpandedSlot[];
   /** Out-of-business-hours fragments (telehealth only). Each is emitted as
    *  its own `cut` row with reason "outside operating hours". They are
    *  not part of the forecast cut budget — they were already removed from
@@ -1365,11 +1367,32 @@ export interface BuildShiftRecommendationsArgs {
 const OUT_OF_HOURS_REASON =
   'Cut — outside operating hours window (9a–9p ET weekdays, 9a–12p ET weekends)';
 
+const FRIDAY_SCARCE_START_MIN = 12 * 60;
+
+export function scarceCoverageWindowForSlot(slot: Pick<ExpandedSlot, 'date' | 'endMin'>): string | null {
+  const day = dayOfWeekUtc(slot.date);
+  if (day === 0) return 'sunday';
+  if (day === 6) return 'saturday';
+  if (day === 5 && slot.endMin > FRIDAY_SCARCE_START_MIN) return 'friday_pm';
+  return null;
+}
+
+export function isScarceCoverageSlot(slot: Pick<ExpandedSlot, 'date' | 'endMin'>): boolean {
+  return scarceCoverageWindowForSlot(slot) !== null;
+}
+
+function dayOfWeekUtc(dateIso: string): number {
+  const [y, m, d] = dateIso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
 /**
  * Cut/publish row generator shared by evaluator and emitter.
  *
  * Forecast slots (recurring_virtual / virtual_oneoff) participate in the
- * cut budget: latest-first, cut until `declinedHours` is satisfied.
+ * cut budget: latest-first, cut until `declinedHours` is satisfied. Protected
+ * forecast slots are skipped by monthly oversupply trims, which lets the
+ * evaluator preserve scarce coverage windows before cutting less useful hours.
  * In-home/clinic slots are not in the forecast scope, so they are always
  * `publish` and don't consume the cut budget.
  *
@@ -1382,12 +1405,17 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
   if (args.timeline.length === 0 && outOfHours.length === 0) return [];
 
   const forecastSlots = new Set(args.forecastTimeline);
+  const protectedForecastSlots = new Set(args.protectedForecastTimeline ?? []);
   const cutBudgetTotal = args.declineAll
     ? sumHours(args.forecastTimeline)
     : Math.max(0, args.declinedHours);
 
-  // Walk forecast slots latest-first to allocate cuts.
-  const sortedDesc = [...args.forecastTimeline].sort((a, b) =>
+  // Walk forecast slots latest-first to allocate cuts. For partial trims,
+  // protected slots are skipped so scarce coverage windows survive the cut.
+  const cutCandidates = args.declineAll
+    ? args.forecastTimeline
+    : args.forecastTimeline.filter(slot => !protectedForecastSlots.has(slot));
+  const sortedDesc = [...cutCandidates].sort((a, b) =>
     b.date.localeCompare(a.date) || b.startMin - a.startMin,
   );
   const cutSet = new Set<ExpandedSlot>();
@@ -1405,6 +1433,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     const slotHours = round2((slot.endMin - slot.startMin) / 60);
     const isForecastSlot = forecastSlots.has(slot);
     const isCut = isForecastSlot && cutSet.has(slot);
+    const isProtected = isForecastSlot && protectedForecastSlots.has(slot);
 
     let assignedState: string | null = null;
     let reason: string;
@@ -1429,9 +1458,15 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
       if (bestState) {
         buckets.set(bestState, round2((buckets.get(bestState) ?? 0) - slotHours));
       }
-      reason = bestState
-        ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
-        : 'Publish (no state allocation; review manually)';
+      if (isProtected) {
+        reason = bestState
+          ? `Publish to ${bestState} (scarce coverage window protected before monthly demand trim)`
+          : 'Publish (scarce coverage window; no state allocation, review manually)';
+      } else {
+        reason = bestState
+          ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
+          : 'Publish (no state allocation; review manually)';
+      }
     }
 
     return {
@@ -1576,11 +1611,16 @@ function round2(n: number): number {
  *      availability (not visits); column name is legacy. See
  *      compute-demand-forecast for the canonical methodology.
  *   5. total_gap = sum of demand_hours across eligible states (clipped 0).
- *   6. Decision:
- *        total_gap >= effective_hours       → accepted (all of it)
- *        0 < total_gap < effective_hours    → partial  (accept = total_gap,
- *                                                      decline = remainder)
- *        total_gap <= 0                     → declined
+ *   6. Scarce coverage windows (Friday PM, Saturday, Sunday) are protected
+ *      before monthly oversupply trimming. This keeps same-day / next-day
+ *      access coverage from being rejected just because total monthly hours
+ *      look full.
+ *   7. Decision:
+ *        accepted_hours = scarce_window_hours + remaining non-scarce hours
+ *                         that fit inside the monthly state gap
+ *        accepted_hours = effective_hours     → accepted
+ *        accepted_hours > 0                   → partial
+ *        accepted_hours <= 0                  → declined
  *
  * Modes:
  *   POST /functions/v1/evaluate-schedule-submissions
@@ -1788,6 +1828,16 @@ function shiftsSignature(parsed: ParsedShifts | null): string {
     fmt('home', arr(parsed.in_home_clinic), ['Date', 'Start Time (ET)', 'End Time (ET)']),
     fmt('off', arr(parsed.unavailable_dates), ['Start Date', 'End Date', 'Date']),
   ].join('||');
+}
+
+type ForecastSlot = BuildTimelineResult['forecastTimeline'][number];
+
+function slotHours(slot: ForecastSlot): number {
+  return (slot.endMin - slot.startMin) / 60;
+}
+
+function sumSlotHours(slots: ForecastSlot[]): number {
+  return round2(slots.reduce((sum, slot) => sum + slotHours(slot), 0));
 }
 
 Deno.serve(async (req: Request) => {
@@ -2301,12 +2351,17 @@ Deno.serve(async (req: Request) => {
           });
 
         // Compute remaining demand-hour gap per state
-        const gapByState: Array<{ state: string; gapHours: number; missingDemand: boolean }> = [];
+        const gapByState: Array<{
+          state: string;
+          gapHours: number;
+          demandHours: number;
+          missingDemand: boolean;
+        }> = [];
         for (const st of licensed) {
           const dKey = `${st}_${targetMonth}`;
           const visits = demandByKey.get(dKey);
           if (visits === undefined) {
-            gapByState.push({ state: st, gapHours: 0, missingDemand: true });
+            gapByState.push({ state: st, gapHours: 0, demandHours: 0, missingDemand: true });
             continue;
           }
           // demand_forecast.projected_visits stores hours of provider
@@ -2317,12 +2372,20 @@ Deno.serve(async (req: Request) => {
           gapByState.push({
             state: st,
             gapHours: Math.max(0, demandHours - committed),
+            demandHours,
             missingDemand: false,
           });
         }
         gapByState.sort((a, b) => b.gapHours - a.gapHours);
         const totalGap = round2(gapByState.reduce((s, g) => s + g.gapHours, 0));
         const missingDemandStates = gapByState.filter(g => g.missingDemand).map(g => g.state);
+        const scarceCoverageTimeline = forecastTimeline.filter(isScarceCoverageSlot);
+        const scarceCoverageHours = sumSlotHours(scarceCoverageTimeline);
+        const scarceCoverageWindows = Array.from(new Set(
+          scarceCoverageTimeline
+            .map(scarceCoverageWindowForSlot)
+            .filter((window): window is string => Boolean(window)),
+        )).sort();
 
         // Decide. `declined` rolls up forecast cuts AND hours dropped for
         // being outside the operating-hours window so the provider sees
@@ -2330,30 +2393,52 @@ Deno.serve(async (req: Request) => {
         let status: 'accepted' | 'partial' | 'declined';
         let accepted: number;
         let forecastDeclined: number;
-        if (totalGap <= 0) {
+        const nonScarceHours = round2(Math.max(0, effectiveHours - scarceCoverageHours));
+        const monthlyGapAfterScarce = round2(Math.max(0, totalGap - scarceCoverageHours));
+        const demandAcceptedHours = round2(Math.min(nonScarceHours, monthlyGapAfterScarce));
+        accepted = round2(Math.min(effectiveHours, scarceCoverageHours + demandAcceptedHours));
+        forecastDeclined = round2(Math.max(0, effectiveHours - accepted));
+        const scarceOverflowHours = round2(Math.max(0, accepted - totalGap));
+        if (accepted <= 0) {
           status = 'declined';
-          accepted = 0;
-          forecastDeclined = effectiveHours;
-        } else if (totalGap >= effectiveHours) {
+        } else if (forecastDeclined <= 0) {
           status = 'accepted';
-          accepted = effectiveHours;
-          forecastDeclined = 0;
         } else {
           status = 'partial';
-          accepted = totalGap;
-          forecastDeclined = round2(effectiveHours - accepted);
         }
         const declined = round2(forecastDeclined + oohDeclined);
 
         // Allocate accepted hours greedily across states
         const allocations: Array<{ state: string; hours: number }> = [];
+        const addAllocation = (state: string, hours: number) => {
+          const rounded = round2(hours);
+          if (rounded <= 0) return;
+          const existing = allocations.find(a => a.state === state);
+          if (existing) {
+            existing.hours = round2(existing.hours + rounded);
+          } else {
+            allocations.push({ state, hours: rounded });
+          }
+        };
         let remaining = accepted;
         for (const g of gapByState) {
           if (remaining <= 0 || g.gapHours <= 0) break;
           const take = Math.min(g.gapHours, remaining);
           if (take > 0) {
-            allocations.push({ state: g.state, hours: round2(take) });
-            remaining -= take;
+            addAllocation(g.state, take);
+            remaining = round2(remaining - take);
+          }
+        }
+        if (remaining > 0) {
+          const fallbackStates = [...gapByState].sort((a, b) =>
+            b.demandHours - a.demandHours ||
+            b.gapHours - a.gapHours ||
+            a.state.localeCompare(b.state),
+          );
+          for (const g of fallbackStates) {
+            if (remaining <= 0) break;
+            addAllocation(g.state, remaining);
+            remaining = 0;
           }
         }
 
@@ -2383,10 +2468,19 @@ Deno.serve(async (req: Request) => {
         if (oohDeclined > 0) {
           noteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
         }
+        if (scarceCoverageHours > 0) {
+          noteParts.push('scarce_window_policy=protected_before_monthly_trim');
+          noteParts.push(`scarce_window_hours=${scarceCoverageHours}h`);
+          noteParts.push(`scarce_windows=${scarceCoverageWindows.join(',')}`);
+          if (scarceOverflowHours > 0) {
+            noteParts.push(`scarce_window_over_monthly_gap=${scarceOverflowHours}h`);
+          }
+        }
         if (eligibleSourceSummary.length) {
           noteParts.push(`eligible_sources=${eligibleSourceSummary.join(',')}`);
         }
         noteParts.push(`total_gap=${totalGap}h`);
+        noteParts.push(`demand_accepted_hours=${demandAcceptedHours}h`);
         noteParts.push(
           'state_gaps=' + gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : round2(g.gapHours) + 'h'}`).join(','),
         );
@@ -2426,6 +2520,7 @@ Deno.serve(async (req: Request) => {
           outOfHoursTimeline: forecastOutOfHoursTimeline,
           // Forecast cut budget is the demand-driven decline only — out-of-
           // hours fragments are handled separately inside the row builder.
+          protectedForecastTimeline: scarceCoverageTimeline,
           declinedHours: forecastDeclined,
           declineAll: status === 'declined',
           allocations,
@@ -2451,6 +2546,9 @@ Deno.serve(async (req: Request) => {
           allocations,
           provider_priority: providerPriority.key,
           state_policy: isPhysician ? 'physician_reserved_for_md_only' : 'standard',
+          scarce_window_hours: scarceCoverageHours,
+          scarce_windows: scarceCoverageWindows,
+          scarce_window_over_monthly_gap: scarceOverflowHours,
           validation_summary: validation.summary,
           validation_report: validation.report,
         });

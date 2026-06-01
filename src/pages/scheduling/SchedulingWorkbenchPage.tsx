@@ -3515,6 +3515,8 @@ function MatchingPanel({
 function classifyReason(text: string): string {
   const t = text.toLowerCase();
   if (!t) return 'No reason recorded';
+  if (t.includes('scarce_window') || t.includes('scarce coverage'))
+    return 'Scarce coverage protected';
   if (t.includes('outside') && t.includes('business')) return 'Outside business hours';
   if (t.includes('capacity') || t.includes('oversupply') || t.includes('surplus'))
     return 'State capacity full';

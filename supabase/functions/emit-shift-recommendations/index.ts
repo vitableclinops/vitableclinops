@@ -27,6 +27,7 @@ import {
   buildSubmissionTimeline,
   buildShiftRecommendationRows,
   emailFromParsedShifts,
+  isScarceCoverageSlot,
   parseAllocationsFromNotes,
   type ParsedShiftsBlob,
 } from '../_shared/submissionTimeline.ts';
@@ -170,6 +171,11 @@ Deno.serve(async (req: Request) => {
         // the forecast cut budget.
         const oohHours = Math.round((validation.summary.hours_removed_for_operating_hours ?? 0) * 100) / 100;
         const forecastDeclined = Math.max(0, Math.round((declined - oohHours) * 100) / 100);
+        const protectScarceWindows = (decided.decision_notes ?? '')
+          .includes('scarce_window_policy=protected_before_monthly_trim');
+        const protectedForecastTimeline = protectScarceWindows
+          ? validation.forecastTimeline.filter(isScarceCoverageSlot)
+          : [];
 
         const rows = buildShiftRecommendationRows({
           providerId: decided.provider_id!,
@@ -178,6 +184,7 @@ Deno.serve(async (req: Request) => {
           timeline: validation.timeline,
           forecastTimeline: validation.forecastTimeline,
           outOfHoursTimeline: validation.forecastOutOfHoursTimeline,
+          protectedForecastTimeline,
           declinedHours: forecastDeclined,
           declineAll: decided.decision_status === 'declined',
           allocations,
