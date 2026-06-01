@@ -29,6 +29,8 @@
  *   4. Write demand_forecast per-day per-state and state_demand_targets
  *      per (state, month) for telehealth.
  *   5. Write service_line_demand_targets for MH coaching and therapy.
+ *   6. Pull card 2940 (PCP State Coverage) and refresh the live
+ *      provider_state_active overlay used by provider-state allocation.
  *
  * Note: state_demand_targets and demand_forecast hold telehealth only,
  * because the other service lines are staffed by separate provider pools
@@ -52,6 +54,11 @@ const METABASE_URL = 'https://metabase.vitablehealth.com';
 const TELEHEALTH_CARD = Number(Deno.env.get('METABASE_BASELINE_CARD_ID') ?? '2974');
 const COACHING_CARD = Number(Deno.env.get('METABASE_COACHING_CARD_ID') ?? '2973');
 const THERAPY_CARD = Number(Deno.env.get('METABASE_THERAPY_CARD_ID') ?? '2971');
+const PCP_STATE_COVERAGE_CARD = Number(
+  Deno.env.get('METABASE_PCP_STATE_COVERAGE_CARD_ID') ??
+  Deno.env.get('METABASE_ACTIVE_STATE_CARD_ID') ??
+  '2940',
+);
 const SEASONAL_MULTIPLIER = 0.95;
 const METHODOLOGY_VERSION = 'july_2026_summer_trough_v1';
 
@@ -81,6 +88,39 @@ type TelehealthDemand = {
   weeklyDemand: number;
   activeMembers: number | null;
 };
+type ProviderLookupRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  npi: string | null;
+};
+type ProviderStateActiveRow = {
+  provider_id: string;
+  state: string;
+  is_active: boolean;
+  source: 'metabase_pcp_state_coverage';
+  report_date: string;
+  raw_payload: Row;
+  provider_name: string | null;
+  provider_email: string | null;
+  synced_at: string;
+};
+type PcpCoverageAuditRow = {
+  row_key: string;
+  provider_id: string | null;
+  provider_email: string | null;
+  provider_name: string | null;
+  npi: string | null;
+  state: string;
+  is_active: boolean | null;
+  active_members: number | null;
+  pcp_count: number | null;
+  coverage_pct: number | null;
+  report_date: string;
+  source_card_id: number;
+  raw_payload: Row;
+  synced_at: string;
+};
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -109,10 +149,11 @@ Deno.serve(async (req: Request) => {
     const token = await getMetabaseToken(username, password);
 
     // Pull the three forecast cards in parallel.
-    const [teleCsv, coachCsv, therapyCsv] = await Promise.all([
+    const [teleCsv, coachCsv, therapyCsv, pcpCoverageCsv] = await Promise.all([
       downloadCardCsv(token, TELEHEALTH_CARD),
       downloadCardCsvSafe(token, COACHING_CARD),
       downloadCardCsvSafe(token, THERAPY_CARD),
+      downloadCardCsvSafe(token, PCP_STATE_COVERAGE_CARD),
     ]);
 
     if (inspect) {
@@ -123,12 +164,13 @@ Deno.serve(async (req: Request) => {
           telehealth: cardSnapshot(TELEHEALTH_CARD, teleCsv),
           coaching:   cardSnapshot(COACHING_CARD, coachCsv),
           therapy:    cardSnapshot(THERAPY_CARD, therapyCsv),
+          pcp_state_coverage: cardSnapshot(PCP_STATE_COVERAGE_CARD, pcpCoverageCsv),
         },
       });
     }
 
     const issues: Record<string, Record<string, number>> = {
-      telehealth: {}, coaching: {}, therapy: {},
+      telehealth: {}, coaching: {}, therapy: {}, pcp_state_coverage: {},
     };
 
     // Parse each card. Card values are weekly hours of provider availability.
@@ -348,8 +390,21 @@ Deno.serve(async (req: Request) => {
       computed_at: computedAt,
     }));
 
+    // ── Live provider-state active overlay from Metabase card 2940 ────
+    const providerLookup = await loadProviderLookup(supabase);
+    const pcpStateCoverage = parsePcpStateCoverageRows(
+      pcpCoverageCsv,
+      providerLookup,
+      PCP_STATE_COVERAGE_CARD,
+      computedAt.slice(0, 10),
+      computedAt,
+      issues.pcp_state_coverage,
+    );
+
     // ── Write to Supabase ─────────────────────────────────────────────
     let demoted = 0;
+    let pcpCoverageRows = 0;
+    let providerStateActiveRows = 0;
     if (!dryRun) {
       const { data: demoteData, error: demoteErr } = await supabase
         .from('demand_forecast')
@@ -375,6 +430,26 @@ Deno.serve(async (req: Request) => {
         .from('service_line_demand_targets')
         .upsert(serviceLineTargets, { onConflict: 'service_line,month' });
       if (slErr) throw new Error(`service_line_demand_targets upsert failed: ${slErr.message}`);
+
+      if (pcpStateCoverage.auditRows.length > 0) {
+        for (const chunk of chunked(pcpStateCoverage.auditRows, 500)) {
+          const { error: pcpErr } = await supabase
+            .from('metabase_pcp_state_coverage')
+            .upsert(chunk, { onConflict: 'row_key' });
+          if (pcpErr) throw new Error(`metabase_pcp_state_coverage upsert failed: ${pcpErr.message}`);
+          pcpCoverageRows += chunk.length;
+        }
+      }
+
+      if (pcpStateCoverage.activeRows.length > 0) {
+        for (const chunk of chunked(pcpStateCoverage.activeRows, 500)) {
+          const { error: activeErr } = await supabase
+            .from('provider_state_active')
+            .upsert(chunk, { onConflict: 'provider_id,state,source' });
+          if (activeErr) throw new Error(`provider_state_active upsert failed: ${activeErr.message}`);
+          providerStateActiveRows += chunk.length;
+        }
+      }
     }
 
     return json({
@@ -391,6 +466,13 @@ Deno.serve(async (req: Request) => {
       projection_rows: projections.length,
       target_rows: targets.length,
       service_line_rows: serviceLineTargets.length,
+      pcp_state_coverage: {
+        source_card_id: PCP_STATE_COVERAGE_CARD,
+        raw_rows: pcpStateCoverage.rawRows,
+        matched_provider_state_rows: pcpStateCoverage.activeRows.length,
+        audit_rows_written: pcpCoverageRows,
+        active_rows_written: providerStateActiveRows,
+      },
       previous_baseline_demoted: demoted,
       dry_run: dryRun,
       issues,
@@ -519,6 +601,182 @@ function parseTelehealthRows(csv: string, issues: Record<string, number>): Map<s
   return result;
 }
 
+async function loadProviderLookup(supabase: ReturnType<typeof createClient>) {
+  const { data, error } = await supabase
+    .from('providers')
+    .select('id, name, email, npi')
+    .range(0, 49999);
+  if (error) throw new Error(`Provider lookup failed: ${error.message}`);
+
+  const byEmail = new Map<string, ProviderLookupRow>();
+  const byName = new Map<string, ProviderLookupRow>();
+  const byNpi = new Map<string, ProviderLookupRow>();
+  for (const p of (data ?? []) as ProviderLookupRow[]) {
+    if (p.email) byEmail.set(normEmail(p.email), p);
+    if (p.name) byName.set(normName(p.name), p);
+    if (p.npi) byNpi.set(normDigits(p.npi), p);
+  }
+  return { byEmail, byName, byNpi };
+}
+
+function parsePcpStateCoverageRows(
+  csv: string,
+  providerLookup: Awaited<ReturnType<typeof loadProviderLookup>>,
+  sourceCardId: number,
+  reportDate: string,
+  syncedAt: string,
+  issues: Record<string, number>,
+): {
+  rawRows: number;
+  auditRows: PcpCoverageAuditRow[];
+  activeRows: ProviderStateActiveRow[];
+} {
+  const rows = parseCSV(csv);
+  const auditRows: PcpCoverageAuditRow[] = [];
+  const activeRowsByKey = new Map<string, ProviderStateActiveRow>();
+
+  rows.forEach((row, index) => {
+    const stateRaw = col(
+      row,
+      'State', 'state', 'service_state', 'Appointment State', 'appointment_state',
+      'Active State', 'active_state', 'State Abbreviation', 'state_abbreviation',
+    );
+    const state = stateRaw ? toAbbreviation(stateRaw) : null;
+    if (!state) {
+      bump(issues, 'missing_or_unknown_state');
+      return;
+    }
+
+    const providerName = col(
+      row,
+      'Provider Full Name', 'Provider', 'provider', 'Provider Name', 'provider_name',
+      'PCP', 'PCP Name', 'Clinician', 'Clinician Name', 'name',
+    ) || null;
+    const providerEmail = col(
+      row,
+      'Provider Email', 'provider_email', 'Email', 'email',
+    ) || null;
+    const npi = col(row, 'NPI', 'Provider NPI', 'provider_npi') || null;
+    const activeRaw = col(
+      row,
+      'Is Active', 'is_active', 'Active', 'active', 'Coverage Active',
+      'pcp_active', 'Status', 'status',
+    );
+    const activeFlag = activeRaw ? parseActiveFlag(activeRaw) : null;
+    const activeMembers = parseIntMaybe(col(
+      row,
+      'Active Members Count', 'active_members_count', 'Active Members', 'active_members', 'members',
+    ));
+    const pcpCount = parseIntMaybe(col(
+      row,
+      'PCP Count', 'pcp_count', 'PCPs', 'providers', 'provider_count', 'count', 'Count',
+    ));
+    const coveragePct = parsePctMaybe(col(
+      row,
+      'Coverage %', 'coverage_pct', 'coverage', 'Coverage', 'pct', '%',
+    ));
+
+    const matched =
+      (providerEmail && providerLookup.byEmail.get(normEmail(providerEmail))) ||
+      (npi && providerLookup.byNpi.get(normDigits(npi))) ||
+      (providerName && providerLookup.byName.get(normName(providerName))) ||
+      null;
+
+    const providerKey =
+      matched?.id ??
+      (providerEmail ? normEmail(providerEmail) : null) ??
+      (providerName ? normName(providerName) : null) ??
+      `row-${index}`;
+
+    const rowKey = [
+      'metabase_pcp_state_coverage',
+      sourceCardId,
+      reportDate,
+      providerKey,
+      state,
+    ].filter(Boolean).join('|').toLowerCase();
+
+    const isProviderRow = Boolean(providerName || providerEmail || npi);
+    const isActive = activeFlag ?? (isProviderRow ? true : null);
+
+    auditRows.push({
+      row_key: rowKey,
+      provider_id: matched?.id ?? null,
+      provider_email: providerEmail ? normEmail(providerEmail) : matched?.email ?? null,
+      provider_name: providerName ?? matched?.name ?? null,
+      npi: npi ?? matched?.npi ?? null,
+      state,
+      is_active: isActive,
+      active_members: activeMembers,
+      pcp_count: pcpCount,
+      coverage_pct: coveragePct,
+      report_date: reportDate,
+      source_card_id: sourceCardId,
+      raw_payload: row,
+      synced_at: syncedAt,
+    });
+
+    if (isProviderRow && !matched) {
+      bump(issues, 'unmatched_provider');
+      return;
+    }
+    if (!matched || isActive === null) return;
+
+    activeRowsByKey.set(`${matched.id}|${state}`, {
+      provider_id: matched.id,
+      state,
+      is_active: isActive,
+      source: 'metabase_pcp_state_coverage',
+      report_date: reportDate,
+      raw_payload: row,
+      provider_name: providerName ?? matched.name ?? null,
+      provider_email: providerEmail ? normEmail(providerEmail) : matched.email ?? null,
+      synced_at: syncedAt,
+    });
+  });
+
+  return {
+    rawRows: rows.length,
+    auditRows,
+    activeRows: Array.from(activeRowsByKey.values()),
+  };
+}
+
+function parseActiveFlag(raw: string): boolean | null {
+  const s = raw.trim().toLowerCase();
+  if (!s) return null;
+  if (['0', 'false', 'no', 'n', 'inactive', 'disabled', 'deactivated'].includes(s)) return false;
+  if (['1', 'true', 'yes', 'y', 'active', 'enabled', 'live'].includes(s)) return true;
+  if (s.includes('inactive') || s.includes('disabled') || s.includes('deactivated')) return false;
+  if (s.includes('active') || s.includes('enabled') || s.includes('live')) return true;
+  return null;
+}
+
+function parseIntMaybe(raw: string): number | null {
+  if (!raw) return null;
+  const n = Number(raw.replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+function parsePctMaybe(raw: string): number | null {
+  if (!raw) return null;
+  const n = Number(raw.replace('%', '').replace(/[^0-9.-]/g, ''));
+  if (!Number.isFinite(n)) return null;
+  return n <= 1 ? round2(n * 100) : round2(n);
+}
+
+function normEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function normDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
 function sumValues(map: Map<string, number>): number {
   let s = 0;
   for (const v of map.values()) s += v;
@@ -605,6 +863,12 @@ function round2(n: number): number {
 
 function round4(n: number): number {
   return Math.round(n * 10000) / 10000;
+}
+
+function chunked<T>(rows: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
 }
 
 function bump(map: Record<string, number>, key: string) {

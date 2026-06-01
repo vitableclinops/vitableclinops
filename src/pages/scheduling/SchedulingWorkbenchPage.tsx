@@ -3458,10 +3458,12 @@ function SourceAuditPanel({ month }: { month: string }) {
     auditQ.data.homebase,
     auditQ.data.metabase,
     auditQ.data.jotform,
+    auditQ.data.medallion,
+    auditQ.data.directshifts,
   ];
 
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
+    <div className="grid gap-3 lg:grid-cols-3 2xl:grid-cols-5">
       {sections.map(section => (
         <Card key={section.id}>
           <CardHeader className="pb-2">
@@ -3531,11 +3533,13 @@ function SourceAuditPanel({ month }: { month: string }) {
 function DataSourceMapPanel() {
   const rows = [
     ['Homebase source', 'sync-homebase → near-term homebase_locations / homebase_employees / homebase_shifts; sync-homebase-rates → provider_pay_rates', 'Same-day / next-day calendar visibility, scheduled hours, rates, match quality'],
-    ['Metabase source', 'cards 2974 / 2973 / 2971 → compute-demand-forecast → demand_forecast / state_demand_targets / service_line_demand_targets', 'Forecast, Readiness, Coverage, Source audit'],
+    ['Metabase source', 'cards 2974 / 2973 / 2971 / 2940 → compute-demand-forecast → demand_forecast / state_demand_targets / service_line_demand_targets / provider_state_active', 'Forecast, Readiness, Coverage, Source audit, Allocation eligibility'],
     ['Jotform availability', 'sync-jotform-submissions → schedule_submissions.raw_answers / parsed_shifts', 'Source of truth for requested monthly provider hours, Matching, Audit'],
     ['Demand forecast', 'compute-demand-forecast → demand_forecast → state_demand_targets', 'Forecast, Readiness, Coverage'],
     ['Provider directory', 'providers', 'Missing submissions, Setup, Matching'],
-    ['Licensure', 'provider_licenses', 'Evaluator eligibility, Coverage eligible/missing counts'],
+    ['Medallion licensure', 'sync-medallion-licenses → medallion_provider_licenses → v_provider_state_eligibility', 'Evaluator eligibility, Coverage eligible/missing counts, Source audit'],
+    ['DirectShifts licensure', 'directshifts_provider_licenses → v_provider_state_eligibility', 'Evaluator eligibility, Coverage eligible/missing counts, Source audit'],
+    ['ClinOps licensure', 'provider_licenses → v_provider_state_eligibility', 'Evaluator eligibility, Coverage eligible/missing counts'],
     ['EHR readiness', 'providers.ehr_activation_status plus shift_recommendations.ehr_posted_at', 'Publish Tracker'],
     ['Homebase publishing', 'shift_recommendations.publish_status / publish_audit_log', 'Publish Tracker, History'],
     ['Recommendations', 'evaluate-schedule-submissions → shift_recommendations', 'Matching, Coverage, Publish, Audit'],

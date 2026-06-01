@@ -39,8 +39,9 @@ export function useStateCoverage(month: string) {
           .eq('active', true)
           .range(0, 49999),
         clinopsSupabase
-          .from('provider_licenses')
-          .select('provider_id, state, status')
+          .from('v_provider_state_eligibility')
+          .select('provider_id, state, allocation_eligible')
+          .eq('allocation_eligible', true)
           .range(0, 49999),
         clinopsSupabase
           .from('schedule_submissions')
@@ -59,7 +60,11 @@ export function useStateCoverage(month: string) {
         targets: targetsRes.data ?? [],
         shifts: shiftsRes.data ?? [],
         providers: providersRes.data ?? [],
-        licenses: licensesRes.data ?? [],
+        licenses: (licensesRes.data ?? []).map(row => ({
+          provider_id: row.provider_id,
+          state: row.state,
+          status: row.allocation_eligible ? 'active' : 'inactive',
+        })),
         submissions: submissionsRes.data ?? [],
       });
     },

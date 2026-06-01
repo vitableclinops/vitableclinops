@@ -26,6 +26,7 @@ PROJECT_REF="bbquooftytwprllipcsb"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DEFAULT_FUNCTIONS=(
   "compute-demand-forecast"
+  "sync-medallion-licenses"
   "evaluate-schedule-submissions"
   "emit-shift-recommendations"
   "sync-homebase"

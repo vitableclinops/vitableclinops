@@ -45,6 +45,9 @@ verify_jwt = false
 [functions.compute-demand-forecast]
 verify_jwt = false
 
+[functions.sync-medallion-licenses]
+verify_jwt = false
+
 [functions.seed-vault-secrets]
 verify_jwt = false
 

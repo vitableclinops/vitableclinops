@@ -9,6 +9,8 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/compute-demand-forecast/**'
+      - 'supabase/functions/evaluate-schedule-submissions/**'
+      - 'supabase/functions/sync-medallion-licenses/**'
       - 'supabase/migrations/**.sql'
       - 'supabase/config.toml'
       - 'scripts/deploy-edge-functions.sh'
@@ -76,7 +78,7 @@ jobs:
       - name: Deploy forecast function
         run: |
           chmod +x scripts/deploy-edge-functions.sh
-          scripts/deploy-edge-functions.sh compute-demand-forecast
+          scripts/deploy-edge-functions.sh compute-demand-forecast sync-medallion-licenses evaluate-schedule-submissions
 
       - name: Fetch project anon key
         id: keys
@@ -102,6 +104,18 @@ jobs:
             -H "Authorization: Bearer $ANON_KEY" \
             -H "Content-Type: application/json" \
             "https://${PROJECT_REF}.supabase.co/functions/v1/compute-demand-forecast?target_month=${TARGET_MONTH}" \
+            --data '{}'
+          echo
+
+      - name: Sync Medallion licenses
+        env:
+          ANON_KEY: ${{ steps.keys.outputs.anon_key }}
+        run: |
+          curl -fsSL -X POST \
+            -H "apikey: $ANON_KEY" \
+            -H "Authorization: Bearer $ANON_KEY" \
+            -H "Content-Type: application/json" \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/sync-medallion-licenses?allow_missing=1" \
             --data '{}'
           echo
 

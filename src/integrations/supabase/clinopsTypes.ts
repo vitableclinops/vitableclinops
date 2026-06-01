@@ -71,6 +71,174 @@ export type ClinOpsDatabase = {
         }
         Relationships: []
       }
+      directshifts_provider_licenses: {
+        Row: {
+          created_at: string
+          effective_from: string | null
+          effective_to: string | null
+          id: string
+          license_number: string | null
+          license_type: string | null
+          notes: string | null
+          provider_email: string | null
+          provider_id: string | null
+          provider_name: string | null
+          raw_payload: Json
+          source: string
+          state: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string
+          license_number?: string | null
+          license_type?: string | null
+          notes?: string | null
+          provider_email?: string | null
+          provider_id?: string | null
+          provider_name?: string | null
+          raw_payload?: Json
+          source?: string
+          state: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string
+          license_number?: string | null
+          license_type?: string | null
+          notes?: string | null
+          provider_email?: string | null
+          provider_id?: string | null
+          provider_name?: string | null
+          raw_payload?: Json
+          source?: string
+          state?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      medallion_provider_licenses: {
+        Row: {
+          created_at: string
+          expiration_date: string | null
+          id: string
+          issue_date: string | null
+          license_number: string | null
+          license_type: string | null
+          medallion_license_key: string
+          medallion_provider_id: string | null
+          provider_email: string | null
+          provider_id: string | null
+          provider_name: string | null
+          raw_payload: Json
+          source: string
+          state: string
+          status: string
+          synced_at: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          expiration_date?: string | null
+          id?: string
+          issue_date?: string | null
+          license_number?: string | null
+          license_type?: string | null
+          medallion_license_key: string
+          medallion_provider_id?: string | null
+          provider_email?: string | null
+          provider_id?: string | null
+          provider_name?: string | null
+          raw_payload?: Json
+          source?: string
+          state: string
+          status?: string
+          synced_at?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          expiration_date?: string | null
+          id?: string
+          issue_date?: string | null
+          license_number?: string | null
+          license_type?: string | null
+          medallion_license_key?: string
+          medallion_provider_id?: string | null
+          provider_email?: string | null
+          provider_id?: string | null
+          provider_name?: string | null
+          raw_payload?: Json
+          source?: string
+          state?: string
+          status?: string
+          synced_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      metabase_pcp_state_coverage: {
+        Row: {
+          active_members: number | null
+          coverage_pct: number | null
+          id: string
+          is_active: boolean | null
+          npi: string | null
+          pcp_count: number | null
+          provider_email: string | null
+          provider_id: string | null
+          provider_name: string | null
+          raw_payload: Json
+          report_date: string
+          row_key: string
+          source_card_id: number
+          state: string
+          synced_at: string
+        }
+        Insert: {
+          active_members?: number | null
+          coverage_pct?: number | null
+          id?: string
+          is_active?: boolean | null
+          npi?: string | null
+          pcp_count?: number | null
+          provider_email?: string | null
+          provider_id?: string | null
+          provider_name?: string | null
+          raw_payload?: Json
+          report_date: string
+          row_key: string
+          source_card_id?: number
+          state: string
+          synced_at?: string
+        }
+        Update: {
+          active_members?: number | null
+          coverage_pct?: number | null
+          id?: string
+          is_active?: boolean | null
+          npi?: string | null
+          pcp_count?: number | null
+          provider_email?: string | null
+          provider_id?: string | null
+          provider_name?: string | null
+          raw_payload?: Json
+          report_date?: string
+          row_key?: string
+          source_card_id?: number
+          state?: string
+          synced_at?: string
+        }
+        Relationships: []
+      }
       monthly_appointment_totals: {
         Row: {
           completed_appointments: number | null
@@ -173,19 +341,34 @@ export type ClinOpsDatabase = {
       provider_state_active: {
         Row: {
           is_active: boolean
+          provider_email: string | null
           provider_id: string
+          provider_name: string | null
+          raw_payload: Json
+          report_date: string | null
+          source: string
           state: string
           synced_at: string
         }
         Insert: {
           is_active?: boolean
+          provider_email?: string | null
           provider_id: string
+          provider_name?: string | null
+          raw_payload?: Json
+          report_date?: string | null
+          source?: string
           state: string
           synced_at?: string
         }
         Update: {
           is_active?: boolean
+          provider_email?: string | null
           provider_id?: string
+          provider_name?: string | null
+          raw_payload?: Json
+          report_date?: string | null
+          source?: string
           state?: string
           synced_at?: string
         }
@@ -687,6 +870,45 @@ export type ClinOpsDatabase = {
         }
         Relationships: []
       }
+      sync_runs: {
+        Row: {
+          details: Json | null
+          duration_ms: number | null
+          error_message: string | null
+          finished_at: string | null
+          function_name: string
+          id: string
+          rows_failed: number | null
+          rows_processed: number | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          details?: Json | null
+          duration_ms?: number | null
+          error_message?: string | null
+          finished_at?: string | null
+          function_name: string
+          id?: string
+          rows_failed?: number | null
+          rows_processed?: number | null
+          started_at?: string
+          status: string
+        }
+        Update: {
+          details?: Json | null
+          duration_ms?: number | null
+          error_message?: string | null
+          finished_at?: string | null
+          function_name?: string
+          id?: string
+          rows_failed?: number | null
+          rows_processed?: number | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: []
+      }
       utilization_summary: {
         Row: {
           computed_at: string
@@ -761,6 +983,43 @@ export type ClinOpsDatabase = {
           published_count: number | null
           target_month: string | null
           total_shifts: number | null
+        }
+        Relationships: []
+      }
+      v_provider_state_allocation_sources: {
+        Row: {
+          allocation_eligible_providers: number | null
+          allocation_eligible_rows: number | null
+          clinops_license_rows: number | null
+          directshifts_license_rows: number | null
+          medallion_license_rows: number | null
+          metabase_active_rows: number | null
+          metabase_inactive_rows: number | null
+          provider_state_rows: number | null
+          providers_with_any_license_source: number | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
+      v_provider_state_eligibility: {
+        Row: {
+          allocation_eligible: boolean | null
+          eligibility_status: string | null
+          has_clinops_license: boolean | null
+          has_directshifts_license: boolean | null
+          has_medallion_license: boolean | null
+          license_sources: string[] | null
+          license_updated_at: string | null
+          metabase_active: boolean | null
+          metabase_report_date: string | null
+          metabase_synced_at: string | null
+          profession: string | null
+          provider_active: boolean | null
+          provider_email: string | null
+          provider_id: string | null
+          provider_name: string | null
+          state: string | null
+          updated_at: string | null
         }
         Relationships: []
       }

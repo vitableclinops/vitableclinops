@@ -18,7 +18,7 @@ export type SourceMetric = {
 };
 
 export type SourceAuditSection = {
-  id: 'homebase' | 'metabase' | 'jotform';
+  id: 'homebase' | 'metabase' | 'jotform' | 'medallion' | 'directshifts';
   title: string;
   status: 'healthy' | 'watch' | 'missing' | 'error';
   updatedAt: string | null;
@@ -34,6 +34,8 @@ export type SchedulingSourceAudit = {
   homebase: SourceAuditSection;
   metabase: SourceAuditSection;
   jotform: SourceAuditSection;
+  medallion: SourceAuditSection;
+  directshifts: SourceAuditSection;
 };
 
 type HomebaseRun = {
@@ -56,6 +58,8 @@ type SyncRun = {
   rows_failed: number | null;
   error_message: string | null;
 };
+
+type ClinopsSyncRun = SyncRun;
 
 type HomebaseLocation = {
   state: string | null;
@@ -124,6 +128,42 @@ type ClinopsSlaDay = {
   state: string;
   date: string;
   computed_at: string;
+};
+
+type MetabasePcpCoverageRow = {
+  provider_id: string | null;
+  state: string;
+  is_active: boolean | null;
+  report_date: string;
+  synced_at: string;
+};
+
+type ProviderStateActiveRow = {
+  provider_id: string;
+  state: string;
+  is_active: boolean;
+  source: string;
+  synced_at: string;
+};
+
+type MedallionLicenseRow = {
+  provider_id: string | null;
+  provider_name: string | null;
+  medallion_provider_id: string | null;
+  state: string;
+  status: string;
+  expiration_date: string | null;
+  synced_at: string;
+};
+
+type DirectShiftsLicenseRow = {
+  provider_id: string | null;
+  provider_email: string | null;
+  provider_name: string | null;
+  state: string;
+  status: string;
+  effective_to: string | null;
+  updated_at: string;
 };
 
 type JotformSubmission = {
@@ -223,6 +263,17 @@ const parsedHasAvailability = (value: unknown) => {
       return raw.trim().length > 0;
     }
   });
+};
+
+const isAllocationLicenseStatus = (status: string | null | undefined) =>
+  ['active', 'verified', 'pending_renewal'].includes((status ?? '').trim().toLowerCase());
+
+const expiresWithinDays = (date: string | null | undefined, days: number) => {
+  if (!date) return false;
+  const expires = new Date(`${date}T00:00:00Z`).getTime();
+  if (!Number.isFinite(expires)) return false;
+  const now = Date.now();
+  return expires >= now && expires <= now + days * 864e5;
 };
 
 async function getHomebaseAudit(): Promise<SourceAuditSection> {
@@ -357,7 +408,7 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
   const start = monthIso(month);
   const end = nextMonthIso(month);
 
-  const [syncRunResult, rawExportsResult, leftoverResult, slaResult, providerUtilResult, providerUtilDailyResult, networkUtilResult, targetsResult, serviceLineResult, forecastResult, slaDailyResult] =
+  const [syncRunResult, rawExportsResult, leftoverResult, slaResult, providerUtilResult, providerUtilDailyResult, networkUtilResult, targetsResult, serviceLineResult, forecastResult, slaDailyResult, pcpCoverageResult, activeStateResult] =
     await Promise.all([
       settle(async () => {
         const { data, error } = await supabase
@@ -464,6 +515,24 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
         if (error) throw error;
         return (data ?? []) as ClinopsSlaDay[];
       }),
+      settle(async () => {
+        const { data, error } = await clinopsSupabase
+          .from('metabase_pcp_state_coverage')
+          .select('provider_id, state, is_active, report_date, synced_at')
+          .order('synced_at', { ascending: false })
+          .limit(5000);
+        if (error) throw error;
+        return (data ?? []) as MetabasePcpCoverageRow[];
+      }),
+      settle(async () => {
+        const { data, error } = await clinopsSupabase
+          .from('provider_state_active')
+          .select('provider_id, state, is_active, source, synced_at')
+          .eq('source', 'metabase_pcp_state_coverage')
+          .range(0, 49999);
+        if (error) throw error;
+        return (data ?? []) as ProviderStateActiveRow[];
+      }),
     ]);
 
   const syncRun = syncRunResult.ok ? syncRunResult.value : null;
@@ -481,6 +550,8 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
   const serviceLines = serviceLineResult.ok ? serviceLineResult.value : [];
   const forecast = forecastResult.ok ? forecastResult.value : [];
   const slaDaily = slaDailyResult.ok ? slaDailyResult.value : [];
+  const pcpCoverage = pcpCoverageResult.ok ? pcpCoverageResult.value : [];
+  const activeStates = activeStateResult.ok ? activeStateResult.value : [];
   const errors = [
     syncRunResult,
     rawExportsResult,
@@ -493,6 +564,8 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
     serviceLineResult,
     forecastResult,
     slaDailyResult,
+    pcpCoverageResult,
+    activeStateResult,
   ]
     .filter((r): r is { ok: false; error: string } => !r.ok)
     .map(r => r.error);
@@ -508,14 +581,19 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
     maxIso(serviceLines.map(r => r.computed_at)),
     maxIso(forecast.map(r => r.computed_at)),
     maxIso(slaDaily.map(r => r.computed_at)),
+    maxIso(pcpCoverage.map(r => r.synced_at)),
+    maxIso(activeStates.map(r => r.synced_at)),
   ]);
 
   const leftoverSlots = leftover.reduce((sum, row) => sum + Number(row.unfilled_slots ?? 0), 0);
+  const activeStateProviders = new Set(activeStates.map(row => row.provider_id)).size;
+  const activeStateRows = activeStates.filter(row => row.is_active).length;
+  const inactiveStateRows = activeStates.filter(row => !row.is_active).length;
 
   return {
     id: 'metabase',
     title: 'Metabase',
-    status: statusFromFreshness(updatedAt, rawExports.length > 0 || targets.length > 0 || forecast.length > 0, errors.length > 0),
+    status: statusFromFreshness(updatedAt, rawExports.length > 0 || targets.length > 0 || forecast.length > 0 || activeStates.length > 0, errors.length > 0),
     updatedAt,
     error: errors[0],
     metrics: [
@@ -523,23 +601,28 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
       { label: 'Raw reports', value: `${fmtInt(latestRawByReport.size)} report keys` },
       { label: 'ClinOps forecast', value: `${fmtInt(targets.length)} state targets · ${fmtInt(serviceLines.length)} service lines · ${fmtInt(forecast.length)} daily rows` },
       { label: 'SLA/access', value: `${fmtInt(sla.length)} state rows · ${fmtInt(slaDaily.length)} daily ClinOps rows` },
+      { label: 'PCP active states', value: `${fmtInt(activeStates.length)} provider-state rows · ${fmtInt(activeStateRows)} active · ${fmtInt(inactiveStateRows)} inactive`, tone: activeStates.length ? 'good' : 'warn' },
+      { label: 'PCP coverage raw', value: `${fmtInt(pcpCoverage.length)} card 2940 rows · ${fmtInt(activeStateProviders)} matched providers` },
       { label: 'Leftover slots', value: `${fmtInt(leftover.length)} rows · ${fmtInt(leftoverSlots)} slots` },
       { label: 'Utilization', value: `${fmtInt(providerUtil.length)} provider rows · ${fmtInt(providerUtilDaily.length)} daily provider rows · ${fmtInt(networkUtil.length)} network rows` },
     ],
     fieldCoverage: [
       'forecast cards: telehealth 2974, MH coaching 2973, therapy 2971 via compute-demand-forecast',
+      'active-state overlay: PCP state coverage card 2940 via compute-demand-forecast',
       'raw exports: SLA MTD, telemedicine availability, PCP coverage, provider appointment count',
       'tables: state demand, daily forecast, SLA, leftover slots, provider utilization',
     ],
     gaps: [
       'In-home scheduling is intentionally excluded from this simplified monthly forecast',
+      activeStates.length === 0 ? 'No matched Metabase PCP active-state rows are available yet; allocation falls back to license sources until card 2940 syncs' : '',
       'Raw Metabase rows are only preserved for reports configured with metabase_raw_exports',
-    ],
+    ].filter(Boolean),
     details: [
       ...Array.from(latestRawByReport.values())
         .sort((a, b) => b.pulled_at.localeCompare(a.pulled_at))
         .slice(0, 8)
         .map(row => ({ label: `raw: ${row.report_key}`, count: row.row_count })),
+      ...topCounts(activeStates, row => row.state, 5).map(r => ({ label: `active state: ${r.label}`, count: r.count })),
       ...topCounts(leftover, row => row.state_abbreviation, 5).map(r => ({ label: `leftover state: ${r.label}`, count: r.count })),
     ],
   };
@@ -619,21 +702,141 @@ async function getJotformAudit(month: string): Promise<SourceAuditSection> {
   };
 }
 
+async function getMedallionAudit(): Promise<SourceAuditSection> {
+  const [runResult, licensesResult] = await Promise.all([
+    settle(async () => {
+      const { data, error } = await clinopsSupabase
+        .from('sync_runs')
+        .select('function_name, status, finished_at, started_at, rows_processed, rows_failed, error_message')
+        .eq('function_name', 'sync-medallion-licenses')
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as ClinopsSyncRun | null;
+    }),
+    settle(async () => {
+      const { data, error } = await clinopsSupabase
+        .from('medallion_provider_licenses')
+        .select('provider_id, provider_name, medallion_provider_id, state, status, expiration_date, synced_at')
+        .range(0, 49999);
+      if (error) throw error;
+      return (data ?? []) as MedallionLicenseRow[];
+    }),
+  ]);
+
+  const run = runResult.ok ? runResult.value : null;
+  const licenses = licensesResult.ok ? licensesResult.value : [];
+  const errors = [runResult, licensesResult]
+    .filter((r): r is { ok: false; error: string } => !r.ok)
+    .map(r => r.error);
+
+  const matched = licenses.filter(row => Boolean(row.provider_id)).length;
+  const active = licenses.filter(row => isAllocationLicenseStatus(row.status)).length;
+  const expiring = licenses.filter(row => expiresWithinDays(row.expiration_date, 45)).length;
+  const providers = new Set(licenses.map(row => row.provider_id ?? row.medallion_provider_id ?? row.provider_name).filter(Boolean)).size;
+  const states = new Set(licenses.map(row => row.state).filter(Boolean)).size;
+  const updatedAt = maxIso([
+    run?.finished_at,
+    maxIso(licenses.map(row => row.synced_at)),
+  ]);
+
+  return {
+    id: 'medallion',
+    title: 'Medallion',
+    status: statusFromFreshness(updatedAt, licenses.length > 0 || Boolean(run), errors.length > 0),
+    updatedAt,
+    error: errors[0],
+    metrics: [
+      { label: 'Latest sync', value: run?.status ?? 'No sync run found', tone: run?.status === 'success' ? 'good' : 'warn' },
+      { label: 'License rows', value: `${fmtInt(licenses.length)} total · ${fmtInt(active)} allocation-active` },
+      { label: 'Matched providers', value: `${fmtInt(matched)} matched · ${fmtInt(licenses.length - matched)} unmatched`, tone: licenses.length === matched ? 'good' : 'warn' },
+      { label: 'Coverage breadth', value: `${fmtInt(providers)} providers · ${fmtInt(states)} states` },
+      { label: 'Expiring soon', value: `${fmtInt(expiring)} within 45 days`, tone: expiring > 0 ? 'warn' : 'good' },
+    ],
+    fieldCoverage: [
+      'Medallion API licenses: provider identity, state, status, license number/type, issue and expiration dates',
+      'Provider matching: medallion_provider_id, email, NPI, then normalized provider name',
+      'Allocation path: medallion_provider_licenses → v_provider_state_eligibility → evaluator',
+    ],
+    gaps: [
+      licenses.length === 0 ? 'No Medallion license rows have synced yet' : '',
+      licenses.length - matched > 0 ? `${fmtInt(licenses.length - matched)} Medallion rows are not matched to ClinOps providers` : '',
+      expiring > 0 ? `${fmtInt(expiring)} Medallion licenses expire within 45 days` : '',
+    ].filter(Boolean),
+    details: [
+      ...topCounts(licenses, row => row.status, 5).map(r => ({ label: `status: ${r.label}`, count: r.count })),
+      ...topCounts(licenses, row => row.state, 6).map(r => ({ label: `state: ${r.label}`, count: r.count })),
+    ],
+  };
+}
+
+async function getDirectShiftsAudit(): Promise<SourceAuditSection> {
+  const licensesResult = await settle(async () => {
+    const { data, error } = await clinopsSupabase
+      .from('directshifts_provider_licenses')
+      .select('provider_id, provider_email, provider_name, state, status, effective_to, updated_at')
+      .range(0, 49999);
+    if (error) throw error;
+    return (data ?? []) as DirectShiftsLicenseRow[];
+  });
+
+  const licenses = licensesResult.ok ? licensesResult.value : [];
+  const errors = licensesResult.ok ? [] : [licensesResult.error];
+  const matched = licenses.filter(row => Boolean(row.provider_id)).length;
+  const active = licenses.filter(row => isAllocationLicenseStatus(row.status)).length;
+  const expiring = licenses.filter(row => expiresWithinDays(row.effective_to, 45)).length;
+  const providers = new Set(licenses.map(row => row.provider_id ?? row.provider_email ?? row.provider_name).filter(Boolean)).size;
+  const states = new Set(licenses.map(row => row.state).filter(Boolean)).size;
+  const updatedAt = maxIso(licenses.map(row => row.updated_at));
+
+  return {
+    id: 'directshifts',
+    title: 'DirectShifts',
+    status: errors.length > 0 ? 'error' : licenses.length > 0 ? 'healthy' : 'missing',
+    updatedAt,
+    error: errors[0],
+    metrics: [
+      { label: 'Static rows', value: `${fmtInt(licenses.length)} total · ${fmtInt(active)} allocation-active`, tone: licenses.length ? 'good' : 'warn' },
+      { label: 'Provider IDs', value: `${fmtInt(matched)} direct IDs · ${fmtInt(licenses.length - matched)} email/name rows`, tone: licenses.length - matched > 0 ? 'warn' : 'good' },
+      { label: 'Coverage breadth', value: `${fmtInt(providers)} providers · ${fmtInt(states)} states` },
+      { label: 'Ending soon', value: `${fmtInt(expiring)} within 45 days`, tone: expiring > 0 ? 'warn' : 'good' },
+    ],
+    fieldCoverage: [
+      'Static DirectShifts licenses: provider id/email/name, state, status, license number/type, effective dates',
+      'Allocation path: directshifts_provider_licenses → v_provider_state_eligibility → evaluator',
+    ],
+    gaps: [
+      licenses.length === 0 ? 'No DirectShifts static license rows are configured' : '',
+      'DirectShifts is static input; refresh rows whenever the DirectShifts roster or licenses change',
+      expiring > 0 ? `${fmtInt(expiring)} DirectShifts rows end within 45 days` : '',
+    ].filter(Boolean),
+    details: [
+      ...topCounts(licenses, row => row.status, 5).map(r => ({ label: `status: ${r.label}`, count: r.count })),
+      ...topCounts(licenses, row => row.state, 6).map(r => ({ label: `state: ${r.label}`, count: r.count })),
+    ],
+  };
+}
+
 export function useSchedulingSourceAudit(month: string) {
   const monthStart = monthIso(month);
   return useQuery({
     queryKey: ['scheduling-source-audit', monthStart],
     queryFn: async (): Promise<SchedulingSourceAudit> => {
-      const [homebase, metabase, jotform] = await Promise.all([
+      const [homebase, metabase, jotform, medallion, directshifts] = await Promise.all([
         getHomebaseAudit(),
         getMetabaseAudit(monthStart),
         getJotformAudit(monthStart),
+        getMedallionAudit(),
+        getDirectShiftsAudit(),
       ]);
       return {
         month: monthStart,
         homebase,
         metabase,
         jotform,
+        medallion,
+        directshifts,
       };
     },
     staleTime: 60_000,
