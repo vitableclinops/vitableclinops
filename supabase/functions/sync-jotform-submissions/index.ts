@@ -27,6 +27,10 @@ const FORM_ID = '252224341308043';
 const JOTFORM_BASE = 'https://api.jotform.com';
 const PAGE_SIZE = 1000;
 
+const PROVIDER_NAME_ALIASES = new Map<string, string>([
+  ['matthew vazquez', 'matthew vasquez'],
+]);
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -166,6 +170,14 @@ Deno.serve(async (req: Request) => {
             const canon = canonicalName(parsed.name);
             if (providersByCanonical.has(canon)) {
               providerId = providersByCanonical.get(canon)!;
+              confidence = 'name_exact';
+              counters.matched_name_exact++;
+            } else if (
+              PROVIDER_NAME_ALIASES.has(canon) &&
+              providersByCanonical.has(PROVIDER_NAME_ALIASES.get(canon)!)
+            ) {
+              const aliasCanon = PROVIDER_NAME_ALIASES.get(canon)!;
+              providerId = providersByCanonical.get(aliasCanon)!;
               confidence = 'name_exact';
               counters.matched_name_exact++;
             } else {

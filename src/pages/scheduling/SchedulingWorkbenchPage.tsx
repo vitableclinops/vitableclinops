@@ -131,6 +131,19 @@ import {
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 
+const requestedHoursFromUnmatchedSubmission = (submission: UnmatchedSubmission) => {
+  const parsed = submission.parsed_shifts;
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const requested = (parsed as Record<string, unknown>).requested_hours_total;
+    if (typeof requested === 'number' && Number.isFinite(requested)) return requested;
+    if (typeof requested === 'string') {
+      const value = Number(requested);
+      if (Number.isFinite(value)) return value;
+    }
+  }
+  return 0;
+};
+
 const formatMonthLabel = (iso: string) => {
   const [y, m] = iso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', {
@@ -452,6 +465,15 @@ export default function SchedulingWorkbenchPage() {
     () => rows.filter(r => isMentalHealthProvider(r.profession, r.provider_name)),
     [rows],
   );
+  const mentalHealthUnmatchedSubs = useMemo(
+    () =>
+      unmatchedSubs.filter(
+        s =>
+          s.target_month === month &&
+          isMentalHealthProvider(null, s.provider_name),
+      ),
+    [month, unmatchedSubs],
+  );
 
   const isAcceptedSubmission = (r: ProviderPublishView) =>
     r.submission?.decision_status === 'accepted' ||
@@ -764,8 +786,10 @@ export default function SchedulingWorkbenchPage() {
           <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
           <TabsTrigger value="mental-health">
             <Brain className="h-3.5 w-3.5 mr-1" />Mental Health
-            {mentalHealthRows.length > 0 && (
-              <span className="ml-1 text-xs">({mentalHealthRows.length})</span>
+            {mentalHealthRows.length + mentalHealthUnmatchedSubs.length > 0 && (
+              <span className="ml-1 text-xs">
+                ({mentalHealthRows.length + mentalHealthUnmatchedSubs.length})
+              </span>
             )}
           </TabsTrigger>
           <TabsTrigger value="declined">
@@ -1258,6 +1282,7 @@ export default function SchedulingWorkbenchPage() {
           <MentalHealthDashboard
             month={month}
             rows={mentalHealthRows}
+            unmatchedSubmissions={mentalHealthUnmatchedSubs}
             acceptedRows={mentalHealthAcceptedRows}
             declinedRows={mentalHealthDeclinedRows}
             needsReviewRows={mentalHealthNeedsReviewRows}
@@ -2172,6 +2197,7 @@ function NeedsReviewPanel({
 function MentalHealthDashboard({
   month,
   rows,
+  unmatchedSubmissions,
   acceptedRows,
   declinedRows,
   needsReviewRows,
@@ -2190,6 +2216,7 @@ function MentalHealthDashboard({
 }: {
   month: string;
   rows: ProviderPublishView[];
+  unmatchedSubmissions: UnmatchedSubmission[];
   acceptedRows: ProviderPublishView[];
   declinedRows: ProviderPublishView[];
   needsReviewRows: ProviderPublishView[];
@@ -2219,6 +2246,10 @@ function MentalHealthDashboard({
     (sum, row) => sum + Number(row.submission?.accepted_hours ?? 0),
     0,
   );
+  const unmatchedRequestedHours = unmatchedSubmissions.reduce(
+    (sum, row) => sum + requestedHoursFromUnmatchedSubmission(row),
+    0,
+  );
   const visitCapacity = Math.floor((acceptedHours * 60) / MH_VISIT_CADENCE_MINUTES);
   const homebasePct =
     summary.totalShifts > 0 ? Math.round((summary.homebaseShifts / summary.totalShifts) * 100) : 0;
@@ -2246,12 +2277,19 @@ function MentalHealthDashboard({
       const lineDeclinedRows = declinedRows.filter(
         row => mentalHealthServiceLineForProvider(row.profession, row.provider_name) === serviceLine,
       );
+      const lineUnmatchedRows = unmatchedSubmissions.filter(
+        row => mentalHealthServiceLineForProvider(null, row.provider_name) === serviceLine,
+      );
       const accepted = lineAcceptedRows.reduce(
         (sum, row) => sum + Number(row.submission?.accepted_hours ?? 0),
         0,
       );
       const declined = lineDeclinedRows.reduce(
         (sum, row) => sum + Number(row.submission?.declined_hours ?? 0),
+        0,
+      );
+      const unmatchedRequested = lineUnmatchedRows.reduce(
+        (sum, row) => sum + requestedHoursFromUnmatchedSubmission(row),
         0,
       );
       const monthlyTarget = target ? Number(target.monthly_hours_target ?? 0) : null;
@@ -2264,6 +2302,8 @@ function MentalHealthDashboard({
         monthlyTarget,
         accepted,
         declined,
+        unmatchedRequested,
+        unmatchedCount: lineUnmatchedRows.length,
         gap,
         fillPct,
         providers: lineRows.length,
@@ -2271,11 +2311,11 @@ function MentalHealthDashboard({
         visitCapacity: Math.floor((accepted * 60) / MH_VISIT_CADENCE_MINUTES),
       };
     });
-  }, [acceptedRows, declinedRows, rows, serviceLineQ.data]);
+  }, [acceptedRows, declinedRows, rows, serviceLineQ.data, unmatchedSubmissions]);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <SummaryCard
           label="MH shifts to publish"
           value={summary.totalShifts.toString()}
@@ -2301,6 +2341,11 @@ function MentalHealthDashboard({
           value={`${summary.declinedCount}/${summary.needsReviewCount}`}
           sub={`${MH_MIN_SHIFT_HOURS}h minimum shift`}
         />
+        <SummaryCard
+          label="Unmatched MH"
+          value={`${unmatchedSubmissions.length}`}
+          sub={`${unmatchedRequestedHours.toFixed(1)} submitted hrs pending link`}
+        />
       </div>
 
       <Card>
@@ -2318,6 +2363,7 @@ function MentalHealthDashboard({
                 <TableHead>Service line</TableHead>
                 <TableHead className="text-right">Forecast hrs</TableHead>
                 <TableHead className="text-right">Accepted hrs</TableHead>
+                <TableHead className="text-right">Pending link hrs</TableHead>
                 <TableHead className="text-right">Gap / surplus</TableHead>
                 <TableHead className="text-right">Coverage</TableHead>
                 <TableHead className="text-right">Visit slots</TableHead>
@@ -2347,6 +2393,11 @@ function MentalHealthDashboard({
                     <TableCell className="text-right tabular-nums">
                       {stat.accepted.toFixed(1)}
                     </TableCell>
+                    <TableCell className="text-right tabular-nums text-amber-700">
+                      {stat.unmatchedRequested > 0
+                        ? `${stat.unmatchedRequested.toFixed(1)} (${stat.unmatchedCount})`
+                        : '—'}
+                    </TableCell>
                     <TableCell
                       className={`text-right tabular-nums ${
                         gap == null ? '' : gap > 0 ? 'text-red-700' : 'text-emerald-700'
@@ -2369,7 +2420,7 @@ function MentalHealthDashboard({
               })}
               {serviceLineQ.isLoading && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-xs text-muted-foreground py-4">
+                  <TableCell colSpan={9} className="text-center text-xs text-muted-foreground py-4">
                     Loading service-line forecast
                   </TableCell>
                 </TableRow>
@@ -2378,6 +2429,57 @@ function MentalHealthDashboard({
           </Table>
         </CardContent>
       </Card>
+
+      {unmatchedSubmissions.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/40">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Unmatched mental health submissions</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Line</TableHead>
+                  <TableHead className="text-right">Submitted hrs</TableHead>
+                  <TableHead>Month</TableHead>
+                  <TableHead>Submitted</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {unmatchedSubmissions.map(row => {
+                  const serviceLine = mentalHealthServiceLineForProvider(null, row.provider_name);
+                  return (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-medium">{row.provider_name || '—'}</TableCell>
+                      <TableCell className="text-xs">
+                        {serviceLine ? SERVICE_LINE_LABEL[serviceLine] : '—'}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {requestedHoursFromUnmatchedSubmission(row).toFixed(1)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="bg-white">
+                          {formatMonthLabel(row.target_month)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(row.submitted_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="bg-amber-100 border-amber-200 text-amber-900">
+                          Pending provider link
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs defaultValue="provider">
         <TabsList className="flex-wrap h-auto">
