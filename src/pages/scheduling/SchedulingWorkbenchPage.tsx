@@ -61,6 +61,9 @@ import {
   Map as MapIcon,
   Send,
   ArrowRight,
+  ShieldCheck,
+  Users,
+  HelpCircle,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
@@ -201,15 +204,23 @@ export default function SchedulingWorkbenchPage() {
   const [month, setMonth] = useState('2026-07-01');
   const initialTab = (() => {
     const t = searchParams.get('tab');
-    return ['overview', 'forecast', 'availability', 'coverage', 'publish'].includes(t ?? '')
+    return [
+      'readiness',
+      'forecast',
+      'availability',
+      'matching',
+      'coverage',
+      'publish',
+      'audit',
+    ].includes(t ?? '')
       ? (t as string)
-      : 'overview';
+      : 'readiness';
   })();
   const [topTab, setTopTab] = useState(initialTab);
   const onTopTabChange = (v: string) => {
     setTopTab(v);
     const next = new URLSearchParams(searchParams);
-    if (v === 'overview') next.delete('tab');
+    if (v === 'readiness') next.delete('tab');
     else next.set('tab', v);
     setSearchParams(next, { replace: true });
   };
@@ -591,21 +602,28 @@ export default function SchedulingWorkbenchPage() {
 
       <Tabs value={topTab} onValueChange={onTopTabChange}>
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="overview"><LayoutDashboard className="h-3.5 w-3.5 mr-1" />Overview</TabsTrigger>
+          <TabsTrigger value="readiness"><ShieldCheck className="h-3.5 w-3.5 mr-1" />Readiness</TabsTrigger>
           <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
           <TabsTrigger value="availability"><Inbox className="h-3.5 w-3.5 mr-1" />Availability</TabsTrigger>
-          <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage</TabsTrigger>
+          <TabsTrigger value="matching"><Users className="h-3.5 w-3.5 mr-1" />Matching</TabsTrigger>
+          <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Gaps</TabsTrigger>
           <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
+          <TabsTrigger value="audit"><HelpCircle className="h-3.5 w-3.5 mr-1" />Audit</TabsTrigger>
         </TabsList>
 
-        {/* ============ OVERVIEW ============ */}
-        <TabsContent value="overview" className="mt-4 space-y-4">
-          <OverviewPanel
+        {/* ============ READINESS ============ */}
+        <TabsContent value="readiness" className="mt-4 space-y-4">
+          <ReadinessPanel
             month={month}
             summary={summary}
             missingCount={summary.missingCount}
+            mentalHealthCount={mentalHealthRows.length}
+            mentalHealthAcceptedCount={mentalHealthRows.filter(r => r.submission?.decision_status === 'accepted' || r.submission?.decision_status === 'partial').length}
+            inboxNeedsReviewCount={inboxActionableCount}
             onJumpToCoverage={() => onTopTabChange('coverage')}
             onJumpToAvailability={() => onTopTabChange('availability')}
+            onJumpToMatching={() => onTopTabChange('matching')}
+            onJumpToPublish={() => onTopTabChange('publish')}
           />
           <SopCard />
           {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
@@ -625,9 +643,20 @@ export default function SchedulingWorkbenchPage() {
           <ForecastPanel month={month} />
         </TabsContent>
 
+        {/* ============ MATCHING ============ */}
+        <TabsContent value="matching" className="mt-4 space-y-4">
+          <MatchingPanel
+            month={month}
+            acceptedRows={acceptedRows}
+            declinedRows={declinedRows}
+            needsReviewRows={needsReviewRows}
+            shiftsByProvider={shiftsByProvider}
+          />
+        </TabsContent>
+
         {/* ============ COVERAGE ============ */}
         <TabsContent value="coverage" className="mt-4 space-y-4">
-          <CoverageMatchingPanel month={month} />
+          <CoverageGapsPanel month={month} acceptedRows={acceptedRows} missingRows={missingRows} />
         </TabsContent>
 
         {/* ============ AVAILABILITY ============ */}
@@ -1074,6 +1103,16 @@ export default function SchedulingWorkbenchPage() {
           <PublishHistoryPanel month={month} entries={auditEntries} />
         </TabsContent>
           </Tabs>
+        </TabsContent>
+
+        {/* ============ AUDIT / WHY ============ */}
+        <TabsContent value="audit" className="mt-4 space-y-4">
+          <AuditPanel
+            month={month}
+            acceptedRows={acceptedRows}
+            declinedRows={declinedRows}
+            needsReviewRows={needsReviewRows}
+          />
         </TabsContent>
       </Tabs>
     </TooltipProvider>
@@ -2357,12 +2396,17 @@ function PublishHistoryPanel({
 // July 2026 Workbench — new top-level tab panels
 // ============================================================================
 
-function OverviewPanel({
+function ReadinessPanel({
   month,
   summary,
   missingCount,
+  mentalHealthCount,
+  mentalHealthAcceptedCount,
+  inboxNeedsReviewCount,
   onJumpToCoverage,
   onJumpToAvailability,
+  onJumpToMatching,
+  onJumpToPublish,
 }: {
   month: string;
   summary: {
@@ -2375,8 +2419,13 @@ function OverviewPanel({
     missingCount: number;
   };
   missingCount: number;
+  mentalHealthCount: number;
+  mentalHealthAcceptedCount: number;
+  inboxNeedsReviewCount: number;
   onJumpToCoverage: () => void;
   onJumpToAvailability: () => void;
+  onJumpToMatching: () => void;
+  onJumpToPublish: () => void;
 }) {
   const demandQ = useMonthlyDemand(month);
   const coverageQ = useStateCoverage(month);
@@ -2401,6 +2450,94 @@ function OverviewPanel({
     [coverageQ.data],
   );
 
+  const homebasePct =
+    summary.totalShifts > 0 ? Math.round((summary.homebaseShifts / summary.totalShifts) * 100) : 0;
+  const ehrPct =
+    summary.totalShifts > 0 ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0;
+
+  // Readiness verdict — three buckets
+  type Readiness = { label: 'Ready' | 'At Risk' | 'Not Ready'; tone: string };
+  const readiness: Readiness = (() => {
+    if (
+      criticalGapStates.length === 0 &&
+      missingCount === 0 &&
+      summary.needsReviewCount === 0 &&
+      ehrPct === 100
+    ) {
+      return { label: 'Ready', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+    }
+    if (criticalGapStates.length > 0 || missingCount > 5 || ehrPct < 50) {
+      return { label: 'Not Ready', tone: 'bg-red-100 text-red-800 border-red-200' };
+    }
+    return { label: 'At Risk', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
+  })();
+
+  // Biggest blocker + suggested next action
+  const { blocker, nextAction, nextActionJump } = useMemo<{
+    blocker: string;
+    nextAction: string;
+    nextActionJump: () => void;
+  }>(() => {
+    if (criticalGapStates.length > 0) {
+      return {
+        blocker: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} below 60% coverage (${criticalGapStates.slice(0, 3).map(s => s.state).join(', ')}${criticalGapStates.length > 3 ? '…' : ''})`,
+        nextAction: 'Open Coverage Gaps and source licensed providers',
+        nextActionJump: onJumpToCoverage,
+      };
+    }
+    if (missingCount > 0) {
+      return {
+        blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} have not submitted July availability`,
+        nextAction: 'Open Availability → Missing and copy BCC list',
+        nextActionJump: onJumpToAvailability,
+      };
+    }
+    if (inboxNeedsReviewCount > 0) {
+      return {
+        blocker: `${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} pending review`,
+        nextAction: 'Resolve resubmissions in Availability → Inbox',
+        nextActionJump: onJumpToAvailability,
+      };
+    }
+    if (summary.needsReviewCount > 0) {
+      return {
+        blocker: `${summary.needsReviewCount} submission${summary.needsReviewCount === 1 ? '' : 's'} flagged needs-review`,
+        nextAction: 'Triage needs-review in Matching',
+        nextActionJump: onJumpToMatching,
+      };
+    }
+    if (homebasePct < 100) {
+      return {
+        blocker: `${summary.totalShifts - summary.homebaseShifts} shift${summary.totalShifts - summary.homebaseShifts === 1 ? '' : 's'} not yet posted to Homebase`,
+        nextAction: 'Post remaining shifts in Publish Tracker',
+        nextActionJump: onJumpToPublish,
+      };
+    }
+    if (ehrPct < 100) {
+      return {
+        blocker: `${summary.totalShifts - summary.ehrShifts} shift${summary.totalShifts - summary.ehrShifts === 1 ? '' : 's'} not yet posted to EHR`,
+        nextAction: 'Finish EHR posts in Publish Tracker',
+        nextActionJump: onJumpToPublish,
+      };
+    }
+    return {
+      blocker: 'None — July is publish-ready',
+      nextAction: 'Confirm with ClinOps lead and announce',
+      nextActionJump: onJumpToPublish,
+    };
+  }, [
+    criticalGapStates,
+    missingCount,
+    inboxNeedsReviewCount,
+    summary,
+    homebasePct,
+    ehrPct,
+    onJumpToAvailability,
+    onJumpToCoverage,
+    onJumpToMatching,
+    onJumpToPublish,
+  ]);
+
   const lastUpdated = useMemo(() => {
     const ts = (demandQ.dataUpdatedAt || coverageQ.dataUpdatedAt) ?? Date.now();
     return new Date(ts).toLocaleString();
@@ -2408,6 +2545,31 @@ function OverviewPanel({
 
   return (
     <div className="space-y-4">
+      {/* HEADLINE: readiness verdict + blocker + next action */}
+      <Card className={`border-2 ${readiness.tone}`}>
+        <CardContent className="py-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <Badge className={`text-sm px-3 py-1 ${readiness.tone}`}>
+              July status: {readiness.label}
+            </Badge>
+            <div className="text-sm">
+              <div className="font-medium">Biggest blocker</div>
+              <div className="text-xs opacity-90">{blocker}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-right max-w-[260px]">
+              <div className="font-medium">Next action</div>
+              <div className="opacity-90">{nextAction}</div>
+            </div>
+            <Button size="sm" variant="outline" onClick={nextActionJump}>
+              Go
+              <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard
           label="Forecast demand"
@@ -2432,6 +2594,29 @@ function OverviewPanel({
           label={gapHours > 0 ? 'Remaining gap' : 'Surplus'}
           value={`${Math.abs(gapHours).toFixed(0)} hrs`}
           sub={gapHours > 0 ? 'Below demand' : 'Above demand'}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard
+          label="Missing submissions"
+          value={String(missingCount)}
+          sub="Providers without July hours"
+        />
+        <SummaryCard
+          label="Needs review"
+          value={String(summary.needsReviewCount + inboxNeedsReviewCount)}
+          sub={`${summary.needsReviewCount} flagged · ${inboxNeedsReviewCount} resubmissions`}
+        />
+        <SummaryCard
+          label="Homebase posted"
+          value={summary.totalShifts ? `${homebasePct}%` : '—'}
+          sub={`${summary.homebaseShifts}/${summary.totalShifts} shifts`}
+        />
+        <SummaryCard
+          label="EHR posted"
+          value={summary.totalShifts ? `${ehrPct}%` : '—'}
+          sub={`${summary.ehrShifts}/${summary.totalShifts} shifts`}
         />
       </div>
 
@@ -2477,14 +2662,17 @@ function OverviewPanel({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <UserX className="h-4 w-4 text-slate-500" />
-              Providers missing July availability
+              <Brain className="h-4 w-4 text-violet-500" />
+              Mental health schedule
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold tabular-nums">{missingCount}</div>
+            <div className="text-2xl font-bold tabular-nums">
+              {mentalHealthAcceptedCount}/{mentalHealthCount}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Providers without a July submission. Chase them on the Availability tab.
+              MH coaches / LPCs with an accepted submission this month. Staffed separately
+              from telehealth.
             </p>
             <Button
               size="sm"
@@ -2674,7 +2862,15 @@ const COVERAGE_STATUS_STYLE: Record<CoverageStatus, string> = {
   'Critical Gap': 'bg-red-100 text-red-800 hover:bg-red-100',
 };
 
-function CoverageMatchingPanel({ month }: { month: string }) {
+function CoverageGapsPanel({
+  month,
+  acceptedRows,
+  missingRows,
+}: {
+  month: string;
+  acceptedRows: ProviderPublishView[];
+  missingRows: ProviderPublishView[];
+}) {
   const coverageQ = useStateCoverage(month);
   const rows = coverageQ.data?.rows ?? [];
 
@@ -2686,21 +2882,51 @@ function CoverageMatchingPanel({ month }: { month: string }) {
     return (
       <EmptyState
         title="No coverage data for July yet"
-        body="Coverage comes from shift_recommendations + state_demand_targets. Run the evaluator from the header above once Jotform submissions are in."
+        body="Coverage comes from shift_recommendations + state_demand_targets. What's missing: an evaluator run after Jotform submissions land. Next: click 'Re-run evaluator' in the header, then come back."
       />
     );
   }
 
   const sorted = [...rows].sort((a, b) => a.pct_filled - b.pct_filled);
 
+  // Best-effort eligible / missing provider counts per state, derived from
+  // accepted-row professions. Until we wire provider_licensure here, we count
+  // an accepted/missing provider as "eligible" for every state in their
+  // submission's parsed shifts (if any state was assigned).
+  const eligibleByState = new Map<string, Set<string>>();
+  const missingByState = new Map<string, Set<string>>();
+  for (const r of acceptedRows) {
+    const states = new Set<string>();
+    for (const s of r.submission?.parsed_shifts ?? []) {
+      if (s.state) states.add(String(s.state).toUpperCase());
+    }
+    for (const st of states) {
+      if (!eligibleByState.has(st)) eligibleByState.set(st, new Set());
+      eligibleByState.get(st)!.add(r.provider_id);
+    }
+  }
+  for (const r of missingRows) {
+    // Without licensure data we can't pin them to a state — leave a single
+    // bucket so ClinOps still sees there's outreach to do.
+    if (!missingByState.has('__any__')) missingByState.set('__any__', new Set());
+    missingByState.get('__any__')!.add(r.provider_id);
+  }
+
+  const recommendedFor = (pct: number, gap: number): string => {
+    if (pct >= 95) return 'Hold — keep monitoring';
+    if (pct >= 80) return 'Watch for cancellations';
+    if (pct >= 60) return `Source ${Math.ceil(-gap)} more hrs from licensed providers`;
+    return `Critical — open Matching to reassign or hire`;
+  };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          Coverage matching · {formatMonthLabel(month)}
+          Coverage gaps · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Primary decision view: which states are still short for July, and by how much.
+          Which states are short or oversupplied, and what to do next.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -2710,16 +2936,19 @@ function CoverageMatchingPanel({ month }: { month: string }) {
               <TableHead>State</TableHead>
               <TableHead>Cohort</TableHead>
               <TableHead className="text-right">Demand hrs</TableHead>
-              <TableHead className="text-right">Available hrs</TableHead>
+              <TableHead className="text-right">Accepted hrs</TableHead>
               <TableHead className="text-right">Gap / surplus</TableHead>
               <TableHead className="text-right">Coverage</TableHead>
+              <TableHead className="text-right">Eligible</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Recommended action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sorted.map(r => {
               const status = coverageStatusFor(r.pct_filled);
               const diff = r.filled - r.needed;
+              const eligible = eligibleByState.get(r.state)?.size ?? 0;
               return (
                 <TableRow key={r.state}>
                   <TableCell className="font-medium">{r.state}</TableCell>
@@ -2732,8 +2961,14 @@ function CoverageMatchingPanel({ month }: { month: string }) {
                   <TableCell className="text-right tabular-nums">
                     {r.needed > 0 ? `${Math.round(r.pct_filled)}%` : '—'}
                   </TableCell>
+                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
+                    {eligible || '—'}
+                  </TableCell>
                   <TableCell>
                     <Badge className={COVERAGE_STATUS_STYLE[status]}>{status}</Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[260px]">
+                    {recommendedFor(r.pct_filled, diff)}
                   </TableCell>
                 </TableRow>
               );
@@ -2753,5 +2988,317 @@ function EmptyState({ title, body }: { title: string; body: string }) {
         <div className="text-xs text-muted-foreground max-w-md mx-auto">{body}</div>
       </CardContent>
     </Card>
+  );
+}
+
+// ============================================================================
+// Matching — provider-level recommendations with priority + decline reasons
+// ============================================================================
+
+function inferPriorityReason(row: ProviderPublishView): string {
+  const reasons: string[] = [];
+  const prof = (row.profession ?? '').toLowerCase();
+  const emp = (row.employment_type ?? '').toLowerCase();
+  if (prof === 'physician' || prof === 'md' || prof === 'do') reasons.push('Clinical lead (MD/DO)');
+  if (emp === 'w2') reasons.push('Internal W2');
+  else if (emp === '1099') reasons.push('1099 contractor');
+  else if (emp === 'agency') reasons.push('DirectShifts / agency');
+  const accepted = Number(row.submission?.accepted_hours ?? 0);
+  const declined = Number(row.submission?.declined_hours ?? 0);
+  if (accepted > 0 && declined === 0) reasons.push('Full accept');
+  if (declined > 0 && accepted > 0) reasons.push('Partial accept');
+  return reasons.join(' · ') || '—';
+}
+
+function inferDeclineReason(row: ProviderPublishView): string {
+  const notes = (row.submission?.decision_notes ?? '').trim();
+  if (notes) return notes;
+  const status = row.submission?.decision_status;
+  if (status === 'declined') return 'Declined (no reason recorded — see Audit tab)';
+  const declined = Number(row.submission?.declined_hours ?? 0);
+  if (declined > 0) return `${declined.toFixed(1)} hrs cut`;
+  return '';
+}
+
+function MatchingPanel({
+  month,
+  acceptedRows,
+  declinedRows,
+  needsReviewRows,
+  shiftsByProvider,
+}: {
+  month: string;
+  acceptedRows: ProviderPublishView[];
+  declinedRows: ProviderPublishView[];
+  needsReviewRows: ProviderPublishView[];
+  shiftsByProvider: Map<string, ShiftRow[]>;
+}) {
+  const all = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: ProviderPublishView[] = [];
+    for (const r of [...acceptedRows, ...declinedRows, ...needsReviewRows]) {
+      if (seen.has(r.provider_id)) continue;
+      seen.add(r.provider_id);
+      merged.push(r);
+    }
+    return merged.sort((a, b) =>
+      a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
+    );
+  }, [acceptedRows, declinedRows, needsReviewRows]);
+
+  if (all.length === 0) {
+    return (
+      <EmptyState
+        title="No matching decisions yet for July"
+        body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one evaluator run after Jotform submissions. Next: open the Availability tab to confirm submissions are in, then click 'Re-run evaluator' in the page header."
+      />
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Provider recommendations · {formatMonthLabel(month)}</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Who is getting hours, why, and what was cut. Prioritization weighs clinical leads,
+          internal vs DirectShifts, state coverage gaps, licensure, and EHR readiness.
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Provider</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Assigned states</TableHead>
+              <TableHead className="text-right">Shifts</TableHead>
+              <TableHead className="text-right">Accepted</TableHead>
+              <TableHead className="text-right">Declined</TableHead>
+              <TableHead>Priority reason</TableHead>
+              <TableHead>Cut / decline reason</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {all.map(r => {
+              const shifts = shiftsByProvider.get(r.provider_id) ?? [];
+              const states = new Set<string>();
+              for (const s of shifts) if (s.assigned_state) states.add(s.assigned_state);
+              for (const s of r.submission?.parsed_shifts ?? [])
+                if (s.state) states.add(String(s.state).toUpperCase());
+              const accepted = Number(r.submission?.accepted_hours ?? 0);
+              const declined = Number(r.submission?.declined_hours ?? 0);
+              const status = r.submission?.decision_status ?? null;
+              return (
+                <TableRow key={r.provider_id}>
+                  <TableCell className="font-medium">{r.provider_name}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {r.profession ?? '—'}
+                    {r.employment_type ? ` · ${r.employment_type}` : ''}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {states.size === 0 ? '—' : Array.from(states).sort().join(', ')}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{shifts.length || '—'}</TableCell>
+                  <TableCell className="text-right tabular-nums">{accepted.toFixed(1)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${declined > 0 ? 'text-red-700' : ''}`}>
+                    {declined.toFixed(1)}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[200px]">
+                    {inferPriorityReason(r)}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[280px]">
+                    {inferDeclineReason(r) || '—'}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={status} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Audit / Why — explains every accept / decline / cut / needs-review
+// ============================================================================
+
+function classifyReason(text: string): string {
+  const t = text.toLowerCase();
+  if (!t) return 'No reason recorded';
+  if (t.includes('outside') && t.includes('business')) return 'Outside business hours';
+  if (t.includes('capacity') || t.includes('oversupply') || t.includes('surplus'))
+    return 'State capacity full';
+  if (t.includes('unavailable') || t.includes('off-day') || t.includes('off day'))
+    return 'Provider unavailable';
+  if (t.includes('license') || t.includes('licensure')) return 'Missing license';
+  if (t.includes('np') && (t.includes('restrict') || t.includes('prohibit')))
+    return 'NP practice restriction';
+  if (t.includes('malformed') || t.includes('parse') || t.includes('invalid')) return 'Malformed time';
+  if (t.includes('unrealistic') || t.includes('too many')) return 'Unrealistic hours';
+  if (t.includes('cost') || t.includes('rate') || t.includes('expensive'))
+    return 'High-cost provider deprioritized';
+  if (t.includes('clinical lead') || t.includes('md')) return 'Clinical lead prioritized';
+  if (t.includes('lower') && t.includes('rate')) return 'Lower-rate provider prioritized';
+  return 'Other';
+}
+
+function AuditPanel({
+  month,
+  acceptedRows,
+  declinedRows,
+  needsReviewRows,
+}: {
+  month: string;
+  acceptedRows: ProviderPublishView[];
+  declinedRows: ProviderPublishView[];
+  needsReviewRows: ProviderPublishView[];
+}) {
+  type Entry = {
+    provider: string;
+    profession: string | null;
+    bucket: 'Accepted' | 'Declined / cut' | 'Needs review';
+    reasonClass: string;
+    reasonText: string;
+    hours: number;
+  };
+
+  const entries: Entry[] = [];
+  for (const r of acceptedRows) {
+    const declined = Number(r.submission?.declined_hours ?? 0);
+    const note = (r.submission?.decision_notes ?? '').trim();
+    if (declined > 0 || note) {
+      entries.push({
+        provider: r.provider_name,
+        profession: r.profession,
+        bucket: declined > 0 ? 'Declined / cut' : 'Accepted',
+        reasonClass: classifyReason(note),
+        reasonText: note || 'Accepted in full',
+        hours: declined || Number(r.submission?.accepted_hours ?? 0),
+      });
+    } else {
+      entries.push({
+        provider: r.provider_name,
+        profession: r.profession,
+        bucket: 'Accepted',
+        reasonClass: 'Clean accept',
+        reasonText: 'Accepted in full — no cuts',
+        hours: Number(r.submission?.accepted_hours ?? 0),
+      });
+    }
+  }
+  for (const r of declinedRows) {
+    if (acceptedRows.find(a => a.provider_id === r.provider_id)) continue;
+    const note = (r.submission?.decision_notes ?? '').trim();
+    entries.push({
+      provider: r.provider_name,
+      profession: r.profession,
+      bucket: 'Declined / cut',
+      reasonClass: classifyReason(note),
+      reasonText: note || 'Declined (no reason recorded)',
+      hours: Number(r.submission?.declined_hours ?? 0),
+    });
+  }
+  for (const r of needsReviewRows) {
+    const note = (r.submission?.decision_notes ?? '').trim();
+    entries.push({
+      provider: r.provider_name,
+      profession: r.profession,
+      bucket: 'Needs review',
+      reasonClass: classifyReason(note),
+      reasonText: note || 'Flagged for manual review',
+      hours: Number(r.submission?.accepted_hours ?? 0),
+    });
+  }
+
+  if (entries.length === 0) {
+    return (
+      <EmptyState
+        title="No decisions to explain yet"
+        body="Once submissions are evaluated, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on the Availability tab and re-run the evaluator."
+      />
+    );
+  }
+
+  // Reason rollup
+  const rollup = new Map<string, number>();
+  for (const e of entries) rollup.set(e.reasonClass, (rollup.get(e.reasonClass) ?? 0) + 1);
+  const rollupSorted = Array.from(rollup.entries()).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Why the schedule looks the way it does</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Rollup of every accept / decline / cut / needs-review decision for {formatMonthLabel(month)}.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-1.5">
+            {rollupSorted.map(([k, n]) => (
+              <Badge key={k} variant="outline" className="text-xs">
+                {k} · {n}
+              </Badge>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Decision log</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Bucket</TableHead>
+                <TableHead>Reason class</TableHead>
+                <TableHead>Detail</TableHead>
+                <TableHead className="text-right">Hrs</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {entries
+                .sort((a, b) => {
+                  const order = { 'Needs review': 0, 'Declined / cut': 1, Accepted: 2 } as const;
+                  return (order[a.bucket] - order[b.bucket]) || a.provider.localeCompare(b.provider);
+                })
+                .map((e, i) => (
+                  <TableRow key={`${e.provider}-${i}`}>
+                    <TableCell className="font-medium">{e.provider}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{e.profession ?? '—'}</TableCell>
+                    <TableCell>
+                      <Badge
+                        className={
+                          e.bucket === 'Accepted'
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+                            : e.bucket === 'Needs review'
+                              ? 'bg-orange-100 text-orange-800 hover:bg-orange-100'
+                              : 'bg-red-100 text-red-700 hover:bg-red-100'
+                        }
+                      >
+                        {e.bucket}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">{e.reasonClass}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[420px]">
+                      {e.reasonText}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{e.hours.toFixed(1)}</TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
