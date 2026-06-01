@@ -84,6 +84,7 @@ import {
   isEhrDone,
   type AvailabilitySubmissionRow,
   type ProviderPublishView,
+  type SubmissionRow,
   type SubmissionForInbox,
   type UnmatchedSubmission,
   type DecisionStatus,
@@ -114,7 +115,6 @@ import {
   useSchedulingSourceAudit,
   type SourceAuditSection,
 } from '@/hooks/useSchedulingSourceAudit';
-import { cohortFor } from '@/lib/scheduling/cohorts';
 import { coverageStatusFor, type CoverageStatus } from '@/lib/scheduling/coverage';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
@@ -146,6 +146,19 @@ const weeksInMonth = (iso: string) => {
 
 const formatHours = (n: number | null | undefined) =>
   n === null || n === undefined ? '—' : Number(n).toFixed(1);
+
+const expandedSubmittedHours = (
+  row:
+    | Pick<SubmissionRow, 'effective_hours_used_for_forecast' | 'normalized_requested_hours' | 'raw_requested_hours'>
+    | Pick<AvailabilitySubmissionRow, 'effective_hours_used_for_forecast' | 'normalized_requested_hours' | 'raw_requested_hours'>
+    | Pick<SubmissionForInbox, 'effective_hours_used_for_forecast' | 'normalized_requested_hours' | 'raw_requested_hours'>
+    | null
+    | undefined,
+) =>
+  row?.effective_hours_used_for_forecast ??
+  row?.normalized_requested_hours ??
+  row?.raw_requested_hours ??
+  null;
 
 const formatRelativeTime = (iso: string): string => {
   const ms = Date.now() - new Date(iso).getTime();
@@ -371,6 +384,7 @@ export default function SchedulingWorkbenchPage() {
               validation_warnings: null,
               raw_requested_hours: accepted_hours,
               normalized_requested_hours: accepted_hours,
+              effective_hours_used_for_forecast: accepted_hours,
             } as unknown as ProviderPublishView['submission']),
       };
     });
@@ -447,7 +461,7 @@ export default function SchedulingWorkbenchPage() {
     }
     let total = 0;
     for (const row of latestByProvider.values()) {
-      total += Number(row.normalized_requested_hours ?? row.raw_requested_hours ?? 0);
+      total += Number(expandedSubmittedHours(row) ?? 0);
     }
     return total;
   }, [availabilitySubmissions]);
@@ -1464,7 +1478,7 @@ function AvailabilitySubmissionsPanel({
               <TableHead>One-off virtual</TableHead>
               <TableHead>In-home / clinic</TableHead>
               <TableHead>Unavailable / exceptions</TableHead>
-              <TableHead className="text-right">Hours</TableHead>
+              <TableHead className="text-right">Expanded hrs</TableHead>
               <TableHead>Submitted</TableHead>
             </TableRow>
           </TableHeader>
@@ -1511,7 +1525,7 @@ function AvailabilitySubmissionsPanel({
                     ) : null}
                   </TableCell>
                   <TableCell className="align-top text-right tabular-nums">
-                    <div>{formatHours(row.normalized_requested_hours ?? row.raw_requested_hours)}</div>
+                    <div>{formatHours(expandedSubmittedHours(row))}</div>
                     <div className="text-xs text-muted-foreground">
                       accepted {formatHours(row.accepted_hours)}
                     </div>
@@ -1915,7 +1929,7 @@ function NeedsReviewPanel({
       submission_id: sub.id,
       prior_status: sub.decision_status,
       decision: target.decision,
-      hours_basis: sub.normalized_requested_hours ?? sub.raw_requested_hours ?? null,
+      hours_basis: expandedSubmittedHours(sub),
       reason: trimmed,
       existing_notes: sub.decision_notes ?? null,
       provider_name: target.row.provider_name,
@@ -1942,7 +1956,7 @@ function NeedsReviewPanel({
             <TableHeader>
               <TableRow>
                 <TableHead>Provider</TableHead>
-                <TableHead className="text-right">Raw hrs</TableHead>
+                <TableHead className="text-right">Expanded hrs</TableHead>
                 <TableHead>Reasons</TableHead>
                 <TableHead className="text-right">Resolve</TableHead>
               </TableRow>
@@ -1960,7 +1974,7 @@ function NeedsReviewPanel({
                       <div className="text-xs text-muted-foreground">{r.profession ?? '—'}</div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatHours(sub.raw_requested_hours)}
+                      {formatHours(expandedSubmittedHours(sub))}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-md">
                       {warnings.length > 0
@@ -2074,7 +2088,7 @@ function MentalHealthPanel({
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
           MH coaches and LPCs use a weekly SLA across all 50 states, so they bypass the
-          state-by-state demand allocator. All submitted hours are accepted unless flagged for
+          state-by-state demand allocator. Expanded submitted hours are accepted unless flagged for
           review.
         </p>
       </CardHeader>
@@ -2831,9 +2845,9 @@ function ReadinessPanel({
           sub={formatMonthLabel(month)}
         />
         <SummaryCard
-          label="Submitted hours"
+          label="Expanded submitted"
           value={submittedHours ? `${submittedHours.toFixed(0)} hrs` : '—'}
-          sub="Provider availability accepted"
+          sub="Recurring expanded minus off dates"
         />
         <SummaryCard
           label="Accepted usable"
@@ -2969,10 +2983,8 @@ function ForecastPanel({ month }: { month: string }) {
         const monthly = Number(r.monthly_hours_target ?? 0);
         const weekly = Number(r.adjusted_weekly_hours ?? monthly / monthWeeks);
         const rawWeekly = Number(r.raw_weekly_hours ?? weekly / 0.95);
-        const cohort = cohortFor(r.state);
         return {
           state: r.state,
-          cohort,
           activeMembers: r.active_members,
           rawWeekly,
           weekly,
@@ -2983,12 +2995,6 @@ function ForecastPanel({ month }: { month: string }) {
       })
       .sort((a, b) => b.monthly - a.monthly);
   }, [monthWeeks, rows]);
-
-  const byCohort = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of enriched) map.set(r.cohort, (map.get(r.cohort) ?? 0) + r.monthly);
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [enriched]);
 
   if (demandQ.isLoading) {
     return <LoadingRow label="Loading forecast" />;
@@ -3007,40 +3013,10 @@ function ForecastPanel({ month }: { month: string }) {
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Demand by planning cohort · {formatMonthLabel(month)}</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Cohort</TableHead>
-                <TableHead className="text-right">Monthly hours</TableHead>
-                <TableHead className="text-right">Weekly hours</TableHead>
-                <TableHead className="text-right">Seasonal factor</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {byCohort.map(([c, hrs]) => (
-                <TableRow key={c}>
-                  <TableCell className="font-medium">{c}</TableCell>
-                  <TableCell className="text-right tabular-nums">{hrs.toFixed(0)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{(hrs / monthWeeks).toFixed(1)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                    ×0.95
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-2">
           <CardTitle className="text-sm">Demand by state · {formatMonthLabel(month)}</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Source: Metabase card 2974 via state_demand_targets. July uses raw weekly demand × 0.95
-            and exact days in month / 7.
+            Source: Metabase card 2974 via state_demand_targets. Demand is reported per state:
+            raw weekly demand × 0.95, then exact days in month / 7 for monthly hours.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -3048,7 +3024,6 @@ function ForecastPanel({ month }: { month: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>State</TableHead>
-                <TableHead>Cohort</TableHead>
                 <TableHead className="text-right">Active members</TableHead>
                 <TableHead className="text-right">Raw/wk</TableHead>
                 <TableHead className="text-right">Adjusted/wk</TableHead>
@@ -3063,7 +3038,6 @@ function ForecastPanel({ month }: { month: string }) {
                 return (
                   <TableRow key={r.state}>
                     <TableCell className="font-medium">{r.state}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{r.cohort}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.activeMembers ?? '—'}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.rawWeekly.toFixed(1)}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.weekly.toFixed(1)}</TableCell>
@@ -3187,7 +3161,6 @@ function CoverageGapsPanel({
           <TableHeader>
             <TableRow>
               <TableHead>State</TableHead>
-              <TableHead>Cohort</TableHead>
               <TableHead className="text-right">Demand hrs</TableHead>
               <TableHead className="text-right">Accepted hrs</TableHead>
               <TableHead className="text-right">Gap / surplus</TableHead>
@@ -3205,7 +3178,6 @@ function CoverageGapsPanel({
               return (
                 <TableRow key={r.state}>
                   <TableCell className="font-medium">{r.state}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{cohortFor(r.state)}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.needed.toFixed(0)}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.filled.toFixed(0)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${diff < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
@@ -3624,7 +3596,7 @@ function DataQualityPanel({
   const acceptedExceedsSubmitted = acceptedRows.filter(row => {
     const sub = row.submission;
     if (!sub) return false;
-    const submitted = Number(sub.normalized_requested_hours ?? sub.raw_requested_hours ?? 0);
+    const submitted = Number(expandedSubmittedHours(sub) ?? 0);
     const accepted = Number(sub.accepted_hours ?? 0);
     return submitted > 0 && accepted - submitted > 0.01;
   });
@@ -3679,7 +3651,7 @@ function DataQualityPanel({
       detail: missingRows.slice(0, 3).map(r => r.provider_name).join(', '),
     },
     {
-      label: 'Accepted hours exceed submitted hours',
+      label: 'Accepted hours exceed expanded submitted hours',
       count: acceptedExceedsSubmitted.length,
       detail: acceptedExceedsSubmitted.slice(0, 3).map(r => r.provider_name).join(', '),
     },

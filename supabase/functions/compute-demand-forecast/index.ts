@@ -18,9 +18,9 @@
  *     adjusted_monthly = adjusted_weekly * (days_in_month / 7)
  *     daily_target     = adjusted_weekly / 6
  *
- *   Do not apply cohort growth buffers or a generic 4.33 month factor.
- *   In-home scheduling is intentionally excluded from this simplified
- *   forecast and handled separately.
+ *   Do not group states into planning buckets, apply group-level buffers, or
+ *   use a generic 4.33 month factor. In-home scheduling is intentionally
+ *   excluded from this simplified forecast and handled separately.
  *
  * Pipeline:
  *   1. Auth to Metabase.
@@ -61,22 +61,6 @@ const PCP_STATE_COVERAGE_CARD = Number(
 );
 const SEASONAL_MULTIPLIER = 0.95;
 const METHODOLOGY_VERSION = 'july_2026_summer_trough_v1';
-
-// Telehealth cohort assignments and buffers
-const COHORT_STATES: Record<string, Set<string>> = {
-  Core:      new Set(['PA', 'NJ']),
-  Growth:    new Set(['TX', 'OH', 'FL']),
-  'MD-Only': new Set(['GA', 'IN', 'MO', 'TN', 'SC', 'MS', 'AL']),
-  DMV:       new Set(['DC', 'MD', 'VA']),
-  DE:        new Set(['DE']),
-};
-
-function cohortFor(state: string): string {
-  for (const [name, members] of Object.entries(COHORT_STATES)) {
-    if (members.has(state)) return name;
-  }
-  return '021';
-}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -191,57 +175,18 @@ Deno.serve(async (req: Request) => {
       adjusted: number;
       monthly: number;
       dailyTarget: number;
-      cohort: string;
       activeMembers: number | null;
     };
     const teleAdjusted = new Map<string, TelehealthRow>();
     for (const [state, row] of teleByState) {
       const adjusted = row.weeklyDemand * SEASONAL_MULTIPLIER;
-      const cohort = cohortFor(state);
       teleAdjusted.set(state, {
         raw: row.weeklyDemand,
         adjusted,
         monthly: adjusted * monthWeeks,
         dailyTarget: adjusted / 6,
-        cohort,
         activeMembers: row.activeMembers,
       });
-    }
-
-    // ── Planning cohort rollup ────────────────────────────────────────
-    type CohortAggregate = {
-      raw_weekly_hrs: number;
-      adjusted_weekly_hrs: number;
-      monthly_hrs: number;
-      daily_target_hrs: number;
-      seasonal_multiplier: number;
-      states: string[];
-    };
-    const cohortNames = ['Core', 'Growth', 'MD-Only', 'DMV', 'DE', '021'];
-    const cohortRollup: Record<string, CohortAggregate> = {};
-    for (const c of cohortNames) {
-      cohortRollup[c] = {
-        raw_weekly_hrs: 0,
-        adjusted_weekly_hrs: 0,
-        monthly_hrs: 0,
-        daily_target_hrs: 0,
-        seasonal_multiplier: SEASONAL_MULTIPLIER,
-        states: [],
-      };
-    }
-    for (const [state, t] of teleAdjusted) {
-      cohortRollup[t.cohort].raw_weekly_hrs += t.raw;
-      cohortRollup[t.cohort].adjusted_weekly_hrs += t.adjusted;
-      cohortRollup[t.cohort].monthly_hrs += t.monthly;
-      cohortRollup[t.cohort].daily_target_hrs += t.dailyTarget;
-      cohortRollup[t.cohort].states.push(state);
-    }
-    for (const c of cohortNames) {
-      cohortRollup[c].raw_weekly_hrs = round2(cohortRollup[c].raw_weekly_hrs);
-      cohortRollup[c].adjusted_weekly_hrs = round2(cohortRollup[c].adjusted_weekly_hrs);
-      cohortRollup[c].monthly_hrs = round2(cohortRollup[c].monthly_hrs);
-      cohortRollup[c].daily_target_hrs = round2(cohortRollup[c].daily_target_hrs);
-      cohortRollup[c].states.sort();
     }
 
     // ── Service-line totals ───────────────────────────────────────────
@@ -461,7 +406,6 @@ Deno.serve(async (req: Request) => {
       month_weeks: round4(monthWeeks),
       seasonal_multiplier: SEASONAL_MULTIPLIER,
       service_lines: serviceLines,
-      planning_cohort_rollup: cohortNames.map(c => ({ cohort: c, ...cohortRollup[c] })),
       states: states.length,
       projection_rows: projections.length,
       target_rows: targets.length,
@@ -481,7 +425,6 @@ Deno.serve(async (req: Request) => {
         const target = targets.find(x => x.state === s)!;
         return {
           state: s,
-          cohort: t.cohort,
           active_members: t.activeMembers,
           raw_weekly_hrs: round2(t.raw),
           adjusted_weekly_hrs: round2(t.adjusted),

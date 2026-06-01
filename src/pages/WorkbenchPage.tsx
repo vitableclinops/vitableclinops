@@ -500,7 +500,8 @@ const WorkbenchPage = () => {
                                           handleOverride(
                                             sub.id,
                                             d,
-                                            sub.normalized_requested_hours ??
+                                            sub.effective_hours_used_for_forecast ??
+                                              sub.normalized_requested_hours ??
                                               sub.raw_requested_hours ??
                                               null,
                                             sub.decision_notes,

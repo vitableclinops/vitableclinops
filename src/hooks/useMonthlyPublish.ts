@@ -38,6 +38,7 @@ export type SubmissionRow = {
   validation_warnings: unknown;
   raw_requested_hours: number | null;
   normalized_requested_hours: number | null;
+  effective_hours_used_for_forecast: number | null;
 };
 
 export type ProviderRow = {
@@ -90,6 +91,7 @@ export type AvailabilitySubmissionRow = {
   validation_warnings: unknown;
   raw_requested_hours: number | null;
   normalized_requested_hours: number | null;
+  effective_hours_used_for_forecast: number | null;
 };
 
 const monthIso = (m: string) => (m.length === 7 ? `${m}-01` : m);
@@ -186,7 +188,7 @@ export function useMonthlyPublishView(month: string) {
         clinopsSupabase
           .from('schedule_submissions')
           .select(
-            'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours',
+            'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast',
           )
           .eq('target_month', monthStart)
           .order('submitted_at', { ascending: false }),
@@ -260,7 +262,7 @@ export function useMonthlyAvailabilitySubmissions(month: string) {
         clinopsSupabase
           .from('schedule_submissions')
           .select(
-            'id, jotform_submission_id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, raw_answers, submitted_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours',
+            'id, jotform_submission_id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, raw_answers, submitted_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast',
           )
           .eq('target_month', monthStart)
           .order('submitted_at', { ascending: false })
@@ -828,6 +830,7 @@ export type SubmissionForInbox = {
   decided_at: string | null;
   raw_requested_hours: number | null;
   normalized_requested_hours: number | null;
+  effective_hours_used_for_forecast: number | null;
   human_review_state: HumanReviewState | null;
   human_review_resolved_at: string | null;
   human_review_resolved_label: string | null;
@@ -876,7 +879,7 @@ export function useResubmissionInbox(anchorMonth: string) {
       const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
         .from('schedule_submissions')
         .select(
-          'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, raw_requested_hours, normalized_requested_hours, human_review_state, human_review_resolved_at, human_review_resolved_label, human_review_notes',
+          'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast, human_review_state, human_review_resolved_at, human_review_resolved_label, human_review_notes',
         )
         .gte('target_month', fromMonth)
         .lte('target_month', toMonth)
