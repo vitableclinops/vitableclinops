@@ -25,6 +25,7 @@ import {
   useMonthlyDemand,
   useMonthlyDecisions,
   useMonthlyForecastSummary,
+  useMonthlyServiceLineDemand,
 } from '@/hooks/useMonthlySchedulingForecast';
 import { downloadCSV } from '@/lib/utils';
 
@@ -41,6 +42,11 @@ const formatMonthLabel = (iso: string) => {
 
 const formatNumber = (n: number, digits = 0) =>
   n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
+const weeksInMonth = (iso: string) => {
+  const [y, m] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate() / 7;
+};
 
 const decisionVariant = (
   status: string,
@@ -61,6 +67,7 @@ export default function SchedulingForecastPage() {
   const [month, setMonth] = useState('2026-07-01');
 
   const demandQ = useMonthlyDemand(month);
+  const serviceLineQ = useMonthlyServiceLineDemand(month);
   const decisionsQ = useMonthlyDecisions(month);
   const { summary, loading } = useMonthlyForecastSummary(month);
 
@@ -86,9 +93,12 @@ export default function SchedulingForecastPage() {
     downloadCSV(
       sortedDemand.map(r => ({
         state: r.state,
+        active_members: r.active_members ?? '',
+        metabase_raw_weekly: Number(r.raw_weekly_hours ?? 0).toFixed(1),
+        adjusted_weekly_hours: Number(r.adjusted_weekly_hours ?? Number(r.monthly_hours_target) / weeksInMonth(month)).toFixed(1),
         monthly_hours_target: Number(r.monthly_hours_target).toFixed(1),
-        weekly_hours_target: (Number(r.monthly_hours_target) / 4.33).toFixed(1),
-        daily_target_slots: r.daily_target_slots,
+        daily_target_hours: Number(r.daily_target_hours ?? 0).toFixed(1),
+        methodology: r.methodology_version ?? '',
       })),
       `demand_forecast_${month}.csv`,
     );
@@ -137,9 +147,9 @@ export default function SchedulingForecastPage() {
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription className="text-xs">
-          Demand values are monthly hours of provider availability needed (≈ adjusted weekly
-          hours × 4.33). Recommended hours come from schedule submissions after the evaluator
-          runs.
+          Demand values come from Metabase card 2974. July uses raw weekly demand × 0.95,
+          then exact days in month / 7. Jotform submissions are the source of truth for
+          provider-requested hours and schedule recommendations.
         </AlertDescription>
       </Alert>
 
@@ -147,7 +157,7 @@ export default function SchedulingForecastPage() {
         <Kpi
           label="Network demand hours"
           value={summary ? formatNumber(summary.totalDemandHours) : '—'}
-          sub={summary ? `≈ ${(summary.totalDemandHours / 4.33).toFixed(0)} hrs/wk` : undefined}
+          sub={summary ? `≈ ${(summary.totalDemandHours / weeksInMonth(month)).toFixed(0)} hrs/wk` : undefined}
           loading={loading}
         />
         <Kpi
@@ -204,9 +214,11 @@ export default function SchedulingForecastPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>State</TableHead>
+                      <TableHead className="text-right">Active members</TableHead>
+                      <TableHead className="text-right">Metabase raw/wk</TableHead>
+                      <TableHead className="text-right">Adjusted/wk</TableHead>
                       <TableHead className="text-right">Monthly hours</TableHead>
-                      <TableHead className="text-right">Weekly hours</TableHead>
-                      <TableHead className="text-right">Daily slots</TableHead>
+                      <TableHead className="text-right">Daily target</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -214,14 +226,30 @@ export default function SchedulingForecastPage() {
                       <TableRow key={r.state}>
                         <TableCell className="font-medium">{r.state}</TableCell>
                         <TableCell className="text-right tabular-nums">
+                          {r.active_members ?? '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {Number(r.raw_weekly_hours ?? 0).toFixed(1)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {Number(r.adjusted_weekly_hours ?? Number(r.monthly_hours_target) / weeksInMonth(month)).toFixed(1)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
                           {Number(r.monthly_hours_target).toFixed(0)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {(Number(r.monthly_hours_target) / 4.33).toFixed(1)}
+                          {Number(r.daily_target_hours ?? 0).toFixed(1)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {r.daily_target_slots}
-                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {(serviceLineQ.data ?? []).map(row => (
+                      <TableRow key={row.service_line} className="bg-muted/30">
+                        <TableCell className="font-medium">{row.label}</TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">{row.scope}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(row.raw_weekly_hours).toFixed(1)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(row.adjusted_weekly_hours).toFixed(1)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(row.monthly_hours_target).toFixed(0)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(row.daily_target_hours).toFixed(1)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

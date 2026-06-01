@@ -4,11 +4,11 @@ import type { ClinOpsTables } from '@/integrations/supabase/clinopsTypes';
 
 // NOTE on units: state_demand_targets.monthly_visits_target and
 // monthly_hours_target both store the SAME number — monthly hours of
-// provider availability needed (= adjusted_weekly_hours × 4.33). The
-// "visits" name is legacy. Per ClinOps methodology, 1 appointment ≈
-// 1 hour of provider availability (30-min appt + 30-min SLA buffer),
-// so the values are numerically equivalent.
+// provider availability needed. The "visits" name is legacy. For the July
+// 2026 build, adjusted weekly demand is raw Metabase weekly demand × 0.95,
+// and monthly hours use exact days-in-month / 7 rather than 4.33.
 export type StateDemandRow = ClinOpsTables<'state_demand_targets'>;
+export type ServiceLineDemandRow = ClinOpsTables<'service_line_demand_targets'>;
 
 export interface ScheduleDecisionRow {
   id: string;
@@ -70,6 +70,23 @@ export function useMonthlyDemand(month: string) {
         .select('*')
         .eq('month', monthStart)
         .order('monthly_visits_target', { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useMonthlyServiceLineDemand(month: string) {
+  const monthStart = monthIso(month);
+  return useQuery({
+    queryKey: ['clinops', 'service_line_demand_targets', monthStart],
+    queryFn: async (): Promise<ServiceLineDemandRow[]> => {
+      const { data, error } = await clinopsSupabase
+        .from('service_line_demand_targets')
+        .select('*')
+        .eq('month', monthStart)
+        .order('service_line', { ascending: true });
       if (error) throw error;
       return data ?? [];
     },

@@ -42,6 +42,9 @@ verify_jwt = false
 [functions.compute-availability-slots]
 verify_jwt = false
 
+[functions.compute-demand-forecast]
+verify_jwt = false
+
 [functions.seed-vault-secrets]
 verify_jwt = false
 

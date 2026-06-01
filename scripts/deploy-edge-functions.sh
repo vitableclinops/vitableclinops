@@ -12,7 +12,7 @@
 #   - Project linked: `supabase link --project-ref bbquooftytwprllipcsb` (one-time)
 #
 # Usage:
-#   ./scripts/deploy-edge-functions.sh                              # deploy both
+#   ./scripts/deploy-edge-functions.sh                              # deploy scheduling pipeline
 #   ./scripts/deploy-edge-functions.sh evaluate-schedule-submissions
 #   ./scripts/deploy-edge-functions.sh emit-shift-recommendations
 #
@@ -25,8 +25,11 @@ set -euo pipefail
 PROJECT_REF="bbquooftytwprllipcsb"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DEFAULT_FUNCTIONS=(
+  "compute-demand-forecast"
   "evaluate-schedule-submissions"
   "emit-shift-recommendations"
+  "sync-homebase"
+  "sync-jotform-submissions"
 )
 
 if [[ $# -eq 0 ]]; then

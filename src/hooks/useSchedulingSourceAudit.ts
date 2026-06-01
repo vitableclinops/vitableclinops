@@ -115,6 +115,11 @@ type ClinopsDemandDay = {
   computed_at: string | null;
 };
 
+type ClinopsServiceLineTarget = {
+  service_line: string;
+  computed_at: string;
+};
+
 type ClinopsSlaDay = {
   state: string;
   date: string;
@@ -220,9 +225,14 @@ const parsedHasAvailability = (value: unknown) => {
   });
 };
 
-async function getHomebaseAudit(month: string): Promise<SourceAuditSection> {
-  const start = monthIso(month);
-  const end = nextMonthIso(month);
+async function getHomebaseAudit(): Promise<SourceAuditSection> {
+  const now = new Date();
+  const startDate = new Date(now);
+  startDate.setDate(startDate.getDate() - 14);
+  const endDate = new Date(now);
+  endDate.setDate(endDate.getDate() + 15);
+  const start = startDate.toISOString().slice(0, 10);
+  const end = endDate.toISOString().slice(0, 10);
 
   const [runResult, syncRunResult, locationsResult, employeesResult, shiftsResult, ratesResult] =
     await Promise.all([
@@ -319,18 +329,19 @@ async function getHomebaseAudit(month: string): Promise<SourceAuditSection> {
       { label: 'Latest sync', value: run?.status ?? genericRun?.status ?? 'No run found', tone: run?.status === 'success' || genericRun?.status === 'success' ? 'good' : 'warn' },
       { label: 'Locations', value: fmtInt(locations.length || run?.locations_synced) },
       { label: 'Employees', value: `${fmtInt(employees.length || run?.employees_synced)} total · ${fmtInt(matchedEmployees || run?.employees_matched)} matched · ${fmtInt(unmatchedEmployees || run?.employees_unmatched)} unmatched`, tone: unmatchedEmployees > 0 ? 'warn' : 'good' },
-      { label: 'Month shifts', value: `${fmtInt(shifts.length)} shifts · ${fmtHours(scheduledHours)} hrs` },
+      { label: 'Near-term shifts', value: `${fmtInt(shifts.length)} shifts · ${fmtHours(scheduledHours)} hrs` },
       { label: 'Published / scheduled', value: `${fmtInt(publishedShifts)} published · ${fmtInt(unscheduledRows)} unscheduled` },
       { label: 'Homebase rates', value: `${fmtInt(rates.length)} active/source rows`, tone: rates.length ? 'good' : 'warn' },
     ],
     fieldCoverage: [
       'locations: uuid, name/address/state/time zone, synced_at',
       'employees: Homebase id, name, email, location, provider match, match confidence',
-      'shifts: Homebase id, user/employee link, location, role, department, start/end, hours, published/scheduled',
+      'near-term shifts: Homebase id, user/employee link, location, role, department, start/end, hours, published/scheduled',
       'rates: provider_pay_rates from sync-homebase-rates when deployed',
     ],
     gaps: [
-      shiftsWithoutEmployee > 0 ? `${fmtInt(shiftsWithoutEmployee)} month shifts have no linked Homebase employee row` : '',
+      'Homebase only covers the live near-term calendar; Jotform is the source of truth for monthly scheduling recommendations',
+      shiftsWithoutEmployee > 0 ? `${fmtInt(shiftsWithoutEmployee)} near-term shifts have no linked Homebase employee row` : '',
       unmatchedEmployees > 0 ? `${fmtInt(unmatchedEmployees)} employees are not matched to provider profiles` : '',
       'Raw Homebase API payloads are not preserved in first-class audit tables today',
     ].filter(Boolean),
@@ -346,7 +357,7 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
   const start = monthIso(month);
   const end = nextMonthIso(month);
 
-  const [syncRunResult, rawExportsResult, leftoverResult, slaResult, providerUtilResult, providerUtilDailyResult, networkUtilResult, targetsResult, forecastResult, slaDailyResult] =
+  const [syncRunResult, rawExportsResult, leftoverResult, slaResult, providerUtilResult, providerUtilDailyResult, networkUtilResult, targetsResult, serviceLineResult, forecastResult, slaDailyResult] =
     await Promise.all([
       settle(async () => {
         const { data, error } = await supabase
@@ -425,6 +436,15 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
       }),
       settle(async () => {
         const { data, error } = await clinopsSupabase
+          .from('service_line_demand_targets')
+          .select('service_line, computed_at')
+          .eq('month', start)
+          .range(0, 9999);
+        if (error) throw error;
+        return (data ?? []) as ClinopsServiceLineTarget[];
+      }),
+      settle(async () => {
+        const { data, error } = await clinopsSupabase
           .from('demand_forecast')
           .select('state, computed_at')
           .gte('date', start)
@@ -458,6 +478,7 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
   const providerUtilDaily = providerUtilDailyResult.ok ? providerUtilDailyResult.value : [];
   const networkUtil = networkUtilResult.ok ? networkUtilResult.value : [];
   const targets = targetsResult.ok ? targetsResult.value : [];
+  const serviceLines = serviceLineResult.ok ? serviceLineResult.value : [];
   const forecast = forecastResult.ok ? forecastResult.value : [];
   const slaDaily = slaDailyResult.ok ? slaDailyResult.value : [];
   const errors = [
@@ -469,6 +490,7 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
     providerUtilDailyResult,
     networkUtilResult,
     targetsResult,
+    serviceLineResult,
     forecastResult,
     slaDailyResult,
   ]
@@ -483,6 +505,7 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
     maxIso(providerUtilDaily.map(r => r.synced_at ?? r.imported_at)),
     maxIso(networkUtil.map(r => r.synced_at ?? r.imported_at)),
     maxIso(targets.map(r => r.computed_at)),
+    maxIso(serviceLines.map(r => r.computed_at)),
     maxIso(forecast.map(r => r.computed_at)),
     maxIso(slaDaily.map(r => r.computed_at)),
   ]);
@@ -498,18 +521,18 @@ async function getMetabaseAudit(month: string): Promise<SourceAuditSection> {
     metrics: [
       { label: 'Latest sync', value: syncRun?.status ?? 'No sync-metabase run found', tone: syncRun?.status === 'success' ? 'good' : 'warn' },
       { label: 'Raw reports', value: `${fmtInt(latestRawByReport.size)} report keys` },
-      { label: 'ClinOps forecast', value: `${fmtInt(targets.length)} state targets · ${fmtInt(forecast.length)} daily rows` },
+      { label: 'ClinOps forecast', value: `${fmtInt(targets.length)} state targets · ${fmtInt(serviceLines.length)} service lines · ${fmtInt(forecast.length)} daily rows` },
       { label: 'SLA/access', value: `${fmtInt(sla.length)} state rows · ${fmtInt(slaDaily.length)} daily ClinOps rows` },
       { label: 'Leftover slots', value: `${fmtInt(leftover.length)} rows · ${fmtInt(leftoverSlots)} slots` },
       { label: 'Utilization', value: `${fmtInt(providerUtil.length)} provider rows · ${fmtInt(providerUtilDaily.length)} daily provider rows · ${fmtInt(networkUtil.length)} network rows` },
     ],
     fieldCoverage: [
-      'forecast cards: telehealth, MH coaching, therapy, in-home via compute-demand-forecast',
+      'forecast cards: telehealth 2974, MH coaching 2973, therapy 2971 via compute-demand-forecast',
       'raw exports: SLA MTD, telemedicine availability, PCP coverage, provider appointment count',
       'tables: state demand, daily forecast, SLA, leftover slots, provider utilization',
     ],
     gaps: [
-      'Service-line monthly totals from compute-demand-forecast are response-only unless persisted by a future table',
+      'In-home scheduling is intentionally excluded from this simplified monthly forecast',
       'Raw Metabase rows are only preserved for reports configured with metabase_raw_exports',
     ],
     details: [
@@ -602,7 +625,7 @@ export function useSchedulingSourceAudit(month: string) {
     queryKey: ['scheduling-source-audit', monthStart],
     queryFn: async (): Promise<SchedulingSourceAudit> => {
       const [homebase, metabase, jotform] = await Promise.all([
-        getHomebaseAudit(monthStart),
+        getHomebaseAudit(),
         getMetabaseAudit(monthStart),
         getJotformAudit(monthStart),
       ]);

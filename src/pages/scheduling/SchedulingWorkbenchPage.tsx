@@ -104,13 +104,17 @@ import {
   useOnboardingReadiness,
   useUnmatchedSubmissions,
 } from '@/hooks/useMonthlyPublish';
-import { useMonthlyDemand, useMonthlySlaRisk } from '@/hooks/useMonthlySchedulingForecast';
+import {
+  useMonthlyDemand,
+  useMonthlyServiceLineDemand,
+  useMonthlySlaRisk,
+} from '@/hooks/useMonthlySchedulingForecast';
 import { useStateCoverage } from '@/hooks/useStateCoverage';
 import {
   useSchedulingSourceAudit,
   type SourceAuditSection,
 } from '@/hooks/useSchedulingSourceAudit';
-import { cohortFor, COHORT_BUFFER_PCT, type Cohort } from '@/lib/scheduling/cohorts';
+import { cohortFor } from '@/lib/scheduling/cohorts';
 import { coverageStatusFor, type CoverageStatus } from '@/lib/scheduling/coverage';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
@@ -133,6 +137,11 @@ const formatMonthLabel = (iso: string) => {
     year: 'numeric',
     timeZone: 'UTC',
   });
+};
+
+const weeksInMonth = (iso: string) => {
+  const [y, m] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate() / 7;
 };
 
 const formatHours = (n: number | null | undefined) =>
@@ -2941,10 +2950,13 @@ function ReadinessPanel({
 
 function ForecastPanel({ month }: { month: string }) {
   const demandQ = useMonthlyDemand(month);
+  const serviceLineQ = useMonthlyServiceLineDemand(month);
   const slaQ = useMonthlySlaRisk(month);
   const demandRows = demandQ.data;
+  const serviceLineRows = serviceLineQ.data ?? [];
   const slaRows = slaQ.data;
   const rows = useMemo(() => demandRows ?? [], [demandRows]);
+  const monthWeeks = weeksInMonth(month);
   const slaByState = useMemo(() => {
     const map = new Map<string, NonNullable<typeof slaRows>[number]>();
     for (const row of slaRows ?? []) map.set(row.state, row);
@@ -2955,27 +2967,25 @@ function ForecastPanel({ month }: { month: string }) {
     return rows
       .map(r => {
         const monthly = Number(r.monthly_hours_target ?? 0);
-        const weekly = monthly / 4.33;
+        const weekly = Number(r.adjusted_weekly_hours ?? monthly / monthWeeks);
+        const rawWeekly = Number(r.raw_weekly_hours ?? weekly / 0.95);
         const cohort = cohortFor(r.state);
-        const bufferPct = COHORT_BUFFER_PCT[cohort];
-        const enhanced = monthly; // demand stored already includes buffer
-        const original = monthly / (1 + bufferPct / 100);
         return {
           state: r.state,
           cohort,
+          activeMembers: r.active_members,
+          rawWeekly,
           weekly,
           monthly,
-          enhanced,
-          original,
-          gapVsEnhanced: enhanced - monthly, // 0 by definition unless future enrichment
-          dailyTarget: Number(r.daily_target_slots ?? 0),
+          dailyTarget: Number(r.daily_target_hours ?? weekly / 6),
+          methodology: r.methodology_version ?? 'legacy',
         };
       })
       .sort((a, b) => b.monthly - a.monthly);
-  }, [rows]);
+  }, [monthWeeks, rows]);
 
   const byCohort = useMemo(() => {
-    const map = new Map<Cohort, number>();
+    const map = new Map<string, number>();
     for (const r of enriched) map.set(r.cohort, (map.get(r.cohort) ?? 0) + r.monthly);
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [enriched]);
@@ -2988,7 +2998,7 @@ function ForecastPanel({ month }: { month: string }) {
     return (
       <EmptyState
         title={`No forecast loaded for ${formatMonthLabel(month)} yet`}
-        body="The demand forecast is computed nightly from Metabase telehealth visit cards. Run the compute-demand-forecast edge function or wait for the nightly job."
+        body="The demand forecast comes from Metabase card 2974. Run the ClinOps Demand forecast workflow or invoke compute-demand-forecast for this month, then refresh."
       />
     );
   }
@@ -2997,7 +3007,7 @@ function ForecastPanel({ month }: { month: string }) {
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Demand by cohort · {formatMonthLabel(month)}</CardTitle>
+          <CardTitle className="text-sm">Demand by planning cohort · {formatMonthLabel(month)}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -3006,7 +3016,7 @@ function ForecastPanel({ month }: { month: string }) {
                 <TableHead>Cohort</TableHead>
                 <TableHead className="text-right">Monthly hours</TableHead>
                 <TableHead className="text-right">Weekly hours</TableHead>
-                <TableHead className="text-right">Buffer</TableHead>
+                <TableHead className="text-right">Seasonal factor</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -3014,9 +3024,9 @@ function ForecastPanel({ month }: { month: string }) {
                 <TableRow key={c}>
                   <TableCell className="font-medium">{c}</TableCell>
                   <TableCell className="text-right tabular-nums">{hrs.toFixed(0)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{(hrs / 4.33).toFixed(1)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{(hrs / monthWeeks).toFixed(1)}</TableCell>
                   <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                    +{COHORT_BUFFER_PCT[c]}%
+                    ×0.95
                   </TableCell>
                 </TableRow>
               ))}
@@ -3029,8 +3039,8 @@ function ForecastPanel({ month }: { month: string }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Demand by state · {formatMonthLabel(month)}</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Source: state_demand_targets. Enhanced values are the persisted
-            cohort-buffered forecast; original is reconstructed from the cohort buffer.
+            Source: Metabase card 2974 via state_demand_targets. July uses raw weekly demand × 0.95
+            and exact days in month / 7.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -3039,10 +3049,11 @@ function ForecastPanel({ month }: { month: string }) {
               <TableRow>
                 <TableHead>State</TableHead>
                 <TableHead>Cohort</TableHead>
-                <TableHead className="text-right">Weekly</TableHead>
-                <TableHead className="text-right">Monthly (enhanced)</TableHead>
-                <TableHead className="text-right">Original build</TableHead>
-                <TableHead className="text-right">Δ vs enhanced</TableHead>
+                <TableHead className="text-right">Active members</TableHead>
+                <TableHead className="text-right">Raw/wk</TableHead>
+                <TableHead className="text-right">Adjusted/wk</TableHead>
+                <TableHead className="text-right">Monthly hrs</TableHead>
+                <TableHead className="text-right">Daily target</TableHead>
                 <TableHead>SLA / access risk</TableHead>
               </TableRow>
             </TableHeader>
@@ -3053,12 +3064,11 @@ function ForecastPanel({ month }: { month: string }) {
                   <TableRow key={r.state}>
                     <TableCell className="font-medium">{r.state}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{r.cohort}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.activeMembers ?? '—'}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.rawWeekly.toFixed(1)}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.weekly.toFixed(1)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.enhanced.toFixed(0)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.original.toFixed(0)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                      {r.gapVsEnhanced.toFixed(0)}
-                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{r.monthly.toFixed(0)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.dailyTarget.toFixed(1)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {risk
                         ? `${risk.status} · ${risk.flaggedDays}/${risk.totalDays} flagged`
@@ -3078,9 +3088,9 @@ function ForecastPanel({ month }: { month: string }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Specialty lines</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Source: compute-demand-forecast response. These service-line totals are
-            not persisted in state_demand_targets today, so this table documents
-            the available methodology rather than live monthly rows.
+            Source: Metabase cards 2973 and 2971 via service_line_demand_targets.
+            These are aggregate service-line needs; Jotform remains the source of truth
+            for provider-requested hours.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -3088,21 +3098,31 @@ function ForecastPanel({ month }: { month: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Service line</TableHead>
-                <TableHead>Buffer</TableHead>
-                <TableHead>Notes</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead className="text-right">Raw/wk</TableHead>
+                <TableHead className="text-right">Adjusted/wk</TableHead>
+                <TableHead className="text-right">Monthly hrs</TableHead>
+                <TableHead className="text-right">Daily target</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell className="font-medium">MH Coaching</TableCell>
-                <TableCell className="text-xs">+15% network sum</TableCell>
-                <TableCell className="text-xs text-muted-foreground">Card 2973</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="font-medium">Therapy / LPCs</TableCell>
-                <TableCell className="text-xs">+15% active states</TableCell>
-                <TableCell className="text-xs text-muted-foreground">Card 2971</TableCell>
-              </TableRow>
+              {serviceLineRows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-xs text-muted-foreground py-6 text-center">
+                    No specialty service-line forecast rows loaded yet.
+                  </TableCell>
+                </TableRow>
+              )}
+              {serviceLineRows.map(row => (
+                <TableRow key={row.service_line}>
+                  <TableCell className="font-medium">{row.label}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{row.scope}</TableCell>
+                  <TableCell className="text-right tabular-nums">{Number(row.raw_weekly_hours).toFixed(1)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{Number(row.adjusted_weekly_hours).toFixed(1)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{Number(row.monthly_hours_target).toFixed(0)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{Number(row.daily_target_hours).toFixed(1)}</TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
@@ -3510,9 +3530,9 @@ function SourceAuditPanel({ month }: { month: string }) {
 
 function DataSourceMapPanel() {
   const rows = [
-    ['Homebase source', 'sync-homebase → homebase_locations / homebase_employees / homebase_shifts; sync-homebase-rates → provider_pay_rates', 'Source audit, scheduled hours, rates, match quality'],
-    ['Metabase source', 'sync-metabase → raw exports / SLA / leftover slots / utilization; compute-demand-forecast → ClinOps forecast tables', 'Forecast, Readiness, Coverage, Source audit'],
-    ['Jotform availability', 'sync-jotform-submissions → schedule_submissions.raw_answers / parsed_shifts', 'Availability, Matching, Audit, Source audit'],
+    ['Homebase source', 'sync-homebase → near-term homebase_locations / homebase_employees / homebase_shifts; sync-homebase-rates → provider_pay_rates', 'Same-day / next-day calendar visibility, scheduled hours, rates, match quality'],
+    ['Metabase source', 'cards 2974 / 2973 / 2971 → compute-demand-forecast → demand_forecast / state_demand_targets / service_line_demand_targets', 'Forecast, Readiness, Coverage, Source audit'],
+    ['Jotform availability', 'sync-jotform-submissions → schedule_submissions.raw_answers / parsed_shifts', 'Source of truth for requested monthly provider hours, Matching, Audit'],
     ['Demand forecast', 'compute-demand-forecast → demand_forecast → state_demand_targets', 'Forecast, Readiness, Coverage'],
     ['Provider directory', 'providers', 'Missing submissions, Setup, Matching'],
     ['Licensure', 'provider_licenses', 'Evaluator eligibility, Coverage eligible/missing counts'],

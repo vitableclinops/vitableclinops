@@ -590,34 +590,100 @@ export type ClinOpsDatabase = {
       }
       state_demand_targets: {
         Row: {
+          active_members: number | null
+          adjusted_weekly_hours: number | null
           computed_at: string
+          daily_target_hours: number | null
           daily_target_slots: number
           forecast_run_id: string | null
           growth_multiplier: number
+          methodology_version: string | null
           month: string
           monthly_hours_target: number
           monthly_visits_target: number
+          raw_weekly_hours: number | null
+          seasonal_multiplier: number | null
           state: string
         }
         Insert: {
+          active_members?: number | null
+          adjusted_weekly_hours?: number | null
           computed_at?: string
+          daily_target_hours?: number | null
           daily_target_slots: number
           forecast_run_id?: string | null
           growth_multiplier?: number
+          methodology_version?: string | null
           month: string
           monthly_hours_target: number
           monthly_visits_target: number
+          raw_weekly_hours?: number | null
+          seasonal_multiplier?: number | null
           state: string
         }
         Update: {
+          active_members?: number | null
+          adjusted_weekly_hours?: number | null
           computed_at?: string
+          daily_target_hours?: number | null
           daily_target_slots?: number
           forecast_run_id?: string | null
           growth_multiplier?: number
+          methodology_version?: string | null
           month?: string
           monthly_hours_target?: number
           monthly_visits_target?: number
+          raw_weekly_hours?: number | null
+          seasonal_multiplier?: number | null
           state?: string
+        }
+        Relationships: []
+      }
+      service_line_demand_targets: {
+        Row: {
+          adjusted_weekly_hours: number
+          computed_at: string
+          daily_target_hours: number
+          forecast_run_id: string | null
+          label: string
+          methodology_version: string | null
+          month: string
+          monthly_hours_target: number
+          raw_weekly_hours: number
+          scope: string
+          seasonal_multiplier: number
+          service_line: string
+          source_card_id: number | null
+        }
+        Insert: {
+          adjusted_weekly_hours?: number
+          computed_at?: string
+          daily_target_hours?: number
+          forecast_run_id?: string | null
+          label: string
+          methodology_version?: string | null
+          month: string
+          monthly_hours_target?: number
+          raw_weekly_hours?: number
+          scope: string
+          seasonal_multiplier?: number
+          service_line: string
+          source_card_id?: number | null
+        }
+        Update: {
+          adjusted_weekly_hours?: number
+          computed_at?: string
+          daily_target_hours?: number
+          forecast_run_id?: string | null
+          label?: string
+          methodology_version?: string | null
+          month?: string
+          monthly_hours_target?: number
+          raw_weekly_hours?: number
+          scope?: string
+          seasonal_multiplier?: number
+          service_line?: string
+          source_card_id?: number | null
         }
         Relationships: []
       }

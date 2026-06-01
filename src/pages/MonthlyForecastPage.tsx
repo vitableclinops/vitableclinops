@@ -30,6 +30,11 @@ const formatMonthLabel = (iso: string) => {
 const formatNumber = (n: number, digits = 0) =>
   n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
+const weeksInMonth = (iso: string) => {
+  const [y, m] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate() / 7;
+};
+
 const formatPct = (n: number | null) =>
   n == null ? '—' : `${n.toFixed(1)}%`;
 
@@ -53,14 +58,14 @@ const MonthlyForecastPage = () => {
     : roles.includes('pod_lead')
     ? 'pod_lead'
     : 'provider';
-  const [month, setMonth] = useState('2026-06-01');
+  const [month, setMonth] = useState('2026-07-01');
 
   const demandQ = useMonthlyDemand(month);
   const decisionsQ = useMonthlyDecisions(month);
   const { summary, loading } = useMonthlyForecastSummary(month);
 
-  const demandRows = demandQ.data ?? [];
-  const decisionRows = decisionsQ.data ?? [];
+  const demandRows = useMemo(() => demandQ.data ?? [], [demandQ.data]);
+  const decisionRows = useMemo(() => decisionsQ.data ?? [], [decisionsQ.data]);
 
   const sortedDemand = useMemo(
     () => [...demandRows].sort((a, b) => b.monthly_visits_target - a.monthly_visits_target),
@@ -81,10 +86,12 @@ const MonthlyForecastPage = () => {
     downloadCSV(
       sortedDemand.map(r => ({
         state: r.state,
+        active_members: r.active_members ?? '',
+        metabase_raw_weekly: Number(r.raw_weekly_hours ?? 0).toFixed(1),
+        adjusted_weekly_hours: Number(r.adjusted_weekly_hours ?? Number(r.monthly_hours_target) / weeksInMonth(month)).toFixed(1),
         monthly_hours_target: Number(r.monthly_hours_target).toFixed(1),
-        weekly_hours_target: (Number(r.monthly_hours_target) / 4.33).toFixed(1),
-        daily_target_slots: r.daily_target_slots,
-        cohort_buffer_pct: ((Number(r.growth_multiplier) - 1) * 100).toFixed(1),
+        daily_target_hours: Number(r.daily_target_hours ?? 0).toFixed(1),
+        methodology: r.methodology_version ?? '',
       })),
       `demand_forecast_${month}.csv`,
     );
@@ -144,9 +151,9 @@ const MonthlyForecastPage = () => {
             <Info className="h-4 w-4" />
             <AlertDescription className="text-xs">
               Demand values are <strong>monthly hours of provider availability</strong> needed
-              (≈ adjusted weekly hours × 4.33). Cohort buffers are applied in
-              <code> compute-demand-forecast</code>: Core 17.5%, Growth 20%, MD-Only 20%, DMV/DE/021 15%.
-              Recommended hours come from <code>schedule_submissions</code> after the evaluator run.
+              from Metabase card 2974. July uses raw weekly demand × 0.95 and exact
+              days in month / 7. Recommended hours come from Jotform submissions after
+              the evaluator run.
             </AlertDescription>
           </Alert>
 
@@ -155,11 +162,11 @@ const MonthlyForecastPage = () => {
               label="Network demand hours"
               value={summary ? formatNumber(summary.totalDemandHours, 0) : '—'}
               loading={loading}
-              footer={summary ? `≈ ${(summary.totalDemandHours / 4.33).toFixed(0)} hrs/wk` : undefined}
+              footer={summary ? `≈ ${(summary.totalDemandHours / weeksInMonth(month)).toFixed(0)} hrs/wk` : undefined}
             />
             <KpiCard
               label="Weekly target hrs"
-              value={summary ? `${(summary.totalDemandHours / 4.33).toFixed(0)}` : '—'}
+              value={summary ? `${(summary.totalDemandHours / weeksInMonth(month)).toFixed(0)}` : '—'}
               loading={loading}
               footer="provider availability needed"
             />
@@ -258,28 +265,24 @@ const MonthlyForecastPage = () => {
                         <thead className="text-xs uppercase text-muted-foreground border-b">
                           <tr>
                             <th className="text-left py-2 px-2 font-medium">State</th>
+                            <th className="text-right py-2 px-2 font-medium">Active members</th>
+                            <th className="text-right py-2 px-2 font-medium">Raw/wk</th>
+                            <th className="text-right py-2 px-2 font-medium">Adjusted/wk</th>
                             <th className="text-right py-2 px-2 font-medium">Monthly hrs</th>
-                            <th className="text-right py-2 px-2 font-medium">Weekly hrs</th>
-                            <th className="text-right py-2 px-2 font-medium">Daily slots</th>
-                            <th className="text-right py-2 px-2 font-medium">Cohort buffer</th>
+                            <th className="text-right py-2 px-2 font-medium">Daily target</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y">
-                          {sortedDemand.map(row => {
-                            const buffer = Number(row.growth_multiplier);
-                            const bufferPct = ((buffer - 1) * 100).toFixed(1);
-                            return (
-                              <tr key={`${row.state}-${row.month}`} className="hover:bg-muted/30">
-                                <td className="py-2 px-2 font-medium">{row.state}</td>
-                                <td className="py-2 px-2 text-right tabular-nums">{formatNumber(Number(row.monthly_hours_target), 0)}</td>
-                                <td className="py-2 px-2 text-right tabular-nums">{(Number(row.monthly_hours_target) / 4.33).toFixed(1)}</td>
-                                <td className="py-2 px-2 text-right tabular-nums">{row.daily_target_slots}</td>
-                                <td className="py-2 px-2 text-right tabular-nums">
-                                  +{bufferPct}%
-                                </td>
-                              </tr>
-                            );
-                          })}
+                          {sortedDemand.map(row => (
+                            <tr key={`${row.state}-${row.month}`} className="hover:bg-muted/30">
+                              <td className="py-2 px-2 font-medium">{row.state}</td>
+                              <td className="py-2 px-2 text-right tabular-nums">{row.active_members ?? '—'}</td>
+                              <td className="py-2 px-2 text-right tabular-nums">{Number(row.raw_weekly_hours ?? 0).toFixed(1)}</td>
+                              <td className="py-2 px-2 text-right tabular-nums">{Number(row.adjusted_weekly_hours ?? Number(row.monthly_hours_target) / weeksInMonth(month)).toFixed(1)}</td>
+                              <td className="py-2 px-2 text-right tabular-nums">{formatNumber(Number(row.monthly_hours_target), 0)}</td>
+                              <td className="py-2 px-2 text-right tabular-nums">{Number(row.daily_target_hours ?? 0).toFixed(1)}</td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>

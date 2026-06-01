@@ -10,8 +10,9 @@
  *   5. Unmatched (recorded for review)
  *
  * Sync window: explicit start_date/end_date or month when provided;
- * otherwise trailing 30 days + next 120 days so upcoming schedule builds
- * have future Homebase shifts available for audit.
+ * otherwise trailing 14 days + next 14 days. Homebase is the near-term
+ * calendar source for same-day / next-day operations, not the source of
+ * truth for month-ahead scheduling recommendations.
  *
  * Scheduled hourly via Supabase cron.
  * Can also be triggered manually via POST /functions/v1/sync-homebase.
@@ -310,13 +311,13 @@ function resolveSyncWindow(url: URL, body: Record<string, unknown>) {
 
   const now = new Date();
   const past = new Date(now);
-  past.setUTCDate(past.getUTCDate() - 30);
+  past.setUTCDate(past.getUTCDate() - 14);
   const future = new Date(now);
-  future.setUTCDate(future.getUTCDate() + 120);
+  future.setUTCDate(future.getUTCDate() + 14);
   return {
     startDate: past.toISOString().slice(0, 10),
     endDate: future.toISOString().slice(0, 10),
-    mode: 'default_30_back_120_forward',
+    mode: 'default_14_back_14_forward',
   };
 }
 

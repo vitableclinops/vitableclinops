@@ -1,63 +1,34 @@
 /**
  * compute-demand-forecast edge function
  *
- * Demand methodology (canonical, set in May 2026 by ClinOps):
+ * Demand methodology (July 2026 planning build):
  *
- *   Metabase cards 2974/2973/2971/2972 return one row per state with
- *   columns "State" and "Target Hrs". The value is **weekly hours of
- *   provider availability needed**, not visits. (Vitable appointments
- *   are 30 min and same/next-day SLA requires roughly 1:1 buffer of
- *   unbooked availability, so 1 visit ≈ 1 hour of availability and the
- *   card values are denominated in hours.)
+ *   Metabase is the authoritative demand source.
  *
- *   For telehealth (card 2974) we apply a flat per-cohort buffer:
+ *   Card 2974 (telehealth) returns one row per state with:
+ *     State, Weekly Demand, Active Members Count.
  *
- *     Cohort   States                            Buffer
- *     Core     PA, NJ                            17.5%
- *     Growth   TX, OH, FL                        20.0%
- *     MD-Only  GA, IN, MO, TN, SC, MS, AL        20.0%
- *     DMV      DC, MD, VA                        15.0%
- *     DE       DE                                15.0%
- *     021      everything else                   15.0%
+ *   Card 2973 (MH coaching) and card 2971 (therapy/LPC) return:
+ *     Appointment State, Target hrs.
  *
- *   For the other service lines:
+ *   All card values are weekly hours of provider availability needed,
+ *   not visits. For June/July planning, apply the documented summer trough:
  *
- *     MH Coaching (2973) - 15% buffer on the network-pool sum
- *     Therapy     (2971) - 15% buffer on the active-state sum
- *     In-Home     (2972 + fixed)  - no buffer (mostly fixed schedule)
+ *     adjusted_weekly  = raw_weekly * 0.95
+ *     adjusted_monthly = adjusted_weekly * (days_in_month / 7)
+ *     daily_target     = adjusted_weekly / 6
  *
- *   In-Home includes hard-coded recurring shifts that aren't in the
- *   Metabase card:
- *
- *     DE - Sara Kamara recurring Thu 9-12 = 3.0 hrs/wk
- *     NJ - one 2-hr shift/month         ≈ 0.46 hrs/wk
- *     IL - one 2-hr shift/month         ≈ 0.46 hrs/wk
- *     OH - one 2-hr shift/month         ≈ 0.46 hrs/wk
- *     TX - one 2-hr shift/month         ≈ 0.46 hrs/wk
- *
- *   Per-state distribution of telehealth across days uses the
- *   established 1/6 weekday, 1/12 weekend rule (so the daily values
- *   sum to roughly 4.25 weeks/month for June, ~4.33 over a year).
- *
- *   For Supabase writes:
- *     monthly_hours_target  = adjusted_weekly_hours × 4.33
- *     monthly_visits_target = monthly_hours_target  (column name is
- *                             legacy/misleading: stores hours)
- *     daily_target_slots    = max(5, round(monthly_hours_target / 20 * 1.5))
+ *   Do not apply cohort growth buffers or a generic 4.33 month factor.
+ *   In-home scheduling is intentionally excluded from this simplified
+ *   forecast and handled separately.
  *
  * Pipeline:
  *   1. Auth to Metabase.
- *   2. Pull cards 2974 (telehealth), 2973 (MH coach), 2971 (therapy),
- *      2972 (in-home).
- *   3. Apply cohort buffer to telehealth per-state.
- *   4. Apply flat 15% buffer to coaching and therapy network sums.
- *   5. Add fixed recurring shifts to In-Home.
- *   6. Distribute telehealth weekly hours across days of target month
- *      (weekday = 1/6, weekend = 1/12).
- *   7. Write demand_forecast per-day per-state (telehealth only) and
- *      state_demand_targets per (state, month) (telehealth only).
- *   8. Return service-line totals + cohort rollup in response payload
- *      so the leadership-facing forecast can be built directly.
+ *   2. Pull cards 2974 (telehealth), 2973 (MH coach), and 2971 (therapy).
+ *   3. Apply the 0.95 seasonal multiplier.
+ *   4. Write demand_forecast per-day per-state and state_demand_targets
+ *      per (state, month) for telehealth.
+ *   5. Write service_line_demand_targets for MH coaching and therapy.
  *
  * Note: state_demand_targets and demand_forecast hold telehealth only,
  * because the other service lines are staffed by separate provider pools
@@ -81,7 +52,8 @@ const METABASE_URL = 'https://metabase.vitablehealth.com';
 const TELEHEALTH_CARD = Number(Deno.env.get('METABASE_BASELINE_CARD_ID') ?? '2974');
 const COACHING_CARD = Number(Deno.env.get('METABASE_COACHING_CARD_ID') ?? '2973');
 const THERAPY_CARD = Number(Deno.env.get('METABASE_THERAPY_CARD_ID') ?? '2971');
-const INHOME_CARD = Number(Deno.env.get('METABASE_INHOME_CARD_ID') ?? '2972');
+const SEASONAL_MULTIPLIER = 0.95;
+const METHODOLOGY_VERSION = 'july_2026_summer_trough_v1';
 
 // Telehealth cohort assignments and buffers
 const COHORT_STATES: Record<string, Set<string>> = {
@@ -91,30 +63,6 @@ const COHORT_STATES: Record<string, Set<string>> = {
   DMV:       new Set(['DC', 'MD', 'VA']),
   DE:        new Set(['DE']),
 };
-
-const COHORT_BUFFER: Record<string, number> = {
-  Core:      0.175,
-  Growth:    0.20,
-  'MD-Only': 0.20,
-  DMV:       0.15,
-  DE:        0.15,
-  '021':     0.15,
-};
-
-const COACHING_BUFFER = 0.15;
-const THERAPY_BUFFER = 0.15;
-const IN_HOME_BUFFER = 0.0;
-
-// In-Home recurring shifts not tracked in Metabase (weekly hours)
-const IN_HOME_FIXED: Record<string, number> = {
-  DE: 3.0,        // Sara Kamara recurring Thu 9-12
-  NJ: 2 / 4.33,   // one 2-hr shift/month
-  IL: 2 / 4.33,
-  OH: 2 / 4.33,
-  TX: 2 / 4.33,
-};
-
-const WEEKS_PER_MONTH = 4.33;
 
 function cohortFor(state: string): string {
   for (const [name, members] of Object.entries(COHORT_STATES)) {
@@ -129,6 +77,10 @@ const corsHeaders = {
 };
 
 type Row = Record<string, string>;
+type TelehealthDemand = {
+  weeklyDemand: number;
+  activeMembers: number | null;
+};
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -156,12 +108,11 @@ Deno.serve(async (req: Request) => {
   try {
     const token = await getMetabaseToken(username, password);
 
-    // Pull all four service-line cards in parallel
-    const [teleCsv, coachCsv, therapyCsv, inHomeCsv] = await Promise.all([
+    // Pull the three forecast cards in parallel.
+    const [teleCsv, coachCsv, therapyCsv] = await Promise.all([
       downloadCardCsv(token, TELEHEALTH_CARD),
       downloadCardCsvSafe(token, COACHING_CARD),
       downloadCardCsvSafe(token, THERAPY_CARD),
-      downloadCardCsvSafe(token, INHOME_CARD),
     ]);
 
     if (inspect) {
@@ -172,108 +123,130 @@ Deno.serve(async (req: Request) => {
           telehealth: cardSnapshot(TELEHEALTH_CARD, teleCsv),
           coaching:   cardSnapshot(COACHING_CARD, coachCsv),
           therapy:    cardSnapshot(THERAPY_CARD, therapyCsv),
-          in_home:    cardSnapshot(INHOME_CARD, inHomeCsv),
         },
       });
     }
 
     const issues: Record<string, Record<string, number>> = {
-      telehealth: {}, coaching: {}, therapy: {}, in_home: {},
+      telehealth: {}, coaching: {}, therapy: {},
     };
 
     // Parse each card. Card values are weekly hours of provider availability.
-    const teleByState   = parseStateHours(teleCsv,    issues.telehealth);
+    const teleByState   = parseTelehealthRows(teleCsv, issues.telehealth);
     const coachByState  = parseStateHours(coachCsv,   issues.coaching);
     const therapyByState= parseStateHours(therapyCsv, issues.therapy);
-    const inHomeByState = parseStateHours(inHomeCsv,  issues.in_home);
 
     if (teleByState.size === 0) {
       return json({ error: `Telehealth card ${TELEHEALTH_CARD} returned no rows` }, 422);
     }
 
-    // ── Telehealth: apply cohort buffer per state ─────────────────────
+    const monthWeeks = weeksInMonth(targetMonth);
+    const monthDays = listMonthDays(targetMonth);
+
+    // ── Telehealth: apply summer trough per state ────────────────────
     type TelehealthRow = {
       raw: number;
       adjusted: number;
+      monthly: number;
+      dailyTarget: number;
       cohort: string;
-      buffer: number;
+      activeMembers: number | null;
     };
     const teleAdjusted = new Map<string, TelehealthRow>();
-    for (const [state, raw] of teleByState) {
+    for (const [state, row] of teleByState) {
+      const adjusted = row.weeklyDemand * SEASONAL_MULTIPLIER;
       const cohort = cohortFor(state);
-      const buffer = COHORT_BUFFER[cohort];
       teleAdjusted.set(state, {
-        raw,
-        adjusted: raw * (1 + buffer),
+        raw: row.weeklyDemand,
+        adjusted,
+        monthly: adjusted * monthWeeks,
+        dailyTarget: adjusted / 6,
         cohort,
-        buffer,
+        activeMembers: row.activeMembers,
       });
     }
 
-    // ── Cohort rollup ─────────────────────────────────────────────────
+    // ── Planning cohort rollup ────────────────────────────────────────
     type CohortAggregate = {
       raw_weekly_hrs: number;
       adjusted_weekly_hrs: number;
+      monthly_hrs: number;
       daily_target_hrs: number;
-      buffer_pct: number;
+      seasonal_multiplier: number;
       states: string[];
     };
-    const cohortNames = Object.keys(COHORT_BUFFER);
+    const cohortNames = ['Core', 'Growth', 'MD-Only', 'DMV', 'DE', '021'];
     const cohortRollup: Record<string, CohortAggregate> = {};
     for (const c of cohortNames) {
       cohortRollup[c] = {
         raw_weekly_hrs: 0,
         adjusted_weekly_hrs: 0,
+        monthly_hrs: 0,
         daily_target_hrs: 0,
-        buffer_pct: COHORT_BUFFER[c],
+        seasonal_multiplier: SEASONAL_MULTIPLIER,
         states: [],
       };
     }
     for (const [state, t] of teleAdjusted) {
       cohortRollup[t.cohort].raw_weekly_hrs += t.raw;
       cohortRollup[t.cohort].adjusted_weekly_hrs += t.adjusted;
+      cohortRollup[t.cohort].monthly_hrs += t.monthly;
+      cohortRollup[t.cohort].daily_target_hrs += t.dailyTarget;
       cohortRollup[t.cohort].states.push(state);
     }
     for (const c of cohortNames) {
       cohortRollup[c].raw_weekly_hrs = round2(cohortRollup[c].raw_weekly_hrs);
       cohortRollup[c].adjusted_weekly_hrs = round2(cohortRollup[c].adjusted_weekly_hrs);
-      // Daily target uses the documented divisor of 6 (weekday=1/6, weekend day=1/12)
-      cohortRollup[c].daily_target_hrs = round2(cohortRollup[c].adjusted_weekly_hrs / 6);
+      cohortRollup[c].monthly_hrs = round2(cohortRollup[c].monthly_hrs);
+      cohortRollup[c].daily_target_hrs = round2(cohortRollup[c].daily_target_hrs);
       cohortRollup[c].states.sort();
     }
 
     // ── Service-line totals ───────────────────────────────────────────
-    const telehealthRaw = sumValues(teleByState);
+    const telehealthRaw = sumMapBy(teleByState, t => t.weeklyDemand);
     const telehealthAdj = sumMapBy(teleAdjusted, t => t.adjusted);
 
     const coachingRaw = sumValues(coachByState);
-    const coachingAdj = coachingRaw * (1 + COACHING_BUFFER);
+    const coachingAdj = coachingRaw * SEASONAL_MULTIPLIER;
 
     const therapyRaw = sumValues(therapyByState);
-    const therapyAdj = therapyRaw * (1 + THERAPY_BUFFER);
+    const therapyAdj = therapyRaw * SEASONAL_MULTIPLIER;
 
-    // In-Home: card values + fixed recurring shifts (no buffer)
-    const inHomeMerged = new Map<string, number>(inHomeByState);
-    for (const [state, fixed] of Object.entries(IN_HOME_FIXED)) {
-      inHomeMerged.set(state, (inHomeMerged.get(state) ?? 0) + fixed);
-    }
-    const inHomeRaw = sumValues(inHomeMerged);
-    const inHomeAdj = inHomeRaw * (1 + IN_HOME_BUFFER);
-
-    const totalRaw = telehealthRaw + coachingRaw + therapyRaw + inHomeRaw;
-    const totalAdj = telehealthAdj + coachingAdj + therapyAdj + inHomeAdj;
+    const totalRaw = telehealthRaw + coachingRaw + therapyRaw;
+    const totalAdj = telehealthAdj + coachingAdj + therapyAdj;
 
     const serviceLines = {
-      telehealth:  { raw_weekly_hrs: round2(telehealthRaw), adjusted_weekly_hrs: round2(telehealthAdj), buffer: 'cohort' },
-      mh_coaching: { raw_weekly_hrs: round2(coachingRaw),   adjusted_weekly_hrs: round2(coachingAdj),   buffer: COACHING_BUFFER },
-      therapy:     { raw_weekly_hrs: round2(therapyRaw),    adjusted_weekly_hrs: round2(therapyAdj),    buffer: THERAPY_BUFFER },
-      in_home:     { raw_weekly_hrs: round2(inHomeRaw),     adjusted_weekly_hrs: round2(inHomeAdj),     buffer: IN_HOME_BUFFER, by_state: Array.from(inHomeMerged.entries()).map(([s, h]) => ({ state: s, weekly_hrs: round2(h) })) },
-      total:       { raw_weekly_hrs: round2(totalRaw),      adjusted_weekly_hrs: round2(totalAdj) },
+      telehealth:  {
+        raw_weekly_hrs: round2(telehealthRaw),
+        adjusted_weekly_hrs: round2(telehealthAdj),
+        monthly_hrs: round2(telehealthAdj * monthWeeks),
+        daily_target_hrs: round2(telehealthAdj / 6),
+        seasonal_multiplier: SEASONAL_MULTIPLIER,
+      },
+      mh_coaching: {
+        raw_weekly_hrs: round2(coachingRaw),
+        adjusted_weekly_hrs: round2(coachingAdj),
+        monthly_hrs: round2(coachingAdj * monthWeeks),
+        daily_target_hrs: round2(coachingAdj / 6),
+        seasonal_multiplier: SEASONAL_MULTIPLIER,
+      },
+      therapy: {
+        raw_weekly_hrs: round2(therapyRaw),
+        adjusted_weekly_hrs: round2(therapyAdj),
+        monthly_hrs: round2(therapyAdj * monthWeeks),
+        daily_target_hrs: round2(therapyAdj / 6),
+        seasonal_multiplier: SEASONAL_MULTIPLIER,
+      },
+      total: {
+        raw_weekly_hrs: round2(totalRaw),
+        adjusted_weekly_hrs: round2(totalAdj),
+        monthly_hrs: round2(totalAdj * monthWeeks),
+        daily_target_hrs: round2(totalAdj / 6),
+      },
     };
 
     // ── Distribute telehealth weekly hours across target month days ───
     const states = Array.from(teleAdjusted.keys()).sort();
-    const monthDays = listMonthDays(targetMonth);
     const projections: Array<{
       date: string;
       state: string;
@@ -286,14 +259,18 @@ Deno.serve(async (req: Request) => {
     const computedAt = new Date().toISOString();
 
     for (const state of states) {
-      const adj = teleAdjusted.get(state)!.adjusted;
+      const t = teleAdjusted.get(state)!;
+      const totalWeight = monthDays.reduce((sum, date) => {
+        const dow = new Date(date + 'T00:00:00Z').getUTCDay();
+        return sum + ((dow === 0 || dow === 6) ? 0.5 : 1);
+      }, 0);
       for (const date of monthDays) {
         const dow = new Date(date + 'T00:00:00Z').getUTCDay();
-        const weight = (dow === 0 || dow === 6) ? 1 / 12 : 1 / 6;
+        const weight = (dow === 0 || dow === 6) ? 0.5 : 1;
         projections.push({
           date,
           state,
-          projected_visits: round2(adj * weight),
+          projected_visits: round2(t.monthly * (weight / totalWeight)),
           forecast_run_id: forecastRunId,
           is_baseline: true,
           computed_at: computedAt,
@@ -308,6 +285,12 @@ Deno.serve(async (req: Request) => {
       monthly_visits_target: number;
       daily_target_slots: number;
       monthly_hours_target: number;
+      raw_weekly_hours: number;
+      adjusted_weekly_hours: number;
+      daily_target_hours: number;
+      active_members: number | null;
+      methodology_version: string;
+      seasonal_multiplier: number;
       growth_multiplier: number;
       forecast_run_id: string;
       computed_at: string;
@@ -315,24 +298,55 @@ Deno.serve(async (req: Request) => {
     const targets: Target[] = [];
     for (const state of states) {
       const t = teleAdjusted.get(state)!;
-      // monthly_hours_target = adjusted_weekly_hours × 4.33 (weeks/month).
-      // monthly_visits_target stores the SAME value (column name is legacy:
-      // both fields denote monthly hours of provider availability).
-      const monthlyHours = round2(t.adjusted * WEEKS_PER_MONTH);
-      const dailyTargetSlots = Math.max(5, Math.round((monthlyHours / 20) * 1.5));
+      const monthlyHours = round2(t.monthly);
+      const dailyTargetHours = round2(t.dailyTarget);
       targets.push({
         state,
         month: targetMonth,
         monthly_visits_target: Math.round(monthlyHours),
         monthly_hours_target: monthlyHours,
-        daily_target_slots: dailyTargetSlots,
-        // We keep the growth_multiplier column populated with the cohort
-        // buffer (1 + buffer_pct) so callers can see what was applied.
-        growth_multiplier: 1 + t.buffer,
+        daily_target_slots: Math.max(1, Math.round(dailyTargetHours)),
+        raw_weekly_hours: round2(t.raw),
+        adjusted_weekly_hours: round2(t.adjusted),
+        daily_target_hours: dailyTargetHours,
+        active_members: t.activeMembers,
+        methodology_version: METHODOLOGY_VERSION,
+        seasonal_multiplier: SEASONAL_MULTIPLIER,
+        growth_multiplier: SEASONAL_MULTIPLIER,
         forecast_run_id: forecastRunId,
         computed_at: computedAt,
       });
     }
+
+    const serviceLineTargets = [
+      {
+        service_line: 'mh_coaching',
+        label: 'MH Coaching',
+        scope: 'nationwide',
+        source_card_id: COACHING_CARD,
+        raw_weekly_hours: round2(coachingRaw),
+        adjusted_weekly_hours: round2(coachingAdj),
+        monthly_hours_target: round2(coachingAdj * monthWeeks),
+        daily_target_hours: round2(coachingAdj / 6),
+      },
+      {
+        service_line: 'therapy',
+        label: 'Therapy / LPC',
+        scope: 'active_states',
+        source_card_id: THERAPY_CARD,
+        raw_weekly_hours: round2(therapyRaw),
+        adjusted_weekly_hours: round2(therapyAdj),
+        monthly_hours_target: round2(therapyAdj * monthWeeks),
+        daily_target_hours: round2(therapyAdj / 6),
+      },
+    ].map(row => ({
+      ...row,
+      month: targetMonth,
+      seasonal_multiplier: SEASONAL_MULTIPLIER,
+      methodology_version: METHODOLOGY_VERSION,
+      forecast_run_id: forecastRunId,
+      computed_at: computedAt,
+    }));
 
     // ── Write to Supabase ─────────────────────────────────────────────
     let demoted = 0;
@@ -356,17 +370,27 @@ Deno.serve(async (req: Request) => {
         .from('state_demand_targets')
         .upsert(targets, { onConflict: 'state,month' });
       if (tErr) throw new Error(`state_demand_targets upsert failed: ${tErr.message}`);
+
+      const { error: slErr } = await supabase
+        .from('service_line_demand_targets')
+        .upsert(serviceLineTargets, { onConflict: 'service_line,month' });
+      if (slErr) throw new Error(`service_line_demand_targets upsert failed: ${slErr.message}`);
     }
 
     return json({
       ok: true,
+      methodology_version: METHODOLOGY_VERSION,
       forecast_run_id: forecastRunId,
       target_month: targetMonth,
+      month_days: monthDays.length,
+      month_weeks: round4(monthWeeks),
+      seasonal_multiplier: SEASONAL_MULTIPLIER,
       service_lines: serviceLines,
-      telehealth_cohort_rollup: cohortNames.map(c => ({ cohort: c, ...cohortRollup[c] })),
+      planning_cohort_rollup: cohortNames.map(c => ({ cohort: c, ...cohortRollup[c] })),
       states: states.length,
       projection_rows: projections.length,
       target_rows: targets.length,
+      service_line_rows: serviceLineTargets.length,
       previous_baseline_demoted: demoted,
       dry_run: dryRun,
       issues,
@@ -376,11 +400,11 @@ Deno.serve(async (req: Request) => {
         return {
           state: s,
           cohort: t.cohort,
-          buffer_pct: t.buffer,
+          active_members: t.activeMembers,
           raw_weekly_hrs: round2(t.raw),
           adjusted_weekly_hrs: round2(t.adjusted),
           monthly_hours_target: target.monthly_hours_target,
-          daily_target_slots: target.daily_target_slots,
+          daily_target_hrs: target.daily_target_hours,
         };
       }),
     });
@@ -451,9 +475,45 @@ function parseStateHours(csv: string, issues: Record<string, number>): Map<strin
     if (!stateRaw || !hoursRaw) { bump(issues, 'missing_field'); continue; }
     const abbr = toAbbreviation(stateRaw);
     if (!abbr) { bump(issues, 'unknown_state'); continue; }
-    const v = Number(hoursRaw.replace(/[^0-9.\-]/g, ''));
+    const v = Number(hoursRaw.replace(/[^0-9.-]/g, ''));
     if (!Number.isFinite(v) || v < 0) { bump(issues, 'unparseable_value'); continue; }
     result.set(abbr, v);
+  }
+  return result;
+}
+
+function parseTelehealthRows(csv: string, issues: Record<string, number>): Map<string, TelehealthDemand> {
+  const result = new Map<string, TelehealthDemand>();
+  if (!csv) return result;
+  const rows = parseCSV(csv);
+  for (const r of rows) {
+    const stateRaw = col(r, 'State', 'state', 'service_state', 'Appointment State', 'appointment_state');
+    const demandRaw = col(
+      r,
+      'Weekly Demand', 'weekly_demand', 'weekly demand',
+      'Target Hrs', 'target_hrs', 'target hours', 'TargetHrs',
+      'weekly_hours', 'hours', 'Hours',
+    );
+    const membersRaw = col(
+      r,
+      'Active Members Count', 'active_members_count', 'active members count',
+      'Active Members', 'active_members', 'members',
+    );
+    if (!stateRaw || !demandRaw) { bump(issues, 'missing_field'); continue; }
+    const abbr = toAbbreviation(stateRaw);
+    if (!abbr) { bump(issues, 'unknown_state'); continue; }
+    const weeklyDemand = Number(demandRaw.replace(/[^0-9.-]/g, ''));
+    if (!Number.isFinite(weeklyDemand) || weeklyDemand < 0) {
+      bump(issues, 'unparseable_value');
+      continue;
+    }
+    const activeMembers = membersRaw
+      ? Number(membersRaw.replace(/[^0-9.-]/g, ''))
+      : null;
+    result.set(abbr, {
+      weeklyDemand,
+      activeMembers: Number.isFinite(activeMembers) ? Math.round(activeMembers) : null,
+    });
   }
   return result;
 }
@@ -503,7 +563,7 @@ function splitCSVLine(line: string): string[] {
 
 function col(row: Row, ...candidates: string[]): string {
   const norm = (s: string) =>
-    s.replace(/^﻿/, '').replace(/[​-‍﻿]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    s.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
   for (const c of candidates) {
     const target = norm(c);
     const key = Object.keys(row).find(k => norm(k) === target);
@@ -532,8 +592,18 @@ function listMonthDays(monthISO: string): string[] {
   return out;
 }
 
+function weeksInMonth(monthISO: string): number {
+  const [y, m] = monthISO.split('-').map(Number);
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return days / 7;
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function round4(n: number): number {
+  return Math.round(n * 10000) / 10000;
 }
 
 function bump(map: Record<string, number>, key: string) {
