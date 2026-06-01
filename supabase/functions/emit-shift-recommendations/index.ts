@@ -33,12 +33,15 @@ import {
 } from '../_shared/submissionTimeline.ts';
 import { DEFAULT_VALIDATION_CONFIG } from '../_shared/availabilityValidation.ts';
 
-const MH_PROFESSIONS = new Set([
+const MH_COACHING_PROFESSIONS = new Set([
   'MENTAL_HEALTH_COACH',
   'MH_COACH',
+  'HEALTH_COACH',
+]);
+const THERAPY_PROFESSIONS = new Set([
   'LPC',
   'THERAPIST',
-  'HEALTH_COACH',
+  'LICENSED_PROFESSIONAL_COUNSELOR',
 ]);
 const normProfession = (profession: string | null | undefined) =>
   (profession ?? '')
@@ -48,7 +51,8 @@ const normProfession = (profession: string | null | undefined) =>
     .replace(/^_+|_+$/g, '');
 const isMentalHealthProfession = (p: string | null | undefined) => {
   if (!p) return false;
-  return MH_PROFESSIONS.has(normProfession(p));
+  const norm = normProfession(p);
+  return MH_COACHING_PROFESSIONS.has(norm) || THERAPY_PROFESSIONS.has(norm);
 };
 
 const MH_MIN_SHIFT_HOURS = 2.5;
@@ -59,7 +63,7 @@ const MENTAL_HEALTH_VALIDATION_CONFIG = {
 const MH_POLICY_CUT_REASON =
   'Cut — mental health shifts must be at least 2.5h (3 visits at 40m with 10m breaks)';
 const MH_PUBLISH_REASON =
-  'Publish (mental health schedule — weekly SLA; state allocator bypassed)';
+  'Publish (mental health service-line forecast; state allocator bypassed)';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

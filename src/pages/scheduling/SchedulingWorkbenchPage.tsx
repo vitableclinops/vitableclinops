@@ -125,16 +125,38 @@ import {
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 
-const MH_PROFESSIONS = new Set([
+type MentalHealthServiceLine = 'mh_coaching' | 'therapy';
+
+const MH_COACHING_PROFESSIONS = new Set([
   'mental_health_coach',
   'mh_coach',
-  'lpc',
-  'therapist',
   'health_coach',
 ]);
+const THERAPY_PROFESSIONS = new Set([
+  'lpc',
+  'therapist',
+  'licensed_professional_counselor',
+]);
+
+const normProfessionKey = (profession: string | null | undefined) =>
+  (profession ?? '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+const mentalHealthServiceLineForProfession = (
+  profession: string | null | undefined,
+): MentalHealthServiceLine | null => {
+  const norm = normProfessionKey(profession);
+  if (MH_COACHING_PROFESSIONS.has(norm)) return 'mh_coaching';
+  if (THERAPY_PROFESSIONS.has(norm)) return 'therapy';
+  return null;
+};
 
 const isMentalHealth = (profession: string | null | undefined) =>
-  !!profession && MH_PROFESSIONS.has(profession.toLowerCase().replace(/\s+/g, '_'));
+  mentalHealthServiceLineForProfession(profession) !== null;
+
+const SERVICE_LINE_LABEL: Record<MentalHealthServiceLine, string> = {
+  mh_coaching: 'MH Coaching',
+  therapy: 'Therapy / LPC',
+};
 
 const formatMonthLabel = (iso: string) => {
   const [y, m] = iso.split('-').map(Number);
@@ -2219,6 +2241,7 @@ function MentalHealthDashboard({
   auditByShift?: ShiftAuditMap;
   auditEntries: PublishAuditEntry[];
 }) {
+  const serviceLineQ = useMonthlyServiceLineDemand(month);
   const acceptedHours = acceptedRows.reduce(
     (sum, row) => sum + Number(row.submission?.accepted_hours ?? 0),
     0,
@@ -2233,6 +2256,49 @@ function MentalHealthDashboard({
     () => auditEntries.filter(e => e.provider_id && providerIds.has(e.provider_id)),
     [auditEntries, providerIds],
   );
+  const serviceLineStats = useMemo(() => {
+    const targetByLine = new Map(
+      (serviceLineQ.data ?? [])
+        .filter(row => row.service_line === 'mh_coaching' || row.service_line === 'therapy')
+        .map(row => [row.service_line as MentalHealthServiceLine, row]),
+    );
+    return (['mh_coaching', 'therapy'] as const).map(serviceLine => {
+      const target = targetByLine.get(serviceLine);
+      const lineRows = rows.filter(
+        row => mentalHealthServiceLineForProfession(row.profession) === serviceLine,
+      );
+      const lineAcceptedRows = acceptedRows.filter(
+        row => mentalHealthServiceLineForProfession(row.profession) === serviceLine,
+      );
+      const lineDeclinedRows = declinedRows.filter(
+        row => mentalHealthServiceLineForProfession(row.profession) === serviceLine,
+      );
+      const accepted = lineAcceptedRows.reduce(
+        (sum, row) => sum + Number(row.submission?.accepted_hours ?? 0),
+        0,
+      );
+      const declined = lineDeclinedRows.reduce(
+        (sum, row) => sum + Number(row.submission?.declined_hours ?? 0),
+        0,
+      );
+      const monthlyTarget = target ? Number(target.monthly_hours_target ?? 0) : null;
+      const gap = monthlyTarget == null ? null : monthlyTarget - accepted;
+      const fillPct = monthlyTarget && monthlyTarget > 0 ? (accepted / monthlyTarget) * 100 : null;
+      return {
+        serviceLine,
+        label: SERVICE_LINE_LABEL[serviceLine],
+        target,
+        monthlyTarget,
+        accepted,
+        declined,
+        gap,
+        fillPct,
+        providers: lineRows.length,
+        acceptedProviders: lineAcceptedRows.length,
+        visitCapacity: Math.floor((accepted * 60) / MH_VISIT_CADENCE_MINUTES),
+      };
+    });
+  }, [acceptedRows, declinedRows, rows, serviceLineQ.data]);
 
   return (
     <div className="space-y-4">
@@ -2263,6 +2329,82 @@ function MentalHealthDashboard({
           sub={`${MH_MIN_SHIFT_HOURS}h minimum shift`}
         />
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Mental health forecast by service line</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Source: Metabase card 2973 for MH Coaching and card 2971 for Therapy / LPC,
+            stored in service_line_demand_targets.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Service line</TableHead>
+                <TableHead className="text-right">Forecast hrs</TableHead>
+                <TableHead className="text-right">Accepted hrs</TableHead>
+                <TableHead className="text-right">Gap / surplus</TableHead>
+                <TableHead className="text-right">Coverage</TableHead>
+                <TableHead className="text-right">Visit slots</TableHead>
+                <TableHead className="text-right">Providers</TableHead>
+                <TableHead className="text-right">Declined hrs</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {serviceLineStats.map(stat => {
+                const gap = stat.gap;
+                const coverageLabel = stat.fillPct == null ? '—' : `${Math.round(stat.fillPct)}%`;
+                const gapLabel =
+                  gap == null ? '—' : `${gap <= 0 ? '+' : '-'}${Math.abs(gap).toFixed(1)}`;
+                return (
+                  <TableRow key={stat.serviceLine}>
+                    <TableCell>
+                      <div className="font-medium">{stat.label}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {stat.serviceLine === 'mh_coaching'
+                          ? 'Mental health coaches only'
+                          : 'Therapy / LPC providers only'}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {stat.monthlyTarget == null ? 'No forecast' : stat.monthlyTarget.toFixed(1)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {stat.accepted.toFixed(1)}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right tabular-nums ${
+                        gap == null ? '' : gap > 0 ? 'text-red-700' : 'text-emerald-700'
+                      }`}
+                    >
+                      {gapLabel}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{coverageLabel}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {stat.visitCapacity}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {stat.acceptedProviders}/{stat.providers}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-red-700">
+                      {stat.declined.toFixed(1)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {serviceLineQ.isLoading && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-xs text-muted-foreground py-4">
+                    Loading service-line forecast
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="provider">
         <TabsList className="flex-wrap h-auto">
@@ -2401,9 +2543,8 @@ function MentalHealthPanel({
           Mental Health · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
-          MH coaches and LPCs use a weekly SLA across all 50 states, so they bypass the
-          state-by-state demand allocator. Expanded submitted hours are accepted unless flagged for
-          review.
+          MH Coaching and Therapy / LPC use separate service-line forecasts and bypass the
+          telehealth state-by-state allocator.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -2411,6 +2552,7 @@ function MentalHealthPanel({
           <TableHeader>
             <TableRow>
               <TableHead>Provider</TableHead>
+              <TableHead>Line</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Hours</TableHead>
               <TableHead>Homebase</TableHead>
@@ -2425,12 +2567,16 @@ function MentalHealthPanel({
               const ehrShiftDone = flats.filter(isEhrDone).length;
               const hbAggregate = !!r.publish?.homebase_posted_at;
               const ehrAggregate = !!r.publish?.ehr_posted_at;
+              const serviceLine = mentalHealthServiceLineForProfession(r.profession);
               return (
                 <Fragment key={r.provider_id}>
                   <TableRow>
                     <TableCell>
                       <div className="font-medium">{r.provider_name}</div>
                       <div className="text-xs text-muted-foreground">{r.profession ?? '—'}</div>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {serviceLine ? SERVICE_LINE_LABEL[serviceLine] : '—'}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={sub?.decision_status} />
@@ -2462,7 +2608,7 @@ function MentalHealthPanel({
                   </TableRow>
                   {flats.length > 0 && (
                     <TableRow className="bg-muted/30 hover:bg-muted/30">
-                      <TableCell colSpan={5} className="py-2">
+                      <TableCell colSpan={6} className="py-2">
                         <ShiftListInline
                           shifts={flats}
                           onToggle={onToggleShift}
@@ -2834,6 +2980,7 @@ function DeclinedHoursPanel({
                 const eligibleStates = eligibility ? Array.from(eligibility.states).sort() : [];
                 const sourceLabels = formatLicenseSources(eligibility?.sources);
                 const cuts = cutRowsByProvider.get(row.provider_id) ?? [];
+                const serviceLine = mentalHealthServiceLineForProfession(row.profession);
                 const uniqueCutReasons = Array.from(new Set(
                   cuts.map(c => c.recommendation_reason).filter(Boolean) as string[],
                 ));
@@ -2845,6 +2992,11 @@ function DeclinedHoursPanel({
                         {row.profession ?? '—'}
                         {row.employment_type ? ` · ${row.employment_type}` : ''}
                       </div>
+                      {serviceLine && (
+                        <Badge variant="outline" className="mt-1 text-[11px]">
+                          {SERVICE_LINE_LABEL[serviceLine]}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="align-top">
                       <StatusBadge status={sub.decision_status} />

@@ -1741,23 +1741,34 @@ const isSchedulableForState = (
   return !isMdOnlyState;
 };
 
-// Mental health professions use a weekly SLA across all 50 states (no per-state
-// demand allocation). They bypass the demand-gap math entirely: every parsed
-// hour becomes accepted unless validation flags it. The "demand" for MH is
-// staffed separately (Metabase 2973), so running them through the telehealth
-// state allocator just produces false declines.
-const MH_PROFESSIONS = new Set([
+type MentalHealthServiceLine = 'mh_coaching' | 'therapy';
+
+// Mental health professions use service-line forecasts, not the telehealth
+// state-demand allocator. Coaching and therapy/LPC are separate demand pools.
+const MH_COACHING_PROFESSIONS = new Set([
   'MENTAL_HEALTH_COACH',
   'MH_COACH',
-  'LPC',
-  'THERAPIST',
   'HEALTH_COACH',
 ]);
+const THERAPY_PROFESSIONS = new Set([
+  'LPC',
+  'THERAPIST',
+  'LICENSED_PROFESSIONAL_COUNSELOR',
+]);
 const isMentalHealthProfession = (p: string | null | undefined) => {
-  if (!p) return false;
-  const norm = normProfession(p);
-  return MH_PROFESSIONS.has(norm);
+  return mentalHealthServiceLineForProfession(p) !== null;
 };
+const mentalHealthServiceLineForProfession = (
+  p: string | null | undefined,
+): MentalHealthServiceLine | null => {
+  if (!p) return null;
+  const norm = normProfession(p);
+  if (MH_COACHING_PROFESSIONS.has(norm)) return 'mh_coaching';
+  if (THERAPY_PROFESSIONS.has(norm)) return 'therapy';
+  return null;
+};
+const mentalHealthServiceLineLabel = (serviceLine: MentalHealthServiceLine) =>
+  serviceLine === 'mh_coaching' ? 'MH Coaching' : 'Therapy / LPC';
 
 const MH_VISIT_MINUTES = 40;
 const MH_BREAK_MINUTES = 10;
@@ -1770,7 +1781,7 @@ const MENTAL_HEALTH_VALIDATION_CONFIG = {
 const MH_POLICY_CUT_REASON =
   'Cut — mental health shifts must be at least 2.5h (3 visits at 40m with 10m breaks)';
 const MH_PUBLISH_REASON =
-  'Publish (mental health schedule — weekly SLA; state allocator bypassed)';
+  'Publish (mental health service-line forecast; state allocator bypassed)';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1823,6 +1834,12 @@ type ProviderProfile = {
   employment_type: string | null;
   source: string | null;
   shift_types: string[] | null;
+};
+
+type ServiceLineDemandTarget = {
+  service_line: string | null;
+  month: string | null;
+  monthly_hours_target: number | null;
 };
 
 type ProviderPriorityKey = 'clinical_supervisor' | 'vitable_internal' | 'access_provider';
@@ -2104,9 +2121,30 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── Preload MH service-line demand targets ─────────────────────────
+    // These are separate from telehealth state demand: MH Coaching and
+    // Therapy/LPC each get their own nationwide service-line forecast.
+    const serviceLineDemandByKey = new Map<string, number>(); // `${service_line}_${month}` → monthly hours
+    if (months.length > 0) {
+      const { data: rows, error: slErr } = await supabase
+        .from('service_line_demand_targets')
+        .select('service_line, month, monthly_hours_target')
+        .in('month', months)
+        .in('service_line', ['mh_coaching', 'therapy']);
+      if (slErr) throw new Error(`Service-line demand load failed: ${slErr.message}`);
+      for (const r of (rows ?? []) as ServiceLineDemandTarget[]) {
+        if (!r.service_line || !r.month) continue;
+        serviceLineDemandByKey.set(
+          `${r.service_line}_${r.month}`,
+          Number(r.monthly_hours_target ?? 0),
+        );
+      }
+    }
+
     // ── Preload committed hours from OTHER groups (not in scope) ────────
     const groupKeysInScope = groupKeys;
     const committedByKey = new Map<string, number>(); // `${state}_${month}` → committed hours
+    const serviceLineCommittedByKey = new Map<string, number>(); // `${service_line}_${month}` → committed hours
     // Sum accepted_hours per (state, month) for groups NOT being re-evaluated.
     // Best-effort even-split across the provider's canonical eligible states
     // for that month.
@@ -2116,6 +2154,17 @@ Deno.serve(async (req: Request) => {
       if (groupKeysInScope.has(k)) continue;
       const hours = typeof c.accepted_hours === 'number' ? c.accepted_hours : 0;
       if (hours <= 0) continue;
+      const serviceLine = mentalHealthServiceLineForProfession(
+        professionByProvider.get(c.provider_id),
+      );
+      if (serviceLine) {
+        const serviceLineKey = `${serviceLine}_${c.target_month}`;
+        serviceLineCommittedByKey.set(
+          serviceLineKey,
+          (serviceLineCommittedByKey.get(serviceLineKey) ?? 0) + hours,
+        );
+        continue;
+      }
       const states = licensedStatesByProvider.get(c.provider_id);
       if (!states || states.size === 0) continue;
       const perState = hours / states.size;
@@ -2373,30 +2422,61 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        // ── Mental health bypass ────────────────────────────────────────────
-        // MH coaches/LPCs serve all 50 states with a weekly SLA, separate from
-        // the telehealth state-demand pipeline. Accept every validated hour
-        // and skip the licensed-states + state-gap math.
+        // ── Mental health service-line allocation ──────────────────────────
+        // MH coaching and therapy/LPC use separate service-line forecasts,
+        // not the telehealth state-demand pipeline.
         if (isMentalHealth) {
           if (olderIds.length) {
             await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
             counters.superseded += olderIds.length;
           }
-          const mhDeclined = round2(oohDeclined + policyDeclined);
-          const mhStatus: 'accepted' | 'partial' = mhDeclined > 0 ? 'partial' : 'accepted';
-          const mhVisitCapacity = Math.floor((effectiveHours * 60) / MH_VISIT_CADENCE_MINUTES);
+          const serviceLine = mentalHealthServiceLineForProfession(profession);
+          if (!serviceLine) {
+            throw new Error(`Mental health provider ${latest.provider_name} has no service-line mapping for profession=${profession}`);
+          }
+          const serviceLineKey = `${serviceLine}_${targetMonth}`;
+          const targetHours = serviceLineDemandByKey.get(serviceLineKey);
+          const committedHours = round2(serviceLineCommittedByKey.get(serviceLineKey) ?? 0);
+          const remainingGap = targetHours == null
+            ? effectiveHours
+            : round2(Math.max(0, targetHours - committedHours));
+          const accepted = targetHours == null
+            ? effectiveHours
+            : round2(Math.min(effectiveHours, remainingGap));
+          const forecastDeclined = round2(Math.max(0, effectiveHours - accepted));
+          const mhDeclined = round2(forecastDeclined + oohDeclined + policyDeclined);
+          let mhStatus: 'accepted' | 'partial' | 'declined';
+          if (accepted <= 0) {
+            mhStatus = 'declined';
+          } else if (mhDeclined > 0) {
+            mhStatus = 'partial';
+          } else {
+            mhStatus = 'accepted';
+          }
+          const mhVisitCapacity = Math.floor((accepted * 60) / MH_VISIT_CADENCE_MINUTES);
           const mhNoteParts = [
             `decision=${mhStatus} (mental_health_bypass)`,
+            `service_line=${serviceLine}`,
+            `service_line_label=${mentalHealthServiceLineLabel(serviceLine)}`,
             `provider_priority=${providerPriority.key}`,
             `profession=${profession}`,
             `effective_hours=${effectiveHours}h`,
+            `accepted_hours=${accepted}h`,
             `raw_hours=${validation.summary.raw_total_hours}h`,
             `mh_visit_length_minutes=${MH_VISIT_MINUTES}`,
             `mh_break_minutes=${MH_BREAK_MINUTES}`,
             `mh_visit_capacity=${mhVisitCapacity}`,
             `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
-            'note=MH uses weekly SLA across 50 states; bypasses state demand allocator',
+            'note=MH uses service-line forecast; bypasses telehealth state allocator',
           ];
+          if (targetHours == null) {
+            mhNoteParts.push('service_line_forecast=missing');
+          } else {
+            mhNoteParts.push(`service_line_target=${round2(targetHours)}h`);
+            mhNoteParts.push(`service_line_committed=${committedHours}h`);
+            mhNoteParts.push(`service_line_gap=${remainingGap}h`);
+            mhNoteParts.push(`forecast_declined_hours=${forecastDeclined}h`);
+          }
           if (oohDeclined > 0) {
             mhNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
           }
@@ -2405,7 +2485,7 @@ Deno.serve(async (req: Request) => {
           }
           await writeDecision(supabase, latest.id, {
             status: mhStatus,
-            accepted_hours: effectiveHours,
+            accepted_hours: accepted,
             declined_hours: mhDeclined,
             notes: mhNoteParts.join('; '),
             decision_run_id: decisionRunId,
@@ -2421,25 +2501,33 @@ Deno.serve(async (req: Request) => {
             policyCutTimeline: validation.forecastPolicyCutTimeline,
             policyCutReason: MH_POLICY_CUT_REASON,
             unallocatedForecastPublishReason: MH_PUBLISH_REASON,
-            declinedHours: 0,
-            declineAll: false,
+            declinedHours: forecastDeclined,
+            declineAll: mhStatus === 'declined',
             allocations: [],
             decisionRunId,
           });
           await writeShiftRecommendations(supabase, groupSubs.map(s => s.id), mhRecRows);
           if (mhStatus === 'accepted') counters.accepted++;
-          else counters.partial++;
+          else if (mhStatus === 'partial') counters.partial++;
+          else counters.declined++;
           decisions.push({
             group: key,
             provider: latest.provider_name,
             target_month: targetMonth,
             status: mhStatus,
-            accepted_hours: effectiveHours,
+            accepted_hours: accepted,
             declined_hours: mhDeclined,
             mh_bypass: true,
+            service_line: serviceLine,
+            service_line_target_hours: targetHours ?? null,
+            service_line_gap_hours: remainingGap,
+            forecast_declined_hours: forecastDeclined,
             mh_visit_capacity: mhVisitCapacity,
             superseded: olderIds.length,
           });
+          if (accepted > 0) {
+            serviceLineCommittedByKey.set(serviceLineKey, committedHours + accepted);
+          }
           continue;
         }
 
