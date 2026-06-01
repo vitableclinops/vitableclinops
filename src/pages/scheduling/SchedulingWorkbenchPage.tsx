@@ -658,6 +658,118 @@ export default function SchedulingWorkbenchPage({
     mentalHealthMissingRows,
   ]);
 
+  // ─────────── Scope-aware (medical vs mental health) view models ───────────
+  // Filters each row collection to the active scope so the same tab
+  // components can power /scheduling/workbench and /scheduling/mental-health.
+  const mhProviderName = (name?: string | null) =>
+    isMentalHealthProvider(null, name ?? null);
+
+  const mhSlMatches = (profession?: string | null, name?: string | null) => {
+    if (!isMh || mhServiceLine === 'all') return true;
+    return (
+      mentalHealthServiceLineForProvider(profession ?? null, name ?? null) ===
+      mhServiceLine
+    );
+  };
+
+  const scopedRows = useMemo(
+    () =>
+      (isMh ? mentalHealthRows : telehealthRows).filter(r =>
+        mhSlMatches(r.profession, r.provider_name),
+      ),
+    [isMh, mhServiceLine, mentalHealthRows, telehealthRows],
+  );
+  const scopedAccepted = useMemo(
+    () => scopedRows.filter(isAcceptedSubmission),
+    [scopedRows],
+  );
+  const scopedDeclined = useMemo(
+    () => sortDeclinedRows(scopedRows.filter(hasDeclinedHours)),
+    [scopedRows],
+  );
+  const scopedNeedsReview = useMemo(
+    () => scopedRows.filter(r => r.submission?.decision_status === 'needs_review'),
+    [scopedRows],
+  );
+  const scopedMissing = useMemo(
+    () => scopedRows.filter(r => !r.submission),
+    [scopedRows],
+  );
+  const scopedFlatAccepted = useMemo(() => {
+    const ids = new Set(scopedAccepted.map(r => r.provider_id));
+    return shiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
+  }, [scopedAccepted, shiftRows]);
+  const scopedSummary = useMemo(() => {
+    const totalShifts = scopedFlatAccepted.length;
+    return {
+      totalProviders: scopedAccepted.length,
+      totalShifts,
+      homebaseShifts: scopedFlatAccepted.filter(isHomebaseDone).length,
+      ehrShifts: scopedFlatAccepted.filter(isEhrDone).length,
+      declinedCount: scopedDeclined.length,
+      needsReviewCount: scopedNeedsReview.length,
+      missingCount: scopedMissing.length,
+    };
+  }, [scopedAccepted, scopedFlatAccepted, scopedDeclined, scopedNeedsReview, scopedMissing]);
+
+  const scopedAvailabilitySubs = useMemo(
+    () =>
+      availabilitySubmissions.filter(s =>
+        (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
+        mhSlMatches(null, s.provider_name),
+      ),
+    [availabilitySubmissions, isMh, mhServiceLine],
+  );
+  const scopedInboxSubs = useMemo(
+    () =>
+      inboxSubmissions.filter(s =>
+        (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
+        mhSlMatches(null, s.provider_name),
+      ),
+    [inboxSubmissions, isMh, mhServiceLine],
+  );
+  const scopedUnmatched = useMemo(
+    () =>
+      unmatchedSubs.filter(s =>
+        (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
+        mhSlMatches(null, s.provider_name),
+      ),
+    [unmatchedSubs, isMh, mhServiceLine],
+  );
+  const scopedTimeOff = useMemo(
+    () =>
+      timeOffRows.filter(t => {
+        const mh = isMentalHealthProvider(t.row.profession, t.row.provider_name);
+        return (isMh ? mh : !mh) && mhSlMatches(t.row.profession, t.row.provider_name);
+      }),
+    [timeOffRows, isMh, mhServiceLine],
+  );
+  const scopedInboxActionable = useMemo(() => {
+    const groups = groupSubmissionsForInbox(scopedInboxSubs);
+    return groups.filter(g => {
+      if (g.latest.human_review_state === 'approved') return false;
+      const d = diffParsedShifts(g.prior.parsed_shifts, g.latest.parsed_shifts);
+      return d.hasChanges;
+    }).length;
+  }, [scopedInboxSubs]);
+  const scopedSubmittedAvailabilityHours = useMemo(() => {
+    const latest = new Map<string, AvailabilitySubmissionRow>();
+    for (const row of scopedAvailabilitySubs) {
+      if (row.decision_status === 'superseded') continue;
+      const key = row.provider_id ?? row.provider_name;
+      const c = latest.get(key);
+      if (!c || row.submitted_at > c.submitted_at) latest.set(key, row);
+    }
+    let t = 0;
+    for (const row of latest.values()) t += Number(expandedSubmittedHours(row) ?? 0);
+    return t;
+  }, [scopedAvailabilitySubs]);
+  const scopedAuditEntries = useMemo(() => {
+    if (!isMh) return auditEntries;
+    const ids = new Set(mentalHealthRows.map(r => r.provider_id));
+    return auditEntries.filter(e => e.provider_id && ids.has(e.provider_id));
+  }, [auditEntries, isMh, mentalHealthRows]);
+
   const handleToggleProvider = (
     row: ProviderPublishView,
     step: ShiftPublishStep,
