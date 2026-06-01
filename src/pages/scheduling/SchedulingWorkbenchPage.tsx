@@ -1104,6 +1104,16 @@ export default function SchedulingWorkbenchPage() {
         </TabsContent>
           </Tabs>
         </TabsContent>
+
+        {/* ============ AUDIT / WHY ============ */}
+        <TabsContent value="audit" className="mt-4 space-y-4">
+          <AuditPanel
+            month={month}
+            acceptedRows={acceptedRows}
+            declinedRows={declinedRows}
+            needsReviewRows={needsReviewRows}
+          />
+        </TabsContent>
       </Tabs>
     </TooltipProvider>
     </SchedulingShell>
