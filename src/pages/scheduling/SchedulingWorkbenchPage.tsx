@@ -3831,10 +3831,10 @@ function ReadinessPanel({
 }
 
 function ForecastPanel({ month }: { month: string }) {
-  const demandQ = useMonthlyDemand(month);
+  const forecastDemandQ = useMonthlyDemand(month);
   const serviceLineQ = useMonthlyServiceLineDemand(month);
   const slaQ = useMonthlySlaRisk(month);
-  const demandRows = demandQ.data;
+  const demandRows = forecastDemandQ.data;
   const serviceLineRows = serviceLineQ.data ?? [];
   const slaRows = slaQ.data;
   const rows = useMemo(() => demandRows ?? [], [demandRows]);
@@ -3864,7 +3864,7 @@ function ForecastPanel({ month }: { month: string }) {
       .sort((a, b) => b.monthly - a.monthly);
   }, [monthWeeks, rows]);
 
-  if (demandQ.isLoading) {
+  if (forecastDemandQ.isLoading) {
     return <LoadingRow label="Loading forecast" />;
   }
 
