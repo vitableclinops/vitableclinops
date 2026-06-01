@@ -163,7 +163,8 @@ from public.demand_forecast
 where is_baseline = true
 group by state, date_trunc('month', date)::date;
 
-create or replace view public.v_provider_shift_summary as
+drop view if exists public.v_provider_shift_summary;
+create view public.v_provider_shift_summary as
 select
   provider_id,
   provider_name,
