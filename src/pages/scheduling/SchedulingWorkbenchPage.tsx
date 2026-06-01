@@ -847,15 +847,32 @@ export default function SchedulingWorkbenchPage({
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Calendar className="h-6 w-6 text-emerald-600" />
-            {formatMonthLabel(month)} Scheduling Workbench
+            {isMh ? (
+              <Brain className="h-6 w-6 text-emerald-600" />
+            ) : (
+              <Calendar className="h-6 w-6 text-emerald-600" />
+            )}
+            {formatMonthLabel(month)} {isMh ? 'Mental Health Scheduling Workbench' : 'Scheduling Workbench'}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            One place to move {formatMonthLabel(month)} from forecast → availability → coverage → publish.
-            Pick a tab below. Every Homebase/EHR click is recorded with who and when.
+            {isMh
+              ? `Mental health only — coaches and therapists. Same forecast → availability → coverage → publish flow, scoped to MH providers.`
+              : `One place to move ${formatMonthLabel(month)} from forecast → availability → coverage → publish. Pick a tab below. Every Homebase/EHR click is recorded with who and when.`}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {isMh && (
+            <Select value={mhServiceLine} onValueChange={(v) => setMhServiceLine(v as 'all' | MentalHealthServiceLine)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All MH service lines</SelectItem>
+                <SelectItem value="mh_coaching">{SERVICE_LINE_LABEL.mh_coaching}</SelectItem>
+                <SelectItem value="therapy">{SERVICE_LINE_LABEL.therapy}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Select value={month} onValueChange={setMonth}>
             <SelectTrigger className="w-[180px]">
               <SelectValue />
@@ -901,19 +918,21 @@ export default function SchedulingWorkbenchPage({
           <TabsTrigger value="matching"><Users className="h-3.5 w-3.5 mr-1" />Matching</TabsTrigger>
           <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Gaps</TabsTrigger>
           <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
-          <TabsTrigger value="mental-health">
-            <Brain className="h-3.5 w-3.5 mr-1" />Mental Health
-            {mentalHealthRows.length + mentalHealthUnmatchedSubs.length > 0 && (
-              <span className="ml-1 text-xs">
-                ({mentalHealthRows.length + mentalHealthUnmatchedSubs.length})
-              </span>
-            )}
-          </TabsTrigger>
+          {!isMh && (
+            <TabsTrigger value="mental-health">
+              <Brain className="h-3.5 w-3.5 mr-1" />Mental Health
+              {mentalHealthRows.length + mentalHealthUnmatchedSubs.length > 0 && (
+                <span className="ml-1 text-xs">
+                  ({mentalHealthRows.length + mentalHealthUnmatchedSubs.length})
+                </span>
+              )}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="declined">
             <CalendarX className="h-3.5 w-3.5 mr-1" />Declined Hours
-            {allDeclinedRows.length > 0 && (
+            {(isMh ? scopedDeclined.length : allDeclinedRows.length) > 0 && (
               <Badge className="ml-1 bg-red-100 text-red-700">
-                {allDeclinedRows.length}
+                {isMh ? scopedDeclined.length : allDeclinedRows.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -924,17 +943,17 @@ export default function SchedulingWorkbenchPage({
         <TabsContent value="readiness" className="mt-4 space-y-4">
           <ReadinessPanel
             month={month}
-            summary={summary}
-            missingCount={summary.missingCount}
-            submittedHours={submittedAvailabilityHours}
-            mentalHealthCount={mentalHealthRows.length}
-            mentalHealthAcceptedCount={mentalHealthAcceptedRows.length}
-            inboxNeedsReviewCount={inboxActionableCount}
+            summary={scopedSummary}
+            missingCount={scopedSummary.missingCount}
+            submittedHours={scopedSubmittedAvailabilityHours}
+            mentalHealthCount={isMh ? 0 : mentalHealthRows.length}
+            mentalHealthAcceptedCount={isMh ? 0 : mentalHealthAcceptedRows.length}
+            inboxNeedsReviewCount={scopedInboxActionable}
             onJumpToCoverage={() => onTopTabChange('coverage')}
             onJumpToAvailability={() => onTopTabChange('availability')}
             onJumpToMatching={() => onTopTabChange('matching')}
             onJumpToPublish={() => onTopTabChange('publish')}
-            onJumpToMentalHealth={() => onTopTabChange('mental-health')}
+            onJumpToMentalHealth={() => (isMh ? undefined : onTopTabChange('mental-health'))}
           />
           <SopCard />
           {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
