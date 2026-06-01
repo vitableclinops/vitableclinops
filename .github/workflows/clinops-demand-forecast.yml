@@ -62,6 +62,14 @@ jobs:
       - name: Link ClinOps project
         run: supabase link --project-ref "$PROJECT_REF"
 
+      - name: Repair legacy remote-only migration versions
+        run: |
+          supabase migration repair --status reverted \
+            20260506193208 \
+            20260506211752 \
+            20260512162717 \
+            20260518182326 || true
+
       - name: Push forecast schema
         run: supabase db push --linked --include-all
 
