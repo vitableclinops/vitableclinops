@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { computeStateCoverage, coverageStatusFor } from '@/lib/scheduling/coverage';
+import {
+  computeStateCoverage,
+  coverageStatusFor,
+  isEligibleForState,
+} from '@/lib/scheduling/coverage';
 
 describe('computeStateCoverage', () => {
   it('uses accepted shift rows for filled hours and active licenses for eligible/missing counts', () => {
@@ -48,6 +52,40 @@ describe('computeStateCoverage', () => {
 
     expect(result.rows[0].eligible_providers).toBe(1);
     expect(result.rows[0].missing_providers).toBe(1);
+  });
+
+  it('reserves physician providers for MD-only states', () => {
+    const result = computeStateCoverage({
+      targets: [
+        { state: 'AL', monthly_hours_target: 25 },
+        { state: 'PA', monthly_hours_target: 100 },
+      ],
+      shifts: [],
+      providers: [
+        { id: 'np1', name: 'NP Provider', profession: 'NP', active: true },
+        { id: 'md1', name: 'MD Provider', profession: 'Physician', active: true },
+      ],
+      licenses: [
+        { provider_id: 'np1', state: 'PA', status: 'active' },
+        { provider_id: 'md1', state: 'AL', status: 'active' },
+        { provider_id: 'md1', state: 'PA', status: 'active' },
+      ],
+      submissions: [],
+    });
+
+    const byState = new Map(result.rows.map(row => [row.state, row]));
+    expect(byState.get('AL')?.eligible_providers).toBe(1);
+    expect(byState.get('PA')?.eligible_providers).toBe(1);
+  });
+});
+
+describe('isEligibleForState', () => {
+  it('keeps physicians on MD-only states and non-physicians off them', () => {
+    expect(isEligibleForState({ profession: 'MD' }, 'AL')).toBe(true);
+    expect(isEligibleForState({ profession: 'Physician' }, 'PA')).toBe(false);
+    expect(isEligibleForState({ profession: 'MD/DO' }, 'TN')).toBe(true);
+    expect(isEligibleForState({ profession: 'NP' }, 'AL')).toBe(false);
+    expect(isEligibleForState({ profession: 'NP' }, 'PA')).toBe(true);
   });
 });
 

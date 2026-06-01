@@ -34,8 +34,9 @@
  *      v_provider_state_eligibility, which rolls up ClinOps manual licenses,
  *      Medallion API licenses, DirectShifts static licenses, and the live
  *      Metabase active-state overlay. Those states are then filtered by the
- *      MD-only state rule: AL/IN/GA/MS/MO/SC/TN/LA can only be allocated
- *      to providers whose profession is MD or DO.
+ *      scheduling policy: MD/DO/Physician providers are reserved for
+ *      MD-only states (AL/IN/GA/MS/MO/SC/TN/LA), and non-physicians cannot
+ *      be allocated to those MD-only states.
  *   4. For each eligible state, demand_hours = sum of demand_forecast
  *      values over the target month, minus committed hours from decisions
  *      made in prior runs for OTHER providers in same state+month.
@@ -68,10 +69,47 @@ import {
   type ShiftRecommendationRow,
 } from '../_shared/submissionTimeline.ts';
 
-// States that can only be served by MDs/DOs per Vitable scope-of-practice rules.
-// NPs licensed in these states cannot be allocated demand hours here.
+// States that can only be served by physicians per Vitable scope-of-practice
+// rules. For now, physician hours are also reserved for these states so broad
+// state demand does not consume scarce MD/DO capacity.
 const MD_ONLY_STATES = new Set(['AL', 'IN', 'GA', 'MS', 'MO', 'SC', 'TN', 'LA']);
-const MD_PROFESSIONS = new Set(['MD', 'DO']);
+const PHYSICIAN_PROFESSIONS = new Set([
+  'MD',
+  'M_D',
+  'DO',
+  'D_O',
+  'PHYSICIAN',
+  'MEDICAL_DOCTOR',
+  'DOCTOR_OF_OSTEOPATHY',
+]);
+
+const normProfession = (profession: string | null | undefined) =>
+  (profession ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const isPhysicianProfession = (profession: string | null | undefined) => {
+  const norm = normProfession(profession);
+  const tokens = norm.split('_');
+  return (
+    PHYSICIAN_PROFESSIONS.has(norm) ||
+    tokens.includes('MD') ||
+    tokens.includes('DO') ||
+    tokens.includes('PHYSICIAN')
+  );
+};
+
+const isSchedulableForState = (
+  profession: string | null | undefined,
+  state: string,
+) => {
+  const st = state.trim().toUpperCase();
+  const isMdOnlyState = MD_ONLY_STATES.has(st);
+  if (isPhysicianProfession(profession)) return isMdOnlyState;
+  return !isMdOnlyState;
+};
 
 // Mental health professions use a weekly SLA across all 50 states (no per-state
 // demand allocation). They bypass the demand-gap math entirely: every parsed
@@ -87,7 +125,7 @@ const MH_PROFESSIONS = new Set([
 ]);
 const isMentalHealthProfession = (p: string | null | undefined) => {
   if (!p) return false;
-  const norm = p.toUpperCase().replace(/\s+/g, '_');
+  const norm = normProfession(p);
   return MH_PROFESSIONS.has(norm);
 };
 
@@ -364,8 +402,8 @@ Deno.serve(async (req: Request) => {
     // ── Preload provider-state eligibility from canonical view ─────────
     // The view rolls up ClinOps manual licenses, Medallion API licenses,
     // DirectShifts static licenses, and the Metabase active-state overlay.
-    // MD-only state rules still live here in the evaluator because they are
-    // scheduling-policy constraints rather than license-source facts.
+    // State scheduling policy still lives here in the evaluator because it is
+    // an allocation constraint rather than a license-source fact.
     const licensedStatesByProvider = new Map<string, Set<string>>();
     const licenseSourcesByProviderState = new Map<string, string[]>();
     if (allEligibilityProviderIds.length > 0) {
@@ -380,8 +418,8 @@ Deno.serve(async (req: Request) => {
       for (const row of (eligibilityRows ?? []) as ProviderStateEligibilityRow[]) {
         if (!row.provider_id || !row.state || row.allocation_eligible !== true) continue;
         const st = String(row.state).trim().toUpperCase();
-        const profession = (professionByProvider.get(row.provider_id) ?? '').toUpperCase();
-        if (MD_ONLY_STATES.has(st) && !MD_PROFESSIONS.has(profession)) continue;
+        const profession = professionByProvider.get(row.provider_id);
+        if (!isSchedulableForState(profession, st)) continue;
         if (!licensedStatesByProvider.has(row.provider_id)) {
           licensedStatesByProvider.set(row.provider_id, new Set());
         }
@@ -663,6 +701,7 @@ Deno.serve(async (req: Request) => {
         // and skip the licensed-states + state-gap math.
         const profession = professionByProvider.get(providerId);
         const providerPriority = providerPriorityFor(providerProfileByProvider.get(providerId));
+        const isPhysician = isPhysicianProfession(profession);
         if (isMentalHealthProfession(profession)) {
           if (olderIds.length) {
             await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
@@ -710,6 +749,9 @@ Deno.serve(async (req: Request) => {
             `provider_priority=${providerPriority.key}`,
             'Provider has no allocation-eligible states on file',
           ];
+          if (isPhysician) {
+            noLicNoteParts.push('state_policy=physician_reserved_for_md_only');
+          }
           if (oohDeclined > 0) {
             noLicNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
           }
@@ -794,6 +836,9 @@ Deno.serve(async (req: Request) => {
         const noteParts: string[] = [];
         noteParts.push(`group_size=${groupSubs.length}`);
         noteParts.push(`provider_priority=${providerPriority.key}`);
+        if (isPhysician) {
+          noteParts.push('state_policy=physician_reserved_for_md_only');
+        }
         noteParts.push(`effective_hours=${effectiveHours}h`);
         noteParts.push(`raw_hours=${validation.summary.raw_total_hours}h`);
         if (validation.summary.intervals_auto_corrected > 0) {
@@ -881,6 +926,7 @@ Deno.serve(async (req: Request) => {
           declined_hours: declined,
           allocations,
           provider_priority: providerPriority.key,
+          state_policy: isPhysician ? 'physician_reserved_for_md_only' : 'standard',
           validation_summary: validation.summary,
           validation_report: validation.report,
         });

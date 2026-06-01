@@ -117,7 +117,11 @@ import {
   useSchedulingSourceAudit,
   type SourceAuditSection,
 } from '@/hooks/useSchedulingSourceAudit';
-import { coverageStatusFor, type CoverageStatus } from '@/lib/scheduling/coverage';
+import {
+  coverageStatusFor,
+  isEligibleForState,
+  type CoverageStatus,
+} from '@/lib/scheduling/coverage';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 
@@ -407,10 +411,13 @@ export default function SchedulingWorkbenchPage() {
 
   const eligibilityByProvider = useMemo(() => {
     const map = new Map<string, ProviderEligibilitySummary>();
+    const professionByProvider = new Map(rows.map(row => [row.provider_id, row.profession]));
     for (const row of providerEligibility) {
       if (!row.provider_id || !row.state || row.allocation_eligible !== true) continue;
       const state = String(row.state).trim().toUpperCase();
       if (!state) continue;
+      const profession = professionByProvider.get(row.provider_id) ?? null;
+      if (!isEligibleForState({ profession }, state)) continue;
       const current = map.get(row.provider_id) ?? {
         states: new Set<string>(),
         sources: new Set<string>(),
@@ -421,7 +428,7 @@ export default function SchedulingWorkbenchPage() {
       map.set(row.provider_id, current);
     }
     return map;
-  }, [providerEligibility]);
+  }, [providerEligibility, rows]);
 
   // Telehealth-only set drives the main publishing flow. MH gets its own tab.
   const telehealthRows = useMemo(

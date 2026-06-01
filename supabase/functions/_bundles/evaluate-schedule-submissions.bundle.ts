@@ -1562,9 +1562,13 @@ function round2(n: number): number {
  *      *normalized* timeline drives the forecast decision.
  *   2. effective_hours = summary.final_approvable_hours from the pipeline
  *      (normalized + deduped + minus unavailable).
- *   3. eligible_states = provider's licensed states, filtered by the
- *      MD-only state rule: AL/IN/GA/MS/MO/SC/TN/LA can only be allocated
- *      to providers whose profession is MD or DO.
+ *   3. eligible_states = provider's allocation-eligible states from
+ *      v_provider_state_eligibility, which rolls up ClinOps manual licenses,
+ *      Medallion API licenses, DirectShifts static licenses, and the live
+ *      Metabase active-state overlay. Those states are then filtered by the
+ *      scheduling policy: MD/DO/Physician providers are reserved for
+ *      MD-only states (AL/IN/GA/MS/MO/SC/TN/LA), and non-physicians cannot
+ *      be allocated to those MD-only states.
  *   4. For each eligible state, demand_hours = sum of demand_forecast
  *      values over the target month, minus committed hours from decisions
  *      made in prior runs for OTHER providers in same state+month.
@@ -1589,10 +1593,47 @@ function round2(n: number): number {
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-// States that can only be served by MDs/DOs per Vitable scope-of-practice rules.
-// NPs licensed in these states cannot be allocated demand hours here.
+// States that can only be served by physicians per Vitable scope-of-practice
+// rules. For now, physician hours are also reserved for these states so broad
+// state demand does not consume scarce MD/DO capacity.
 const MD_ONLY_STATES = new Set(['AL', 'IN', 'GA', 'MS', 'MO', 'SC', 'TN', 'LA']);
-const MD_PROFESSIONS = new Set(['MD', 'DO']);
+const PHYSICIAN_PROFESSIONS = new Set([
+  'MD',
+  'M_D',
+  'DO',
+  'D_O',
+  'PHYSICIAN',
+  'MEDICAL_DOCTOR',
+  'DOCTOR_OF_OSTEOPATHY',
+]);
+
+const normProfession = (profession: string | null | undefined) =>
+  (profession ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const isPhysicianProfession = (profession: string | null | undefined) => {
+  const norm = normProfession(profession);
+  const tokens = norm.split('_');
+  return (
+    PHYSICIAN_PROFESSIONS.has(norm) ||
+    tokens.includes('MD') ||
+    tokens.includes('DO') ||
+    tokens.includes('PHYSICIAN')
+  );
+};
+
+const isSchedulableForState = (
+  profession: string | null | undefined,
+  state: string,
+) => {
+  const st = state.trim().toUpperCase();
+  const isMdOnlyState = MD_ONLY_STATES.has(st);
+  if (isPhysicianProfession(profession)) return isMdOnlyState;
+  return !isMdOnlyState;
+};
 
 // Mental health professions use a weekly SLA across all 50 states (no per-state
 // demand allocation). They bypass the demand-gap math entirely: every parsed
@@ -1608,7 +1649,7 @@ const MH_PROFESSIONS = new Set([
 ]);
 const isMentalHealthProfession = (p: string | null | undefined) => {
   if (!p) return false;
-  const norm = p.toUpperCase().replace(/\s+/g, '_');
+  const norm = normProfession(p);
   return MH_PROFESSIONS.has(norm);
 };
 
@@ -1637,6 +1678,88 @@ type Submission = {
   submitted_at: string;
   human_review_state: string | null;
 };
+
+type CommittedSubmission = {
+  id: string;
+  provider_id: string | null;
+  target_month: string | null;
+  parsed_shifts: ParsedShifts | null;
+  accepted_hours: number | null;
+  decision_status: string | null;
+};
+
+type ProviderStateEligibilityRow = {
+  provider_id: string | null;
+  state: string | null;
+  allocation_eligible: boolean | null;
+  eligibility_status: string | null;
+  license_sources: string[] | null;
+  metabase_active: boolean | null;
+};
+
+type ProviderProfile = {
+  id: string;
+  name: string | null;
+  profession: string | null;
+  employment_type: string | null;
+  source: string | null;
+  shift_types: string[] | null;
+};
+
+type ProviderPriorityKey = 'clinical_supervisor' | 'vitable_internal' | 'access_provider';
+
+type ProviderPriority = {
+  key: ProviderPriorityKey;
+  rank: 0 | 1 | 2;
+  label: string;
+};
+
+const DEFAULT_PROVIDER_PRIORITY: ProviderPriority = {
+  key: 'vitable_internal',
+  rank: 1,
+  label: 'Vitable internal',
+};
+
+function providerPriorityFor(profile: ProviderProfile | null | undefined): ProviderPriority {
+  if (!profile) return DEFAULT_PROVIDER_PRIORITY;
+  const employmentType = (profile.employment_type ?? '').trim().toLowerCase();
+  const source = (profile.source ?? '').trim().toLowerCase();
+  const shiftTypes = Array.isArray(profile.shift_types) ? profile.shift_types : [];
+  const haystack = [
+    profile.name,
+    profile.profession,
+    employmentType,
+    source,
+    ...shiftTypes,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+
+  if (
+    haystack.includes('clinical supervisor') ||
+    haystack.includes('clinical lead') ||
+    haystack.includes('supervisor')
+  ) {
+    return { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' };
+  }
+
+  if (
+    employmentType === 'agency' ||
+    source.includes('directshifts') ||
+    source.includes('direct shifts') ||
+    source.includes('access') ||
+    haystack.includes('directshifts') ||
+    haystack.includes('direct shifts') ||
+    haystack.includes('access provider') ||
+    haystack.includes('agency supplied')
+  ) {
+    return { key: 'access_provider', rank: 2, label: 'Access provider' };
+  }
+
+  return DEFAULT_PROVIDER_PRIORITY;
+}
 
 // Stable signature of a parsed_shifts blob for "did anything material change
 // vs the prior submission?" gating. We canonicalize the four widget arrays
@@ -1760,38 +1883,75 @@ Deno.serve(async (req: Request) => {
       submissionsByGroup.get(k)!.push(s);
     }
 
-    // ── Preload provider profession (for MD-only state enforcement) ────
+    // ── Preload committed rows before eligibility ─────────────────────
+    // Committed rows from providers outside this re-run still consume state
+    // demand. Include those providers in the eligibility preload so their
+    // accepted hours are split against the same canonical source set.
+    let committedRows: CommittedSubmission[] = [];
+    if (months.length > 0) {
+      const { data: committed, error: cErr } = await supabase
+        .from('schedule_submissions')
+        .select('id, provider_id, target_month, parsed_shifts, accepted_hours, decision_status')
+        .in('target_month', months)
+        .in('decision_status', ['accepted', 'partial'])
+        .range(0, 49999);
+      if (cErr) throw new Error(`Committed submissions load failed: ${cErr.message}`);
+      committedRows = (committed ?? []) as CommittedSubmission[];
+    }
+
+    const allEligibilityProviderIds = Array.from(new Set([
+      ...providerIds,
+      ...committedRows
+        .map(row => row.provider_id)
+        .filter((id): id is string => Boolean(id)),
+    ]));
+
+    // ── Preload provider roster metadata ───────────────────────────────
+    // The evaluator uses the full license-state view for eligibility, then
+    // orders providers by ClinOps priority: supervisors, Vitable internal,
+    // access providers. Within each tier, constrained providers still go first.
+    const providerProfileByProvider = new Map<string, ProviderProfile>();
     const professionByProvider = new Map<string, string | null>();
-    if (providerIds.length > 0) {
+    if (allEligibilityProviderIds.length > 0) {
       const { data: provs } = await supabase
         .from('providers')
-        .select('id, profession')
-        .in('id', providerIds);
-      for (const p of provs ?? []) {
+        .select('id, name, profession, employment_type, source, shift_types')
+        .in('id', allEligibilityProviderIds);
+      for (const p of (provs ?? []) as ProviderProfile[]) {
+        providerProfileByProvider.set(p.id, p);
         professionByProvider.set(p.id, p.profession ?? null);
       }
     }
 
-    // ── Preload provider licenses (filtered by MD-only constraint) ─────
-    // For the eight MD-only states, only providers whose profession is MD/DO
-    // are eligible — even if an NP holds a valid license. Drop non-eligible
-    // (provider, state) pairs at preload time so the allocator never sees them.
+    // ── Preload provider-state eligibility from canonical view ─────────
+    // The view rolls up ClinOps manual licenses, Medallion API licenses,
+    // DirectShifts static licenses, and the Metabase active-state overlay.
+    // State scheduling policy still lives here in the evaluator because it is
+    // an allocation constraint rather than a license-source fact.
     const licensedStatesByProvider = new Map<string, Set<string>>();
-    if (providerIds.length > 0) {
-      const { data: licenses } = await supabase
-        .from('provider_licenses')
-        .select('provider_id, state, status')
-        .in('provider_id', providerIds);
-      for (const l of licenses ?? []) {
-        if (!l.provider_id || !l.state) continue;
-        if (l.status && !['active', 'verified', 'pending_renewal'].includes(l.status)) continue;
-        const st = String(l.state).trim().toUpperCase();
-        const profession = (professionByProvider.get(l.provider_id) ?? '').toUpperCase();
-        if (MD_ONLY_STATES.has(st) && !MD_PROFESSIONS.has(profession)) continue;
-        if (!licensedStatesByProvider.has(l.provider_id)) {
-          licensedStatesByProvider.set(l.provider_id, new Set());
+    const licenseSourcesByProviderState = new Map<string, string[]>();
+    if (allEligibilityProviderIds.length > 0) {
+      const { data: eligibilityRows, error: eligErr } = await supabase
+        .from('v_provider_state_eligibility')
+        .select('provider_id, state, allocation_eligible, eligibility_status, license_sources, metabase_active')
+        .in('provider_id', allEligibilityProviderIds)
+        .eq('allocation_eligible', true)
+        .range(0, 49999);
+      if (eligErr) throw new Error(`Provider-state eligibility load failed: ${eligErr.message}`);
+
+      for (const row of (eligibilityRows ?? []) as ProviderStateEligibilityRow[]) {
+        if (!row.provider_id || !row.state || row.allocation_eligible !== true) continue;
+        const st = String(row.state).trim().toUpperCase();
+        const profession = professionByProvider.get(row.provider_id);
+        if (!isSchedulableForState(profession, st)) continue;
+        if (!licensedStatesByProvider.has(row.provider_id)) {
+          licensedStatesByProvider.set(row.provider_id, new Set());
         }
-        licensedStatesByProvider.get(l.provider_id)!.add(st);
+        licensedStatesByProvider.get(row.provider_id)!.add(st);
+        licenseSourcesByProviderState.set(
+          `${row.provider_id}|${st}`,
+          Array.isArray(row.license_sources) ? row.license_sources : [],
+        );
       }
     }
 
@@ -1818,41 +1978,35 @@ Deno.serve(async (req: Request) => {
     // ── Preload committed hours from OTHER groups (not in scope) ────────
     const groupKeysInScope = groupKeys;
     const committedByKey = new Map<string, number>(); // `${state}_${month}` → committed hours
-    if (months.length > 0) {
-      const { data: committed } = await supabase
-        .from('schedule_submissions')
-        .select('id, provider_id, target_month, parsed_shifts, accepted_hours, decision_status')
-        .in('target_month', months)
-        .in('decision_status', ['accepted', 'partial'])
-        .range(0, 49999);
-
-      // Sum accepted_hours per (state, month) for groups NOT being re-evaluated.
-      // Best-effort even-split across the provider's licensed states for that month.
-      for (const c of committed ?? []) {
-        if (!c.provider_id || !c.target_month) continue;
-        const k = `${c.provider_id}|${c.target_month}`;
-        if (groupKeysInScope.has(k)) continue;
-        const hours = typeof c.accepted_hours === 'number' ? c.accepted_hours : 0;
-        if (hours <= 0) continue;
-        const states = licensedStatesByProvider.get(c.provider_id);
-        if (!states || states.size === 0) continue;
-        const perState = hours / states.size;
-        for (const st of states) {
-          const key = `${st}_${c.target_month}`;
-          committedByKey.set(key, (committedByKey.get(key) ?? 0) + perState);
-        }
+    // Sum accepted_hours per (state, month) for groups NOT being re-evaluated.
+    // Best-effort even-split across the provider's canonical eligible states
+    // for that month.
+    for (const c of committedRows) {
+      if (!c.provider_id || !c.target_month) continue;
+      const k = `${c.provider_id}|${c.target_month}`;
+      if (groupKeysInScope.has(k)) continue;
+      const hours = typeof c.accepted_hours === 'number' ? c.accepted_hours : 0;
+      if (hours <= 0) continue;
+      const states = licensedStatesByProvider.get(c.provider_id);
+      if (!states || states.size === 0) continue;
+      const perState = hours / states.size;
+      for (const st of states) {
+        const key = `${st}_${c.target_month}`;
+        committedByKey.set(key, (committedByKey.get(key) ?? 0) + perState);
       }
     }
 
-    // ── Sort groups: most-constrained providers first ──────────────────
-    // Process providers with the fewest licensed-states-with-demand first so
-    // they don't get bumped by multi-state providers who have alternatives.
-    // This is the practical heuristic for "maximize utilization across
-    // providers" — single-state providers grab their state's gap before
-    // flexible providers consume it.
+    // ── Sort groups by provider priority, then constrained coverage ─────
+    // Clinical supervisors get first pass at demand, then Vitable internal
+    // providers, then access providers. Within each tier, process providers
+    // with the fewest licensed-states-with-demand first so single-state
+    // providers are not displaced by flexible providers with alternatives.
     const groupKeysSorted = Array.from(submissionsByGroup.keys()).sort((a, b) => {
       const [provA, monthA] = a.split('|');
       const [provB, monthB] = b.split('|');
+      const priorityA = providerPriorityFor(providerProfileByProvider.get(provA));
+      const priorityB = providerPriorityFor(providerProfileByProvider.get(provB));
+      if (priorityA.rank !== priorityB.rank) return priorityA.rank - priorityB.rank;
       const licA = licensedStatesByProvider.get(provA) ?? new Set();
       const licB = licensedStatesByProvider.get(provB) ?? new Set();
       const countWithDemand = (states: Set<string>, month: string) =>
@@ -1860,7 +2014,9 @@ Deno.serve(async (req: Request) => {
       const cA = countWithDemand(licA, monthA);
       const cB = countWithDemand(licB, monthB);
       if (cA !== cB) return cA - cB;        // fewer licensed-with-demand first
-      return monthA.localeCompare(monthB);  // stable tiebreaker
+      const nameA = providerProfileByProvider.get(provA)?.name ?? provA;
+      const nameB = providerProfileByProvider.get(provB)?.name ?? provB;
+      return monthA.localeCompare(monthB) || nameA.localeCompare(nameB);
     });
 
     // ── Evaluate each group ─────────────────────────────────────────────
@@ -2068,6 +2224,8 @@ Deno.serve(async (req: Request) => {
         // the telehealth state-demand pipeline. Accept every validated hour
         // and skip the licensed-states + state-gap math.
         const profession = professionByProvider.get(providerId);
+        const providerPriority = providerPriorityFor(providerProfileByProvider.get(providerId));
+        const isPhysician = isPhysicianProfession(profession);
         if (isMentalHealthProfession(profession)) {
           if (olderIds.length) {
             await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
@@ -2075,6 +2233,7 @@ Deno.serve(async (req: Request) => {
           }
           const mhNoteParts = [
             `decision=accepted (mental_health_bypass)`,
+            `provider_priority=${providerPriority.key}`,
             `profession=${profession}`,
             `effective_hours=${effectiveHours}h`,
             `raw_hours=${validation.summary.raw_total_hours}h`,
@@ -2110,7 +2269,13 @@ Deno.serve(async (req: Request) => {
         if (licensed.size === 0) {
           counters.skipped_no_licensed_states++;
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
-          const noLicNoteParts = ['Provider has no active licenses on file'];
+          const noLicNoteParts = [
+            `provider_priority=${providerPriority.key}`,
+            'Provider has no allocation-eligible states on file',
+          ];
+          if (isPhysician) {
+            noLicNoteParts.push('state_policy=physician_reserved_for_md_only');
+          }
           if (oohDeclined > 0) {
             noLicNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
           }
@@ -2127,6 +2292,13 @@ Deno.serve(async (req: Request) => {
           decisions.push({ group: key, provider: latest.provider_name, target_month: targetMonth, status: 'declined', reason: 'no_licenses', superseded: olderIds.length });
           continue;
         }
+
+        const eligibleSourceSummary = Array.from(licensed)
+          .sort()
+          .map(st => {
+            const sources = licenseSourcesByProviderState.get(`${providerId}|${st}`) ?? [];
+            return `${st}:${sources.length ? sources.join('+') : 'unknown'}`;
+          });
 
         // Compute remaining demand-hour gap per state
         const gapByState: Array<{ state: string; gapHours: number; missingDemand: boolean }> = [];
@@ -2187,6 +2359,10 @@ Deno.serve(async (req: Request) => {
 
         const noteParts: string[] = [];
         noteParts.push(`group_size=${groupSubs.length}`);
+        noteParts.push(`provider_priority=${providerPriority.key}`);
+        if (isPhysician) {
+          noteParts.push('state_policy=physician_reserved_for_md_only');
+        }
         noteParts.push(`effective_hours=${effectiveHours}h`);
         noteParts.push(`raw_hours=${validation.summary.raw_total_hours}h`);
         if (validation.summary.intervals_auto_corrected > 0) {
@@ -2206,6 +2382,9 @@ Deno.serve(async (req: Request) => {
         }
         if (oohDeclined > 0) {
           noteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
+        }
+        if (eligibleSourceSummary.length) {
+          noteParts.push(`eligible_sources=${eligibleSourceSummary.join(',')}`);
         }
         noteParts.push(`total_gap=${totalGap}h`);
         noteParts.push(
@@ -2270,6 +2449,8 @@ Deno.serve(async (req: Request) => {
           accepted_hours: accepted,
           declined_hours: declined,
           allocations,
+          provider_priority: providerPriority.key,
+          state_policy: isPhysician ? 'physician_reserved_for_md_only' : 'standard',
           validation_summary: validation.summary,
           validation_report: validation.report,
         });

@@ -56,7 +56,15 @@ export type CoverageComputationResult = {
 
 const VALID_LICENSE_STATUSES = new Set(['active', 'verified', 'pending_renewal']);
 const MD_ONLY_STATES = new Set(['AL', 'IN', 'GA', 'MS', 'MO', 'SC', 'TN', 'LA']);
-const MD_PROFESSIONS = new Set(['MD', 'DO', 'PHYSICIAN']);
+const PHYSICIAN_PROFESSIONS = new Set([
+  'MD',
+  'M_D',
+  'DO',
+  'D_O',
+  'PHYSICIAN',
+  'MEDICAL_DOCTOR',
+  'DOCTOR_OF_OSTEOPATHY',
+]);
 const MH_PROFESSIONS = new Set([
   'MENTAL_HEALTH_COACH',
   'MH_COACH',
@@ -66,18 +74,34 @@ const MH_PROFESSIONS = new Set([
 ]);
 
 const normProfession = (profession: string | null | undefined) =>
-  (profession ?? '').trim().toUpperCase().replace(/\s+/g, '_');
+  (profession ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 
 export const isMentalHealthProfession = (profession: string | null | undefined) =>
   MH_PROFESSIONS.has(normProfession(profession));
+
+export const isPhysicianProfession = (profession: string | null | undefined) => {
+  const norm = normProfession(profession);
+  const tokens = norm.split('_');
+  return (
+    PHYSICIAN_PROFESSIONS.has(norm) ||
+    tokens.includes('MD') ||
+    tokens.includes('DO') ||
+    tokens.includes('PHYSICIAN')
+  );
+};
 
 export const isEligibleForState = (
   provider: Pick<CoverageProviderInput, 'profession'>,
   state: string,
 ) => {
-  const profession = normProfession(provider.profession);
-  if (MD_ONLY_STATES.has(state) && !MD_PROFESSIONS.has(profession)) return false;
-  return true;
+  const st = state.trim().toUpperCase();
+  const isMdOnlyState = MD_ONLY_STATES.has(st);
+  if (isPhysicianProfession(provider.profession)) return isMdOnlyState;
+  return !isMdOnlyState;
 };
 
 export function coverageStatusFor(pct: number): CoverageStatus {
