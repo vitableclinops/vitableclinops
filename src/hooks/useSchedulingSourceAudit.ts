@@ -781,8 +781,10 @@ async function getDirectShiftsAudit(): Promise<SourceAuditSection> {
     return (data ?? []) as DirectShiftsLicenseRow[];
   });
 
-  const licenses = licensesResult.ok ? licensesResult.value : [];
-  const errors = licensesResult.ok ? [] : [licensesResult.error];
+  const licenses: DirectShiftsLicenseRow[] =
+    'value' in licensesResult ? licensesResult.value : [];
+  const errors: string[] =
+    'error' in licensesResult ? [licensesResult.error] : [];
   const matched = licenses.filter(row => Boolean(row.provider_id)).length;
   const active = licenses.filter(row => isAllocationLicenseStatus(row.status)).length;
   const expiring = licenses.filter(row => expiresWithinDays(row.effective_to, 45)).length;
