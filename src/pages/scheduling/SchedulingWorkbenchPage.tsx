@@ -1,4 +1,5 @@
 import { useMemo, useState, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import SchedulingShell from './SchedulingShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,11 @@ import {
   Brain,
   UserX,
   Copy,
+  LayoutDashboard,
+  TrendingUp,
+  Map as MapIcon,
+  Send,
+  ArrowRight,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
@@ -91,8 +97,11 @@ import {
   useOnboardingReadiness,
   useUnmatchedSubmissions,
 } from '@/hooks/useMonthlyPublish';
+import { useMonthlyDemand } from '@/hooks/useMonthlySchedulingForecast';
+import { useStateCoverage } from '@/hooks/useStateCoverage';
+import { cohortFor, COHORT_BUFFER_PCT, type Cohort } from '@/lib/scheduling/cohorts';
 
-const MONTH_OPTIONS = ['2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01'];
+const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 
 const MH_PROFESSIONS = new Set([
   'mental_health_coach',
