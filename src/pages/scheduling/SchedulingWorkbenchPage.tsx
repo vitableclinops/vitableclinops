@@ -3303,9 +3303,15 @@ function MatchingPanel({
             {all.map(r => {
               const shifts = shiftsByProvider.get(r.provider_id) ?? [];
               const states = new Set<string>();
-              for (const s of shifts) if (s.assigned_state) states.add(s.assigned_state);
-              for (const s of r.submission?.parsed_shifts ?? [])
-                if (s.state) states.add(String(s.state).toUpperCase());
+              for (const s of Array.isArray(shifts) ? shifts : []) {
+                if (s.assigned_state) states.add(s.assigned_state);
+              }
+              const parsedShifts = r.submission?.parsed_shifts;
+              for (const s of Array.isArray(parsedShifts) ? parsedShifts : []) {
+                if (s && typeof s === 'object' && 'state' in s && (s as any).state) {
+                  states.add(String((s as any).state).toUpperCase());
+                }
+              }
               const accepted = Number(r.submission?.accepted_hours ?? 0);
               const declined = Number(r.submission?.declined_hours ?? 0);
               const status = r.submission?.decision_status ?? null;
