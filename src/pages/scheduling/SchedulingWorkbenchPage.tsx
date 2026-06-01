@@ -589,39 +589,50 @@ export default function SchedulingWorkbenchPage() {
         </div>
       </div>
 
-      <SopCard />
+      <Tabs value={topTab} onValueChange={onTopTabChange}>
+        <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="overview"><LayoutDashboard className="h-3.5 w-3.5 mr-1" />Overview</TabsTrigger>
+          <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
+          <TabsTrigger value="availability"><Inbox className="h-3.5 w-3.5 mr-1" />Availability</TabsTrigger>
+          <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage</TabsTrigger>
+          <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
+        </TabsList>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryCard
-          label="Shifts to publish"
-          value={summary.totalShifts.toString()}
-          sub={`${summary.totalProviders} provider${summary.totalProviders === 1 ? '' : 's'}`}
-        />
-        <SummaryCard
-          label="Posted to Homebase"
-          value={`${summary.totalShifts ? Math.round((summary.homebaseShifts / summary.totalShifts) * 100) : 0}%`}
-          sub={`${summary.homebaseShifts} of ${summary.totalShifts} shifts`}
-        />
-        <SummaryCard
-          label="Posted to EHR"
-          value={`${summary.totalShifts ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0}%`}
-          sub={`${summary.ehrShifts} of ${summary.totalShifts} shifts`}
-        />
-        <SummaryCard label="Declined" value={summary.declinedCount.toString()} />
-      </div>
+        {/* ============ OVERVIEW ============ */}
+        <TabsContent value="overview" className="mt-4 space-y-4">
+          <OverviewPanel
+            month={month}
+            summary={summary}
+            missingCount={summary.missingCount}
+            onJumpToCoverage={() => onTopTabChange('coverage')}
+            onJumpToAvailability={() => onTopTabChange('availability')}
+          />
+          <SopCard />
+          {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                No per-shift recommendations have been generated for{' '}
+                {formatMonthLabel(month)}. Click "Re-run evaluator" above to expand the Jotform
+                submissions into individual shifts.
+              </AlertDescription>
+            </Alert>
+          )}
+        </TabsContent>
 
-      {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            No per-shift recommendations have been generated for{' '}
-            {formatMonthLabel(month)}. Click "Re-run evaluator" to expand the Jotform
-            submissions into individual shifts.
-          </AlertDescription>
-        </Alert>
-      )}
+        {/* ============ FORECAST ============ */}
+        <TabsContent value="forecast" className="mt-4 space-y-4">
+          <ForecastPanel month={month} />
+        </TabsContent>
 
-      <Card>
+        {/* ============ COVERAGE ============ */}
+        <TabsContent value="coverage" className="mt-4 space-y-4">
+          <CoverageMatchingPanel month={month} />
+        </TabsContent>
+
+        {/* ============ AVAILABILITY ============ */}
+        <TabsContent value="availability" className="mt-4 space-y-4">
+          <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
@@ -673,7 +684,7 @@ export default function SchedulingWorkbenchPage() {
         </Alert>
       )}
 
-      <Tabs defaultValue="provider">
+      <Tabs defaultValue="inbox">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="inbox">
             <Inbox className="h-3.5 w-3.5 mr-1" /> Inbox
@@ -699,31 +710,6 @@ export default function SchedulingWorkbenchPage() {
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="provider">By Provider</TabsTrigger>
-          <TabsTrigger value="queue">
-            Publishing Queue
-            {summary.totalShifts > 0 && (
-              <span className="ml-1 text-xs">
-                ({summary.homebaseShifts}/{summary.totalShifts})
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="day">By Day</TabsTrigger>
-          <TabsTrigger value="review">
-            Needs Review
-            {summary.needsReviewCount > 0 && (
-              <Badge className="ml-1 bg-orange-100 text-orange-800">
-                {summary.needsReviewCount}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="declined">Declined</TabsTrigger>
-          <TabsTrigger value="mh">
-            <Brain className="h-3.5 w-3.5 mr-1" /> Mental Health
-            {mentalHealthRows.length > 0 && (
-              <span className="ml-1 text-xs">({mentalHealthRows.length})</span>
-            )}
-          </TabsTrigger>
           <TabsTrigger value="missing">
             <UserX className="h-3.5 w-3.5 mr-1" /> Missing
             {summary.missingCount > 0 && (
@@ -736,12 +722,6 @@ export default function SchedulingWorkbenchPage() {
             <CalendarOff className="h-3.5 w-3.5 mr-1" /> Time Off
             {timeOffRows.length > 0 && (
               <span className="ml-1 text-xs">({timeOffRows.length})</span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="history">
-            <History className="h-3.5 w-3.5 mr-1" /> History
-            {auditEntries.length > 0 && (
-              <span className="ml-1 text-xs">({auditEntries.length})</span>
             )}
           </TabsTrigger>
         </TabsList>
@@ -761,6 +741,87 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="setup" className="mt-4 space-y-4">
           <OnboardingReadinessPanel />
         </TabsContent>
+
+        <TabsContent value="missing" className="mt-4 space-y-4">
+          <MissingSubmissionsPanel
+            month={month}
+            rows={missingRows}
+            isLoading={isLoading}
+          />
+        </TabsContent>
+
+        <TabsContent value="timeoff" className="mt-4 space-y-4">
+          <TimeOffPanel
+            month={month}
+            entries={timeOffRows}
+            isLoading={isLoading}
+          />
+        </TabsContent>
+      </Tabs>
+        </TabsContent>
+
+        {/* ============ PUBLISH ============ */}
+        <TabsContent value="publish" className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <SummaryCard
+              label="Shifts to publish"
+              value={summary.totalShifts.toString()}
+              sub={`${summary.totalProviders} provider${summary.totalProviders === 1 ? '' : 's'}`}
+            />
+            <SummaryCard
+              label="Posted to Homebase"
+              value={`${summary.totalShifts ? Math.round((summary.homebaseShifts / summary.totalShifts) * 100) : 0}%`}
+              sub={`${summary.homebaseShifts} of ${summary.totalShifts} shifts`}
+            />
+            <SummaryCard
+              label="Posted to EHR"
+              value={`${summary.totalShifts ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0}%`}
+              sub={`${summary.ehrShifts} of ${summary.totalShifts} shifts`}
+            />
+            <SummaryCard label="Declined" value={summary.declinedCount.toString()} />
+          </div>
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs">
+              Final step — only publish after Coverage Matching shows no critical gaps.
+              Hover any checked box to see who marked it and when.
+            </AlertDescription>
+          </Alert>
+
+          <Tabs defaultValue="provider">
+            <TabsList className="flex-wrap h-auto">
+              <TabsTrigger value="provider">By Provider</TabsTrigger>
+              <TabsTrigger value="queue">
+                Publishing Queue
+                {summary.totalShifts > 0 && (
+                  <span className="ml-1 text-xs">
+                    ({summary.homebaseShifts}/{summary.totalShifts})
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="day">By Day</TabsTrigger>
+              <TabsTrigger value="review">
+                Needs Review
+                {summary.needsReviewCount > 0 && (
+                  <Badge className="ml-1 bg-orange-100 text-orange-800">
+                    {summary.needsReviewCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="declined">Declined</TabsTrigger>
+              <TabsTrigger value="mh">
+                <Brain className="h-3.5 w-3.5 mr-1" /> Mental Health
+                {mentalHealthRows.length > 0 && (
+                  <span className="ml-1 text-xs">({mentalHealthRows.length})</span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="history">
+                <History className="h-3.5 w-3.5 mr-1" /> History
+                {auditEntries.length > 0 && (
+                  <span className="ml-1 text-xs">({auditEntries.length})</span>
+                )}
+              </TabsTrigger>
+            </TabsList>
 
         <TabsContent value="provider" className="mt-4 space-y-4">
           <Card>
