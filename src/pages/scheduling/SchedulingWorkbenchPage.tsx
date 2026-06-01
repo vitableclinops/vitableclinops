@@ -61,6 +61,9 @@ import {
   Map as MapIcon,
   Send,
   ArrowRight,
+  ShieldCheck,
+  Users,
+  HelpCircle,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
@@ -201,15 +204,23 @@ export default function SchedulingWorkbenchPage() {
   const [month, setMonth] = useState('2026-07-01');
   const initialTab = (() => {
     const t = searchParams.get('tab');
-    return ['overview', 'forecast', 'availability', 'coverage', 'publish'].includes(t ?? '')
+    return [
+      'readiness',
+      'forecast',
+      'availability',
+      'matching',
+      'coverage',
+      'publish',
+      'audit',
+    ].includes(t ?? '')
       ? (t as string)
-      : 'overview';
+      : 'readiness';
   })();
   const [topTab, setTopTab] = useState(initialTab);
   const onTopTabChange = (v: string) => {
     setTopTab(v);
     const next = new URLSearchParams(searchParams);
-    if (v === 'overview') next.delete('tab');
+    if (v === 'readiness') next.delete('tab');
     else next.set('tab', v);
     setSearchParams(next, { replace: true });
   };
