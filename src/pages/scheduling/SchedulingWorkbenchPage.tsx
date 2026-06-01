@@ -602,21 +602,28 @@ export default function SchedulingWorkbenchPage() {
 
       <Tabs value={topTab} onValueChange={onTopTabChange}>
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="overview"><LayoutDashboard className="h-3.5 w-3.5 mr-1" />Overview</TabsTrigger>
+          <TabsTrigger value="readiness"><ShieldCheck className="h-3.5 w-3.5 mr-1" />Readiness</TabsTrigger>
           <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
           <TabsTrigger value="availability"><Inbox className="h-3.5 w-3.5 mr-1" />Availability</TabsTrigger>
-          <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage</TabsTrigger>
+          <TabsTrigger value="matching"><Users className="h-3.5 w-3.5 mr-1" />Matching</TabsTrigger>
+          <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Gaps</TabsTrigger>
           <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
+          <TabsTrigger value="audit"><HelpCircle className="h-3.5 w-3.5 mr-1" />Audit</TabsTrigger>
         </TabsList>
 
-        {/* ============ OVERVIEW ============ */}
-        <TabsContent value="overview" className="mt-4 space-y-4">
-          <OverviewPanel
+        {/* ============ READINESS ============ */}
+        <TabsContent value="readiness" className="mt-4 space-y-4">
+          <ReadinessPanel
             month={month}
             summary={summary}
             missingCount={summary.missingCount}
+            mentalHealthCount={mentalHealthRows.length}
+            mentalHealthAcceptedCount={mentalHealthRows.filter(r => r.submission?.decision_status === 'accepted' || r.submission?.decision_status === 'partial').length}
+            inboxNeedsReviewCount={inboxActionableCount}
             onJumpToCoverage={() => onTopTabChange('coverage')}
             onJumpToAvailability={() => onTopTabChange('availability')}
+            onJumpToMatching={() => onTopTabChange('matching')}
+            onJumpToPublish={() => onTopTabChange('publish')}
           />
           <SopCard />
           {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
@@ -636,9 +643,20 @@ export default function SchedulingWorkbenchPage() {
           <ForecastPanel month={month} />
         </TabsContent>
 
+        {/* ============ MATCHING ============ */}
+        <TabsContent value="matching" className="mt-4 space-y-4">
+          <MatchingPanel
+            month={month}
+            acceptedRows={acceptedRows}
+            declinedRows={declinedRows}
+            needsReviewRows={needsReviewRows}
+            shiftsByProvider={shiftsByProvider}
+          />
+        </TabsContent>
+
         {/* ============ COVERAGE ============ */}
         <TabsContent value="coverage" className="mt-4 space-y-4">
-          <CoverageMatchingPanel month={month} />
+          <CoverageGapsPanel month={month} acceptedRows={acceptedRows} missingRows={missingRows} />
         </TabsContent>
 
         {/* ============ AVAILABILITY ============ */}
