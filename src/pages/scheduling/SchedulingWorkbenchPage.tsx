@@ -202,6 +202,8 @@ const labelShiftType = (t: string | null | undefined) => {
   return SHIFT_TYPE_LABEL[t] ?? t;
 };
 
+const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : []);
+
 export default function SchedulingWorkbenchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [month, setMonth] = useState('2026-07-01');
@@ -232,16 +234,24 @@ export default function SchedulingWorkbenchPage() {
   const toggleExpanded = (id: string) =>
     setExpanded(p => ({ ...p, [id]: !p[id] }));
 
-  const { data: dbRows = [], isLoading, refetch } = useMonthlyPublishView(month);
-  const { data: shiftRows = [], isLoading: shiftsLoading, refetch: refetchShifts } =
+  const { data: dbRowsData = [], isLoading, refetch } = useMonthlyPublishView(month);
+  const { data: shiftRowsData = [], isLoading: shiftsLoading, refetch: refetchShifts } =
     useShiftRecommendationsForMonth(month);
-  const { data: auditEntries = [] } = usePublishAuditLog(month);
-  const { data: inboxSubmissions = [], isLoading: inboxLoading } =
+  const { data: auditEntriesData = [] } = usePublishAuditLog(month);
+  const { data: inboxSubmissionsData = [], isLoading: inboxLoading } =
     useResubmissionInbox(month);
-  const { data: unmatchedSubs = [] } = useUnmatchedSubmissions();
-  const { data: availabilitySubmissions = [], isLoading: availabilityLoading } =
+  const { data: unmatchedSubsData = [] } = useUnmatchedSubmissions();
+  const { data: availabilitySubmissionsData = [], isLoading: availabilityLoading } =
     useMonthlyAvailabilitySubmissions(month);
-  const { data: readinessRows = [] } = useOnboardingReadiness(30);
+  const { data: readinessRowsData = [] } = useOnboardingReadiness(30);
+
+  const dbRows = safeArray<ProviderPublishView>(dbRowsData);
+  const shiftRows = safeArray<ShiftRow>(shiftRowsData);
+  const auditEntries = safeArray<PublishAuditEntry>(auditEntriesData);
+  const inboxSubmissions = safeArray(inboxSubmissionsData);
+  const unmatchedSubs = safeArray(unmatchedSubsData);
+  const availabilitySubmissions = safeArray<AvailabilitySubmissionRow>(availabilitySubmissionsData);
+  const readinessRows = safeArray<{ readyForSubmissions: boolean }>(readinessRowsData);
   const setupIssuesCount = useMemo(
     () => readinessRows.filter(r => !r.readyForSubmissions).length,
     [readinessRows],
