@@ -3675,9 +3675,9 @@ function ReadinessPanel({
   ]);
 
   const lastUpdated = useMemo(() => {
-    const ts = (demandQ.dataUpdatedAt || coverageQ.dataUpdatedAt) ?? Date.now();
+    const ts = coverageQ.dataUpdatedAt || Date.now();
     return new Date(ts).toLocaleString();
-  }, [demandQ.dataUpdatedAt, coverageQ.dataUpdatedAt]);
+  }, [coverageQ.dataUpdatedAt]);
 
   return (
     <div className="space-y-4">
