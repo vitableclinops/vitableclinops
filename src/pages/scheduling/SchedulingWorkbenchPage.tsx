@@ -544,12 +544,11 @@ export default function SchedulingWorkbenchPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Calendar className="h-6 w-6 text-emerald-600" />
-            Scheduling Workbench
+            July 2026 Scheduling Workbench
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Track each shift through Homebase and the EHR. Resume anywhere — every
-            click is recorded with who and when. Hover any checked box to see who
-            marked it.
+            One place to move July from forecast → availability → coverage → publish.
+            Pick a tab below. Every Homebase/EHR click is recorded with who and when.
           </p>
         </div>
         <div className="flex items-center gap-2">
