@@ -28,7 +28,7 @@ import {
 } from '@/hooks/useMonthlySchedulingForecast';
 import { downloadCSV } from '@/lib/utils';
 
-const MONTH_OPTIONS = ['2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01'];
+const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 
 const formatMonthLabel = (iso: string) => {
   const [y, m] = iso.split('-').map(Number);
@@ -58,23 +58,23 @@ const decisionVariant = (
 };
 
 export default function SchedulingForecastPage() {
-  const [month, setMonth] = useState('2026-06-01');
+  const [month, setMonth] = useState('2026-07-01');
 
   const demandQ = useMonthlyDemand(month);
   const decisionsQ = useMonthlyDecisions(month);
   const { summary, loading } = useMonthlyForecastSummary(month);
 
-  const demandRows = demandQ.data ?? [];
-  const decisionRows = decisionsQ.data ?? [];
+  const demandRows = demandQ.data;
+  const decisionRows = decisionsQ.data;
 
   const sortedDemand = useMemo(
-    () => [...demandRows].sort((a, b) => b.monthly_visits_target - a.monthly_visits_target),
+    () => [...(demandRows ?? [])].sort((a, b) => b.monthly_visits_target - a.monthly_visits_target),
     [demandRows],
   );
 
   const sortedDecisions = useMemo(() => {
     const order = { accepted: 0, partial: 1, declined: 2, pending: 3 } as Record<string, number>;
-    return [...decisionRows].sort((a, b) => {
+    return [...(decisionRows ?? [])].sort((a, b) => {
       const ao = order[a.decision_status] ?? 99;
       const bo = order[b.decision_status] ?? 99;
       if (ao !== bo) return ao - bo;

@@ -31,6 +31,7 @@ export type SubmissionRow = {
   declined_hours: number | null;
   decision_notes: string | null;
   parsed_shifts: ParsedShift[] | null;
+  raw_answers?: unknown;
   submitted_at: string;
   decided_at: string | null;
   validation_status: string | null;
@@ -68,6 +69,27 @@ export type ProviderPublishView = {
   employment_type: string | null;
   submission: SubmissionRow | null;
   publish: PublishStatusRow | null;
+};
+
+export type AvailabilitySubmissionRow = {
+  id: string;
+  jotform_submission_id: string;
+  provider_id: string | null;
+  provider_name: string;
+  provider_email: string | null;
+  provider_profession: string | null;
+  target_month: string;
+  decision_status: DecisionStatus | string | null;
+  accepted_hours: number | null;
+  declined_hours: number | null;
+  decision_notes: string | null;
+  parsed_shifts: unknown;
+  raw_answers: unknown;
+  submitted_at: string;
+  validation_status: string | null;
+  validation_warnings: unknown;
+  raw_requested_hours: number | null;
+  normalized_requested_hours: number | null;
 };
 
 const monthIso = (m: string) => (m.length === 7 ? `${m}-01` : m);
@@ -189,6 +211,7 @@ export function useMonthlyPublishView(month: string) {
       const latestByProvider = new Map<string, SubmissionRow>();
       for (const s of submissions) {
         if (!s.provider_id) continue;
+        if (s.decision_status === 'superseded') continue;
         if (!latestByProvider.has(s.provider_id)) latestByProvider.set(s.provider_id, s);
       }
 
@@ -222,6 +245,54 @@ export function useMonthlyPublishView(month: string) {
       });
 
       return rows;
+    },
+    staleTime: 30_000,
+    enabled: Boolean(monthStart),
+  });
+}
+
+export function useMonthlyAvailabilitySubmissions(month: string) {
+  const monthStart = monthIso(month);
+  return useQuery({
+    queryKey: ['workbench', 'availability-submissions', monthStart],
+    queryFn: async (): Promise<AvailabilitySubmissionRow[]> => {
+      const [submissionsRes, providersRes] = await Promise.all([
+        clinopsSupabase
+          .from('schedule_submissions')
+          .select(
+            'id, jotform_submission_id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, raw_answers, submitted_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours',
+          )
+          .eq('target_month', monthStart)
+          .order('submitted_at', { ascending: false })
+          .range(0, 49999),
+        clinopsSupabase
+          .from('providers')
+          .select('id, email, profession')
+          .range(0, 49999),
+      ]);
+      if (submissionsRes.error) throw submissionsRes.error;
+      if (providersRes.error) throw providersRes.error;
+
+      const providerById = new Map(
+        (providersRes.data ?? []).map(p => [
+          p.id,
+          { email: p.email ?? null, profession: p.profession ?? null },
+        ]),
+      );
+
+      return (submissionsRes.data ?? []).map(s => {
+        const provider = s.provider_id ? providerById.get(s.provider_id) : null;
+        const parsed = (s.parsed_shifts ?? null) as Record<string, unknown> | null;
+        const parsedEmail =
+          parsed && typeof parsed.email === 'string' && parsed.email.trim()
+            ? parsed.email.trim()
+            : null;
+        return {
+          ...(s as unknown as Omit<AvailabilitySubmissionRow, 'provider_email' | 'provider_profession'>),
+          provider_email: provider?.email ?? parsedEmail,
+          provider_profession: provider?.profession ?? null,
+        };
+      });
     },
     staleTime: 30_000,
     enabled: Boolean(monthStart),
@@ -798,15 +869,17 @@ const inboxWindowBounds = (anchorMonth: string) => {
 
 export function useResubmissionInbox(anchorMonth: string) {
   const targetMonth = monthIso(anchorMonth);
+  const { fromMonth, toMonth } = inboxWindowBounds(targetMonth);
   return useQuery({
-    queryKey: ['workbench', 'resubmission-inbox', targetMonth],
+    queryKey: ['workbench', 'resubmission-inbox', fromMonth, toMonth],
     queryFn: async (): Promise<SubmissionForInbox[]> => {
       const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
         .from('schedule_submissions')
         .select(
           'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, raw_requested_hours, normalized_requested_hours, human_review_state, human_review_resolved_at, human_review_resolved_label, human_review_notes',
         )
-        .eq('target_month', targetMonth)
+        .gte('target_month', fromMonth)
+        .lte('target_month', toMonth)
         .order('submitted_at', { ascending: true })
         .range(0, 9999);
       if (error) throw error;

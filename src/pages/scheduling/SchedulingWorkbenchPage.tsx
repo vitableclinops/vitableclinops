@@ -78,9 +78,11 @@ import {
   useTogglePublishShift,
   useBulkMarkPublishShifts,
   useResolveNeedsReview,
+  useMonthlyAvailabilitySubmissions,
   formatShiftTime,
   isHomebaseDone,
   isEhrDone,
+  type AvailabilitySubmissionRow,
   type ProviderPublishView,
   type DecisionStatus,
   type ParsedShift,
@@ -100,9 +102,10 @@ import {
   useOnboardingReadiness,
   useUnmatchedSubmissions,
 } from '@/hooks/useMonthlyPublish';
-import { useMonthlyDemand } from '@/hooks/useMonthlySchedulingForecast';
+import { useMonthlyDemand, useMonthlySlaRisk } from '@/hooks/useMonthlySchedulingForecast';
 import { useStateCoverage } from '@/hooks/useStateCoverage';
 import { cohortFor, COHORT_BUFFER_PCT, type Cohort } from '@/lib/scheduling/cohorts';
+import { coverageStatusFor, type CoverageStatus } from '@/lib/scheduling/coverage';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 
@@ -236,6 +239,8 @@ export default function SchedulingWorkbenchPage() {
   const { data: inboxSubmissions = [], isLoading: inboxLoading } =
     useResubmissionInbox(month);
   const { data: unmatchedSubs = [] } = useUnmatchedSubmissions();
+  const { data: availabilitySubmissions = [], isLoading: availabilityLoading } =
+    useMonthlyAvailabilitySubmissions(month);
   const { data: readinessRows = [] } = useOnboardingReadiness(30);
   const setupIssuesCount = useMemo(
     () => readinessRows.filter(r => !r.readyForSubmissions).length,
@@ -407,6 +412,21 @@ export default function SchedulingWorkbenchPage() {
     [rows],
   );
 
+  const submittedAvailabilityHours = useMemo(() => {
+    const latestByProvider = new Map<string, AvailabilitySubmissionRow>();
+    for (const row of availabilitySubmissions) {
+      if (row.decision_status === 'superseded') continue;
+      const key = row.provider_id ?? row.provider_name;
+      const current = latestByProvider.get(key);
+      if (!current || row.submitted_at > current.submitted_at) latestByProvider.set(key, row);
+    }
+    let total = 0;
+    for (const row of latestByProvider.values()) {
+      total += Number(row.normalized_requested_hours ?? row.raw_requested_hours ?? 0);
+    }
+    return total;
+  }, [availabilitySubmissions]);
+
   // Resubmission inbox count — # of groups with a content-changing latest
   // submission that hasn't been resolved yet. Drives the tab badge.
   const inboxActionableCount = useMemo(() => {
@@ -555,10 +575,10 @@ export default function SchedulingWorkbenchPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Calendar className="h-6 w-6 text-emerald-600" />
-            July 2026 Scheduling Workbench
+            {formatMonthLabel(month)} Scheduling Workbench
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            One place to move July from forecast → availability → coverage → publish.
+            One place to move {formatMonthLabel(month)} from forecast → availability → coverage → publish.
             Pick a tab below. Every Homebase/EHR click is recorded with who and when.
           </p>
         </div>
@@ -617,6 +637,7 @@ export default function SchedulingWorkbenchPage() {
             month={month}
             summary={summary}
             missingCount={summary.missingCount}
+            submittedHours={submittedAvailabilityHours}
             mentalHealthCount={mentalHealthRows.length}
             mentalHealthAcceptedCount={mentalHealthRows.filter(r => r.submission?.decision_status === 'accepted' || r.submission?.decision_status === 'partial').length}
             inboxNeedsReviewCount={inboxActionableCount}
@@ -713,10 +734,18 @@ export default function SchedulingWorkbenchPage() {
         </Alert>
       )}
 
-      <Tabs defaultValue="inbox">
+      <Tabs defaultValue="submissions">
         <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="submissions">
+            <Inbox className="h-3.5 w-3.5 mr-1" /> Submissions
+            {availabilitySubmissions.length > 0 && (
+              <Badge className="ml-1 bg-emerald-100 text-emerald-800">
+                {availabilitySubmissions.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="inbox">
-            <Inbox className="h-3.5 w-3.5 mr-1" /> Inbox
+            <RefreshCw className="h-3.5 w-3.5 mr-1" /> Resubmits
             {inboxActionableCount > 0 && (
               <Badge className="ml-1 bg-blue-100 text-blue-800">
                 {inboxActionableCount}
@@ -754,6 +783,14 @@ export default function SchedulingWorkbenchPage() {
             )}
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="submissions" className="mt-4 space-y-4">
+          <AvailabilitySubmissionsPanel
+            month={month}
+            rows={availabilitySubmissions}
+            isLoading={availabilityLoading}
+          />
+        </TabsContent>
 
         <TabsContent value="inbox" className="mt-4 space-y-4">
           <ResubmissionInboxPanel
@@ -1112,6 +1149,10 @@ export default function SchedulingWorkbenchPage() {
             acceptedRows={acceptedRows}
             declinedRows={declinedRows}
             needsReviewRows={needsReviewRows}
+            availabilityRows={availabilitySubmissions}
+            unmatchedRows={unmatchedSubs}
+            missingRows={missingRows}
+            shifts={shiftRows}
           />
         </TabsContent>
       </Tabs>
@@ -1291,6 +1332,192 @@ function LoadingRow({ label }: { label: string }) {
       <Loader2 className="h-5 w-5 animate-spin mr-2" />
       {label}
     </div>
+  );
+}
+
+const parseWidgetRows = (raw: unknown): Record<string, unknown>[] => {
+  if (raw == null) return [];
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (entry): entry is Record<string, unknown> =>
+      entry != null && typeof entry === 'object' && !Array.isArray(entry),
+  );
+};
+
+const asParsedBlob = (raw: unknown): Record<string, unknown> =>
+  raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+
+const compactJson = (raw: unknown) => {
+  try {
+    return JSON.stringify(raw ?? null, null, 2);
+  } catch {
+    return String(raw);
+  }
+};
+
+const formatAvailabilityRows = (
+  raw: unknown,
+  mode: 'recurring' | 'dated' | 'unavailable',
+) => {
+  const rows = parseWidgetRows(raw);
+  if (rows.length === 0) return '—';
+  return rows
+    .slice(0, 4)
+    .map(row => {
+      if (mode === 'recurring') {
+        const day = row['Day of Week'] ?? 'Day';
+        return `${day}: ${row['Start Time (ET)'] ?? '?'}-${row['End Time (ET)'] ?? '?'}`;
+      }
+      if (mode === 'unavailable') {
+        const start = row['Start Date'] ?? row.Date ?? '?';
+        const end = row['End Date'] ?? start;
+        return start === end ? String(start) : `${start}-${end}`;
+      }
+      return `${row.Date ?? '?'}: ${row['Start Time (ET)'] ?? '?'}-${row['End Time (ET)'] ?? '?'}`;
+    })
+    .join('; ') + (rows.length > 4 ? `; +${rows.length - 4} more` : '');
+};
+
+function AvailabilitySubmissionsPanel({
+  month,
+  rows,
+  isLoading,
+}: {
+  month: string;
+  rows: AvailabilitySubmissionRow[];
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent>
+          <LoadingRow label="Loading availability submissions" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          No Jotform availability submissions are stored for {formatMonthLabel(month)}.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          Availability submissions · {formatMonthLabel(month)}
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Source: Jotform form 252224341308043 → sync-jotform-submissions →
+          schedule_submissions.
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Provider</TableHead>
+              <TableHead>Shift type</TableHead>
+              <TableHead>Recurring virtual</TableHead>
+              <TableHead>One-off virtual</TableHead>
+              <TableHead>In-home / clinic</TableHead>
+              <TableHead>Unavailable / exceptions</TableHead>
+              <TableHead className="text-right">Hours</TableHead>
+              <TableHead>Submitted</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map(row => {
+              const parsed = asParsedBlob(row.parsed_shifts);
+              const shiftTypes = Array.isArray(parsed.shift_types)
+                ? (parsed.shift_types as unknown[]).map(String).join(', ')
+                : String(parsed.shift_types ?? '—');
+              const warnings = Array.isArray(row.validation_warnings)
+                ? row.validation_warnings
+                : [];
+              return (
+                <TableRow key={row.id}>
+                  <TableCell className="align-top">
+                    <div className="font-medium">{row.provider_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.provider_email ?? 'No email'} · {formatMonthLabel(row.target_month)}
+                    </div>
+                    {!row.provider_id && (
+                      <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                        Unmatched
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="align-top text-xs">{shiftTypes || '—'}</TableCell>
+                  <TableCell className="align-top text-xs max-w-[220px]">
+                    {formatAvailabilityRows(parsed.recurring_virtual, 'recurring')}
+                  </TableCell>
+                  <TableCell className="align-top text-xs max-w-[220px]">
+                    {formatAvailabilityRows(parsed.one_off_virtual, 'dated')}
+                  </TableCell>
+                  <TableCell className="align-top text-xs max-w-[220px]">
+                    {formatAvailabilityRows(parsed.in_home_clinic, 'dated')}
+                  </TableCell>
+                  <TableCell className="align-top text-xs max-w-[220px]">
+                    {formatAvailabilityRows(parsed.unavailable_dates, 'unavailable')}
+                    <div className="mt-1 text-muted-foreground">
+                      Last-minute: {parsed.last_minute_ok == null ? '—' : parsed.last_minute_ok ? 'yes' : 'no'}
+                      {parsed.travel_miles != null ? ` · ${parsed.travel_miles} mi` : ''}
+                    </div>
+                    {parsed.comments ? (
+                      <div className="mt-1 text-muted-foreground">Comments: {String(parsed.comments)}</div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="align-top text-right tabular-nums">
+                    <div>{formatHours(row.normalized_requested_hours ?? row.raw_requested_hours)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      accepted {formatHours(row.accepted_hours)}
+                    </div>
+                  </TableCell>
+                  <TableCell className="align-top text-xs text-muted-foreground">
+                    <div>{formatRelativeTime(row.submitted_at)}</div>
+                    <StatusBadge status={row.decision_status as DecisionStatus} />
+                    {warnings.length > 0 && (
+                      <div className="mt-1 text-amber-700">
+                        {warnings.slice(0, 2).map(String).join(' · ')}
+                      </div>
+                    )}
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                        Raw / parsed
+                      </summary>
+                      <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-[10px] leading-snug">
+                        {compactJson({
+                          parsed_shifts: row.parsed_shifts,
+                          raw_answers: row.raw_answers,
+                        })}
+                      </pre>
+                    </details>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1910,6 +2137,19 @@ function MissingSubmissionsPanel({
   rows: ProviderPublishView[];
   isLoading: boolean;
 }) {
+  const sortedRows = useMemo(
+    () =>
+      [...rows].sort((a, b) =>
+        a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
+      ),
+    [rows],
+  );
+
+  const emailsWithAddress = useMemo(
+    () => sortedRows.filter(r => r.provider_email && r.provider_email.includes('@')),
+    [sortedRows],
+  );
+
   if (isLoading) {
     return (
       <Card>
@@ -1934,19 +2174,6 @@ function MissingSubmissionsPanel({
   const monthLabel = formatMonthLabel(month);
   const reminderTemplate = (name: string) =>
     `Hi ${name.split(' ')[0]}, gentle reminder to submit your ${monthLabel} availability when you have a moment. Thanks!`;
-
-  const sortedRows = useMemo(
-    () =>
-      [...rows].sort((a, b) =>
-        a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
-      ),
-    [rows],
-  );
-
-  const emailsWithAddress = useMemo(
-    () => sortedRows.filter(r => r.provider_email && r.provider_email.includes('@')),
-    [sortedRows],
-  );
 
   const copyAll = async () => {
     const text = sortedRows
@@ -2400,6 +2627,7 @@ function ReadinessPanel({
   month,
   summary,
   missingCount,
+  submittedHours,
   mentalHealthCount,
   mentalHealthAcceptedCount,
   inboxNeedsReviewCount,
@@ -2419,6 +2647,7 @@ function ReadinessPanel({
     missingCount: number;
   };
   missingCount: number;
+  submittedHours: number;
   mentalHealthCount: number;
   mentalHealthAcceptedCount: number;
   inboxNeedsReviewCount: number;
@@ -2440,7 +2669,6 @@ function ReadinessPanel({
     [coverageQ.data],
   );
 
-  const submittedHours = acceptedHours; // best-available proxy from coverage
   const gapHours = demandHours - acceptedHours;
   const criticalGapStates = useMemo(
     () =>
@@ -2487,7 +2715,7 @@ function ReadinessPanel({
     }
     if (missingCount > 0) {
       return {
-        blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} have not submitted July availability`,
+        blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} have not submitted ${formatMonthLabel(month)} availability`,
         nextAction: 'Open Availability → Missing and copy BCC list',
         nextActionJump: onJumpToAvailability,
       };
@@ -2495,7 +2723,7 @@ function ReadinessPanel({
     if (inboxNeedsReviewCount > 0) {
       return {
         blocker: `${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} pending review`,
-        nextAction: 'Resolve resubmissions in Availability → Inbox',
+        nextAction: 'Resolve resubmissions in Availability → Resubmits',
         nextActionJump: onJumpToAvailability,
       };
     }
@@ -2521,11 +2749,12 @@ function ReadinessPanel({
       };
     }
     return {
-      blocker: 'None — July is publish-ready',
+      blocker: `None — ${formatMonthLabel(month)} is publish-ready`,
       nextAction: 'Confirm with ClinOps lead and announce',
       nextActionJump: onJumpToPublish,
     };
   }, [
+    month,
     criticalGapStates,
     missingCount,
     inboxNeedsReviewCount,
@@ -2550,7 +2779,7 @@ function ReadinessPanel({
         <CardContent className="py-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <Badge className={`text-sm px-3 py-1 ${readiness.tone}`}>
-              July status: {readiness.label}
+              {formatMonthLabel(month)} status: {readiness.label}
             </Badge>
             <div className="text-sm">
               <div className="font-medium">Biggest blocker</div>
@@ -2601,7 +2830,7 @@ function ReadinessPanel({
         <SummaryCard
           label="Missing submissions"
           value={String(missingCount)}
-          sub="Providers without July hours"
+          sub={`Providers without ${formatMonthLabel(month)} hours`}
         />
         <SummaryCard
           label="Needs review"
@@ -2696,7 +2925,15 @@ function ReadinessPanel({
 
 function ForecastPanel({ month }: { month: string }) {
   const demandQ = useMonthlyDemand(month);
-  const rows = demandQ.data ?? [];
+  const slaQ = useMonthlySlaRisk(month);
+  const demandRows = demandQ.data;
+  const slaRows = slaQ.data;
+  const rows = useMemo(() => demandRows ?? [], [demandRows]);
+  const slaByState = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof slaRows>[number]>();
+    for (const row of slaRows ?? []) map.set(row.state, row);
+    return map;
+  }, [slaRows]);
 
   const enriched = useMemo(() => {
     return rows
@@ -2715,6 +2952,7 @@ function ForecastPanel({ month }: { month: string }) {
           enhanced,
           original,
           gapVsEnhanced: enhanced - monthly, // 0 by definition unless future enrichment
+          dailyTarget: Number(r.daily_target_slots ?? 0),
         };
       })
       .sort((a, b) => b.monthly - a.monthly);
@@ -2733,7 +2971,7 @@ function ForecastPanel({ month }: { month: string }) {
   if (rows.length === 0) {
     return (
       <EmptyState
-        title="No forecast loaded for July yet"
+        title={`No forecast loaded for ${formatMonthLabel(month)} yet`}
         body="The demand forecast is computed nightly from Metabase telehealth visit cards. Run the compute-demand-forecast edge function or wait for the nightly job."
       />
     );
@@ -2775,8 +3013,8 @@ function ForecastPanel({ month }: { month: string }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Demand by state · {formatMonthLabel(month)}</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Telehealth hours of provider availability needed. MH coaching and therapy
-            are staffed separately and not shown here.
+            Source: state_demand_targets. Enhanced values are the persisted
+            cohort-buffered forecast; original is reconstructed from the cohort buffer.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -2789,21 +3027,32 @@ function ForecastPanel({ month }: { month: string }) {
                 <TableHead className="text-right">Monthly (enhanced)</TableHead>
                 <TableHead className="text-right">Original build</TableHead>
                 <TableHead className="text-right">Δ vs enhanced</TableHead>
+                <TableHead>SLA / access risk</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {enriched.map(r => (
-                <TableRow key={r.state}>
-                  <TableCell className="font-medium">{r.state}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{r.cohort}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.weekly.toFixed(1)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.enhanced.toFixed(0)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.original.toFixed(0)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                    {r.gapVsEnhanced.toFixed(0)}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {enriched.map(r => {
+                const risk = slaByState.get(r.state);
+                return (
+                  <TableRow key={r.state}>
+                    <TableCell className="font-medium">{r.state}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{r.cohort}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.weekly.toFixed(1)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.enhanced.toFixed(0)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.original.toFixed(0)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
+                      {r.gapVsEnhanced.toFixed(0)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {risk
+                        ? `${risk.status} · ${risk.flaggedDays}/${risk.totalDays} flagged`
+                        : slaQ.isLoading
+                          ? 'Loading'
+                          : 'Unavailable'}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -2813,9 +3062,9 @@ function ForecastPanel({ month }: { month: string }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Specialty lines</CardTitle>
           <p className="text-xs text-muted-foreground">
-            MH coaching and therapy/LPC demand are staffed off-network and tracked separately.
-            Values shown below come from the ClinOps demand methodology buffers and are
-            not yet wired to live cards here.
+            Source: compute-demand-forecast response. These service-line totals are
+            not persisted in state_demand_targets today, so this table documents
+            the available methodology rather than live monthly rows.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -2846,20 +3095,11 @@ function ForecastPanel({ month }: { month: string }) {
   );
 }
 
-type CoverageStatus = 'Covered' | 'Watch' | 'Gap' | 'Critical Gap';
-
-function coverageStatusFor(pct: number): CoverageStatus {
-  if (pct >= 95) return 'Covered';
-  if (pct >= 80) return 'Watch';
-  if (pct >= 60) return 'Gap';
-  return 'Critical Gap';
-}
-
 const COVERAGE_STATUS_STYLE: Record<CoverageStatus, string> = {
   Covered: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
   Watch: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
   Gap: 'bg-orange-100 text-orange-800 hover:bg-orange-100',
-  'Critical Gap': 'bg-red-100 text-red-800 hover:bg-red-100',
+  Critical: 'bg-red-100 text-red-800 hover:bg-red-100',
 };
 
 function CoverageGapsPanel({
@@ -2881,7 +3121,7 @@ function CoverageGapsPanel({
   if (rows.length === 0) {
     return (
       <EmptyState
-        title="No coverage data for July yet"
+        title={`No coverage data for ${formatMonthLabel(month)} yet`}
         body="Coverage comes from shift_recommendations + state_demand_targets. What's missing: an evaluator run after Jotform submissions land. Next: click 'Re-run evaluator' in the header, then come back."
       />
     );
@@ -2889,33 +3129,10 @@ function CoverageGapsPanel({
 
   const sorted = [...rows].sort((a, b) => a.pct_filled - b.pct_filled);
 
-  // Best-effort eligible / missing provider counts per state, derived from
-  // accepted-row professions. Until we wire provider_licensure here, we count
-  // an accepted/missing provider as "eligible" for every state in their
-  // submission's parsed shifts (if any state was assigned).
-  const eligibleByState = new Map<string, Set<string>>();
-  const missingByState = new Map<string, Set<string>>();
-  for (const r of acceptedRows) {
-    const states = new Set<string>();
-    for (const s of r.submission?.parsed_shifts ?? []) {
-      if (s.state) states.add(String(s.state).toUpperCase());
-    }
-    for (const st of states) {
-      if (!eligibleByState.has(st)) eligibleByState.set(st, new Set());
-      eligibleByState.get(st)!.add(r.provider_id);
-    }
-  }
-  for (const r of missingRows) {
-    // Without licensure data we can't pin them to a state — leave a single
-    // bucket so ClinOps still sees there's outreach to do.
-    if (!missingByState.has('__any__')) missingByState.set('__any__', new Set());
-    missingByState.get('__any__')!.add(r.provider_id);
-  }
-
   const recommendedFor = (pct: number, gap: number): string => {
     if (pct >= 95) return 'Hold — keep monitoring';
     if (pct >= 80) return 'Watch for cancellations';
-    if (pct >= 60) return `Source ${Math.ceil(-gap)} more hrs from licensed providers`;
+    if (pct >= 60) return `Source ${Math.ceil(Math.abs(gap))} more hrs from licensed providers`;
     return `Critical — open Matching to reassign or hire`;
   };
 
@@ -2940,15 +3157,15 @@ function CoverageGapsPanel({
               <TableHead className="text-right">Gap / surplus</TableHead>
               <TableHead className="text-right">Coverage</TableHead>
               <TableHead className="text-right">Eligible</TableHead>
+              <TableHead className="text-right">Missing</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Recommended action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sorted.map(r => {
-              const status = coverageStatusFor(r.pct_filled);
+              const status = r.status ?? coverageStatusFor(r.pct_filled);
               const diff = r.filled - r.needed;
-              const eligible = eligibleByState.get(r.state)?.size ?? 0;
               return (
                 <TableRow key={r.state}>
                   <TableCell className="font-medium">{r.state}</TableCell>
@@ -2962,7 +3179,10 @@ function CoverageGapsPanel({
                     {r.needed > 0 ? `${Math.round(r.pct_filled)}%` : '—'}
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                    {eligible || '—'}
+                    {r.eligible_providers || '—'}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
+                    {r.missing_providers || '—'}
                   </TableCell>
                   <TableCell>
                     <Badge className={COVERAGE_STATUS_STYLE[status]}>{status}</Badge>
@@ -3049,7 +3269,7 @@ function MatchingPanel({
   if (all.length === 0) {
     return (
       <EmptyState
-        title="No matching decisions yet for July"
+        title={`No matching decisions yet for ${formatMonthLabel(month)}`}
         body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one evaluator run after Jotform submissions. Next: open the Availability tab to confirm submissions are in, then click 'Re-run evaluator' in the page header."
       />
     );
@@ -3147,17 +3367,222 @@ function classifyReason(text: string): string {
   return 'Other';
 }
 
+function DataSourceMapPanel() {
+  const rows = [
+    ['Demand forecast', 'compute-demand-forecast → demand_forecast → state_demand_targets', 'Forecast, Readiness, Coverage'],
+    ['Jotform availability', 'sync-jotform-submissions → schedule_submissions.raw_answers / parsed_shifts', 'Availability, Matching, Audit'],
+    ['Provider directory', 'providers', 'Missing submissions, Setup, Matching'],
+    ['Licensure', 'provider_licenses', 'Evaluator eligibility, Coverage eligible/missing counts'],
+    ['EHR readiness', 'providers.ehr_activation_status plus shift_recommendations.ehr_posted_at', 'Publish Tracker'],
+    ['Homebase publishing', 'shift_recommendations.publish_status / publish_audit_log', 'Publish Tracker, History'],
+    ['Recommendations', 'evaluate-schedule-submissions → shift_recommendations', 'Matching, Coverage, Publish, Audit'],
+  ];
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Data source map</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Number</TableHead>
+              <TableHead>Source path</TableHead>
+              <TableHead>Used in</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map(([label, source, used]) => (
+              <TableRow key={label}>
+                <TableCell className="font-medium">{label}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{source}</TableCell>
+                <TableCell className="text-xs">{used}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DataQualityPanel({
+  month,
+  availabilityRows,
+  unmatchedRows,
+  missingRows,
+  acceptedRows,
+  shifts,
+  coverageRows,
+}: {
+  month: string;
+  availabilityRows: AvailabilitySubmissionRow[];
+  unmatchedRows: Array<{ id: string; provider_name: string; target_month: string }>;
+  missingRows: ProviderPublishView[];
+  acceptedRows: ProviderPublishView[];
+  shifts: ShiftRow[];
+  coverageRows: Array<{
+    state: string;
+    needed: number;
+    eligible_providers: number;
+  }>;
+}) {
+  const emptyParsed = availabilityRows.filter(row => {
+    const parsed = asParsedBlob(row.parsed_shifts);
+    return (
+      parseWidgetRows(parsed.recurring_virtual).length +
+        parseWidgetRows(parsed.one_off_virtual).length +
+        parseWidgetRows(parsed.in_home_clinic).length
+    ) === 0;
+  });
+
+  const missingEmail = availabilityRows.filter(row => !row.provider_email);
+  const invalidTime = availabilityRows.filter(row => {
+    const warnings = Array.isArray(row.validation_warnings)
+      ? row.validation_warnings.map(String).join(' ')
+      : '';
+    return (
+      row.validation_status === 'needs_review' ||
+      /invalid|malformed|unrealistic|rejected|manual review/i.test(warnings)
+    );
+  });
+
+  const byProviderMonth = new Map<string, number>();
+  for (const row of availabilityRows) {
+    const key = `${row.provider_id ?? row.provider_name}|${row.target_month}`;
+    byProviderMonth.set(key, (byProviderMonth.get(key) ?? 0) + 1);
+  }
+  const duplicateGroups = Array.from(byProviderMonth.values()).filter(n => n > 1).length;
+
+  const acceptedExceedsSubmitted = acceptedRows.filter(row => {
+    const sub = row.submission;
+    if (!sub) return false;
+    const submitted = Number(sub.normalized_requested_hours ?? sub.raw_requested_hours ?? 0);
+    const accepted = Number(sub.accepted_hours ?? 0);
+    return submitted > 0 && accepted - submitted > 0.01;
+  });
+
+  const acceptedProviderIds = new Set(acceptedRows.map(r => r.provider_id));
+  const providersWithShiftRows = new Set(shifts.map(s => s.provider_id).filter(Boolean) as string[]);
+  const missingPublishRows = Array.from(acceptedProviderIds).filter(
+    providerId => !providersWithShiftRows.has(providerId),
+  ).length;
+
+  const demandWithoutEligibleProviders = coverageRows.filter(
+    row => row.needed > 0 && row.eligible_providers === 0,
+  );
+
+  const unmatchedThisMonth = unmatchedRows.filter(row => row.target_month === month);
+  const unmatchedOtherMonths = unmatchedRows.filter(row => row.target_month !== month);
+
+  const checks = [
+    {
+      label: 'Submissions with no matched provider',
+      count: unmatchedThisMonth.length,
+      detail: unmatchedThisMonth.slice(0, 3).map(r => r.provider_name).join(', '),
+    },
+    {
+      label: 'Unmatched submissions for another month',
+      count: unmatchedOtherMonths.length,
+      detail: unmatchedOtherMonths.slice(0, 3).map(r => `${r.provider_name} (${formatMonthLabel(r.target_month)})`).join(', '),
+    },
+    {
+      label: 'Missing provider email',
+      count: missingEmail.length,
+      detail: missingEmail.slice(0, 3).map(r => r.provider_name).join(', '),
+    },
+    {
+      label: 'Invalid / needs-review time ranges',
+      count: invalidTime.length,
+      detail: invalidTime.slice(0, 3).map(r => r.provider_name).join(', '),
+    },
+    {
+      label: 'Duplicate submissions / resubmission groups',
+      count: duplicateGroups,
+      detail: duplicateGroups ? 'Review Availability → Resubmits' : '',
+    },
+    {
+      label: 'Parsed shifts empty',
+      count: emptyParsed.length,
+      detail: emptyParsed.slice(0, 3).map(r => r.provider_name).join(', '),
+    },
+    {
+      label: 'Active providers missing availability',
+      count: missingRows.length,
+      detail: missingRows.slice(0, 3).map(r => r.provider_name).join(', '),
+    },
+    {
+      label: 'Accepted hours exceed submitted hours',
+      count: acceptedExceedsSubmitted.length,
+      detail: acceptedExceedsSubmitted.slice(0, 3).map(r => r.provider_name).join(', '),
+    },
+    {
+      label: 'State demand but no eligible providers',
+      count: demandWithoutEligibleProviders.length,
+      detail: demandWithoutEligibleProviders.slice(0, 5).map(r => r.state).join(', '),
+    },
+    {
+      label: 'Accepted providers missing publish rows',
+      count: missingPublishRows,
+      detail: missingPublishRows ? 'Run evaluator to emit shift_recommendations' : '',
+    },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Data quality checks · {formatMonthLabel(month)}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {checks.map(check => (
+            <div
+              key={check.label}
+              className="flex items-start justify-between gap-3 rounded-md border p-2"
+            >
+              <div>
+                <div className="text-sm font-medium">{check.label}</div>
+                {check.detail && (
+                  <div className="text-xs text-muted-foreground mt-0.5">{check.detail}</div>
+                )}
+              </div>
+              <Badge
+                className={
+                  check.count > 0
+                    ? 'bg-amber-100 text-amber-800 hover:bg-amber-100'
+                    : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+                }
+              >
+                {check.count}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AuditPanel({
   month,
   acceptedRows,
   declinedRows,
   needsReviewRows,
+  availabilityRows,
+  unmatchedRows,
+  missingRows,
+  shifts,
 }: {
   month: string;
   acceptedRows: ProviderPublishView[];
   declinedRows: ProviderPublishView[];
   needsReviewRows: ProviderPublishView[];
+  availabilityRows: AvailabilitySubmissionRow[];
+  unmatchedRows: Array<{ id: string; provider_name: string; target_month: string }>;
+  missingRows: ProviderPublishView[];
+  shifts: ShiftRow[];
 }) {
+  const coverageQ = useStateCoverage(month);
   type Entry = {
     provider: string;
     profession: string | null;
@@ -3217,10 +3642,22 @@ function AuditPanel({
 
   if (entries.length === 0) {
     return (
-      <EmptyState
-        title="No decisions to explain yet"
-        body="Once submissions are evaluated, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on the Availability tab and re-run the evaluator."
-      />
+      <div className="space-y-4">
+        <DataSourceMapPanel />
+        <DataQualityPanel
+          month={month}
+          availabilityRows={availabilityRows}
+          unmatchedRows={unmatchedRows}
+          missingRows={missingRows}
+          acceptedRows={acceptedRows}
+          shifts={shifts}
+          coverageRows={coverageQ.data?.rows ?? []}
+        />
+        <EmptyState
+          title="No decisions to explain yet"
+          body="Once submissions are evaluated, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on the Availability tab and re-run the evaluator."
+        />
+      </div>
     );
   }
 
@@ -3231,6 +3668,16 @@ function AuditPanel({
 
   return (
     <div className="space-y-4">
+      <DataSourceMapPanel />
+      <DataQualityPanel
+        month={month}
+        availabilityRows={availabilityRows}
+        unmatchedRows={unmatchedRows}
+        missingRows={missingRows}
+        acceptedRows={acceptedRows}
+        shifts={shifts}
+        coverageRows={coverageQ.data?.rows ?? []}
+      />
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Why the schedule looks the way it does</CardTitle>

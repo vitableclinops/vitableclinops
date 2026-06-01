@@ -28,7 +28,7 @@ interface SchedulingSidebarProps {
 }
 
 const items = [
-  { label: 'July Build', icon: CalendarCheck, href: '/scheduling/workbench' },
+  { label: 'Scheduling Workbench', icon: CalendarCheck, href: '/scheduling/workbench' },
 ];
 
 export function SchedulingSidebar({ userName, userEmail, userAvatarUrl }: SchedulingSidebarProps) {

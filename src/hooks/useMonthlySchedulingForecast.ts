@@ -39,6 +39,15 @@ export interface MonthlyForecastSummary {
   costPerVisitProjection: number | null;
 }
 
+export interface StateSlaRiskRow {
+  state: string;
+  status: string;
+  flaggedDays: number;
+  totalDays: number;
+  worstRatio: number | null;
+  avgSlaPct: number | null;
+}
+
 const monthIso = (month: string) => {
   // Accept "2026-06" or "2026-06-01" — normalize to first-of-month ISO date.
   if (month.length === 7) return `${month}-01`;
@@ -100,6 +109,83 @@ export function useMonthlyCostPerVisit(month: string) {
         .maybeSingle();
       if (error) throw error;
       return data;
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useMonthlySlaRisk(month: string) {
+  const monthStart = monthIso(month);
+  const nextMonth = nextMonthIso(month);
+  return useQuery({
+    queryKey: ['clinops', 'sla_daily', monthStart],
+    queryFn: async (): Promise<StateSlaRiskRow[]> => {
+      const { data, error } = await clinopsSupabase
+        .from('sla_daily')
+        .select('state, date, ratio, sla_pct, sla_flagged, status')
+        .gte('date', monthStart)
+        .lt('date', nextMonth)
+        .range(0, 9999);
+      if (error) throw error;
+
+      const byState = new Map<string, {
+        statuses: string[];
+        flaggedDays: number;
+        totalDays: number;
+        worstRatio: number | null;
+        slaPctSum: number;
+        slaPctCount: number;
+      }>();
+      for (const row of data ?? []) {
+        const state = String(row.state ?? '').trim().toUpperCase();
+        if (!state) continue;
+        const cur = byState.get(state) ?? {
+          statuses: [],
+          flaggedDays: 0,
+          totalDays: 0,
+          worstRatio: null,
+          slaPctSum: 0,
+          slaPctCount: 0,
+        };
+        cur.totalDays += 1;
+        if (row.status) cur.statuses.push(String(row.status));
+        if (row.sla_flagged) cur.flaggedDays += 1;
+        const ratio = Number(row.ratio);
+        if (Number.isFinite(ratio)) {
+          cur.worstRatio = cur.worstRatio == null ? ratio : Math.min(cur.worstRatio, ratio);
+        }
+        const slaPct = Number(row.sla_pct);
+        if (Number.isFinite(slaPct)) {
+          cur.slaPctSum += slaPct;
+          cur.slaPctCount += 1;
+        }
+        byState.set(state, cur);
+      }
+
+      const severity = (status: string) => {
+        const s = status.toLowerCase();
+        if (s.includes('critical')) return 4;
+        if (s.includes('gap') || s.includes('red')) return 3;
+        if (s.includes('watch') || s.includes('risk') || s.includes('yellow')) return 2;
+        if (s.includes('ok') || s.includes('green') || s.includes('healthy')) return 1;
+        return 0;
+      };
+
+      return Array.from(byState.entries())
+        .map(([state, v]) => {
+          const status =
+            [...v.statuses].sort((a, b) => severity(b) - severity(a))[0] ??
+            (v.flaggedDays > 0 ? 'flagged' : 'no risk');
+          return {
+            state,
+            status,
+            flaggedDays: v.flaggedDays,
+            totalDays: v.totalDays,
+            worstRatio: v.worstRatio,
+            avgSlaPct: v.slaPctCount ? v.slaPctSum / v.slaPctCount : null,
+          };
+        })
+        .sort((a, b) => a.state.localeCompare(b.state));
     },
     staleTime: 5 * 60_000,
   });

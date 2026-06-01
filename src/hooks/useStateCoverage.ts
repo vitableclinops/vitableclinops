@@ -1,19 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
+import {
+  computeStateCoverage,
+  type CoverageStatus,
+  type InHomeProviderHours,
+  type StateCoverageComputedRow,
+} from '@/lib/scheduling/coverage';
 
-export type StateCoverageRow = {
-  state: string;
-  needed: number;
-  filled: number;
-  leftover: number;
-  pct_filled: number;
-};
-
-export type InHomeProviderHours = {
-  provider_name: string;
-  hours: number;
-  shifts: number;
-};
+export type StateCoverageRow = StateCoverageComputedRow;
+export type { CoverageStatus, InHomeProviderHours };
 
 const monthIso = (m: string) => (m.length === 7 ? `${m}-01` : m);
 
@@ -27,7 +22,7 @@ export function useStateCoverage(month: string) {
       inHomeBreakdown: InHomeProviderHours[];
       otherUnassignedHours: number;
     }> => {
-      const [targetsRes, shiftsRes] = await Promise.all([
+      const [targetsRes, shiftsRes, providersRes, licensesRes, submissionsRes] = await Promise.all([
         clinopsSupabase
           .from('state_demand_targets')
           .select('state, monthly_hours_target')
@@ -38,67 +33,35 @@ export function useStateCoverage(month: string) {
           .eq('target_month', monthStart)
           .eq('recommendation', 'publish')
           .range(0, 9999),
+        clinopsSupabase
+          .from('providers')
+          .select('id, name, profession, active')
+          .eq('active', true)
+          .range(0, 49999),
+        clinopsSupabase
+          .from('provider_licenses')
+          .select('provider_id, state, status')
+          .range(0, 49999),
+        clinopsSupabase
+          .from('schedule_submissions')
+          .select('provider_id, decision_status')
+          .eq('target_month', monthStart)
+          .range(0, 49999),
       ]);
 
       if (targetsRes.error) throw targetsRes.error;
       if (shiftsRes.error) throw shiftsRes.error;
+      if (providersRes.error) throw providersRes.error;
+      if (licensesRes.error) throw licensesRes.error;
+      if (submissionsRes.error) throw submissionsRes.error;
 
-      const needed = new Map<string, number>();
-      for (const t of targetsRes.data ?? []) {
-        needed.set(t.state, Number(t.monthly_hours_target ?? 0));
-      }
-
-      const filled = new Map<string, number>();
-      let inHomeHours = 0;
-      let otherUnassignedHours = 0;
-      const inHomeByProvider = new Map<string, { hours: number; shifts: number }>();
-
-      for (const s of shiftsRes.data ?? []) {
-        const hrs = Number(s.hours ?? 0);
-        const isInHome = s.shift_type === 'in_home_clinic';
-
-        if (isInHome) {
-          inHomeHours += hrs;
-          const key = s.provider_name ?? 'Unknown';
-          const cur = inHomeByProvider.get(key) ?? { hours: 0, shifts: 0 };
-          cur.hours += hrs;
-          cur.shifts += 1;
-          inHomeByProvider.set(key, cur);
-          if (s.assigned_state) {
-            filled.set(s.assigned_state, (filled.get(s.assigned_state) ?? 0) + hrs);
-          }
-          continue;
-        }
-
-        if (!s.assigned_state) {
-          otherUnassignedHours += hrs;
-          continue;
-        }
-        filled.set(s.assigned_state, (filled.get(s.assigned_state) ?? 0) + hrs);
-      }
-
-      const allStates = new Set<string>([...needed.keys(), ...filled.keys()]);
-      const rows: StateCoverageRow[] = Array.from(allStates).map(state => {
-        const need = needed.get(state) ?? 0;
-        const fill = filled.get(state) ?? 0;
-        return {
-          state,
-          needed: need,
-          filled: fill,
-          leftover: need - fill,
-          pct_filled: need > 0 ? Math.min(999, (fill / need) * 100) : fill > 0 ? 999 : 0,
-        };
+      return computeStateCoverage({
+        targets: targetsRes.data ?? [],
+        shifts: shiftsRes.data ?? [],
+        providers: providersRes.data ?? [],
+        licenses: licensesRes.data ?? [],
+        submissions: submissionsRes.data ?? [],
       });
-
-      rows.sort((a, b) => a.state.localeCompare(b.state));
-
-      const inHomeBreakdown: InHomeProviderHours[] = Array.from(
-        inHomeByProvider.entries(),
-      )
-        .map(([provider_name, v]) => ({ provider_name, hours: v.hours, shifts: v.shifts }))
-        .sort((a, b) => b.hours - a.hours);
-
-      return { rows, inHomeHours, inHomeBreakdown, otherUnassignedHours };
     },
     staleTime: 30_000,
     enabled: Boolean(monthStart),
