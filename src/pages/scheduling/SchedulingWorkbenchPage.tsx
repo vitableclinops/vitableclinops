@@ -2990,3 +2990,315 @@ function EmptyState({ title, body }: { title: string; body: string }) {
     </Card>
   );
 }
+
+// ============================================================================
+// Matching — provider-level recommendations with priority + decline reasons
+// ============================================================================
+
+function inferPriorityReason(row: ProviderPublishView): string {
+  const reasons: string[] = [];
+  const prof = (row.profession ?? '').toLowerCase();
+  const emp = (row.employment_type ?? '').toLowerCase();
+  if (prof === 'physician' || prof === 'md' || prof === 'do') reasons.push('Clinical lead (MD/DO)');
+  if (emp === 'w2') reasons.push('Internal W2');
+  else if (emp === '1099') reasons.push('1099 contractor');
+  else if (emp === 'agency') reasons.push('DirectShifts / agency');
+  const accepted = Number(row.submission?.accepted_hours ?? 0);
+  const declined = Number(row.submission?.declined_hours ?? 0);
+  if (accepted > 0 && declined === 0) reasons.push('Full accept');
+  if (declined > 0 && accepted > 0) reasons.push('Partial accept');
+  return reasons.join(' · ') || '—';
+}
+
+function inferDeclineReason(row: ProviderPublishView): string {
+  const notes = (row.submission?.decision_notes ?? '').trim();
+  if (notes) return notes;
+  const status = row.submission?.decision_status;
+  if (status === 'declined') return 'Declined (no reason recorded — see Audit tab)';
+  const declined = Number(row.submission?.declined_hours ?? 0);
+  if (declined > 0) return `${declined.toFixed(1)} hrs cut`;
+  return '';
+}
+
+function MatchingPanel({
+  month,
+  acceptedRows,
+  declinedRows,
+  needsReviewRows,
+  shiftsByProvider,
+}: {
+  month: string;
+  acceptedRows: ProviderPublishView[];
+  declinedRows: ProviderPublishView[];
+  needsReviewRows: ProviderPublishView[];
+  shiftsByProvider: Map<string, ShiftRow[]>;
+}) {
+  const all = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: ProviderPublishView[] = [];
+    for (const r of [...acceptedRows, ...declinedRows, ...needsReviewRows]) {
+      if (seen.has(r.provider_id)) continue;
+      seen.add(r.provider_id);
+      merged.push(r);
+    }
+    return merged.sort((a, b) =>
+      a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
+    );
+  }, [acceptedRows, declinedRows, needsReviewRows]);
+
+  if (all.length === 0) {
+    return (
+      <EmptyState
+        title="No matching decisions yet for July"
+        body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one evaluator run after Jotform submissions. Next: open the Availability tab to confirm submissions are in, then click 'Re-run evaluator' in the page header."
+      />
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Provider recommendations · {formatMonthLabel(month)}</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Who is getting hours, why, and what was cut. Prioritization weighs clinical leads,
+          internal vs DirectShifts, state coverage gaps, licensure, and EHR readiness.
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Provider</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Assigned states</TableHead>
+              <TableHead className="text-right">Shifts</TableHead>
+              <TableHead className="text-right">Accepted</TableHead>
+              <TableHead className="text-right">Declined</TableHead>
+              <TableHead>Priority reason</TableHead>
+              <TableHead>Cut / decline reason</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {all.map(r => {
+              const shifts = shiftsByProvider.get(r.provider_id) ?? [];
+              const states = new Set<string>();
+              for (const s of shifts) if (s.assigned_state) states.add(s.assigned_state);
+              for (const s of r.submission?.parsed_shifts ?? [])
+                if (s.state) states.add(String(s.state).toUpperCase());
+              const accepted = Number(r.submission?.accepted_hours ?? 0);
+              const declined = Number(r.submission?.declined_hours ?? 0);
+              const status = r.submission?.decision_status ?? null;
+              return (
+                <TableRow key={r.provider_id}>
+                  <TableCell className="font-medium">{r.provider_name}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {r.profession ?? '—'}
+                    {r.employment_type ? ` · ${r.employment_type}` : ''}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {states.size === 0 ? '—' : Array.from(states).sort().join(', ')}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{shifts.length || '—'}</TableCell>
+                  <TableCell className="text-right tabular-nums">{accepted.toFixed(1)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${declined > 0 ? 'text-red-700' : ''}`}>
+                    {declined.toFixed(1)}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[200px]">
+                    {inferPriorityReason(r)}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[280px]">
+                    {inferDeclineReason(r) || '—'}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={status} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Audit / Why — explains every accept / decline / cut / needs-review
+// ============================================================================
+
+function classifyReason(text: string): string {
+  const t = text.toLowerCase();
+  if (!t) return 'No reason recorded';
+  if (t.includes('outside') && t.includes('business')) return 'Outside business hours';
+  if (t.includes('capacity') || t.includes('oversupply') || t.includes('surplus'))
+    return 'State capacity full';
+  if (t.includes('unavailable') || t.includes('off-day') || t.includes('off day'))
+    return 'Provider unavailable';
+  if (t.includes('license') || t.includes('licensure')) return 'Missing license';
+  if (t.includes('np') && (t.includes('restrict') || t.includes('prohibit')))
+    return 'NP practice restriction';
+  if (t.includes('malformed') || t.includes('parse') || t.includes('invalid')) return 'Malformed time';
+  if (t.includes('unrealistic') || t.includes('too many')) return 'Unrealistic hours';
+  if (t.includes('cost') || t.includes('rate') || t.includes('expensive'))
+    return 'High-cost provider deprioritized';
+  if (t.includes('clinical lead') || t.includes('md')) return 'Clinical lead prioritized';
+  if (t.includes('lower') && t.includes('rate')) return 'Lower-rate provider prioritized';
+  return 'Other';
+}
+
+function AuditPanel({
+  month,
+  acceptedRows,
+  declinedRows,
+  needsReviewRows,
+}: {
+  month: string;
+  acceptedRows: ProviderPublishView[];
+  declinedRows: ProviderPublishView[];
+  needsReviewRows: ProviderPublishView[];
+}) {
+  type Entry = {
+    provider: string;
+    profession: string | null;
+    bucket: 'Accepted' | 'Declined / cut' | 'Needs review';
+    reasonClass: string;
+    reasonText: string;
+    hours: number;
+  };
+
+  const entries: Entry[] = [];
+  for (const r of acceptedRows) {
+    const declined = Number(r.submission?.declined_hours ?? 0);
+    const note = (r.submission?.decision_notes ?? '').trim();
+    if (declined > 0 || note) {
+      entries.push({
+        provider: r.provider_name,
+        profession: r.profession,
+        bucket: declined > 0 ? 'Declined / cut' : 'Accepted',
+        reasonClass: classifyReason(note),
+        reasonText: note || 'Accepted in full',
+        hours: declined || Number(r.submission?.accepted_hours ?? 0),
+      });
+    } else {
+      entries.push({
+        provider: r.provider_name,
+        profession: r.profession,
+        bucket: 'Accepted',
+        reasonClass: 'Clean accept',
+        reasonText: 'Accepted in full — no cuts',
+        hours: Number(r.submission?.accepted_hours ?? 0),
+      });
+    }
+  }
+  for (const r of declinedRows) {
+    if (acceptedRows.find(a => a.provider_id === r.provider_id)) continue;
+    const note = (r.submission?.decision_notes ?? '').trim();
+    entries.push({
+      provider: r.provider_name,
+      profession: r.profession,
+      bucket: 'Declined / cut',
+      reasonClass: classifyReason(note),
+      reasonText: note || 'Declined (no reason recorded)',
+      hours: Number(r.submission?.declined_hours ?? 0),
+    });
+  }
+  for (const r of needsReviewRows) {
+    const note = (r.submission?.decision_notes ?? '').trim();
+    entries.push({
+      provider: r.provider_name,
+      profession: r.profession,
+      bucket: 'Needs review',
+      reasonClass: classifyReason(note),
+      reasonText: note || 'Flagged for manual review',
+      hours: Number(r.submission?.accepted_hours ?? 0),
+    });
+  }
+
+  if (entries.length === 0) {
+    return (
+      <EmptyState
+        title="No decisions to explain yet"
+        body="Once submissions are evaluated, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on the Availability tab and re-run the evaluator."
+      />
+    );
+  }
+
+  // Reason rollup
+  const rollup = new Map<string, number>();
+  for (const e of entries) rollup.set(e.reasonClass, (rollup.get(e.reasonClass) ?? 0) + 1);
+  const rollupSorted = Array.from(rollup.entries()).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Why the schedule looks the way it does</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Rollup of every accept / decline / cut / needs-review decision for {formatMonthLabel(month)}.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-1.5">
+            {rollupSorted.map(([k, n]) => (
+              <Badge key={k} variant="outline" className="text-xs">
+                {k} · {n}
+              </Badge>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Decision log</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Bucket</TableHead>
+                <TableHead>Reason class</TableHead>
+                <TableHead>Detail</TableHead>
+                <TableHead className="text-right">Hrs</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {entries
+                .sort((a, b) => {
+                  const order = { 'Needs review': 0, 'Declined / cut': 1, Accepted: 2 } as const;
+                  return (order[a.bucket] - order[b.bucket]) || a.provider.localeCompare(b.provider);
+                })
+                .map((e, i) => (
+                  <TableRow key={`${e.provider}-${i}`}>
+                    <TableCell className="font-medium">{e.provider}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{e.profession ?? '—'}</TableCell>
+                    <TableCell>
+                      <Badge
+                        className={
+                          e.bucket === 'Accepted'
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+                            : e.bucket === 'Needs review'
+                              ? 'bg-orange-100 text-orange-800 hover:bg-orange-100'
+                              : 'bg-red-100 text-red-700 hover:bg-red-100'
+                        }
+                      >
+                        {e.bucket}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">{e.reasonClass}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[420px]">
+                      {e.reasonText}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{e.hours.toFixed(1)}</TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
