@@ -31,7 +31,7 @@ interface SchedulingSidebarProps {
 
 const items = [
   { label: 'Scheduling Workbench', icon: CalendarCheck, href: '/scheduling/workbench' },
-  { label: 'Mental Health', icon: Brain, href: '/scheduling/workbench?tab=mental-health' },
+  { label: 'Mental Health', icon: Brain, href: '/scheduling/mental-health' },
   { label: 'Declined Hours', icon: CalendarX, href: '/scheduling/workbench?tab=declined' },
 ];
 
