@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   CalendarCheck,
+  CalendarX,
+  Brain,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -29,6 +31,8 @@ interface SchedulingSidebarProps {
 
 const items = [
   { label: 'Scheduling Workbench', icon: CalendarCheck, href: '/scheduling/workbench' },
+  { label: 'Mental Health', icon: Brain, href: '/scheduling/workbench?tab=mental-health' },
+  { label: 'Declined Hours', icon: CalendarX, href: '/scheduling/workbench?tab=declined' },
 ];
 
 export function SchedulingSidebar({ userName, userEmail, userAvatarUrl }: SchedulingSidebarProps) {
@@ -75,7 +79,10 @@ export function SchedulingSidebar({ userName, userEmail, userAvatarUrl }: Schedu
 
         <nav className="flex-1 px-2 py-4 space-y-1">
           {items.map(item => {
-            const active = location.pathname === item.href;
+            const [path, query = ''] = item.href.split('?');
+            const active =
+              location.pathname === path &&
+              (query ? location.search === `?${query}` : location.search === '');
             return (
               <NavLink
                 key={item.href}

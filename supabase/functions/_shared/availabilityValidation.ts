@@ -86,6 +86,9 @@ export interface NormalizationSummary {
    *  operating-hours window (default 9 AM - 9 PM ET weekdays, 9 AM - 12 PM ET
    *  weekends). */
   hours_removed_for_operating_hours: number;
+  /** Hours dropped because a window is shorter than the configured minimum
+   *  shift length. Used for MH coaching's 2.5h minimum. */
+  hours_removed_for_minimum_shift: number;
   hours_changed_by_validation: number;
   intervals_auto_corrected: number;
   intervals_needing_review: number;
@@ -645,6 +648,30 @@ export function applyOperatingHoursWindow(
   return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
 }
 
+export function applyMinimumShiftLength(
+  slots: ExpandedSlot[],
+  config: ValidationConfig,
+): { slots: ExpandedSlot[]; droppedSlots: ExpandedSlot[]; hoursRemoved: number } {
+  const minHours = Number(config.min_single_shift_hours ?? 0);
+  if (!Number.isFinite(minHours) || minHours <= 0) {
+    return { slots, droppedSlots: [], hoursRemoved: 0 };
+  }
+
+  const out: ExpandedSlot[] = [];
+  const dropped: ExpandedSlot[] = [];
+  let removed = 0;
+  for (const s of slots) {
+    const hours = (s.endMin - s.startMin) / 60;
+    if (hours + 0.001 < minHours) {
+      removed += hours;
+      dropped.push(s);
+    } else {
+      out.push(s);
+    }
+  }
+  return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
+}
+
 function isInMonth(dateISO: string, monthISO: string): boolean {
   return dateISO >= monthISO && dateISO < nextMonth(monthISO);
 }
@@ -787,6 +814,9 @@ export interface NormalizationResult {
    *  preserved, so downstream can emit "declined: outside business hours"
    *  per-shift rows. */
   outOfHoursTimeline: ExpandedSlot[];
+  /** Slots dropped because they are shorter than the configured minimum shift
+   *  length. These can be emitted as explicit cut rows downstream. */
+  policyCutTimeline: ExpandedSlot[];
   summary: NormalizationSummary;
   report: ValidationReportRow[];
   override_used: ProviderOverride | null;
@@ -831,7 +861,8 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
   }
 
   const windowed = applyOperatingHoursWindow(slotInputs, config);
-  const windowedSlotInputs: DatedSlotInput[] = windowed.slots.map(s => {
+  const minimumLength = applyMinimumShiftLength(windowed.slots, config);
+  const windowedSlotInputs: DatedSlotInput[] = minimumLength.slots.map(s => {
     const orig = slotInputs.find(
       o => o.date === s.date && o.source === s.source,
     );
@@ -865,6 +896,7 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     hours_removed_for_unavailability: reconciled.hours_removed_for_unavailability,
     hours_removed_for_duplicates: reconciled.hours_removed_for_duplicates,
     hours_removed_for_operating_hours: windowed.hoursRemoved,
+    hours_removed_for_minimum_shift: minimumLength.hoursRemoved,
     hours_changed_by_validation: round2(hoursChanged),
     intervals_auto_corrected: normalized.filter(n => n.validation_status === 'auto_corrected').length,
     intervals_needing_review: normalized.filter(n => n.validation_status === 'needs_review').length,
@@ -916,6 +948,7 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     normalized,
     timeline: reconciled.slots,
     outOfHoursTimeline: windowed.droppedSlots,
+    policyCutTimeline: minimumLength.droppedSlots,
     summary,
     report,
     override_used: override,

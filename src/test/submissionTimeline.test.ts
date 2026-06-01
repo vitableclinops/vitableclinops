@@ -8,6 +8,7 @@ import {
   type SubmissionRow,
   type ShiftRecommendationRow,
 } from '@/lib/submissionTimeline';
+import { DEFAULT_VALIDATION_CONFIG } from '@/lib/availabilityValidation';
 
 const FIXTURE_TARGET_MONTH = '2026-06-01';
 
@@ -192,6 +193,47 @@ describe('buildShiftRecommendationRows', () => {
     expect(monday?.recommendation).toBe('cut');
     expect(sunday?.recommendation).toBe('publish');
     expect(sunday?.recommendation_reason).toContain('scarce coverage window');
+  });
+
+  it('emits policy cut rows for MH shifts shorter than 2.5 hours', () => {
+    const submission: SubmissionRow = {
+      id: 'sub-mh',
+      submitted_at: '2026-05-01T00:00:00Z',
+      parsed_shifts: {
+        one_off_virtual: JSON.stringify([
+          { 'Date': '06-04-2026', 'Start Time (ET)': '9:00 AM', 'End Time (ET)': '11:00 AM' },
+          { 'Date': '06-05-2026', 'Start Time (ET)': '9:00 AM', 'End Time (ET)': '11:30 AM' },
+        ]),
+      } as ParsedShiftsBlob,
+    };
+    const validation = buildSubmissionTimeline(
+      [submission],
+      { name: 'MH Coach' },
+      FIXTURE_TARGET_MONTH,
+      { config: { ...DEFAULT_VALIDATION_CONFIG, min_single_shift_hours: 2.5 } },
+    );
+    const rows = buildShiftRecommendationRows({
+      providerId: 'mh-1',
+      providerName: 'MH Coach',
+      targetMonth: FIXTURE_TARGET_MONTH,
+      timeline: validation.timeline,
+      forecastTimeline: validation.forecastTimeline,
+      policyCutTimeline: validation.forecastPolicyCutTimeline,
+      policyCutReason: 'Cut — mental health shifts must be at least 2.5h',
+      unallocatedForecastPublishReason: 'Publish (mental health schedule)',
+      declinedHours: 0,
+      declineAll: false,
+      allocations: [],
+      decisionRunId: 'run-mh',
+    });
+
+    const cutRows = rows.filter(r => r.recommendation === 'cut');
+    const publishRows = rows.filter(r => r.recommendation === 'publish');
+    expect(cutRows).toHaveLength(1);
+    expect(cutRows[0].shift_date).toBe('2026-06-04');
+    expect(cutRows[0].recommendation_reason).toContain('2.5h');
+    expect(publishRows).toHaveLength(1);
+    expect(publishRows[0].recommendation_reason).toContain('mental health schedule');
   });
 });
 

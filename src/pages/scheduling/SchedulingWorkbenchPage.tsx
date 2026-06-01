@@ -231,6 +231,9 @@ const SHIFT_TYPE_LABEL: Record<string, string> = {
   in_home_clinic: 'In-home / clinic',
 };
 
+const MH_VISIT_CADENCE_MINUTES = 50;
+const MH_MIN_SHIFT_HOURS = 2.5;
+
 const labelShiftType = (t: string | null | undefined) => {
   if (!t) return '—';
   return SHIFT_TYPE_LABEL[t] ?? t;
@@ -250,6 +253,8 @@ export default function SchedulingWorkbenchPage() {
       'matching',
       'coverage',
       'publish',
+      'mental-health',
+      'declined',
       'audit',
     ].includes(t ?? '')
       ? (t as string)
@@ -271,6 +276,8 @@ export default function SchedulingWorkbenchPage() {
   const { data: dbRowsData = [], isLoading, refetch } = useMonthlyPublishView(month);
   const { data: shiftRowsData = [], isLoading: shiftsLoading, refetch: refetchShifts } =
     useShiftRecommendationsForMonth(month);
+  const { data: cutRowsData = [], isLoading: cutsLoading } =
+    useShiftRecommendationsForMonth(month, 'cut');
   const { data: auditEntriesData = [] } = usePublishAuditLog(month);
   const { data: inboxSubmissionsData = [], isLoading: inboxLoading } =
     useResubmissionInbox(month);
@@ -282,6 +289,7 @@ export default function SchedulingWorkbenchPage() {
 
   const dbRows = safeArray<ProviderPublishView>(dbRowsData);
   const shiftRows = safeArray<ShiftRow>(shiftRowsData);
+  const cutRows = safeArray<ShiftRow>(cutRowsData);
   const auditEntries = safeArray<PublishAuditEntry>(auditEntriesData);
   const inboxSubmissions = safeArray<SubmissionForInbox>(inboxSubmissionsData);
   const unmatchedSubs = safeArray<UnmatchedSubmission>(unmatchedSubsData);
@@ -409,6 +417,16 @@ export default function SchedulingWorkbenchPage() {
     return map;
   }, [shiftRows]);
 
+  const cutRowsByProvider = useMemo(() => {
+    const map = new Map<string, ShiftRow[]>();
+    for (const s of cutRows) {
+      if (!s.provider_id) continue;
+      if (!map.has(s.provider_id)) map.set(s.provider_id, []);
+      map.get(s.provider_id)!.push(s);
+    }
+    return map;
+  }, [cutRows]);
+
   const eligibilityByProvider = useMemo(() => {
     const map = new Map<string, ProviderEligibilitySummary>();
     const professionByProvider = new Map(rows.map(row => [row.provider_id, row.profession]));
@@ -440,14 +458,28 @@ export default function SchedulingWorkbenchPage() {
     [rows],
   );
 
+  const isAcceptedSubmission = (r: ProviderPublishView) =>
+    r.submission?.decision_status === 'accepted' ||
+    r.submission?.decision_status === 'partial';
+
+  const hasDeclinedHours = (r: ProviderPublishView) =>
+    r.submission?.decision_status === 'declined' ||
+    Number(r.submission?.declined_hours ?? 0) > 0;
+
+  const sortDeclinedRows = (items: ProviderPublishView[]) =>
+    [...items].sort(
+      (a, b) =>
+        Number(b.submission?.declined_hours ?? 0) -
+        Number(a.submission?.declined_hours ?? 0),
+    );
+
   const acceptedRows = useMemo(
-    () =>
-      telehealthRows.filter(
-        r =>
-          r.submission?.decision_status === 'accepted' ||
-          r.submission?.decision_status === 'partial',
-      ),
+    () => telehealthRows.filter(isAcceptedSubmission),
     [telehealthRows],
+  );
+  const mentalHealthAcceptedRows = useMemo(
+    () => mentalHealthRows.filter(isAcceptedSubmission),
+    [mentalHealthRows],
   );
 
   // Include any provider with declined hours, not just status='declined'.
@@ -455,29 +487,42 @@ export default function SchedulingWorkbenchPage() {
   // submission as 'accepted' or 'partial' but still have declined_hours > 0,
   // and ClinOps wants to see those alongside fully-declined submissions.
   const declinedRows = useMemo(
-    () =>
-      telehealthRows
-        .filter(
-          r =>
-            r.submission?.decision_status === 'declined' ||
-            Number(r.submission?.declined_hours ?? 0) > 0,
-        )
-        .sort(
-          (a, b) =>
-            Number(b.submission?.declined_hours ?? 0) -
-              Number(a.submission?.declined_hours ?? 0),
-        ),
+    () => sortDeclinedRows(telehealthRows.filter(hasDeclinedHours)),
     [telehealthRows],
+  );
+  const mentalHealthDeclinedRows = useMemo(
+    () => sortDeclinedRows(mentalHealthRows.filter(hasDeclinedHours)),
+    [mentalHealthRows],
+  );
+  const allDeclinedRows = useMemo(
+    () => sortDeclinedRows(rows.filter(hasDeclinedHours)),
+    [rows],
   );
 
   const needsReviewRows = useMemo(
     () => rows.filter(r => r.submission?.decision_status === 'needs_review'),
     [rows],
   );
+  const telehealthNeedsReviewRows = useMemo(
+    () => telehealthRows.filter(r => r.submission?.decision_status === 'needs_review'),
+    [telehealthRows],
+  );
+  const mentalHealthNeedsReviewRows = useMemo(
+    () => mentalHealthRows.filter(r => r.submission?.decision_status === 'needs_review'),
+    [mentalHealthRows],
+  );
 
   const missingRows = useMemo(
     () => rows.filter(r => !r.submission),
     [rows],
+  );
+  const telehealthMissingRows = useMemo(
+    () => telehealthRows.filter(r => !r.submission),
+    [telehealthRows],
+  );
+  const mentalHealthMissingRows = useMemo(
+    () => mentalHealthRows.filter(r => !r.submission),
+    [mentalHealthRows],
   );
 
   const submittedAvailabilityHours = useMemo(() => {
@@ -550,6 +595,11 @@ export default function SchedulingWorkbenchPage() {
     return shiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
   }, [acceptedRows, shiftRows]);
 
+  const mentalHealthFlatAccepted = useMemo(() => {
+    const acceptedProviderIds = new Set(mentalHealthAcceptedRows.map(r => r.provider_id));
+    return shiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
+  }, [mentalHealthAcceptedRows, shiftRows]);
+
   const summary = useMemo(() => {
     const totalShifts = allFlatAccepted.length;
     const homebaseShifts = allFlatAccepted.filter(isHomebaseDone).length;
@@ -560,10 +610,31 @@ export default function SchedulingWorkbenchPage() {
       homebaseShifts,
       ehrShifts,
       declinedCount: declinedRows.length,
-      needsReviewCount: needsReviewRows.length,
-      missingCount: missingRows.length,
+      needsReviewCount: telehealthNeedsReviewRows.length,
+      missingCount: telehealthMissingRows.length,
     };
-  }, [acceptedRows, allFlatAccepted, declinedRows, needsReviewRows, missingRows]);
+  }, [acceptedRows, allFlatAccepted, declinedRows, telehealthNeedsReviewRows, telehealthMissingRows]);
+
+  const mentalHealthSummary = useMemo(() => {
+    const totalShifts = mentalHealthFlatAccepted.length;
+    const homebaseShifts = mentalHealthFlatAccepted.filter(isHomebaseDone).length;
+    const ehrShifts = mentalHealthFlatAccepted.filter(isEhrDone).length;
+    return {
+      totalProviders: mentalHealthAcceptedRows.length,
+      totalShifts,
+      homebaseShifts,
+      ehrShifts,
+      declinedCount: mentalHealthDeclinedRows.length,
+      needsReviewCount: mentalHealthNeedsReviewRows.length,
+      missingCount: mentalHealthMissingRows.length,
+    };
+  }, [
+    mentalHealthAcceptedRows,
+    mentalHealthFlatAccepted,
+    mentalHealthDeclinedRows,
+    mentalHealthNeedsReviewRows,
+    mentalHealthMissingRows,
+  ]);
 
   const handleToggleProvider = (
     row: ProviderPublishView,
@@ -696,6 +767,20 @@ export default function SchedulingWorkbenchPage() {
           <TabsTrigger value="matching"><Users className="h-3.5 w-3.5 mr-1" />Matching</TabsTrigger>
           <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Gaps</TabsTrigger>
           <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
+          <TabsTrigger value="mental-health">
+            <Brain className="h-3.5 w-3.5 mr-1" />Mental Health
+            {mentalHealthRows.length > 0 && (
+              <span className="ml-1 text-xs">({mentalHealthRows.length})</span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="declined">
+            <CalendarX className="h-3.5 w-3.5 mr-1" />Declined Hours
+            {allDeclinedRows.length > 0 && (
+              <Badge className="ml-1 bg-red-100 text-red-700">
+                {allDeclinedRows.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="audit"><HelpCircle className="h-3.5 w-3.5 mr-1" />Audit</TabsTrigger>
         </TabsList>
 
@@ -707,12 +792,13 @@ export default function SchedulingWorkbenchPage() {
             missingCount={summary.missingCount}
             submittedHours={submittedAvailabilityHours}
             mentalHealthCount={mentalHealthRows.length}
-            mentalHealthAcceptedCount={mentalHealthRows.filter(r => r.submission?.decision_status === 'accepted' || r.submission?.decision_status === 'partial').length}
+            mentalHealthAcceptedCount={mentalHealthAcceptedRows.length}
             inboxNeedsReviewCount={inboxActionableCount}
             onJumpToCoverage={() => onTopTabChange('coverage')}
             onJumpToAvailability={() => onTopTabChange('availability')}
             onJumpToMatching={() => onTopTabChange('matching')}
             onJumpToPublish={() => onTopTabChange('publish')}
+            onJumpToMentalHealth={() => onTopTabChange('mental-health')}
           />
           <SopCard />
           {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
@@ -738,7 +824,7 @@ export default function SchedulingWorkbenchPage() {
             month={month}
             acceptedRows={acceptedRows}
             declinedRows={declinedRows}
-            needsReviewRows={needsReviewRows}
+            needsReviewRows={telehealthNeedsReviewRows}
             shiftsByProvider={shiftsByProvider}
             eligibilityByProvider={eligibilityByProvider}
           />
@@ -746,7 +832,7 @@ export default function SchedulingWorkbenchPage() {
 
         {/* ============ COVERAGE ============ */}
         <TabsContent value="coverage" className="mt-4 space-y-4">
-          <CoverageGapsPanel month={month} acceptedRows={acceptedRows} missingRows={missingRows} />
+          <CoverageGapsPanel month={month} acceptedRows={acceptedRows} missingRows={telehealthMissingRows} />
         </TabsContent>
 
         {/* ============ AVAILABILITY ============ */}
@@ -941,13 +1027,6 @@ export default function SchedulingWorkbenchPage() {
                   <Badge className="ml-1 bg-orange-100 text-orange-800">
                     {summary.needsReviewCount}
                   </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="declined">Declined</TabsTrigger>
-              <TabsTrigger value="mh">
-                <Brain className="h-3.5 w-3.5 mr-1" /> Mental Health
-                {mentalHealthRows.length > 0 && (
-                  <span className="ml-1 text-xs">({mentalHealthRows.length})</span>
                 )}
               </TabsTrigger>
               <TabsTrigger value="history">
@@ -1157,7 +1236,7 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="review" className="mt-4 space-y-4">
           <NeedsReviewPanel
             month={month}
-            rows={needsReviewRows}
+            rows={telehealthNeedsReviewRows}
             isLoading={isLoading}
             onResolve={(args) =>
               resolveReview.mutate(args, {
@@ -1173,42 +1252,66 @@ export default function SchedulingWorkbenchPage() {
           />
         </TabsContent>
 
-        <TabsContent value="declined" className="mt-4 space-y-4">
-          <DeclinedPanel month={month} declinedRows={declinedRows} isLoading={isLoading} />
-        </TabsContent>
-
-        <TabsContent value="mh" className="mt-4 space-y-4">
-          <MentalHealthPanel
-            month={month}
-            rows={mentalHealthRows}
-            shiftsByProvider={shiftsByProvider}
-            isLoading={isLoading}
-            onToggleShift={handleToggleShift}
-            onToggleProvider={handleToggleProvider}
-            auditByShift={auditByShift}
-          />
-        </TabsContent>
-
-        <TabsContent value="missing" className="mt-4 space-y-4">
-          <MissingSubmissionsPanel
-            month={month}
-            rows={missingRows}
-            isLoading={isLoading}
-          />
-        </TabsContent>
-
-        <TabsContent value="timeoff" className="mt-4 space-y-4">
-          <TimeOffPanel
-            month={month}
-            entries={timeOffRows}
-            isLoading={isLoading}
-          />
-        </TabsContent>
-
         <TabsContent value="history" className="mt-4 space-y-4">
           <PublishHistoryPanel month={month} entries={auditEntries} />
         </TabsContent>
           </Tabs>
+        </TabsContent>
+
+        {/* ============ MENTAL HEALTH ============ */}
+        <TabsContent value="mental-health" className="mt-4 space-y-4">
+          <MentalHealthDashboard
+            month={month}
+            rows={mentalHealthRows}
+            acceptedRows={mentalHealthAcceptedRows}
+            declinedRows={mentalHealthDeclinedRows}
+            needsReviewRows={mentalHealthNeedsReviewRows}
+            summary={mentalHealthSummary}
+            shifts={mentalHealthFlatAccepted}
+            shiftsByProvider={shiftsByProvider}
+            isLoading={isLoading}
+            shiftsLoading={shiftsLoading}
+            onToggleShift={handleToggleShift}
+            onToggleProvider={handleToggleProvider}
+            onBulkShifts={(shifts, step, done) =>
+              bulkPerShift.mutate(
+                { shifts, step, done },
+                {
+                  onSuccess: () =>
+                    toast.success(
+                      `Marked ${shifts.length} mental health shift${shifts.length === 1 ? '' : 's'} ${
+                        done ? 'posted' : 'unposted'
+                      }`,
+                    ),
+                  onError: e => toast.error(`Bulk mark failed: ${(e as Error).message}`),
+                },
+              )
+            }
+            onResolve={(args) =>
+              resolveReview.mutate(args, {
+                onSuccess: () => {
+                  toast.success(`Marked ${args.decision} for ${args.provider_name}`);
+                  refetch();
+                  refetchShifts();
+                },
+                onError: e => toast.error(`Could not resolve: ${(e as Error).message}`),
+              })
+            }
+            isResolvePending={resolveReview.isPending}
+            auditByShift={auditByShift}
+            auditEntries={auditEntries}
+          />
+        </TabsContent>
+
+        {/* ============ DECLINED HOURS ============ */}
+        <TabsContent value="declined" className="mt-4 space-y-4">
+          <DeclinedHoursPanel
+            month={month}
+            declinedRows={allDeclinedRows}
+            cutRowsByProvider={cutRowsByProvider}
+            eligibilityByProvider={eligibilityByProvider}
+            isLoading={isLoading || cutsLoading}
+          />
         </TabsContent>
 
         {/* ============ AUDIT / WHY ============ */}
@@ -2071,6 +2174,187 @@ function NeedsReviewPanel({
   );
 }
 
+function MentalHealthDashboard({
+  month,
+  rows,
+  acceptedRows,
+  declinedRows,
+  needsReviewRows,
+  summary,
+  shifts,
+  shiftsByProvider,
+  isLoading,
+  shiftsLoading,
+  onToggleShift,
+  onToggleProvider,
+  onBulkShifts,
+  onResolve,
+  isResolvePending,
+  auditByShift,
+  auditEntries,
+}: {
+  month: string;
+  rows: ProviderPublishView[];
+  acceptedRows: ProviderPublishView[];
+  declinedRows: ProviderPublishView[];
+  needsReviewRows: ProviderPublishView[];
+  summary: {
+    totalShifts: number;
+    totalProviders: number;
+    homebaseShifts: number;
+    ehrShifts: number;
+    declinedCount: number;
+    needsReviewCount: number;
+    missingCount: number;
+  };
+  shifts: ShiftRow[];
+  shiftsByProvider: Map<string, ShiftRow[]>;
+  isLoading: boolean;
+  shiftsLoading: boolean;
+  onToggleShift: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
+  onToggleProvider: (row: ProviderPublishView, step: ShiftPublishStep, done: boolean) => void;
+  onBulkShifts: (shifts: ShiftRow[], step: ShiftPublishStep, done: boolean) => void;
+  onResolve: (args: ResolveArgs) => void;
+  isResolvePending: boolean;
+  auditByShift?: ShiftAuditMap;
+  auditEntries: PublishAuditEntry[];
+}) {
+  const acceptedHours = acceptedRows.reduce(
+    (sum, row) => sum + Number(row.submission?.accepted_hours ?? 0),
+    0,
+  );
+  const visitCapacity = Math.floor((acceptedHours * 60) / MH_VISIT_CADENCE_MINUTES);
+  const homebasePct =
+    summary.totalShifts > 0 ? Math.round((summary.homebaseShifts / summary.totalShifts) * 100) : 0;
+  const ehrPct =
+    summary.totalShifts > 0 ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0;
+  const providerIds = useMemo(() => new Set(rows.map(r => r.provider_id)), [rows]);
+  const mhAuditEntries = useMemo(
+    () => auditEntries.filter(e => e.provider_id && providerIds.has(e.provider_id)),
+    [auditEntries, providerIds],
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <SummaryCard
+          label="MH shifts to publish"
+          value={summary.totalShifts.toString()}
+          sub={`${summary.totalProviders} provider${summary.totalProviders === 1 ? '' : 's'}`}
+        />
+        <SummaryCard
+          label="Accepted MH hours"
+          value={`${acceptedHours.toFixed(1)} hrs`}
+          sub={`${visitCapacity} visit slot${visitCapacity === 1 ? '' : 's'} at 40m + 10m`}
+        />
+        <SummaryCard
+          label="Posted to Homebase"
+          value={summary.totalShifts ? `${homebasePct}%` : '—'}
+          sub={`${summary.homebaseShifts} of ${summary.totalShifts} shifts`}
+        />
+        <SummaryCard
+          label="Posted to EHR"
+          value={summary.totalShifts ? `${ehrPct}%` : '—'}
+          sub={`${summary.ehrShifts} of ${summary.totalShifts} shifts`}
+        />
+        <SummaryCard
+          label="Declined / review"
+          value={`${summary.declinedCount}/${summary.needsReviewCount}`}
+          sub={`${MH_MIN_SHIFT_HOURS}h minimum shift`}
+        />
+      </div>
+
+      <Tabs defaultValue="provider">
+        <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="provider">By Provider</TabsTrigger>
+          <TabsTrigger value="queue">
+            Publishing Queue
+            {summary.totalShifts > 0 && (
+              <span className="ml-1 text-xs">
+                ({summary.homebaseShifts}/{summary.totalShifts})
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="day">By Day</TabsTrigger>
+          <TabsTrigger value="review">
+            Needs Review
+            {summary.needsReviewCount > 0 && (
+              <Badge className="ml-1 bg-orange-100 text-orange-800">
+                {summary.needsReviewCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="declined">
+            Declined
+            {summary.declinedCount > 0 && (
+              <Badge className="ml-1 bg-red-100 text-red-700">
+                {summary.declinedCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="history">
+            <History className="h-3.5 w-3.5 mr-1" /> History
+            {mhAuditEntries.length > 0 && (
+              <span className="ml-1 text-xs">({mhAuditEntries.length})</span>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="provider" className="mt-4 space-y-4">
+          <MentalHealthPanel
+            month={month}
+            rows={rows}
+            shiftsByProvider={shiftsByProvider}
+            isLoading={isLoading}
+            onToggleShift={onToggleShift}
+            onToggleProvider={onToggleProvider}
+            auditByShift={auditByShift}
+          />
+        </TabsContent>
+
+        <TabsContent value="queue" className="mt-4 space-y-4">
+          <PublishingQueue
+            month={month}
+            shifts={shifts}
+            isLoading={shiftsLoading}
+            onToggleShift={onToggleShift}
+            auditByShift={auditByShift}
+            onBulkShifts={onBulkShifts}
+          />
+        </TabsContent>
+
+        <TabsContent value="day" className="mt-4 space-y-4">
+          <ByDayPanel
+            month={month}
+            shifts={shifts}
+            isLoading={shiftsLoading}
+            onToggleShift={onToggleShift}
+            auditByShift={auditByShift}
+          />
+        </TabsContent>
+
+        <TabsContent value="review" className="mt-4 space-y-4">
+          <NeedsReviewPanel
+            month={month}
+            rows={needsReviewRows}
+            isLoading={isLoading}
+            onResolve={onResolve}
+            isPending={isResolvePending}
+          />
+        </TabsContent>
+
+        <TabsContent value="declined" className="mt-4 space-y-4">
+          <DeclinedPanel month={month} declinedRows={declinedRows} isLoading={isLoading} />
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-4 space-y-4">
+          <PublishHistoryPanel month={month} entries={mhAuditEntries} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
 function MentalHealthPanel({
   month,
   rows,
@@ -2452,6 +2736,193 @@ function DeclinedPanel({
   );
 }
 
+function DeclinedHoursPanel({
+  month,
+  declinedRows,
+  cutRowsByProvider,
+  eligibilityByProvider,
+  isLoading,
+}: {
+  month: string;
+  declinedRows: ProviderPublishView[];
+  cutRowsByProvider: Map<string, ShiftRow[]>;
+  eligibilityByProvider: Map<string, ProviderEligibilitySummary>;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent>
+          <LoadingRow label="Loading declined hours" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (declinedRows.length === 0) {
+    return (
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          No declined hours for {formatMonthLabel(month)}.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  const declinedHours = declinedRows.reduce(
+    (sum, row) => sum + Number(row.submission?.declined_hours ?? 0),
+    0,
+  );
+  const cutCount = declinedRows.reduce(
+    (sum, row) => sum + (cutRowsByProvider.get(row.provider_id)?.length ?? 0),
+    0,
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <SummaryCard
+          label="Providers with declined hrs"
+          value={declinedRows.length.toString()}
+          sub={formatMonthLabel(month)}
+        />
+        <SummaryCard
+          label="Declined hours"
+          value={`${declinedHours.toFixed(1)} hrs`}
+          sub="Submission-level total"
+        />
+        <SummaryCard
+          label="Cut shift rows"
+          value={cutCount.toString()}
+          sub="From shift recommendations"
+        />
+        <SummaryCard
+          label="License visibility"
+          value={`${declinedRows.filter(r => eligibilityByProvider.has(r.provider_id)).length}`}
+          sub="Providers with eligible states"
+        />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <CalendarX className="h-4 w-4 text-red-600" />
+            Declined hours · {formatMonthLabel(month)}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Declined or trimmed hours with the provider's eligible states and cut-row reasons.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Accepted</TableHead>
+                <TableHead className="text-right">Declined</TableHead>
+                <TableHead>Eligible states</TableHead>
+                <TableHead>Cut shifts</TableHead>
+                <TableHead>Decision detail</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {declinedRows.map(row => {
+                const sub = row.submission!;
+                const eligibility = eligibilityByProvider.get(row.provider_id);
+                const eligibleStates = eligibility ? Array.from(eligibility.states).sort() : [];
+                const sourceLabels = formatLicenseSources(eligibility?.sources);
+                const cuts = cutRowsByProvider.get(row.provider_id) ?? [];
+                const uniqueCutReasons = Array.from(new Set(
+                  cuts.map(c => c.recommendation_reason).filter(Boolean) as string[],
+                ));
+                return (
+                  <TableRow key={row.provider_id}>
+                    <TableCell className="align-top">
+                      <div className="font-medium">{row.provider_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.profession ?? '—'}
+                        {row.employment_type ? ` · ${row.employment_type}` : ''}
+                      </div>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <StatusBadge status={sub.decision_status} />
+                    </TableCell>
+                    <TableCell className="align-top text-right tabular-nums">
+                      {formatHours(sub.accepted_hours)}
+                    </TableCell>
+                    <TableCell className="align-top text-right tabular-nums text-red-700">
+                      {formatHours(sub.declined_hours)}
+                    </TableCell>
+                    <TableCell className="align-top text-xs max-w-[220px]">
+                      {eligibleStates.length > 0 ? (
+                        <>
+                          <div className="flex flex-wrap gap-1">
+                            {eligibleStates.map(state => (
+                              <Badge key={state} variant="outline" className="text-[11px]">
+                                {state}
+                              </Badge>
+                            ))}
+                          </div>
+                          {sourceLabels && (
+                            <div className="text-[11px] text-muted-foreground mt-1">
+                              {sourceLabels}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">No eligible states found</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="align-top text-xs max-w-[260px]">
+                      {cuts.length === 0 ? (
+                        <span className="text-muted-foreground">No cut rows emitted</span>
+                      ) : (
+                        <div className="space-y-1">
+                          {cuts.slice(0, 4).map(cut => (
+                            <div key={cut.id} className="rounded border px-2 py-1">
+                              <div className="font-medium">
+                                {formatDateLabel(cut.shift_date)} · {formatShiftTime(cut.start_min)}-{formatShiftTime(cut.end_min)}
+                              </div>
+                              <div className="text-muted-foreground">
+                                {formatHours(cut.hours)}h · {labelShiftType(cut.shift_type)}
+                              </div>
+                            </div>
+                          ))}
+                          {cuts.length > 4 && (
+                            <div className="text-muted-foreground">+{cuts.length - 4} more</div>
+                          )}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="align-top text-xs text-muted-foreground max-w-[360px]">
+                      {uniqueCutReasons.length > 0 && (
+                        <div className="mb-2 space-y-1">
+                          {uniqueCutReasons.slice(0, 3).map(reason => (
+                            <Badge
+                              key={reason}
+                              variant="outline"
+                              className="mr-1 whitespace-normal text-[11px] font-normal"
+                            >
+                              {reason}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap">{sub.decision_notes ?? '—'}</div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 type TimeOffPanelEntry = {
   row: ProviderPublishView;
   ranges: ReturnType<typeof extractUnavailableRanges>;
@@ -2704,6 +3175,7 @@ function ReadinessPanel({
   onJumpToAvailability,
   onJumpToMatching,
   onJumpToPublish,
+  onJumpToMentalHealth,
 }: {
   month: string;
   summary: {
@@ -2724,6 +3196,7 @@ function ReadinessPanel({
   onJumpToAvailability: () => void;
   onJumpToMatching: () => void;
   onJumpToPublish: () => void;
+  onJumpToMentalHealth: () => void;
 }) {
   const demandQ = useMonthlyDemand(month);
   const coverageQ = useStateCoverage(month);
@@ -2976,9 +3449,9 @@ function ReadinessPanel({
               size="sm"
               variant="outline"
               className="mt-3"
-              onClick={onJumpToAvailability}
+              onClick={onJumpToMentalHealth}
             >
-              Open Availability
+              Open Mental Health
               <ArrowRight className="h-3.5 w-3.5 ml-1" />
             </Button>
           </CardContent>

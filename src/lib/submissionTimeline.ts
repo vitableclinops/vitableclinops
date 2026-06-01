@@ -23,6 +23,7 @@ import {
   type NormalizationInput,
   type NormalizationResult,
   type RawInterval,
+  type ValidationConfig,
   type ProviderIdentity,
 } from '@/lib/availabilityValidation';
 
@@ -71,6 +72,7 @@ export interface ShiftRecommendationRow {
 
 export interface BuildTimelineOptions {
   forecastKinds?: IntervalKind[];
+  config?: ValidationConfig;
 }
 
 export interface BuildTimelineResult extends NormalizationResult {
@@ -80,6 +82,8 @@ export interface BuildTimelineResult extends NormalizationResult {
    *  clinic shifts are not subject to the operating-hours window so they
    *  never appear here. */
   forecastOutOfHoursTimeline: ExpandedSlot[];
+  /** Subset of `policyCutTimeline` filtered by forecastKinds. */
+  forecastPolicyCutTimeline: ExpandedSlot[];
 }
 
 /**
@@ -111,6 +115,7 @@ export function buildSubmissionTimeline(
     targetMonth,
     unavailableDates,
     forecastKinds,
+    config: options.config,
   };
 
   const result = normalizeProviderAvailability(input);
@@ -119,7 +124,10 @@ export function buildSubmissionTimeline(
   const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
     forecastSet.has(s.source.kind),
   );
-  return { ...result, forecastTimeline, forecastOutOfHoursTimeline };
+  const forecastPolicyCutTimeline = result.policyCutTimeline.filter(s =>
+    forecastSet.has(s.source.kind),
+  );
+  return { ...result, forecastTimeline, forecastOutOfHoursTimeline, forecastPolicyCutTimeline };
 }
 
 export function extractRawIntervalsFromParsedShifts(parsed: ParsedShiftsBlob | null): RawInterval[] {
@@ -216,6 +224,10 @@ export interface BuildShiftRecommendationsArgs {
    *  not part of the forecast cut budget — they were already removed from
    *  `final_approvable_hours` upstream. */
   outOfHoursTimeline?: ExpandedSlot[];
+  /** Policy-rejected fragments, e.g. MH blocks shorter than 2.5h. */
+  policyCutTimeline?: ExpandedSlot[];
+  policyCutReason?: string;
+  unallocatedForecastPublishReason?: string;
   declinedHours: number;
   /** True if the entire forecast timeline should be cut (declined decision). */
   declineAll: boolean;
@@ -225,6 +237,7 @@ export interface BuildShiftRecommendationsArgs {
 
 const OUT_OF_HOURS_REASON =
   'Cut — outside operating hours window (9a–9p ET weekdays, 9a–12p ET weekends)';
+const POLICY_CUT_REASON = 'Cut — below minimum shift length policy';
 
 const FRIDAY_SCARCE_START_MIN = 12 * 60;
 
@@ -261,7 +274,8 @@ function dayOfWeekUtc(dateIso: string): number {
  */
 export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs): ShiftRecommendationRow[] {
   const outOfHours = args.outOfHoursTimeline ?? [];
-  if (args.timeline.length === 0 && outOfHours.length === 0) return [];
+  const policyCuts = args.policyCutTimeline ?? [];
+  if (args.timeline.length === 0 && outOfHours.length === 0 && policyCuts.length === 0) return [];
 
   const forecastSlots = new Set(args.forecastTimeline);
   const protectedForecastSlots = new Set(args.protectedForecastTimeline ?? []);
@@ -320,11 +334,11 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
       if (isProtected) {
         reason = bestState
           ? `Publish to ${bestState} (scarce coverage window protected before monthly demand trim)`
-          : 'Publish (scarce coverage window; no state allocation, review manually)';
+          : (args.unallocatedForecastPublishReason ?? 'Publish (scarce coverage window; no state allocation, review manually)');
       } else {
         reason = bestState
           ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
-          : 'Publish (no state allocation; review manually)';
+          : (args.unallocatedForecastPublishReason ?? 'Publish (no state allocation; review manually)');
       }
     }
 
@@ -363,7 +377,24 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     publish_status: 'pending',
   }));
 
-  return [...timelineRows, ...outOfHoursRows].sort((a, b) =>
+  const policyCutRows: ShiftRecommendationRow[] = policyCuts.map(slot => ({
+    submission_id: slot.source.submissionId ?? '',
+    provider_id: args.providerId,
+    provider_name: args.providerName,
+    target_month: args.targetMonth,
+    shift_date: slot.date,
+    start_min: slot.startMin,
+    end_min: slot.endMin,
+    hours: round2((slot.endMin - slot.startMin) / 60),
+    shift_type: kindToShiftType(slot.source.kind),
+    assigned_state: null,
+    recommendation: 'cut',
+    recommendation_reason: args.policyCutReason ?? POLICY_CUT_REASON,
+    decision_run_id: args.decisionRunId,
+    publish_status: 'pending',
+  }));
+
+  return [...timelineRows, ...outOfHoursRows, ...policyCutRows].sort((a, b) =>
     a.shift_date.localeCompare(b.shift_date) || a.start_min - b.start_min,
   );
 }

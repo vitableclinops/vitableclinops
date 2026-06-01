@@ -348,6 +348,29 @@ describe('Operating hours window (9 AM-9 PM weekday, 9 AM-12 PM weekend)', () =>
 });
 
 describe('Pipeline: dedup + later submission overwrites', () => {
+  it('drops slots shorter than a configured minimum shift length', () => {
+    const result = normalizeProviderAvailability({
+      identity: { name: 'MH Coach' },
+      submissions: [
+        {
+          submissionId: 'S1',
+          submittedAt: '2026-05-01T00:00:00Z',
+          intervals: [
+            { kind: 'one_off', date: '2026-06-04', rawStart: '9:00 AM', rawEnd: '11:00 AM' },
+            { kind: 'one_off', date: '2026-06-05', rawStart: '9:00 AM', rawEnd: '11:30 AM' },
+          ],
+        },
+      ],
+      targetMonth: '2026-06-01',
+      config: { ...DEFAULT_VALIDATION_CONFIG, min_single_shift_hours: 2.5 },
+    });
+
+    expect(result.summary.hours_removed_for_minimum_shift).toBe(2);
+    expect(result.summary.final_approvable_hours).toBe(2.5);
+    expect(result.policyCutTimeline).toHaveLength(1);
+    expect(result.policyCutTimeline[0].date).toBe('2026-06-04');
+  });
+
   it('identical (date, start, end) submissions collapse', () => {
     const intervals: RawInterval[] = [
       { kind: 'one_off', date: '2026-06-04', rawStart: '9:00 AM', rawEnd: '5:00 PM' },

@@ -79,6 +79,8 @@ export const FUZZY_MATCH_THRESHOLD = 0.85;
  *  Keep in sync with the canonical version. */
 
 export interface ValidationConfig {
+  /** Reject any single shift shorter than this after windowing. 0 disables. */
+  min_single_shift_hours: number;
   /** Reject any single shift longer than this (after correction). */
   max_single_shift_hours: number;
   /** Flag if a single calendar date totals more than this. */
@@ -101,6 +103,7 @@ export interface ValidationConfig {
 }
 
 export const DEFAULT_VALIDATION_CONFIG: ValidationConfig = {
+  min_single_shift_hours: 0,
   max_single_shift_hours: 12,
   max_daily_hours: 12,
   max_weekly_hours: 60,
@@ -276,6 +279,9 @@ export interface NormalizationSummary {
    *  operating-hours window (default 9 AM - 9 PM ET weekdays, 9 AM - 12 PM ET
    *  weekends). */
   hours_removed_for_operating_hours: number;
+  /** Hours dropped because a window is shorter than the configured minimum
+   *  shift length. Used for MH coaching's 2.5h minimum. */
+  hours_removed_for_minimum_shift: number;
   hours_changed_by_validation: number;
   intervals_auto_corrected: number;
   intervals_needing_review: number;
@@ -835,6 +841,30 @@ export function applyOperatingHoursWindow(
   return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
 }
 
+export function applyMinimumShiftLength(
+  slots: ExpandedSlot[],
+  config: ValidationConfig,
+): { slots: ExpandedSlot[]; droppedSlots: ExpandedSlot[]; hoursRemoved: number } {
+  const minHours = Number(config.min_single_shift_hours ?? 0);
+  if (!Number.isFinite(minHours) || minHours <= 0) {
+    return { slots, droppedSlots: [], hoursRemoved: 0 };
+  }
+
+  const out: ExpandedSlot[] = [];
+  const dropped: ExpandedSlot[] = [];
+  let removed = 0;
+  for (const s of slots) {
+    const hours = (s.endMin - s.startMin) / 60;
+    if (hours + 0.001 < minHours) {
+      removed += hours;
+      dropped.push(s);
+    } else {
+      out.push(s);
+    }
+  }
+  return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
+}
+
 function isInMonth(dateISO: string, monthISO: string): boolean {
   return dateISO >= monthISO && dateISO < nextMonth(monthISO);
 }
@@ -977,6 +1007,9 @@ export interface NormalizationResult {
    *  preserved, so downstream can emit "declined: outside business hours"
    *  per-shift rows. */
   outOfHoursTimeline: ExpandedSlot[];
+  /** Slots dropped because they are shorter than the configured minimum shift
+   *  length. These can be emitted as explicit cut rows downstream. */
+  policyCutTimeline: ExpandedSlot[];
   summary: NormalizationSummary;
   report: ValidationReportRow[];
   override_used: ProviderOverride | null;
@@ -1021,7 +1054,8 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
   }
 
   const windowed = applyOperatingHoursWindow(slotInputs, config);
-  const windowedSlotInputs: DatedSlotInput[] = windowed.slots.map(s => {
+  const minimumLength = applyMinimumShiftLength(windowed.slots, config);
+  const windowedSlotInputs: DatedSlotInput[] = minimumLength.slots.map(s => {
     const orig = slotInputs.find(
       o => o.date === s.date && o.source === s.source,
     );
@@ -1055,6 +1089,7 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     hours_removed_for_unavailability: reconciled.hours_removed_for_unavailability,
     hours_removed_for_duplicates: reconciled.hours_removed_for_duplicates,
     hours_removed_for_operating_hours: windowed.hoursRemoved,
+    hours_removed_for_minimum_shift: minimumLength.hoursRemoved,
     hours_changed_by_validation: round2(hoursChanged),
     intervals_auto_corrected: normalized.filter(n => n.validation_status === 'auto_corrected').length,
     intervals_needing_review: normalized.filter(n => n.validation_status === 'needs_review').length,
@@ -1106,6 +1141,7 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
     normalized,
     timeline: reconciled.slots,
     outOfHoursTimeline: windowed.droppedSlots,
+    policyCutTimeline: minimumLength.droppedSlots,
     summary,
     report,
     override_used: override,
@@ -1212,6 +1248,7 @@ export interface ShiftRecommendationRow {
 
 export interface BuildTimelineOptions {
   forecastKinds?: IntervalKind[];
+  config?: ValidationConfig;
 }
 
 export interface BuildTimelineResult extends NormalizationResult {
@@ -1221,6 +1258,8 @@ export interface BuildTimelineResult extends NormalizationResult {
    *  clinic shifts are not subject to the operating-hours window so they
    *  never appear here. */
   forecastOutOfHoursTimeline: ExpandedSlot[];
+  /** Subset of `policyCutTimeline` filtered by forecastKinds. */
+  forecastPolicyCutTimeline: ExpandedSlot[];
 }
 
 /**
@@ -1252,6 +1291,7 @@ export function buildSubmissionTimeline(
     targetMonth,
     unavailableDates,
     forecastKinds,
+    config: options.config,
   };
 
   const result = normalizeProviderAvailability(input);
@@ -1260,7 +1300,10 @@ export function buildSubmissionTimeline(
   const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
     forecastSet.has(s.source.kind),
   );
-  return { ...result, forecastTimeline, forecastOutOfHoursTimeline };
+  const forecastPolicyCutTimeline = result.policyCutTimeline.filter(s =>
+    forecastSet.has(s.source.kind),
+  );
+  return { ...result, forecastTimeline, forecastOutOfHoursTimeline, forecastPolicyCutTimeline };
 }
 
 export function extractRawIntervalsFromParsedShifts(parsed: ParsedShiftsBlob | null): RawInterval[] {
@@ -1357,6 +1400,10 @@ export interface BuildShiftRecommendationsArgs {
    *  not part of the forecast cut budget — they were already removed from
    *  `final_approvable_hours` upstream. */
   outOfHoursTimeline?: ExpandedSlot[];
+  /** Policy-rejected fragments, e.g. MH blocks shorter than 2.5h. */
+  policyCutTimeline?: ExpandedSlot[];
+  policyCutReason?: string;
+  unallocatedForecastPublishReason?: string;
   declinedHours: number;
   /** True if the entire forecast timeline should be cut (declined decision). */
   declineAll: boolean;
@@ -1366,6 +1413,7 @@ export interface BuildShiftRecommendationsArgs {
 
 const OUT_OF_HOURS_REASON =
   'Cut — outside operating hours window (9a–9p ET weekdays, 9a–12p ET weekends)';
+const POLICY_CUT_REASON = 'Cut — below minimum shift length policy';
 
 const FRIDAY_SCARCE_START_MIN = 12 * 60;
 
@@ -1402,7 +1450,8 @@ function dayOfWeekUtc(dateIso: string): number {
  */
 export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs): ShiftRecommendationRow[] {
   const outOfHours = args.outOfHoursTimeline ?? [];
-  if (args.timeline.length === 0 && outOfHours.length === 0) return [];
+  const policyCuts = args.policyCutTimeline ?? [];
+  if (args.timeline.length === 0 && outOfHours.length === 0 && policyCuts.length === 0) return [];
 
   const forecastSlots = new Set(args.forecastTimeline);
   const protectedForecastSlots = new Set(args.protectedForecastTimeline ?? []);
@@ -1461,11 +1510,11 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
       if (isProtected) {
         reason = bestState
           ? `Publish to ${bestState} (scarce coverage window protected before monthly demand trim)`
-          : 'Publish (scarce coverage window; no state allocation, review manually)';
+          : (args.unallocatedForecastPublishReason ?? 'Publish (scarce coverage window; no state allocation, review manually)');
       } else {
         reason = bestState
           ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
-          : 'Publish (no state allocation; review manually)';
+          : (args.unallocatedForecastPublishReason ?? 'Publish (no state allocation; review manually)');
       }
     }
 
@@ -1504,7 +1553,24 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     publish_status: 'pending',
   }));
 
-  return [...timelineRows, ...outOfHoursRows].sort((a, b) =>
+  const policyCutRows: ShiftRecommendationRow[] = policyCuts.map(slot => ({
+    submission_id: slot.source.submissionId ?? '',
+    provider_id: args.providerId,
+    provider_name: args.providerName,
+    target_month: args.targetMonth,
+    shift_date: slot.date,
+    start_min: slot.startMin,
+    end_min: slot.endMin,
+    hours: round2((slot.endMin - slot.startMin) / 60),
+    shift_type: kindToShiftType(slot.source.kind),
+    assigned_state: null,
+    recommendation: 'cut',
+    recommendation_reason: args.policyCutReason ?? POLICY_CUT_REASON,
+    decision_run_id: args.decisionRunId,
+    publish_status: 'pending',
+  }));
+
+  return [...timelineRows, ...outOfHoursRows, ...policyCutRows].sort((a, b) =>
     a.shift_date.localeCompare(b.shift_date) || a.start_min - b.start_min,
   );
 }
@@ -1590,6 +1656,34 @@ function round2(n: number): number {
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+const MH_PROFESSIONS = new Set([
+  'MENTAL_HEALTH_COACH',
+  'MH_COACH',
+  'LPC',
+  'THERAPIST',
+  'HEALTH_COACH',
+]);
+const normProfession = (profession: string | null | undefined) =>
+  (profession ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+const isMentalHealthProfession = (p: string | null | undefined) => {
+  if (!p) return false;
+  return MH_PROFESSIONS.has(normProfession(p));
+};
+
+const MH_MIN_SHIFT_HOURS = 2.5;
+const MENTAL_HEALTH_VALIDATION_CONFIG = {
+  ...DEFAULT_VALIDATION_CONFIG,
+  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
+};
+const MH_POLICY_CUT_REASON =
+  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m with 10m breaks)';
+const MH_PUBLISH_REASON =
+  'Publish (mental health schedule — weekly SLA; state allocator bypassed)';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -1607,6 +1701,11 @@ type Submission = {
   decision_notes: string | null;
   submitted_at: string;
   decision_run_id: string | null;
+};
+
+type ProviderProfile = {
+  id: string;
+  profession: string | null;
 };
 
 Deno.serve(async (req: Request) => {
@@ -1678,6 +1777,21 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const providerIdsForEmit = Array.from(new Set(
+      Array.from(groups.keys()).map(k => k.split('|')[0]),
+    ));
+    const professionByProvider = new Map<string, string | null>();
+    if (providerIdsForEmit.length > 0) {
+      const { data: providers, error: provErr } = await supabase
+        .from('providers')
+        .select('id, profession')
+        .in('id', providerIdsForEmit);
+      if (provErr) throw new Error(`provider load: ${provErr.message}`);
+      for (const provider of (providers ?? []) as ProviderProfile[]) {
+        professionByProvider.set(provider.id, provider.profession ?? null);
+      }
+    }
+
     for (const [key, groupSubs] of groups) {
       try {
         counters.groups++;
@@ -1692,6 +1806,9 @@ Deno.serve(async (req: Request) => {
           counters.skipped_needs_review++;
           continue;
         }
+        const isMentalHealth =
+          isMentalHealthProfession(professionByProvider.get(decided.provider_id!)) ||
+          (decided.decision_notes ?? '').includes('mental_health_bypass');
 
         const ids = groupSubs.map(s => s.id);
         const { count: deletedCount, error: dErr } = await supabase
@@ -1716,19 +1833,24 @@ Deno.serve(async (req: Request) => {
             name: decided.provider_name,
           },
           decided.target_month,
+          isMentalHealth ? { config: MENTAL_HEALTH_VALIDATION_CONFIG } : {},
         );
 
-        if (validation.timeline.length === 0) continue;
+        if (
+          validation.timeline.length === 0 &&
+          validation.forecastOutOfHoursTimeline.length === 0 &&
+          validation.forecastPolicyCutTimeline.length === 0
+        ) continue;
 
         const declined = Number(decided.declined_hours ?? 0);
         const allocations = parseAllocationsFromNotes(decided.decision_notes ?? '');
-        // declined_hours stored on the row includes both forecast cuts and
-        // hours dropped for being outside operating hours. The latter are
-        // re-emitted by buildShiftRecommendationRows from
-        // forecastOutOfHoursTimeline, so we subtract them here to leave only
-        // the forecast cut budget.
+        // declined_hours stored on the row includes forecast cuts plus
+        // policy cuts (outside operating hours, MH minimum-shift failures).
+        // Policy cuts are re-emitted from their dedicated timelines, so we
+        // subtract them here to leave only the forecast cut budget.
         const oohHours = Math.round((validation.summary.hours_removed_for_operating_hours ?? 0) * 100) / 100;
-        const forecastDeclined = Math.max(0, Math.round((declined - oohHours) * 100) / 100);
+        const policyHours = Math.round((validation.summary.hours_removed_for_minimum_shift ?? 0) * 100) / 100;
+        const forecastDeclined = Math.max(0, Math.round((declined - oohHours - policyHours) * 100) / 100);
         const protectScarceWindows = (decided.decision_notes ?? '')
           .includes('scarce_window_policy=protected_before_monthly_trim');
         const protectedForecastTimeline = protectScarceWindows
@@ -1742,6 +1864,9 @@ Deno.serve(async (req: Request) => {
           timeline: validation.timeline,
           forecastTimeline: validation.forecastTimeline,
           outOfHoursTimeline: validation.forecastOutOfHoursTimeline,
+          policyCutTimeline: validation.forecastPolicyCutTimeline,
+          policyCutReason: isMentalHealth ? MH_POLICY_CUT_REASON : undefined,
+          unallocatedForecastPublishReason: isMentalHealth ? MH_PUBLISH_REASON : undefined,
           protectedForecastTimeline,
           declinedHours: forecastDeclined,
           declineAll: decided.decision_status === 'declined',

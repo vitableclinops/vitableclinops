@@ -502,6 +502,7 @@ export type ShiftRow = {
   shift_type: string;
   assigned_state: string | null;
   recommendation: string;
+  recommendation_reason: string | null;
   publish_status: string;
   published_at: string | null;
   published_by: string | null;
@@ -538,7 +539,7 @@ export function useShiftRecommendationsInboxWindow(anchorMonth: string) {
       const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
         .from('shift_recommendations')
         .select(
-          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
+          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
         )
         .gte('target_month', fromMonth)
         .lte('target_month', toMonth)
@@ -552,18 +553,22 @@ export function useShiftRecommendationsInboxWindow(anchorMonth: string) {
   });
 }
 
-export function useShiftRecommendationsForMonth(month: string) {
+export function useShiftRecommendationsForMonth(
+  month: string,
+  recommendation: 'publish' | 'cut' | 'all' = 'publish',
+) {
   const monthStart = monthIso(month);
   return useQuery({
-    queryKey: ['workbench', 'shift-recommendations', monthStart],
+    queryKey: ['workbench', 'shift-recommendations', monthStart, recommendation],
     queryFn: async (): Promise<ShiftRow[]> => {
-      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      let query = (clinopsSupabase as unknown as { from: (t: string) => any })
         .from('shift_recommendations')
         .select(
-          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
+          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
         )
-        .eq('target_month', monthStart)
-        .eq('recommendation', 'publish')
+        .eq('target_month', monthStart);
+      if (recommendation !== 'all') query = query.eq('recommendation', recommendation);
+      const { data, error } = await query
         .order('shift_date', { ascending: true })
         .order('start_min', { ascending: true })
         .range(0, 9999);

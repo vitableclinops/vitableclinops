@@ -2,6 +2,8 @@
  *  Keep in sync with the canonical version. */
 
 export interface ValidationConfig {
+  /** Reject any single shift shorter than this after windowing. 0 disables. */
+  min_single_shift_hours: number;
   /** Reject any single shift longer than this (after correction). */
   max_single_shift_hours: number;
   /** Flag if a single calendar date totals more than this. */
@@ -24,6 +26,7 @@ export interface ValidationConfig {
 }
 
 export const DEFAULT_VALIDATION_CONFIG: ValidationConfig = {
+  min_single_shift_hours: 0,
   max_single_shift_hours: 12,
   max_daily_hours: 12,
   max_weekly_hours: 60,

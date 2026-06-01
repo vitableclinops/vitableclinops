@@ -75,6 +75,7 @@ import {
   type BuildTimelineResult,
   type ShiftRecommendationRow,
 } from '../_shared/submissionTimeline.ts';
+import { DEFAULT_VALIDATION_CONFIG } from '../_shared/availabilityValidation.ts';
 
 // States that can only be served by physicians per Vitable scope-of-practice
 // rules. For now, physician hours are also reserved for these states so broad
@@ -135,6 +136,19 @@ const isMentalHealthProfession = (p: string | null | undefined) => {
   const norm = normProfession(p);
   return MH_PROFESSIONS.has(norm);
 };
+
+const MH_VISIT_MINUTES = 40;
+const MH_BREAK_MINUTES = 10;
+const MH_VISIT_CADENCE_MINUTES = MH_VISIT_MINUTES + MH_BREAK_MINUTES;
+const MH_MIN_SHIFT_HOURS = 2.5;
+const MENTAL_HEALTH_VALIDATION_CONFIG = {
+  ...DEFAULT_VALIDATION_CONFIG,
+  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
+};
+const MH_POLICY_CUT_REASON =
+  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m with 10m breaks)';
+const MH_PUBLISH_REASON =
+  'Publish (mental health schedule — weekly SLA; state allocator bypassed)';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -539,6 +553,11 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
+        const profession = professionByProvider.get(providerId);
+        const providerPriority = providerPriorityFor(providerProfileByProvider.get(providerId));
+        const isPhysician = isPhysicianProfession(profession);
+        const isMentalHealth = isMentalHealthProfession(profession);
+
         // ── Resubmission inbox gating ─────────────────────────────────────
         // If the latest submission is awaiting human review, leave the group's
         // existing decision + shift_recommendations alone. ClinOps will
@@ -611,6 +630,7 @@ Deno.serve(async (req: Request) => {
             name: latest.provider_name,
           },
           targetMonth,
+          isMentalHealth ? { config: MENTAL_HEALTH_VALIDATION_CONFIG } : {},
         );
         const fullTimeline = validation.timeline;
         const forecastTimeline = validation.forecastTimeline;
@@ -621,6 +641,7 @@ Deno.serve(async (req: Request) => {
         // declined_hours so the provider sees the full reason their submitted
         // time was not approved.
         const oohDeclined = round2(validation.summary.hours_removed_for_operating_hours ?? 0);
+        const policyDeclined = round2(validation.summary.hours_removed_for_minimum_shift ?? 0);
 
         if (validation.report.length > 0) {
           console.log(`[validation] ${latest.provider_name} ${targetMonth}`,
@@ -680,18 +701,33 @@ Deno.serve(async (req: Request) => {
           counters.skipped_no_hours++;
           // Mark older as superseded; latest becomes 'declined' with note
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; group has 0 effective hours`);
-          const noHoursNotes = oohDeclined > 0
-            ? `No effective hours in any submission for this provider+month; hours_removed_outside_business_hours=${oohDeclined}h`
-            : 'No effective hours in any submission for this provider+month';
+          const noHoursNoteParts = ['No effective hours in any submission for this provider+month'];
+          if (isMentalHealth) {
+            noHoursNoteParts.push(
+              `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
+              `mh_visit_cadence=${MH_VISIT_MINUTES}m_visit+${MH_BREAK_MINUTES}m_break`,
+            );
+          }
+          if (oohDeclined > 0) {
+            noHoursNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
+          }
+          if (policyDeclined > 0) {
+            noHoursNoteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);
+          }
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
-            declined_hours: oohDeclined,
-            notes: noHoursNotes,
+            declined_hours: round2(oohDeclined + policyDeclined),
+            notes: noHoursNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
           });
-          if (oohDeclined > 0 || forecastOutOfHoursTimeline.length > 0) {
+          if (
+            oohDeclined > 0 ||
+            policyDeclined > 0 ||
+            forecastOutOfHoursTimeline.length > 0 ||
+            validation.forecastPolicyCutTimeline.length > 0
+          ) {
             const oohRecRows = buildShiftRecommendationRows({
               providerId,
               providerName: latest.provider_name,
@@ -699,6 +735,9 @@ Deno.serve(async (req: Request) => {
               timeline: [],
               forecastTimeline: [],
               outOfHoursTimeline: forecastOutOfHoursTimeline,
+              policyCutTimeline: validation.forecastPolicyCutTimeline,
+              policyCutReason: isMentalHealth ? MH_POLICY_CUT_REASON : undefined,
+              unallocatedForecastPublishReason: isMentalHealth ? MH_PUBLISH_REASON : undefined,
               declinedHours: 0,
               declineAll: false,
               allocations: [],
@@ -716,42 +755,67 @@ Deno.serve(async (req: Request) => {
         // MH coaches/LPCs serve all 50 states with a weekly SLA, separate from
         // the telehealth state-demand pipeline. Accept every validated hour
         // and skip the licensed-states + state-gap math.
-        const profession = professionByProvider.get(providerId);
-        const providerPriority = providerPriorityFor(providerProfileByProvider.get(providerId));
-        const isPhysician = isPhysicianProfession(profession);
-        if (isMentalHealthProfession(profession)) {
+        if (isMentalHealth) {
           if (olderIds.length) {
             await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
             counters.superseded += olderIds.length;
           }
+          const mhDeclined = round2(oohDeclined + policyDeclined);
+          const mhStatus: 'accepted' | 'partial' = mhDeclined > 0 ? 'partial' : 'accepted';
+          const mhVisitCapacity = Math.floor((effectiveHours * 60) / MH_VISIT_CADENCE_MINUTES);
           const mhNoteParts = [
-            `decision=accepted (mental_health_bypass)`,
+            `decision=${mhStatus} (mental_health_bypass)`,
             `provider_priority=${providerPriority.key}`,
             `profession=${profession}`,
             `effective_hours=${effectiveHours}h`,
             `raw_hours=${validation.summary.raw_total_hours}h`,
+            `mh_visit_length_minutes=${MH_VISIT_MINUTES}`,
+            `mh_break_minutes=${MH_BREAK_MINUTES}`,
+            `mh_visit_capacity=${mhVisitCapacity}`,
+            `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
             'note=MH uses weekly SLA across 50 states; bypasses state demand allocator',
           ];
           if (oohDeclined > 0) {
             mhNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
           }
+          if (policyDeclined > 0) {
+            mhNoteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);
+          }
           await writeDecision(supabase, latest.id, {
-            status: 'accepted',
+            status: mhStatus,
             accepted_hours: effectiveHours,
-            declined_hours: oohDeclined,
+            declined_hours: mhDeclined,
             notes: mhNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
           });
-          counters.accepted++;
+          const mhRecRows = buildShiftRecommendationRows({
+            providerId,
+            providerName: latest.provider_name,
+            targetMonth,
+            timeline: fullTimeline,
+            forecastTimeline,
+            outOfHoursTimeline: forecastOutOfHoursTimeline,
+            policyCutTimeline: validation.forecastPolicyCutTimeline,
+            policyCutReason: MH_POLICY_CUT_REASON,
+            unallocatedForecastPublishReason: MH_PUBLISH_REASON,
+            declinedHours: 0,
+            declineAll: false,
+            allocations: [],
+            decisionRunId,
+          });
+          await writeShiftRecommendations(supabase, groupSubs.map(s => s.id), mhRecRows);
+          if (mhStatus === 'accepted') counters.accepted++;
+          else counters.partial++;
           decisions.push({
             group: key,
             provider: latest.provider_name,
             target_month: targetMonth,
-            status: 'accepted',
+            status: mhStatus,
             accepted_hours: effectiveHours,
-            declined_hours: oohDeclined,
+            declined_hours: mhDeclined,
             mh_bypass: true,
+            mh_visit_capacity: mhVisitCapacity,
             superseded: olderIds.length,
           });
           continue;
@@ -772,10 +836,13 @@ Deno.serve(async (req: Request) => {
           if (oohDeclined > 0) {
             noLicNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
           }
+          if (policyDeclined > 0) {
+            noLicNoteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);
+          }
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
-            declined_hours: round2(effectiveHours + oohDeclined),
+            declined_hours: round2(effectiveHours + oohDeclined + policyDeclined),
             notes: noLicNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
@@ -849,7 +916,7 @@ Deno.serve(async (req: Request) => {
         } else {
           status = 'partial';
         }
-        const declined = round2(forecastDeclined + oohDeclined);
+        const declined = round2(forecastDeclined + oohDeclined + policyDeclined);
 
         // Allocate accepted hours greedily across states
         const allocations: Array<{ state: string; hours: number }> = [];
@@ -911,6 +978,9 @@ Deno.serve(async (req: Request) => {
         if (oohDeclined > 0) {
           noteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
         }
+        if (policyDeclined > 0) {
+          noteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);
+        }
         if (scarceCoverageHours > 0) {
           noteParts.push('scarce_window_policy=protected_before_monthly_trim');
           noteParts.push(`scarce_window_hours=${scarceCoverageHours}h`);
@@ -961,6 +1031,7 @@ Deno.serve(async (req: Request) => {
           timeline: fullTimeline,
           forecastTimeline,
           outOfHoursTimeline: forecastOutOfHoursTimeline,
+          policyCutTimeline: validation.forecastPolicyCutTimeline,
           // Forecast cut budget is the demand-driven decline only — out-of-
           // hours fragments are handled separately inside the row builder.
           protectedForecastTimeline: scarceCoverageTimeline,
