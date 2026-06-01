@@ -180,7 +180,8 @@ select
 from public.shift_recommendations
 group by provider_id, provider_name, target_month;
 
-create or replace view public.v_monthly_cost_per_visit as
+drop view if exists public.v_monthly_cost_per_visit;
+create view public.v_monthly_cost_per_visit as
 select
   month_start,
   total_appointments,
