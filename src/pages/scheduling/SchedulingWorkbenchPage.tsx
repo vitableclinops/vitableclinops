@@ -2352,3 +2352,406 @@ function PublishHistoryPanel({
     </Card>
   );
 }
+
+// ============================================================================
+// July 2026 Workbench — new top-level tab panels
+// ============================================================================
+
+function OverviewPanel({
+  month,
+  summary,
+  missingCount,
+  onJumpToCoverage,
+  onJumpToAvailability,
+}: {
+  month: string;
+  summary: {
+    totalShifts: number;
+    totalProviders: number;
+    homebaseShifts: number;
+    ehrShifts: number;
+    declinedCount: number;
+    needsReviewCount: number;
+    missingCount: number;
+  };
+  missingCount: number;
+  onJumpToCoverage: () => void;
+  onJumpToAvailability: () => void;
+}) {
+  const demandQ = useMonthlyDemand(month);
+  const coverageQ = useStateCoverage(month);
+
+  const demandHours = useMemo(
+    () => (demandQ.data ?? []).reduce((s, r) => s + Number(r.monthly_hours_target ?? 0), 0),
+    [demandQ.data],
+  );
+
+  const acceptedHours = useMemo(
+    () => (coverageQ.data?.rows ?? []).reduce((s, r) => s + r.filled, 0),
+    [coverageQ.data],
+  );
+
+  const submittedHours = acceptedHours; // best-available proxy from coverage
+  const gapHours = demandHours - acceptedHours;
+  const criticalGapStates = useMemo(
+    () =>
+      (coverageQ.data?.rows ?? []).filter(
+        r => r.needed > 0 && r.pct_filled < 60,
+      ),
+    [coverageQ.data],
+  );
+
+  const lastUpdated = useMemo(() => {
+    const ts = (demandQ.dataUpdatedAt || coverageQ.dataUpdatedAt) ?? Date.now();
+    return new Date(ts).toLocaleString();
+  }, [demandQ.dataUpdatedAt, coverageQ.dataUpdatedAt]);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard
+          label="Forecast demand"
+          value={demandHours ? `${demandHours.toFixed(0)} hrs` : '—'}
+          sub={formatMonthLabel(month)}
+        />
+        <SummaryCard
+          label="Submitted hours"
+          value={submittedHours ? `${submittedHours.toFixed(0)} hrs` : '—'}
+          sub="Provider availability accepted"
+        />
+        <SummaryCard
+          label="Accepted usable"
+          value={acceptedHours ? `${acceptedHours.toFixed(0)} hrs` : '—'}
+          sub={
+            demandHours > 0
+              ? `${Math.min(999, Math.round((acceptedHours / demandHours) * 100))}% of demand`
+              : undefined
+          }
+        />
+        <SummaryCard
+          label={gapHours > 0 ? 'Remaining gap' : 'Surplus'}
+          value={`${Math.abs(gapHours).toFixed(0)} hrs`}
+          sub={gapHours > 0 ? 'Below demand' : 'Above demand'}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              States with critical gaps
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {coverageQ.isLoading ? (
+              <div className="text-xs text-muted-foreground">Loading…</div>
+            ) : criticalGapStates.length === 0 ? (
+              <div className="text-xs text-muted-foreground">
+                No state below 60% coverage. Nice.
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {criticalGapStates.map(r => (
+                  <Badge
+                    key={r.state}
+                    className="bg-red-100 text-red-800 hover:bg-red-100"
+                  >
+                    {r.state} · {Math.round(r.pct_filled)}%
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-3"
+              onClick={onJumpToCoverage}
+            >
+              Review coverage gaps
+              <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <UserX className="h-4 w-4 text-slate-500" />
+              Providers missing July availability
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold tabular-nums">{missingCount}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Providers without a July submission. Chase them on the Availability tab.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-3"
+              onClick={onJumpToAvailability}
+            >
+              Open Availability
+              <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        Last updated {lastUpdated}.
+      </div>
+    </div>
+  );
+}
+
+function ForecastPanel({ month }: { month: string }) {
+  const demandQ = useMonthlyDemand(month);
+  const rows = demandQ.data ?? [];
+
+  const enriched = useMemo(() => {
+    return rows
+      .map(r => {
+        const monthly = Number(r.monthly_hours_target ?? 0);
+        const weekly = monthly / 4.33;
+        const cohort = cohortFor(r.state);
+        const bufferPct = COHORT_BUFFER_PCT[cohort];
+        const enhanced = monthly; // demand stored already includes buffer
+        const original = monthly / (1 + bufferPct / 100);
+        return {
+          state: r.state,
+          cohort,
+          weekly,
+          monthly,
+          enhanced,
+          original,
+          gapVsEnhanced: enhanced - monthly, // 0 by definition unless future enrichment
+        };
+      })
+      .sort((a, b) => b.monthly - a.monthly);
+  }, [rows]);
+
+  const byCohort = useMemo(() => {
+    const map = new Map<Cohort, number>();
+    for (const r of enriched) map.set(r.cohort, (map.get(r.cohort) ?? 0) + r.monthly);
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [enriched]);
+
+  if (demandQ.isLoading) {
+    return <LoadingRow label="Loading forecast" />;
+  }
+
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        title="No forecast loaded for July yet"
+        body="The demand forecast is computed nightly from Metabase telehealth visit cards. Run the compute-demand-forecast edge function or wait for the nightly job."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Demand by cohort · {formatMonthLabel(month)}</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Cohort</TableHead>
+                <TableHead className="text-right">Monthly hours</TableHead>
+                <TableHead className="text-right">Weekly hours</TableHead>
+                <TableHead className="text-right">Buffer</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {byCohort.map(([c, hrs]) => (
+                <TableRow key={c}>
+                  <TableCell className="font-medium">{c}</TableCell>
+                  <TableCell className="text-right tabular-nums">{hrs.toFixed(0)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{(hrs / 4.33).toFixed(1)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
+                    +{COHORT_BUFFER_PCT[c]}%
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Demand by state · {formatMonthLabel(month)}</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Telehealth hours of provider availability needed. MH coaching and therapy
+            are staffed separately and not shown here.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>State</TableHead>
+                <TableHead>Cohort</TableHead>
+                <TableHead className="text-right">Weekly</TableHead>
+                <TableHead className="text-right">Monthly (enhanced)</TableHead>
+                <TableHead className="text-right">Original build</TableHead>
+                <TableHead className="text-right">Δ vs enhanced</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {enriched.map(r => (
+                <TableRow key={r.state}>
+                  <TableCell className="font-medium">{r.state}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{r.cohort}</TableCell>
+                  <TableCell className="text-right tabular-nums">{r.weekly.toFixed(1)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{r.enhanced.toFixed(0)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{r.original.toFixed(0)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
+                    {r.gapVsEnhanced.toFixed(0)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Specialty lines</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            MH coaching and therapy/LPC demand are staffed off-network and tracked separately.
+            Values shown below come from the ClinOps demand methodology buffers and are
+            not yet wired to live cards here.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Service line</TableHead>
+                <TableHead>Buffer</TableHead>
+                <TableHead>Notes</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow>
+                <TableCell className="font-medium">MH Coaching</TableCell>
+                <TableCell className="text-xs">+15% network sum</TableCell>
+                <TableCell className="text-xs text-muted-foreground">Card 2973</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="font-medium">Therapy / LPCs</TableCell>
+                <TableCell className="text-xs">+15% active states</TableCell>
+                <TableCell className="text-xs text-muted-foreground">Card 2971</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+type CoverageStatus = 'Covered' | 'Watch' | 'Gap' | 'Critical Gap';
+
+function coverageStatusFor(pct: number): CoverageStatus {
+  if (pct >= 95) return 'Covered';
+  if (pct >= 80) return 'Watch';
+  if (pct >= 60) return 'Gap';
+  return 'Critical Gap';
+}
+
+const COVERAGE_STATUS_STYLE: Record<CoverageStatus, string> = {
+  Covered: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+  Watch: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+  Gap: 'bg-orange-100 text-orange-800 hover:bg-orange-100',
+  'Critical Gap': 'bg-red-100 text-red-800 hover:bg-red-100',
+};
+
+function CoverageMatchingPanel({ month }: { month: string }) {
+  const coverageQ = useStateCoverage(month);
+  const rows = coverageQ.data?.rows ?? [];
+
+  if (coverageQ.isLoading) {
+    return <LoadingRow label="Loading coverage" />;
+  }
+
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        title="No coverage data for July yet"
+        body="Coverage comes from shift_recommendations + state_demand_targets. Run the evaluator from the header above once Jotform submissions are in."
+      />
+    );
+  }
+
+  const sorted = [...rows].sort((a, b) => a.pct_filled - b.pct_filled);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          Coverage matching · {formatMonthLabel(month)}
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Primary decision view: which states are still short for July, and by how much.
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>State</TableHead>
+              <TableHead>Cohort</TableHead>
+              <TableHead className="text-right">Demand hrs</TableHead>
+              <TableHead className="text-right">Available hrs</TableHead>
+              <TableHead className="text-right">Gap / surplus</TableHead>
+              <TableHead className="text-right">Coverage</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.map(r => {
+              const status = coverageStatusFor(r.pct_filled);
+              const diff = r.filled - r.needed;
+              return (
+                <TableRow key={r.state}>
+                  <TableCell className="font-medium">{r.state}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{cohortFor(r.state)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{r.needed.toFixed(0)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{r.filled.toFixed(0)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${diff < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                    {diff >= 0 ? '+' : ''}{diff.toFixed(0)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.needed > 0 ? `${Math.round(r.pct_filled)}%` : '—'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={COVERAGE_STATUS_STYLE[status]}>{status}</Badge>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EmptyState({ title, body }: { title: string; body: string }) {
+  return (
+    <Card>
+      <CardContent className="py-10 text-center space-y-2">
+        <div className="font-medium text-sm">{title}</div>
+        <div className="text-xs text-muted-foreground max-w-md mx-auto">{body}</div>
+      </CardContent>
+    </Card>
+  );
+}
