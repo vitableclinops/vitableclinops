@@ -84,6 +84,8 @@ import {
   isEhrDone,
   type AvailabilitySubmissionRow,
   type ProviderPublishView,
+  type SubmissionForInbox,
+  type UnmatchedSubmission,
   type DecisionStatus,
   type ParsedShift,
   type ShiftRow,
@@ -248,8 +250,8 @@ export default function SchedulingWorkbenchPage() {
   const dbRows = safeArray<ProviderPublishView>(dbRowsData);
   const shiftRows = safeArray<ShiftRow>(shiftRowsData);
   const auditEntries = safeArray<PublishAuditEntry>(auditEntriesData);
-  const inboxSubmissions = safeArray(inboxSubmissionsData);
-  const unmatchedSubs = safeArray(unmatchedSubsData);
+  const inboxSubmissions = safeArray<SubmissionForInbox>(inboxSubmissionsData);
+  const unmatchedSubs = safeArray<UnmatchedSubmission>(unmatchedSubsData);
   const availabilitySubmissions = safeArray<AvailabilitySubmissionRow>(availabilitySubmissionsData);
   const readinessRows = safeArray<{ readyForSubmissions: boolean }>(readinessRowsData);
   const setupIssuesCount = useMemo(
