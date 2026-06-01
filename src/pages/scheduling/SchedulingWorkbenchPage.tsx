@@ -2396,12 +2396,17 @@ function PublishHistoryPanel({
 // July 2026 Workbench — new top-level tab panels
 // ============================================================================
 
-function OverviewPanel({
+function ReadinessPanel({
   month,
   summary,
   missingCount,
+  mentalHealthCount,
+  mentalHealthAcceptedCount,
+  inboxNeedsReviewCount,
   onJumpToCoverage,
   onJumpToAvailability,
+  onJumpToMatching,
+  onJumpToPublish,
 }: {
   month: string;
   summary: {
@@ -2414,8 +2419,13 @@ function OverviewPanel({
     missingCount: number;
   };
   missingCount: number;
+  mentalHealthCount: number;
+  mentalHealthAcceptedCount: number;
+  inboxNeedsReviewCount: number;
   onJumpToCoverage: () => void;
   onJumpToAvailability: () => void;
+  onJumpToMatching: () => void;
+  onJumpToPublish: () => void;
 }) {
   const demandQ = useMonthlyDemand(month);
   const coverageQ = useStateCoverage(month);
@@ -2440,6 +2450,94 @@ function OverviewPanel({
     [coverageQ.data],
   );
 
+  const homebasePct =
+    summary.totalShifts > 0 ? Math.round((summary.homebaseShifts / summary.totalShifts) * 100) : 0;
+  const ehrPct =
+    summary.totalShifts > 0 ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0;
+
+  // Readiness verdict — three buckets
+  type Readiness = { label: 'Ready' | 'At Risk' | 'Not Ready'; tone: string };
+  const readiness: Readiness = (() => {
+    if (
+      criticalGapStates.length === 0 &&
+      missingCount === 0 &&
+      summary.needsReviewCount === 0 &&
+      ehrPct === 100
+    ) {
+      return { label: 'Ready', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+    }
+    if (criticalGapStates.length > 0 || missingCount > 5 || ehrPct < 50) {
+      return { label: 'Not Ready', tone: 'bg-red-100 text-red-800 border-red-200' };
+    }
+    return { label: 'At Risk', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
+  })();
+
+  // Biggest blocker + suggested next action
+  const { blocker, nextAction, nextActionJump } = useMemo<{
+    blocker: string;
+    nextAction: string;
+    nextActionJump: () => void;
+  }>(() => {
+    if (criticalGapStates.length > 0) {
+      return {
+        blocker: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} below 60% coverage (${criticalGapStates.slice(0, 3).map(s => s.state).join(', ')}${criticalGapStates.length > 3 ? '…' : ''})`,
+        nextAction: 'Open Coverage Gaps and source licensed providers',
+        nextActionJump: onJumpToCoverage,
+      };
+    }
+    if (missingCount > 0) {
+      return {
+        blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} have not submitted July availability`,
+        nextAction: 'Open Availability → Missing and copy BCC list',
+        nextActionJump: onJumpToAvailability,
+      };
+    }
+    if (inboxNeedsReviewCount > 0) {
+      return {
+        blocker: `${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} pending review`,
+        nextAction: 'Resolve resubmissions in Availability → Inbox',
+        nextActionJump: onJumpToAvailability,
+      };
+    }
+    if (summary.needsReviewCount > 0) {
+      return {
+        blocker: `${summary.needsReviewCount} submission${summary.needsReviewCount === 1 ? '' : 's'} flagged needs-review`,
+        nextAction: 'Triage needs-review in Matching',
+        nextActionJump: onJumpToMatching,
+      };
+    }
+    if (homebasePct < 100) {
+      return {
+        blocker: `${summary.totalShifts - summary.homebaseShifts} shift${summary.totalShifts - summary.homebaseShifts === 1 ? '' : 's'} not yet posted to Homebase`,
+        nextAction: 'Post remaining shifts in Publish Tracker',
+        nextActionJump: onJumpToPublish,
+      };
+    }
+    if (ehrPct < 100) {
+      return {
+        blocker: `${summary.totalShifts - summary.ehrShifts} shift${summary.totalShifts - summary.ehrShifts === 1 ? '' : 's'} not yet posted to EHR`,
+        nextAction: 'Finish EHR posts in Publish Tracker',
+        nextActionJump: onJumpToPublish,
+      };
+    }
+    return {
+      blocker: 'None — July is publish-ready',
+      nextAction: 'Confirm with ClinOps lead and announce',
+      nextActionJump: onJumpToPublish,
+    };
+  }, [
+    criticalGapStates,
+    missingCount,
+    inboxNeedsReviewCount,
+    summary,
+    homebasePct,
+    ehrPct,
+    onJumpToAvailability,
+    onJumpToCoverage,
+    onJumpToMatching,
+    onJumpToPublish,
+  ]);
+
   const lastUpdated = useMemo(() => {
     const ts = (demandQ.dataUpdatedAt || coverageQ.dataUpdatedAt) ?? Date.now();
     return new Date(ts).toLocaleString();
@@ -2447,6 +2545,31 @@ function OverviewPanel({
 
   return (
     <div className="space-y-4">
+      {/* HEADLINE: readiness verdict + blocker + next action */}
+      <Card className={`border-2 ${readiness.tone}`}>
+        <CardContent className="py-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <Badge className={`text-sm px-3 py-1 ${readiness.tone}`}>
+              July status: {readiness.label}
+            </Badge>
+            <div className="text-sm">
+              <div className="font-medium">Biggest blocker</div>
+              <div className="text-xs opacity-90">{blocker}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-right max-w-[260px]">
+              <div className="font-medium">Next action</div>
+              <div className="opacity-90">{nextAction}</div>
+            </div>
+            <Button size="sm" variant="outline" onClick={nextActionJump}>
+              Go
+              <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard
           label="Forecast demand"
@@ -2471,6 +2594,29 @@ function OverviewPanel({
           label={gapHours > 0 ? 'Remaining gap' : 'Surplus'}
           value={`${Math.abs(gapHours).toFixed(0)} hrs`}
           sub={gapHours > 0 ? 'Below demand' : 'Above demand'}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard
+          label="Missing submissions"
+          value={String(missingCount)}
+          sub="Providers without July hours"
+        />
+        <SummaryCard
+          label="Needs review"
+          value={String(summary.needsReviewCount + inboxNeedsReviewCount)}
+          sub={`${summary.needsReviewCount} flagged · ${inboxNeedsReviewCount} resubmissions`}
+        />
+        <SummaryCard
+          label="Homebase posted"
+          value={summary.totalShifts ? `${homebasePct}%` : '—'}
+          sub={`${summary.homebaseShifts}/${summary.totalShifts} shifts`}
+        />
+        <SummaryCard
+          label="EHR posted"
+          value={summary.totalShifts ? `${ehrPct}%` : '—'}
+          sub={`${summary.ehrShifts}/${summary.totalShifts} shifts`}
         />
       </div>
 
@@ -2516,14 +2662,17 @@ function OverviewPanel({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <UserX className="h-4 w-4 text-slate-500" />
-              Providers missing July availability
+              <Brain className="h-4 w-4 text-violet-500" />
+              Mental health schedule
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold tabular-nums">{missingCount}</div>
+            <div className="text-2xl font-bold tabular-nums">
+              {mentalHealthAcceptedCount}/{mentalHealthCount}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Providers without a July submission. Chase them on the Availability tab.
+              MH coaches / LPCs with an accepted submission this month. Staffed separately
+              from telehealth.
             </p>
             <Button
               size="sm"
