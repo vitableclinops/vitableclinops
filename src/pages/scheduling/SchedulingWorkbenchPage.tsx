@@ -1073,6 +1073,8 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="history" className="mt-4 space-y-4">
           <PublishHistoryPanel month={month} entries={auditEntries} />
         </TabsContent>
+          </Tabs>
+        </TabsContent>
       </Tabs>
     </TooltipProvider>
     </SchedulingShell>
