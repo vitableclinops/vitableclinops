@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACCESS_GROWTH_BUFFER_MULTIPLIER,
   computeStateCoverage,
   coverageStatusFor,
   isEligibleForState,
@@ -32,6 +33,26 @@ describe('computeStateCoverage', () => {
       eligible_providers: 2,
       missing_providers: 1,
       status: 'Critical',
+    });
+  });
+
+  it('can apply an access growth buffer to demand targets', () => {
+    const result = computeStateCoverage({
+      targets: [{ state: 'PA', monthly_hours_target: 100 }],
+      shifts: [{ assigned_state: 'PA', hours: 100, shift_type: 'virtual_oneoff', provider_name: 'Ready Provider' }],
+      providers: [{ id: 'p1', name: 'Ready Provider', profession: 'NP', active: true }],
+      licenses: [{ provider_id: 'p1', state: 'PA', status: 'active' }],
+      submissions: [{ provider_id: 'p1', decision_status: 'accepted' }],
+      demandMultiplier: ACCESS_GROWTH_BUFFER_MULTIPLIER,
+    });
+
+    expect(result.rows[0]).toMatchObject({
+      baseline_needed: 100,
+      needed: 125,
+      access_buffer_hours: 25,
+      filled: 100,
+      leftover: 25,
+      status: 'Watch',
     });
   });
 

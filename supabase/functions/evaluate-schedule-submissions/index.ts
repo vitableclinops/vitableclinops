@@ -37,13 +37,16 @@
  *      scheduling policy: MD/DO/Physician providers are reserved for
  *      MD-only states (AL/IN/GA/MS/MO/SC/TN/LA), and non-physicians cannot
  *      be allocated to those MD-only states.
- *   4. For each eligible state, demand_hours = sum of demand_forecast
- *      values over the target month, minus committed hours from decisions
- *      made in prior runs for OTHER providers in same state+month.
+ *   4. For each eligible state, base_demand_hours = sum of demand_forecast
+ *      values over the target month. The telehealth allocator applies a
+ *      1.25x access-growth buffer before subtracting committed hours from
+ *      decisions made in prior runs for OTHER providers in same state+month.
  *      Note: demand_forecast.projected_visits stores hours of provider
  *      availability (not visits); column name is legacy. See
  *      compute-demand-forecast for the canonical methodology.
- *   5. total_gap = sum of demand_hours across eligible states (clipped 0).
+ *   5. total_gap = sum of buffered demand-hour gaps across eligible states
+ *      (clipped 0). The buffer intentionally schedules above historical
+ *      utilization so scheduling can improve same-day / next-day access.
  *   6. Scarce coverage windows (Friday PM, Saturday, Sunday) are protected
  *      before monthly oversupply trimming. This keeps same-day / next-day
  *      access coverage from being rejected just because total monthly hours
@@ -202,6 +205,8 @@ const MH_POLICY_CUT_REASON =
   'Cut — mental health shifts must be at least 2.5h (3 visits at 40m with 10m breaks)';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
+const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1.25;
+const ACCESS_GROWTH_BUFFER_POLICY = 'access_growth_buffer_1_25';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1005,6 +1010,11 @@ Deno.serve(async (req: Request) => {
         const gapByState: Array<{
           state: string;
           gapHours: number;
+          baseDemandHours: number;
+          bufferedDemandHours: number;
+          accessBufferHours: number;
+          committedHours: number;
+          baseGapHours: number;
           demandHours: number;
           missingDemand: boolean;
         }> = [];
@@ -1012,23 +1022,44 @@ Deno.serve(async (req: Request) => {
           const dKey = `${st}_${targetMonth}`;
           const visits = demandByKey.get(dKey);
           if (visits === undefined) {
-            gapByState.push({ state: st, gapHours: 0, demandHours: 0, missingDemand: true });
+            gapByState.push({
+              state: st,
+              gapHours: 0,
+              baseDemandHours: 0,
+              bufferedDemandHours: 0,
+              accessBufferHours: 0,
+              committedHours: 0,
+              baseGapHours: 0,
+              demandHours: 0,
+              missingDemand: true,
+            });
             continue;
           }
           // demand_forecast.projected_visits stores hours of provider
           // availability (column name is legacy/misleading), so the value
-          // already IS the demand hour figure — no conversion.
-          const demandHours = visits;
+          // already IS the base demand hour figure — no conversion.
+          const baseDemandHours = visits;
+          const bufferedDemandHours = round2(baseDemandHours * ACCESS_GROWTH_BUFFER_MULTIPLIER);
           const committed = committedByKey.get(dKey) ?? 0;
+          const baseGapHours = Math.max(0, baseDemandHours - committed);
           gapByState.push({
             state: st,
-            gapHours: Math.max(0, demandHours - committed),
-            demandHours,
+            gapHours: Math.max(0, bufferedDemandHours - committed),
+            baseDemandHours,
+            bufferedDemandHours,
+            accessBufferHours: Math.max(0, bufferedDemandHours - baseDemandHours),
+            committedHours: committed,
+            baseGapHours,
+            demandHours: bufferedDemandHours,
             missingDemand: false,
           });
         }
         gapByState.sort((a, b) => b.gapHours - a.gapHours);
         const totalGap = round2(gapByState.reduce((s, g) => s + g.gapHours, 0));
+        const baseTotalGap = round2(gapByState.reduce((s, g) => s + g.baseGapHours, 0));
+        const baseTotalDemand = round2(gapByState.reduce((s, g) => s + g.baseDemandHours, 0));
+        const bufferedTotalDemand = round2(gapByState.reduce((s, g) => s + g.bufferedDemandHours, 0));
+        const accessBufferHours = round2(Math.max(0, totalGap - baseTotalGap));
         const missingDemandStates = gapByState.filter(g => g.missingDemand).map(g => g.state);
         const scarceCoverageTimeline = forecastTimeline.filter(isScarceCoverageSlot);
         const scarceCoverageHours = sumSlotHours(scarceCoverageTimeline);
@@ -1050,6 +1081,7 @@ Deno.serve(async (req: Request) => {
         accepted = round2(Math.min(effectiveHours, scarceCoverageHours + demandAcceptedHours));
         forecastDeclined = round2(Math.max(0, effectiveHours - accepted));
         const scarceOverflowHours = round2(Math.max(0, accepted - totalGap));
+        const accessBufferUsedHours = round2(Math.max(0, accepted - baseTotalGap));
         if (accepted <= 0) {
           status = 'declined';
         } else if (forecastDeclined <= 0) {
@@ -1133,10 +1165,22 @@ Deno.serve(async (req: Request) => {
         if (eligibleSourceSummary.length) {
           noteParts.push(`eligible_sources=${eligibleSourceSummary.join(',')}`);
         }
+        noteParts.push(`access_growth_buffer_policy=${ACCESS_GROWTH_BUFFER_POLICY}`);
+        noteParts.push(`access_growth_buffer_multiplier=${ACCESS_GROWTH_BUFFER_MULTIPLIER}`);
+        noteParts.push(`base_total_demand=${baseTotalDemand}h`);
+        noteParts.push(`buffered_total_demand=${bufferedTotalDemand}h`);
+        noteParts.push(`base_total_gap=${baseTotalGap}h`);
+        noteParts.push(`access_buffer_hours=${accessBufferHours}h`);
+        if (accessBufferUsedHours > 0) {
+          noteParts.push(`access_buffer_used_hours=${accessBufferUsedHours}h`);
+        }
         noteParts.push(`total_gap=${totalGap}h`);
         noteParts.push(`demand_accepted_hours=${demandAcceptedHours}h`);
         noteParts.push(
           'state_gaps=' + gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : round2(g.gapHours) + 'h'}`).join(','),
+        );
+        noteParts.push(
+          'base_state_demand=' + gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : round2(g.baseDemandHours) + 'h'}`).join(','),
         );
         if (allocations.length) {
           noteParts.push('alloc=' + allocations.map(a => `${a.state}:${a.hours}h`).join(','));
@@ -1195,6 +1239,11 @@ Deno.serve(async (req: Request) => {
           superseded: olderIds.length,
           effective_hours: effectiveHours,
           total_gap_hours: totalGap,
+          base_total_demand_hours: baseTotalDemand,
+          buffered_total_demand_hours: bufferedTotalDemand,
+          base_total_gap_hours: baseTotalGap,
+          access_buffer_used_hours: accessBufferUsedHours,
+          access_growth_buffer_multiplier: ACCESS_GROWTH_BUFFER_MULTIPLIER,
           status,
           accepted_hours: accepted,
           declined_hours: declined,

@@ -118,6 +118,7 @@ import {
   type SourceAuditSection,
 } from '@/hooks/useSchedulingSourceAudit';
 import {
+  ACCESS_GROWTH_BUFFER_MULTIPLIER,
   coverageStatusFor,
   isEligibleForState,
   type CoverageStatus,
@@ -3563,12 +3564,11 @@ function ReadinessPanel({
   onJumpToPublish: () => void;
   onJumpToMentalHealth: () => void;
 }) {
-  const demandQ = useMonthlyDemand(month);
   const coverageQ = useStateCoverage(month);
 
   const demandHours = useMemo(
-    () => (demandQ.data ?? []).reduce((s, r) => s + Number(r.monthly_hours_target ?? 0), 0),
-    [demandQ.data],
+    () => (coverageQ.data?.rows ?? []).reduce((s, r) => s + r.needed, 0),
+    [coverageQ.data],
   );
 
   const acceptedHours = useMemo(
@@ -4021,7 +4021,9 @@ function CoverageGapsPanel({
           Coverage gaps · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Which states are short or oversupplied, and what to do next.
+          Access target uses Metabase demand × {ACCESS_GROWTH_BUFFER_MULTIPLIER.toFixed(2)}
+          so scheduling can build same-day / next-day headroom instead of merely matching
+          historical utilization.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -4029,7 +4031,7 @@ function CoverageGapsPanel({
           <TableHeader>
             <TableRow>
               <TableHead>State</TableHead>
-              <TableHead className="text-right">Demand hrs</TableHead>
+              <TableHead className="text-right">Access target</TableHead>
               <TableHead className="text-right">Accepted hrs</TableHead>
               <TableHead className="text-right">Gap / surplus</TableHead>
               <TableHead className="text-right">Coverage</TableHead>
@@ -4046,7 +4048,14 @@ function CoverageGapsPanel({
               return (
                 <TableRow key={r.state}>
                   <TableCell className="font-medium">{r.state}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.needed.toFixed(0)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.needed.toFixed(0)}
+                    {r.access_buffer_hours > 0 && (
+                      <div className="text-[11px] text-muted-foreground">
+                        base {r.baseline_needed.toFixed(0)} + buffer
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{r.filled.toFixed(0)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${diff < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                     {diff >= 0 ? '+' : ''}{diff.toFixed(0)}
@@ -4353,6 +4362,8 @@ function MatchingPanel({
 function classifyReason(text: string): string {
   const t = text.toLowerCase();
   if (!t) return 'No reason recorded';
+  if (t.includes('access_growth_buffer') || t.includes('access buffer'))
+    return 'Access growth buffer';
   if (t.includes('scarce_window') || t.includes('scarce coverage'))
     return 'Scarce coverage protected';
   if (t.includes('outside') && t.includes('business')) return 'Outside business hours';

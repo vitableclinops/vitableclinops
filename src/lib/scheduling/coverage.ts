@@ -32,6 +32,9 @@ export type CoverageSubmissionInput = {
 
 export type StateCoverageComputedRow = {
   state: string;
+  baseline_needed: number;
+  access_buffer_multiplier: number;
+  access_buffer_hours: number;
   needed: number;
   filled: number;
   leftover: number;
@@ -40,6 +43,8 @@ export type StateCoverageComputedRow = {
   missing_providers: number;
   status: CoverageStatus;
 };
+
+export const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1.25;
 
 export type InHomeProviderHours = {
   provider_name: string;
@@ -117,7 +122,11 @@ export function computeStateCoverage(input: {
   providers: CoverageProviderInput[];
   licenses: CoverageLicenseInput[];
   submissions: CoverageSubmissionInput[];
+  demandMultiplier?: number;
 }): CoverageComputationResult {
+  const demandMultiplier = typeof input.demandMultiplier === 'number' && Number.isFinite(input.demandMultiplier)
+    ? Math.max(0, Number(input.demandMultiplier))
+    : 1;
   const providersById = new Map(input.providers.map(p => [p.id, p]));
   const submittedProviderIds = new Set(
     input.submissions
@@ -126,10 +135,13 @@ export function computeStateCoverage(input: {
   );
 
   const needed = new Map<string, number>();
+  const baselineNeeded = new Map<string, number>();
   for (const t of input.targets) {
     const state = String(t.state ?? '').trim().toUpperCase();
     if (!state) continue;
-    needed.set(state, Number(t.monthly_hours_target ?? 0));
+    const baseline = Number(t.monthly_hours_target ?? 0);
+    baselineNeeded.set(state, baseline);
+    needed.set(state, round2(baseline * demandMultiplier));
   }
 
   const filled = new Map<string, number>();
@@ -191,6 +203,9 @@ export function computeStateCoverage(input: {
     const pct = need > 0 ? Math.min(999, (fill / need) * 100) : fill > 0 ? 999 : 0;
     return {
       state,
+      baseline_needed: baselineNeeded.get(state) ?? 0,
+      access_buffer_multiplier: demandMultiplier,
+      access_buffer_hours: Math.max(0, need - (baselineNeeded.get(state) ?? 0)),
       needed: need,
       filled: fill,
       leftover: need - fill,
@@ -211,4 +226,8 @@ export function computeStateCoverage(input: {
       .sort((a, b) => b.hours - a.hours),
     otherUnassignedHours,
   };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import {
+  ACCESS_GROWTH_BUFFER_MULTIPLIER,
   computeStateCoverage,
   type CoverageStatus,
   type InHomeProviderHours,
@@ -66,6 +67,7 @@ export function useStateCoverage(month: string) {
           status: row.allocation_eligible ? 'active' : 'inactive',
         })),
         submissions: submissionsRes.data ?? [],
+        demandMultiplier: ACCESS_GROWTH_BUFFER_MULTIPLIER,
       });
     },
     staleTime: 30_000,
