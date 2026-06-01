@@ -403,6 +403,11 @@ const App = () => (
                 <SchedulingWorkbenchPage />
               </ProtectedRoute>
             } />
+            <Route path="/scheduling/mental-health" element={
+              <ProtectedRoute requiredRoles={['admin', 'scheduling']}>
+                <SchedulingWorkbenchPage scope="mental_health" />
+              </ProtectedRoute>
+            } />
             <Route path="/scheduling/forecast" element={<Navigate to="/scheduling/workbench?tab=forecast" replace />} />
             <Route path="/scheduling/june-mvp" element={<Navigate to="/scheduling/workbench" replace />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

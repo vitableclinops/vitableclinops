@@ -249,24 +249,29 @@ const labelShiftType = (t: string | null | undefined) => {
 
 const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : []);
 
-export default function SchedulingWorkbenchPage() {
+export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
+
+export default function SchedulingWorkbenchPage({
+  scope = 'medical',
+}: { scope?: SchedulingWorkbenchScope } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [month, setMonth] = useState('2026-07-01');
+  const isMh = scope === 'mental_health';
+  const [mhServiceLine, setMhServiceLine] = useState<'all' | MentalHealthServiceLine>('all');
   const initialTab = (() => {
     const t = searchParams.get('tab');
-    return [
+    const allowed = [
       'readiness',
       'forecast',
       'availability',
       'matching',
       'coverage',
       'publish',
-      'mental-health',
       'declined',
       'audit',
-    ].includes(t ?? '')
-      ? (t as string)
-      : 'readiness';
+      ...(isMh ? [] : ['mental-health']),
+    ];
+    return allowed.includes(t ?? '') ? (t as string) : 'readiness';
   })();
   const [topTab, setTopTab] = useState(initialTab);
   const onTopTabChange = (v: string) => {
@@ -653,6 +658,118 @@ export default function SchedulingWorkbenchPage() {
     mentalHealthMissingRows,
   ]);
 
+  // ─────────── Scope-aware (medical vs mental health) view models ───────────
+  // Filters each row collection to the active scope so the same tab
+  // components can power /scheduling/workbench and /scheduling/mental-health.
+  const mhProviderName = (name?: string | null) =>
+    isMentalHealthProvider(null, name ?? null);
+
+  const mhSlMatches = (profession?: string | null, name?: string | null) => {
+    if (!isMh || mhServiceLine === 'all') return true;
+    return (
+      mentalHealthServiceLineForProvider(profession ?? null, name ?? null) ===
+      mhServiceLine
+    );
+  };
+
+  const scopedRows = useMemo(
+    () =>
+      (isMh ? mentalHealthRows : telehealthRows).filter(r =>
+        mhSlMatches(r.profession, r.provider_name),
+      ),
+    [isMh, mhServiceLine, mentalHealthRows, telehealthRows],
+  );
+  const scopedAccepted = useMemo(
+    () => scopedRows.filter(isAcceptedSubmission),
+    [scopedRows],
+  );
+  const scopedDeclined = useMemo(
+    () => sortDeclinedRows(scopedRows.filter(hasDeclinedHours)),
+    [scopedRows],
+  );
+  const scopedNeedsReview = useMemo(
+    () => scopedRows.filter(r => r.submission?.decision_status === 'needs_review'),
+    [scopedRows],
+  );
+  const scopedMissing = useMemo(
+    () => scopedRows.filter(r => !r.submission),
+    [scopedRows],
+  );
+  const scopedFlatAccepted = useMemo(() => {
+    const ids = new Set(scopedAccepted.map(r => r.provider_id));
+    return shiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
+  }, [scopedAccepted, shiftRows]);
+  const scopedSummary = useMemo(() => {
+    const totalShifts = scopedFlatAccepted.length;
+    return {
+      totalProviders: scopedAccepted.length,
+      totalShifts,
+      homebaseShifts: scopedFlatAccepted.filter(isHomebaseDone).length,
+      ehrShifts: scopedFlatAccepted.filter(isEhrDone).length,
+      declinedCount: scopedDeclined.length,
+      needsReviewCount: scopedNeedsReview.length,
+      missingCount: scopedMissing.length,
+    };
+  }, [scopedAccepted, scopedFlatAccepted, scopedDeclined, scopedNeedsReview, scopedMissing]);
+
+  const scopedAvailabilitySubs = useMemo(
+    () =>
+      availabilitySubmissions.filter(s =>
+        (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
+        mhSlMatches(null, s.provider_name),
+      ),
+    [availabilitySubmissions, isMh, mhServiceLine],
+  );
+  const scopedInboxSubs = useMemo(
+    () =>
+      inboxSubmissions.filter(s =>
+        (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
+        mhSlMatches(null, s.provider_name),
+      ),
+    [inboxSubmissions, isMh, mhServiceLine],
+  );
+  const scopedUnmatched = useMemo(
+    () =>
+      unmatchedSubs.filter(s =>
+        (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
+        mhSlMatches(null, s.provider_name),
+      ),
+    [unmatchedSubs, isMh, mhServiceLine],
+  );
+  const scopedTimeOff = useMemo(
+    () =>
+      timeOffRows.filter(t => {
+        const mh = isMentalHealthProvider(t.row.profession, t.row.provider_name);
+        return (isMh ? mh : !mh) && mhSlMatches(t.row.profession, t.row.provider_name);
+      }),
+    [timeOffRows, isMh, mhServiceLine],
+  );
+  const scopedInboxActionable = useMemo(() => {
+    const groups = groupSubmissionsForInbox(scopedInboxSubs);
+    return groups.filter(g => {
+      if (g.latest.human_review_state === 'approved') return false;
+      const d = diffParsedShifts(g.prior.parsed_shifts, g.latest.parsed_shifts);
+      return d.hasChanges;
+    }).length;
+  }, [scopedInboxSubs]);
+  const scopedSubmittedAvailabilityHours = useMemo(() => {
+    const latest = new Map<string, AvailabilitySubmissionRow>();
+    for (const row of scopedAvailabilitySubs) {
+      if (row.decision_status === 'superseded') continue;
+      const key = row.provider_id ?? row.provider_name;
+      const c = latest.get(key);
+      if (!c || row.submitted_at > c.submitted_at) latest.set(key, row);
+    }
+    let t = 0;
+    for (const row of latest.values()) t += Number(expandedSubmittedHours(row) ?? 0);
+    return t;
+  }, [scopedAvailabilitySubs]);
+  const scopedAuditEntries = useMemo(() => {
+    if (!isMh) return auditEntries;
+    const ids = new Set(mentalHealthRows.map(r => r.provider_id));
+    return auditEntries.filter(e => e.provider_id && ids.has(e.provider_id));
+  }, [auditEntries, isMh, mentalHealthRows]);
+
   const handleToggleProvider = (
     row: ProviderPublishView,
     step: ShiftPublishStep,
@@ -730,15 +847,32 @@ export default function SchedulingWorkbenchPage() {
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Calendar className="h-6 w-6 text-emerald-600" />
-            {formatMonthLabel(month)} Scheduling Workbench
+            {isMh ? (
+              <Brain className="h-6 w-6 text-emerald-600" />
+            ) : (
+              <Calendar className="h-6 w-6 text-emerald-600" />
+            )}
+            {formatMonthLabel(month)} {isMh ? 'Mental Health Scheduling Workbench' : 'Scheduling Workbench'}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            One place to move {formatMonthLabel(month)} from forecast → availability → coverage → publish.
-            Pick a tab below. Every Homebase/EHR click is recorded with who and when.
+            {isMh
+              ? `Mental health only — coaches and therapists. Same forecast → availability → coverage → publish flow, scoped to MH providers.`
+              : `One place to move ${formatMonthLabel(month)} from forecast → availability → coverage → publish. Pick a tab below. Every Homebase/EHR click is recorded with who and when.`}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {isMh && (
+            <Select value={mhServiceLine} onValueChange={(v) => setMhServiceLine(v as 'all' | MentalHealthServiceLine)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All MH service lines</SelectItem>
+                <SelectItem value="mh_coaching">{SERVICE_LINE_LABEL.mh_coaching}</SelectItem>
+                <SelectItem value="therapy">{SERVICE_LINE_LABEL.therapy}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Select value={month} onValueChange={setMonth}>
             <SelectTrigger className="w-[180px]">
               <SelectValue />
@@ -784,19 +918,21 @@ export default function SchedulingWorkbenchPage() {
           <TabsTrigger value="matching"><Users className="h-3.5 w-3.5 mr-1" />Matching</TabsTrigger>
           <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Gaps</TabsTrigger>
           <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
-          <TabsTrigger value="mental-health">
-            <Brain className="h-3.5 w-3.5 mr-1" />Mental Health
-            {mentalHealthRows.length + mentalHealthUnmatchedSubs.length > 0 && (
-              <span className="ml-1 text-xs">
-                ({mentalHealthRows.length + mentalHealthUnmatchedSubs.length})
-              </span>
-            )}
-          </TabsTrigger>
+          {!isMh && (
+            <TabsTrigger value="mental-health">
+              <Brain className="h-3.5 w-3.5 mr-1" />Mental Health
+              {mentalHealthRows.length + mentalHealthUnmatchedSubs.length > 0 && (
+                <span className="ml-1 text-xs">
+                  ({mentalHealthRows.length + mentalHealthUnmatchedSubs.length})
+                </span>
+              )}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="declined">
             <CalendarX className="h-3.5 w-3.5 mr-1" />Declined Hours
-            {allDeclinedRows.length > 0 && (
+            {(isMh ? scopedDeclined.length : allDeclinedRows.length) > 0 && (
               <Badge className="ml-1 bg-red-100 text-red-700">
-                {allDeclinedRows.length}
+                {isMh ? scopedDeclined.length : allDeclinedRows.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -807,17 +943,17 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="readiness" className="mt-4 space-y-4">
           <ReadinessPanel
             month={month}
-            summary={summary}
-            missingCount={summary.missingCount}
-            submittedHours={submittedAvailabilityHours}
-            mentalHealthCount={mentalHealthRows.length}
-            mentalHealthAcceptedCount={mentalHealthAcceptedRows.length}
-            inboxNeedsReviewCount={inboxActionableCount}
+            summary={scopedSummary}
+            missingCount={scopedSummary.missingCount}
+            submittedHours={scopedSubmittedAvailabilityHours}
+            mentalHealthCount={isMh ? 0 : mentalHealthRows.length}
+            mentalHealthAcceptedCount={isMh ? 0 : mentalHealthAcceptedRows.length}
+            inboxNeedsReviewCount={scopedInboxActionable}
             onJumpToCoverage={() => onTopTabChange('coverage')}
             onJumpToAvailability={() => onTopTabChange('availability')}
             onJumpToMatching={() => onTopTabChange('matching')}
             onJumpToPublish={() => onTopTabChange('publish')}
-            onJumpToMentalHealth={() => onTopTabChange('mental-health')}
+            onJumpToMentalHealth={() => (isMh ? undefined : onTopTabChange('mental-health'))}
           />
           <SopCard />
           {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
@@ -841,9 +977,9 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="matching" className="mt-4 space-y-4">
           <MatchingPanel
             month={month}
-            acceptedRows={acceptedRows}
-            declinedRows={declinedRows}
-            needsReviewRows={telehealthNeedsReviewRows}
+            acceptedRows={scopedAccepted}
+            declinedRows={scopedDeclined}
+            needsReviewRows={scopedNeedsReview}
             shiftsByProvider={shiftsByProvider}
             eligibilityByProvider={eligibilityByProvider}
           />
@@ -851,7 +987,7 @@ export default function SchedulingWorkbenchPage() {
 
         {/* ============ COVERAGE ============ */}
         <TabsContent value="coverage" className="mt-4 space-y-4">
-          <CoverageGapsPanel month={month} acceptedRows={acceptedRows} missingRows={telehealthMissingRows} />
+          <CoverageGapsPanel month={month} acceptedRows={scopedAccepted} missingRows={scopedMissing} />
         </TabsContent>
 
         {/* ============ AVAILABILITY ============ */}
@@ -912,25 +1048,25 @@ export default function SchedulingWorkbenchPage() {
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="submissions">
             <Inbox className="h-3.5 w-3.5 mr-1" /> Submissions
-            {availabilitySubmissions.length > 0 && (
+            {scopedAvailabilitySubs.length > 0 && (
               <Badge className="ml-1 bg-emerald-100 text-emerald-800">
-                {availabilitySubmissions.length}
+                {scopedAvailabilitySubs.length}
               </Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="inbox">
             <RefreshCw className="h-3.5 w-3.5 mr-1" /> Resubmits
-            {inboxActionableCount > 0 && (
+            {scopedInboxActionable > 0 && (
               <Badge className="ml-1 bg-blue-100 text-blue-800">
-                {inboxActionableCount}
+                {scopedInboxActionable}
               </Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="unmatched">
             <AlertCircle className="h-3.5 w-3.5 mr-1" /> Unmatched
-            {unmatchedSubs.length > 0 && (
+            {scopedUnmatched.length > 0 && (
               <Badge className="ml-1 bg-amber-100 text-amber-800">
-                {unmatchedSubs.length}
+                {scopedUnmatched.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -944,16 +1080,16 @@ export default function SchedulingWorkbenchPage() {
           </TabsTrigger>
           <TabsTrigger value="missing">
             <UserX className="h-3.5 w-3.5 mr-1" /> Missing
-            {summary.missingCount > 0 && (
+            {scopedSummary.missingCount > 0 && (
               <Badge className="ml-1 bg-slate-200 text-slate-700">
-                {summary.missingCount}
+                {scopedSummary.missingCount}
               </Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="timeoff">
             <CalendarOff className="h-3.5 w-3.5 mr-1" /> Time Off
-            {timeOffRows.length > 0 && (
-              <span className="ml-1 text-xs">({timeOffRows.length})</span>
+            {scopedTimeOff.length > 0 && (
+              <span className="ml-1 text-xs">({scopedTimeOff.length})</span>
             )}
           </TabsTrigger>
         </TabsList>
@@ -961,7 +1097,7 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="submissions" className="mt-4 space-y-4">
           <AvailabilitySubmissionsPanel
             month={month}
-            rows={availabilitySubmissions}
+            rows={scopedAvailabilitySubs}
             isLoading={availabilityLoading}
           />
         </TabsContent>
@@ -969,7 +1105,7 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="inbox" className="mt-4 space-y-4">
           <ResubmissionInboxPanel
             anchorMonth={month}
-            submissions={inboxSubmissions}
+            submissions={scopedInboxSubs}
             isLoading={inboxLoading}
           />
         </TabsContent>
@@ -985,7 +1121,7 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="missing" className="mt-4 space-y-4">
           <MissingSubmissionsPanel
             month={month}
-            rows={missingRows}
+            rows={scopedMissing}
             isLoading={isLoading}
           />
         </TabsContent>
@@ -993,7 +1129,7 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="timeoff" className="mt-4 space-y-4">
           <TimeOffPanel
             month={month}
-            entries={timeOffRows}
+            entries={scopedTimeOff}
             isLoading={isLoading}
           />
         </TabsContent>
@@ -1005,20 +1141,20 @@ export default function SchedulingWorkbenchPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard
               label="Shifts to publish"
-              value={summary.totalShifts.toString()}
-              sub={`${summary.totalProviders} provider${summary.totalProviders === 1 ? '' : 's'}`}
+              value={scopedSummary.totalShifts.toString()}
+              sub={`${scopedSummary.totalProviders} provider${scopedSummary.totalProviders === 1 ? '' : 's'}`}
             />
             <SummaryCard
               label="Posted to Homebase"
-              value={`${summary.totalShifts ? Math.round((summary.homebaseShifts / summary.totalShifts) * 100) : 0}%`}
-              sub={`${summary.homebaseShifts} of ${summary.totalShifts} shifts`}
+              value={`${scopedSummary.totalShifts ? Math.round((scopedSummary.homebaseShifts / scopedSummary.totalShifts) * 100) : 0}%`}
+              sub={`${scopedSummary.homebaseShifts} of ${scopedSummary.totalShifts} shifts`}
             />
             <SummaryCard
               label="Posted to EHR"
-              value={`${summary.totalShifts ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0}%`}
-              sub={`${summary.ehrShifts} of ${summary.totalShifts} shifts`}
+              value={`${scopedSummary.totalShifts ? Math.round((scopedSummary.ehrShifts / scopedSummary.totalShifts) * 100) : 0}%`}
+              sub={`${scopedSummary.ehrShifts} of ${scopedSummary.totalShifts} shifts`}
             />
-            <SummaryCard label="Declined" value={summary.declinedCount.toString()} />
+            <SummaryCard label="Declined" value={scopedSummary.declinedCount.toString()} />
           </div>
           <Alert>
             <AlertCircle className="h-4 w-4" />
@@ -1033,25 +1169,25 @@ export default function SchedulingWorkbenchPage() {
               <TabsTrigger value="provider">By Provider</TabsTrigger>
               <TabsTrigger value="queue">
                 Publishing Queue
-                {summary.totalShifts > 0 && (
+                {scopedSummary.totalShifts > 0 && (
                   <span className="ml-1 text-xs">
-                    ({summary.homebaseShifts}/{summary.totalShifts})
+                    ({scopedSummary.homebaseShifts}/{scopedSummary.totalShifts})
                   </span>
                 )}
               </TabsTrigger>
               <TabsTrigger value="day">By Day</TabsTrigger>
               <TabsTrigger value="review">
                 Needs Review
-                {summary.needsReviewCount > 0 && (
+                {scopedSummary.needsReviewCount > 0 && (
                   <Badge className="ml-1 bg-orange-100 text-orange-800">
-                    {summary.needsReviewCount}
+                    {scopedSummary.needsReviewCount}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="history">
                 <History className="h-3.5 w-3.5 mr-1" /> History
-                {auditEntries.length > 0 && (
-                  <span className="ml-1 text-xs">({auditEntries.length})</span>
+                {scopedAuditEntries.length > 0 && (
+                  <span className="ml-1 text-xs">({scopedAuditEntries.length})</span>
                 )}
               </TabsTrigger>
             </TabsList>
@@ -1221,7 +1357,7 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="queue" className="mt-4 space-y-4">
           <PublishingQueue
             month={month}
-            shifts={allFlatAccepted}
+            shifts={scopedFlatAccepted}
             isLoading={shiftsLoading}
             onToggleShift={handleToggleShift}
             auditByShift={auditByShift}
@@ -1245,7 +1381,7 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="day" className="mt-4 space-y-4">
           <ByDayPanel
             month={month}
-            shifts={allFlatAccepted}
+            shifts={scopedFlatAccepted}
             isLoading={shiftsLoading}
             onToggleShift={handleToggleShift}
             auditByShift={auditByShift}
@@ -1255,7 +1391,7 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="review" className="mt-4 space-y-4">
           <NeedsReviewPanel
             month={month}
-            rows={telehealthNeedsReviewRows}
+            rows={scopedNeedsReview}
             isLoading={isLoading}
             onResolve={(args) =>
               resolveReview.mutate(args, {
@@ -1272,12 +1408,13 @@ export default function SchedulingWorkbenchPage() {
         </TabsContent>
 
         <TabsContent value="history" className="mt-4 space-y-4">
-          <PublishHistoryPanel month={month} entries={auditEntries} />
+          <PublishHistoryPanel month={month} entries={scopedAuditEntries} />
         </TabsContent>
           </Tabs>
         </TabsContent>
 
-        {/* ============ MENTAL HEALTH ============ */}
+        {/* ============ MENTAL HEALTH (only on main workbench) ============ */}
+        {!isMh && (
         <TabsContent value="mental-health" className="mt-4 space-y-4">
           <MentalHealthDashboard
             month={month}
@@ -1322,12 +1459,13 @@ export default function SchedulingWorkbenchPage() {
             auditEntries={auditEntries}
           />
         </TabsContent>
+        )}
 
         {/* ============ DECLINED HOURS ============ */}
         <TabsContent value="declined" className="mt-4 space-y-4">
           <DeclinedHoursPanel
             month={month}
-            declinedRows={allDeclinedRows}
+            declinedRows={isMh ? scopedDeclined : allDeclinedRows}
             cutRowsByProvider={cutRowsByProvider}
             eligibilityByProvider={eligibilityByProvider}
             isLoading={isLoading || cutsLoading}
@@ -1338,13 +1476,13 @@ export default function SchedulingWorkbenchPage() {
         <TabsContent value="audit" className="mt-4 space-y-4">
           <AuditPanel
             month={month}
-            acceptedRows={acceptedRows}
-            declinedRows={declinedRows}
-            needsReviewRows={needsReviewRows}
-            availabilityRows={availabilitySubmissions}
-            unmatchedRows={unmatchedSubs}
-            missingRows={missingRows}
-            shifts={shiftRows}
+            acceptedRows={scopedAccepted}
+            declinedRows={scopedDeclined}
+            needsReviewRows={scopedNeedsReview}
+            availabilityRows={scopedAvailabilitySubs}
+            unmatchedRows={scopedUnmatched}
+            missingRows={scopedMissing}
+            shifts={isMh ? scopedFlatAccepted : shiftRows}
           />
         </TabsContent>
       </Tabs>
