@@ -2862,7 +2862,15 @@ const COVERAGE_STATUS_STYLE: Record<CoverageStatus, string> = {
   'Critical Gap': 'bg-red-100 text-red-800 hover:bg-red-100',
 };
 
-function CoverageMatchingPanel({ month }: { month: string }) {
+function CoverageGapsPanel({
+  month,
+  acceptedRows,
+  missingRows,
+}: {
+  month: string;
+  acceptedRows: ProviderPublishView[];
+  missingRows: ProviderPublishView[];
+}) {
   const coverageQ = useStateCoverage(month);
   const rows = coverageQ.data?.rows ?? [];
 
@@ -2874,21 +2882,51 @@ function CoverageMatchingPanel({ month }: { month: string }) {
     return (
       <EmptyState
         title="No coverage data for July yet"
-        body="Coverage comes from shift_recommendations + state_demand_targets. Run the evaluator from the header above once Jotform submissions are in."
+        body="Coverage comes from shift_recommendations + state_demand_targets. What's missing: an evaluator run after Jotform submissions land. Next: click 'Re-run evaluator' in the header, then come back."
       />
     );
   }
 
   const sorted = [...rows].sort((a, b) => a.pct_filled - b.pct_filled);
 
+  // Best-effort eligible / missing provider counts per state, derived from
+  // accepted-row professions. Until we wire provider_licensure here, we count
+  // an accepted/missing provider as "eligible" for every state in their
+  // submission's parsed shifts (if any state was assigned).
+  const eligibleByState = new Map<string, Set<string>>();
+  const missingByState = new Map<string, Set<string>>();
+  for (const r of acceptedRows) {
+    const states = new Set<string>();
+    for (const s of r.submission?.parsed_shifts ?? []) {
+      if (s.state) states.add(String(s.state).toUpperCase());
+    }
+    for (const st of states) {
+      if (!eligibleByState.has(st)) eligibleByState.set(st, new Set());
+      eligibleByState.get(st)!.add(r.provider_id);
+    }
+  }
+  for (const r of missingRows) {
+    // Without licensure data we can't pin them to a state — leave a single
+    // bucket so ClinOps still sees there's outreach to do.
+    if (!missingByState.has('__any__')) missingByState.set('__any__', new Set());
+    missingByState.get('__any__')!.add(r.provider_id);
+  }
+
+  const recommendedFor = (pct: number, gap: number): string => {
+    if (pct >= 95) return 'Hold — keep monitoring';
+    if (pct >= 80) return 'Watch for cancellations';
+    if (pct >= 60) return `Source ${Math.ceil(-gap)} more hrs from licensed providers`;
+    return `Critical — open Matching to reassign or hire`;
+  };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          Coverage matching · {formatMonthLabel(month)}
+          Coverage gaps · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Primary decision view: which states are still short for July, and by how much.
+          Which states are short or oversupplied, and what to do next.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -2898,16 +2936,19 @@ function CoverageMatchingPanel({ month }: { month: string }) {
               <TableHead>State</TableHead>
               <TableHead>Cohort</TableHead>
               <TableHead className="text-right">Demand hrs</TableHead>
-              <TableHead className="text-right">Available hrs</TableHead>
+              <TableHead className="text-right">Accepted hrs</TableHead>
               <TableHead className="text-right">Gap / surplus</TableHead>
               <TableHead className="text-right">Coverage</TableHead>
+              <TableHead className="text-right">Eligible</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Recommended action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sorted.map(r => {
               const status = coverageStatusFor(r.pct_filled);
               const diff = r.filled - r.needed;
+              const eligible = eligibleByState.get(r.state)?.size ?? 0;
               return (
                 <TableRow key={r.state}>
                   <TableCell className="font-medium">{r.state}</TableCell>
@@ -2920,8 +2961,14 @@ function CoverageMatchingPanel({ month }: { month: string }) {
                   <TableCell className="text-right tabular-nums">
                     {r.needed > 0 ? `${Math.round(r.pct_filled)}%` : '—'}
                   </TableCell>
+                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
+                    {eligible || '—'}
+                  </TableCell>
                   <TableCell>
                     <Badge className={COVERAGE_STATUS_STYLE[status]}>{status}</Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[260px]">
+                    {recommendedFor(r.pct_filled, diff)}
                   </TableCell>
                 </TableRow>
               );
