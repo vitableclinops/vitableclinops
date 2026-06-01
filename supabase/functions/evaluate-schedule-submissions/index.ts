@@ -130,12 +130,40 @@ const MH_COACHING_PROFESSIONS = new Set([
 ]);
 const THERAPY_PROFESSIONS = new Set([
   'LPC',
+  'LCSW',
+  'LICSW',
+  'LMFT',
+  'MFT',
+  'LMHC',
   'THERAPIST',
+  'LICENSED_CLINICAL_SOCIAL_WORKER',
   'LICENSED_PROFESSIONAL_COUNSELOR',
 ]);
-const isMentalHealthProfession = (p: string | null | undefined) => {
-  return mentalHealthServiceLineForProfession(p) !== null;
-};
+const MENTAL_HEALTH_PROVIDER_OVERRIDES = new Map<string, MentalHealthServiceLine>([
+  ['matthew vazquez', 'mh_coaching'],
+  ['matthew vasquez', 'mh_coaching'],
+  ['jamie fuentes', 'mh_coaching'],
+  ['jennifer yost', 'mh_coaching'],
+  ['esha shah', 'mh_coaching'],
+  ['liana griebsch', 'mh_coaching'],
+  ['li griebsch', 'mh_coaching'],
+  ['li greibsch', 'mh_coaching'],
+  ['michelle diederich', 'mh_coaching'],
+  ['margaret margo mulgrew', 'therapy'],
+  ['margaret mulgrew', 'therapy'],
+  ['margo mulgrew', 'therapy'],
+  ['richard travis rash', 'therapy'],
+  ['richard rash', 'therapy'],
+  ['mishelle lockerby', 'therapy'],
+  ['mishelle lockerby direct shifts', 'therapy'],
+]);
+const normProviderName = (name: string | null | undefined) =>
+  (name ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 const mentalHealthServiceLineForProfession = (
   p: string | null | undefined,
 ): MentalHealthServiceLine | null => {
@@ -145,6 +173,20 @@ const mentalHealthServiceLineForProfession = (
   if (THERAPY_PROFESSIONS.has(norm)) return 'therapy';
   return null;
 };
+const mentalHealthServiceLineForProvider = (
+  profession: string | null | undefined,
+  ...providerNames: Array<string | null | undefined>
+): MentalHealthServiceLine | null => {
+  for (const providerName of providerNames) {
+    const override = MENTAL_HEALTH_PROVIDER_OVERRIDES.get(normProviderName(providerName));
+    if (override) return override;
+  }
+  return mentalHealthServiceLineForProfession(profession);
+};
+const isMentalHealthProvider = (
+  profession: string | null | undefined,
+  ...providerNames: Array<string | null | undefined>
+) => mentalHealthServiceLineForProvider(profession, ...providerNames) !== null;
 const mentalHealthServiceLineLabel = (serviceLine: MentalHealthServiceLine) =>
   serviceLine === 'mh_coaching' ? 'MH Coaching' : 'Therapy / LPC';
 
@@ -532,8 +574,10 @@ Deno.serve(async (req: Request) => {
       if (groupKeysInScope.has(k)) continue;
       const hours = typeof c.accepted_hours === 'number' ? c.accepted_hours : 0;
       if (hours <= 0) continue;
-      const serviceLine = mentalHealthServiceLineForProfession(
-        professionByProvider.get(c.provider_id),
+      const committedProfile = providerProfileByProvider.get(c.provider_id);
+      const serviceLine = mentalHealthServiceLineForProvider(
+        committedProfile?.profession ?? professionByProvider.get(c.provider_id),
+        committedProfile?.name,
       );
       if (serviceLine) {
         const serviceLineKey = `${serviceLine}_${c.target_month}`;
@@ -602,10 +646,15 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        const profession = professionByProvider.get(providerId);
-        const providerPriority = providerPriorityFor(providerProfileByProvider.get(providerId));
+        const providerProfile = providerProfileByProvider.get(providerId);
+        const profession = providerProfile?.profession ?? professionByProvider.get(providerId);
+        const providerPriority = providerPriorityFor(providerProfile);
         const isPhysician = isPhysicianProfession(profession);
-        const isMentalHealth = isMentalHealthProfession(profession);
+        const isMentalHealth = isMentalHealthProvider(
+          profession,
+          providerProfile?.name,
+          latest.provider_name,
+        );
 
         // ── Resubmission inbox gating ─────────────────────────────────────
         // If the latest submission is awaiting human review, leave the group's
@@ -808,7 +857,11 @@ Deno.serve(async (req: Request) => {
             await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
             counters.superseded += olderIds.length;
           }
-          const serviceLine = mentalHealthServiceLineForProfession(profession);
+          const serviceLine = mentalHealthServiceLineForProvider(
+            profession,
+            providerProfile?.name,
+            latest.provider_name,
+          );
           if (!serviceLine) {
             throw new Error(`Mental health provider ${latest.provider_name} has no service-line mapping for profession=${profession}`);
           }

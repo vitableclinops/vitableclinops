@@ -122,41 +122,14 @@ import {
   isEligibleForState,
   type CoverageStatus,
 } from '@/lib/scheduling/coverage';
+import {
+  isMentalHealthProvider,
+  mentalHealthServiceLineForProvider,
+  SERVICE_LINE_LABEL,
+  type MentalHealthServiceLine,
+} from '@/lib/scheduling/mentalHealth';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
-
-type MentalHealthServiceLine = 'mh_coaching' | 'therapy';
-
-const MH_COACHING_PROFESSIONS = new Set([
-  'mental_health_coach',
-  'mh_coach',
-  'health_coach',
-]);
-const THERAPY_PROFESSIONS = new Set([
-  'lpc',
-  'therapist',
-  'licensed_professional_counselor',
-]);
-
-const normProfessionKey = (profession: string | null | undefined) =>
-  (profession ?? '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-
-const mentalHealthServiceLineForProfession = (
-  profession: string | null | undefined,
-): MentalHealthServiceLine | null => {
-  const norm = normProfessionKey(profession);
-  if (MH_COACHING_PROFESSIONS.has(norm)) return 'mh_coaching';
-  if (THERAPY_PROFESSIONS.has(norm)) return 'therapy';
-  return null;
-};
-
-const isMentalHealth = (profession: string | null | undefined) =>
-  mentalHealthServiceLineForProfession(profession) !== null;
-
-const SERVICE_LINE_LABEL: Record<MentalHealthServiceLine, string> = {
-  mh_coaching: 'MH Coaching',
-  therapy: 'Therapy / LPC',
-};
 
 const formatMonthLabel = (iso: string) => {
   const [y, m] = iso.split('-').map(Number);
@@ -472,11 +445,11 @@ export default function SchedulingWorkbenchPage() {
 
   // Telehealth-only set drives the main publishing flow. MH gets its own tab.
   const telehealthRows = useMemo(
-    () => rows.filter(r => !isMentalHealth(r.profession)),
+    () => rows.filter(r => !isMentalHealthProvider(r.profession, r.provider_name)),
     [rows],
   );
   const mentalHealthRows = useMemo(
-    () => rows.filter(r => isMentalHealth(r.profession)),
+    () => rows.filter(r => isMentalHealthProvider(r.profession, r.provider_name)),
     [rows],
   );
 
@@ -2265,13 +2238,13 @@ function MentalHealthDashboard({
     return (['mh_coaching', 'therapy'] as const).map(serviceLine => {
       const target = targetByLine.get(serviceLine);
       const lineRows = rows.filter(
-        row => mentalHealthServiceLineForProfession(row.profession) === serviceLine,
+        row => mentalHealthServiceLineForProvider(row.profession, row.provider_name) === serviceLine,
       );
       const lineAcceptedRows = acceptedRows.filter(
-        row => mentalHealthServiceLineForProfession(row.profession) === serviceLine,
+        row => mentalHealthServiceLineForProvider(row.profession, row.provider_name) === serviceLine,
       );
       const lineDeclinedRows = declinedRows.filter(
-        row => mentalHealthServiceLineForProfession(row.profession) === serviceLine,
+        row => mentalHealthServiceLineForProvider(row.profession, row.provider_name) === serviceLine,
       );
       const accepted = lineAcceptedRows.reduce(
         (sum, row) => sum + Number(row.submission?.accepted_hours ?? 0),
@@ -2567,7 +2540,7 @@ function MentalHealthPanel({
               const ehrShiftDone = flats.filter(isEhrDone).length;
               const hbAggregate = !!r.publish?.homebase_posted_at;
               const ehrAggregate = !!r.publish?.ehr_posted_at;
-              const serviceLine = mentalHealthServiceLineForProfession(r.profession);
+              const serviceLine = mentalHealthServiceLineForProvider(r.profession, r.provider_name);
               return (
                 <Fragment key={r.provider_id}>
                   <TableRow>
@@ -2980,7 +2953,7 @@ function DeclinedHoursPanel({
                 const eligibleStates = eligibility ? Array.from(eligibility.states).sort() : [];
                 const sourceLabels = formatLicenseSources(eligibility?.sources);
                 const cuts = cutRowsByProvider.get(row.provider_id) ?? [];
-                const serviceLine = mentalHealthServiceLineForProfession(row.profession);
+                const serviceLine = mentalHealthServiceLineForProvider(row.profession, row.provider_name);
                 const uniqueCutReasons = Array.from(new Set(
                   cuts.map(c => c.recommendation_reason).filter(Boolean) as string[],
                 ));

@@ -40,8 +40,32 @@ const MH_COACHING_PROFESSIONS = new Set([
 ]);
 const THERAPY_PROFESSIONS = new Set([
   'LPC',
+  'LCSW',
+  'LICSW',
+  'LMFT',
+  'MFT',
+  'LMHC',
   'THERAPIST',
+  'LICENSED_CLINICAL_SOCIAL_WORKER',
   'LICENSED_PROFESSIONAL_COUNSELOR',
+]);
+const MENTAL_HEALTH_PROVIDER_OVERRIDES = new Map<string, 'mh_coaching' | 'therapy'>([
+  ['matthew vazquez', 'mh_coaching'],
+  ['matthew vasquez', 'mh_coaching'],
+  ['jamie fuentes', 'mh_coaching'],
+  ['jennifer yost', 'mh_coaching'],
+  ['esha shah', 'mh_coaching'],
+  ['liana griebsch', 'mh_coaching'],
+  ['li griebsch', 'mh_coaching'],
+  ['li greibsch', 'mh_coaching'],
+  ['michelle diederich', 'mh_coaching'],
+  ['margaret margo mulgrew', 'therapy'],
+  ['margaret mulgrew', 'therapy'],
+  ['margo mulgrew', 'therapy'],
+  ['richard travis rash', 'therapy'],
+  ['richard rash', 'therapy'],
+  ['mishelle lockerby', 'therapy'],
+  ['mishelle lockerby direct shifts', 'therapy'],
 ]);
 const normProfession = (profession: string | null | undefined) =>
   (profession ?? '')
@@ -49,9 +73,21 @@ const normProfession = (profession: string | null | undefined) =>
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
-const isMentalHealthProfession = (p: string | null | undefined) => {
-  if (!p) return false;
-  const norm = normProfession(p);
+const normProviderName = (name: string | null | undefined) =>
+  (name ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+const isMentalHealthProvider = (
+  profession: string | null | undefined,
+  ...providerNames: Array<string | null | undefined>
+) => {
+  for (const providerName of providerNames) {
+    if (MENTAL_HEALTH_PROVIDER_OVERRIDES.has(normProviderName(providerName))) return true;
+  }
+  const norm = normProfession(profession);
   return MH_COACHING_PROFESSIONS.has(norm) || THERAPY_PROFESSIONS.has(norm);
 };
 
@@ -86,6 +122,7 @@ type Submission = {
 
 type ProviderProfile = {
   id: string;
+  name: string | null;
   profession: string | null;
 };
 
@@ -161,15 +198,15 @@ Deno.serve(async (req: Request) => {
     const providerIdsForEmit = Array.from(new Set(
       Array.from(groups.keys()).map(k => k.split('|')[0]),
     ));
-    const professionByProvider = new Map<string, string | null>();
+    const providerProfileByProvider = new Map<string, ProviderProfile>();
     if (providerIdsForEmit.length > 0) {
       const { data: providers, error: provErr } = await supabase
         .from('providers')
-        .select('id, profession')
+        .select('id, name, profession')
         .in('id', providerIdsForEmit);
       if (provErr) throw new Error(`provider load: ${provErr.message}`);
       for (const provider of (providers ?? []) as ProviderProfile[]) {
-        professionByProvider.set(provider.id, provider.profession ?? null);
+        providerProfileByProvider.set(provider.id, provider);
       }
     }
 
@@ -187,8 +224,13 @@ Deno.serve(async (req: Request) => {
           counters.skipped_needs_review++;
           continue;
         }
+        const providerProfile = providerProfileByProvider.get(decided.provider_id!);
         const isMentalHealth =
-          isMentalHealthProfession(professionByProvider.get(decided.provider_id!)) ||
+          isMentalHealthProvider(
+            providerProfile?.profession,
+            providerProfile?.name,
+            decided.provider_name,
+          ) ||
           (decided.decision_notes ?? '').includes('mental_health_bypass');
 
         const ids = groupSubs.map(s => s.id);
