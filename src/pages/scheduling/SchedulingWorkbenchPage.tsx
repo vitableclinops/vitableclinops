@@ -249,24 +249,29 @@ const labelShiftType = (t: string | null | undefined) => {
 
 const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : []);
 
-export default function SchedulingWorkbenchPage() {
+export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
+
+export default function SchedulingWorkbenchPage({
+  scope = 'medical',
+}: { scope?: SchedulingWorkbenchScope } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [month, setMonth] = useState('2026-07-01');
+  const isMh = scope === 'mental_health';
+  const [mhServiceLine, setMhServiceLine] = useState<'all' | MentalHealthServiceLine>('all');
   const initialTab = (() => {
     const t = searchParams.get('tab');
-    return [
+    const allowed = [
       'readiness',
       'forecast',
       'availability',
       'matching',
       'coverage',
       'publish',
-      'mental-health',
       'declined',
       'audit',
-    ].includes(t ?? '')
-      ? (t as string)
-      : 'readiness';
+      ...(isMh ? [] : ['mental-health']),
+    ];
+    return allowed.includes(t ?? '') ? (t as string) : 'readiness';
   })();
   const [topTab, setTopTab] = useState(initialTab);
   const onTopTabChange = (v: string) => {
