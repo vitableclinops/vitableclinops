@@ -79,11 +79,13 @@ import {
   useBulkMarkPublishShifts,
   useResolveNeedsReview,
   useMonthlyAvailabilitySubmissions,
+  useProviderStateEligibility,
   formatShiftTime,
   isHomebaseDone,
   isEhrDone,
   type AvailabilitySubmissionRow,
   type ProviderPublishView,
+  type ProviderStateEligibilityRow,
   type SubmissionRow,
   type SubmissionForInbox,
   type UnmatchedSubmission,
@@ -271,6 +273,7 @@ export default function SchedulingWorkbenchPage() {
   const { data: unmatchedSubsData = [] } = useUnmatchedSubmissions();
   const { data: availabilitySubmissionsData = [], isLoading: availabilityLoading } =
     useMonthlyAvailabilitySubmissions(month);
+  const { data: providerEligibilityData = [] } = useProviderStateEligibility();
   const { data: readinessRowsData = [] } = useOnboardingReadiness(30);
 
   const dbRows = safeArray<ProviderPublishView>(dbRowsData);
@@ -279,6 +282,7 @@ export default function SchedulingWorkbenchPage() {
   const inboxSubmissions = safeArray<SubmissionForInbox>(inboxSubmissionsData);
   const unmatchedSubs = safeArray<UnmatchedSubmission>(unmatchedSubsData);
   const availabilitySubmissions = safeArray<AvailabilitySubmissionRow>(availabilitySubmissionsData);
+  const providerEligibility = safeArray<ProviderStateEligibilityRow>(providerEligibilityData);
   const readinessRows = safeArray<{ readyForSubmissions: boolean }>(readinessRowsData);
   const setupIssuesCount = useMemo(
     () => readinessRows.filter(r => !r.readyForSubmissions).length,
@@ -400,6 +404,24 @@ export default function SchedulingWorkbenchPage() {
     }
     return map;
   }, [shiftRows]);
+
+  const eligibilityByProvider = useMemo(() => {
+    const map = new Map<string, ProviderEligibilitySummary>();
+    for (const row of providerEligibility) {
+      if (!row.provider_id || !row.state || row.allocation_eligible !== true) continue;
+      const state = String(row.state).trim().toUpperCase();
+      if (!state) continue;
+      const current = map.get(row.provider_id) ?? {
+        states: new Set<string>(),
+        sources: new Set<string>(),
+      };
+      current.states.add(state);
+      for (const source of row.license_sources ?? []) current.sources.add(source);
+      if (row.metabase_active === true) current.sources.add('metabase_active');
+      map.set(row.provider_id, current);
+    }
+    return map;
+  }, [providerEligibility]);
 
   // Telehealth-only set drives the main publishing flow. MH gets its own tab.
   const telehealthRows = useMemo(
@@ -711,6 +733,7 @@ export default function SchedulingWorkbenchPage() {
             declinedRows={declinedRows}
             needsReviewRows={needsReviewRows}
             shiftsByProvider={shiftsByProvider}
+            eligibilityByProvider={eligibilityByProvider}
           />
         </TabsContent>
 
@@ -3223,14 +3246,102 @@ function EmptyState({ title, body }: { title: string; body: string }) {
 // Matching — provider-level recommendations with priority + decline reasons
 // ============================================================================
 
+type ProviderEligibilitySummary = {
+  states: Set<string>;
+  sources: Set<string>;
+};
+
+type ProviderPriorityKey = 'clinical_supervisor' | 'vitable_internal' | 'access_provider';
+
+type ProviderPriority = {
+  key: ProviderPriorityKey;
+  rank: 0 | 1 | 2;
+  label: string;
+};
+
+const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPriority> = {
+  clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' },
+  vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Vitable internal' },
+  access_provider: { key: 'access_provider', rank: 2, label: 'Access provider' },
+};
+
+const LICENSE_SOURCE_LABELS: Record<string, string> = {
+  provider_licenses: 'ClinOps',
+  medallion_api: 'Medallion',
+  directshifts_static: 'DirectShifts',
+  metabase_active: 'Metabase active',
+};
+
+function parsePriorityFromNotes(notes: string | null | undefined): ProviderPriority | null {
+  const match = (notes ?? '').match(/provider_priority=([^;]+)/);
+  const key = match?.[1]?.trim() as ProviderPriorityKey | undefined;
+  return key && key in PROVIDER_PRIORITY_BY_KEY ? PROVIDER_PRIORITY_BY_KEY[key] : null;
+}
+
+function providerPriorityForRow(row: ProviderPublishView): ProviderPriority {
+  const fromNotes = parsePriorityFromNotes(row.submission?.decision_notes);
+  if (fromNotes) return fromNotes;
+
+  const employmentType = (row.employment_type ?? '').trim().toLowerCase();
+  const source = (row.provider_source ?? '').trim().toLowerCase();
+  const shiftTypes = Array.isArray(row.shift_types) ? row.shift_types : [];
+  const haystack = [
+    row.provider_name,
+    row.profession,
+    employmentType,
+    source,
+    ...shiftTypes,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+
+  if (
+    haystack.includes('clinical supervisor') ||
+    haystack.includes('clinical lead') ||
+    haystack.includes('supervisor')
+  ) {
+    return PROVIDER_PRIORITY_BY_KEY.clinical_supervisor;
+  }
+  if (
+    employmentType === 'agency' ||
+    source.includes('directshifts') ||
+    source.includes('direct shifts') ||
+    source.includes('access') ||
+    haystack.includes('directshifts') ||
+    haystack.includes('direct shifts') ||
+    haystack.includes('access provider') ||
+    haystack.includes('agency supplied')
+  ) {
+    return PROVIDER_PRIORITY_BY_KEY.access_provider;
+  }
+  return PROVIDER_PRIORITY_BY_KEY.vitable_internal;
+}
+
+function statusSort(row: ProviderPublishView): number {
+  const status = row.submission?.decision_status;
+  if (status === 'accepted') return 0;
+  if (status === 'partial') return 1;
+  if (status === 'needs_review') return 2;
+  if (status === 'declined') return 3;
+  return 4;
+}
+
+function formatLicenseSources(sources: Set<string> | undefined): string {
+  if (!sources || sources.size === 0) return '';
+  return Array.from(sources)
+    .map(s => LICENSE_SOURCE_LABELS[s] ?? s)
+    .sort()
+    .join(', ');
+}
+
 function inferPriorityReason(row: ProviderPublishView): string {
+  const priority = providerPriorityForRow(row);
   const reasons: string[] = [];
-  const prof = (row.profession ?? '').toLowerCase();
-  const emp = (row.employment_type ?? '').toLowerCase();
-  if (prof === 'physician' || prof === 'md' || prof === 'do') reasons.push('Clinical lead (MD/DO)');
-  if (emp === 'w2') reasons.push('Internal W2');
-  else if (emp === '1099') reasons.push('1099 contractor');
-  else if (emp === 'agency') reasons.push('DirectShifts / agency');
+  reasons.push(`P${priority.rank + 1} ${priority.label}`);
+  const emp = (row.employment_type ?? '').trim();
+  if (emp) reasons.push(emp.toUpperCase());
   const accepted = Number(row.submission?.accepted_hours ?? 0);
   const declined = Number(row.submission?.declined_hours ?? 0);
   if (accepted > 0 && declined === 0) reasons.push('Full accept');
@@ -3254,12 +3365,14 @@ function MatchingPanel({
   declinedRows,
   needsReviewRows,
   shiftsByProvider,
+  eligibilityByProvider,
 }: {
   month: string;
   acceptedRows: ProviderPublishView[];
   declinedRows: ProviderPublishView[];
   needsReviewRows: ProviderPublishView[];
   shiftsByProvider: Map<string, ShiftRow[]>;
+  eligibilityByProvider: Map<string, ProviderEligibilitySummary>;
 }) {
   const all = useMemo(() => {
     const seen = new Set<string>();
@@ -3269,9 +3382,18 @@ function MatchingPanel({
       seen.add(r.provider_id);
       merged.push(r);
     }
-    return merged.sort((a, b) =>
-      a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
-    );
+    return merged.sort((a, b) => {
+      const pa = providerPriorityForRow(a);
+      const pb = providerPriorityForRow(b);
+      if (pa.rank !== pb.rank) return pa.rank - pb.rank;
+      const sa = statusSort(a);
+      const sb = statusSort(b);
+      if (sa !== sb) return sa - sb;
+      const ha = Number(a.submission?.accepted_hours ?? 0);
+      const hb = Number(b.submission?.accepted_hours ?? 0);
+      if (ha !== hb) return hb - ha;
+      return a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' });
+    });
   }, [acceptedRows, declinedRows, needsReviewRows]);
 
   if (all.length === 0) {
@@ -3288,8 +3410,9 @@ function MatchingPanel({
       <CardHeader>
         <CardTitle className="text-base">Provider recommendations · {formatMonthLabel(month)}</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Who is getting hours, why, and what was cut. Prioritization weighs clinical leads,
-          internal vs DirectShifts, state coverage gaps, licensure, and EHR readiness.
+          Who is getting hours, why, and what was cut. Allocation uses Supabase provider-state
+          eligibility, then prioritizes clinical supervisors, Vitable internal providers, and
+          access providers.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -3298,7 +3421,7 @@ function MatchingPanel({
             <TableRow>
               <TableHead>Provider</TableHead>
               <TableHead>Type</TableHead>
-              <TableHead>Assigned states</TableHead>
+              <TableHead>State basis</TableHead>
               <TableHead className="text-right">Shifts</TableHead>
               <TableHead className="text-right">Accepted</TableHead>
               <TableHead className="text-right">Declined</TableHead>
@@ -3310,17 +3433,21 @@ function MatchingPanel({
           <TableBody>
             {all.map(r => {
               const shifts = shiftsByProvider.get(r.provider_id) ?? [];
-              const states = new Set<string>();
+              const assignedStates = new Set<string>();
               for (const s of Array.isArray(shifts) ? shifts : []) {
-                if (s.assigned_state) states.add(s.assigned_state);
+                if (s.assigned_state) assignedStates.add(s.assigned_state);
               }
               const parsedShifts = r.submission?.parsed_shifts;
               for (const s of Array.isArray(parsedShifts) ? parsedShifts : []) {
                 if (s && typeof s === 'object' && 'state' in s) {
                   const state = (s as { state?: unknown }).state;
-                  if (state) states.add(String(state).toUpperCase());
+                  if (state) assignedStates.add(String(state).toUpperCase());
                 }
               }
+              const eligibility = eligibilityByProvider.get(r.provider_id);
+              const eligibleStates = eligibility ? Array.from(eligibility.states).sort() : [];
+              const assignedStateList = Array.from(assignedStates).sort();
+              const sourceLabels = formatLicenseSources(eligibility?.sources);
               const accepted = Number(r.submission?.accepted_hours ?? 0);
               const declined = Number(r.submission?.declined_hours ?? 0);
               const status = r.submission?.decision_status ?? null;
@@ -3332,7 +3459,23 @@ function MatchingPanel({
                     {r.employment_type ? ` · ${r.employment_type}` : ''}
                   </TableCell>
                   <TableCell className="text-xs">
-                    {states.size === 0 ? '—' : Array.from(states).sort().join(', ')}
+                    {assignedStateList.length > 0 ? (
+                      <div>Assigned: {assignedStateList.join(', ')}</div>
+                    ) : eligibleStates.length > 0 ? (
+                      <div>Eligible: {eligibleStates.join(', ')}</div>
+                    ) : (
+                      <div>—</div>
+                    )}
+                    {assignedStateList.length > 0 && eligibleStates.length > 0 && (
+                      <div className="text-[11px] text-muted-foreground">
+                        Eligible: {eligibleStates.join(', ')}
+                      </div>
+                    )}
+                    {sourceLabels && (
+                      <div className="text-[11px] text-muted-foreground">
+                        Sources: {sourceLabels}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{shifts.length || '—'}</TableCell>
                   <TableCell className="text-right tabular-nums">{accepted.toFixed(1)}</TableCell>

@@ -48,6 +48,9 @@ export type ProviderRow = {
   profession: string | null;
   employment_type: string | null;
   employment_status: string | null;
+  readiness_status: string | null;
+  shift_types: string[] | null;
+  source: string | null;
   active: boolean | null;
 };
 
@@ -68,8 +71,20 @@ export type ProviderPublishView = {
   provider_email: string | null;
   profession: string | null;
   employment_type: string | null;
+  readiness_status: string | null;
+  shift_types: string[] | null;
+  provider_source: string | null;
   submission: SubmissionRow | null;
   publish: PublishStatusRow | null;
+};
+
+export type ProviderStateEligibilityRow = {
+  provider_id: string | null;
+  state: string | null;
+  allocation_eligible: boolean | null;
+  eligibility_status: string | null;
+  license_sources: string[] | null;
+  metabase_active: boolean | null;
 };
 
 export type AvailabilitySubmissionRow = {
@@ -194,7 +209,9 @@ export function useMonthlyPublishView(month: string) {
           .order('submitted_at', { ascending: false }),
         clinopsSupabase
           .from('providers')
-          .select('id, name, email, profession, employment_type, employment_status, active'),
+          .select(
+            'id, name, email, profession, employment_type, employment_status, readiness_status, shift_types, source, active',
+          ),
         (clinopsSupabase as unknown as { from: (t: string) => any })
           .from('publish_status')
           .select('*')
@@ -230,6 +247,9 @@ export function useMonthlyPublishView(month: string) {
           provider_email: p.email ?? null,
           profession: p.profession,
           employment_type: p.employment_type,
+          readiness_status: p.readiness_status,
+          shift_types: p.shift_types,
+          provider_source: p.source,
           submission,
           publish: publishByProvider.get(p.id) ?? null,
         });
@@ -250,6 +270,22 @@ export function useMonthlyPublishView(month: string) {
     },
     staleTime: 30_000,
     enabled: Boolean(monthStart),
+  });
+}
+
+export function useProviderStateEligibility() {
+  return useQuery({
+    queryKey: ['workbench', 'provider-state-eligibility'],
+    queryFn: async (): Promise<ProviderStateEligibilityRow[]> => {
+      const { data, error } = await clinopsSupabase
+        .from('v_provider_state_eligibility')
+        .select('provider_id, state, allocation_eligible, eligibility_status, license_sources, metabase_active')
+        .eq('allocation_eligible', true)
+        .range(0, 49999);
+      if (error) throw error;
+      return (data ?? []) as ProviderStateEligibilityRow[];
+    },
+    staleTime: 30_000,
   });
 }
 

@@ -135,6 +135,70 @@ type ProviderStateEligibilityRow = {
   metabase_active: boolean | null;
 };
 
+type ProviderProfile = {
+  id: string;
+  name: string | null;
+  profession: string | null;
+  employment_type: string | null;
+  source: string | null;
+  shift_types: string[] | null;
+};
+
+type ProviderPriorityKey = 'clinical_supervisor' | 'vitable_internal' | 'access_provider';
+
+type ProviderPriority = {
+  key: ProviderPriorityKey;
+  rank: 0 | 1 | 2;
+  label: string;
+};
+
+const DEFAULT_PROVIDER_PRIORITY: ProviderPriority = {
+  key: 'vitable_internal',
+  rank: 1,
+  label: 'Vitable internal',
+};
+
+function providerPriorityFor(profile: ProviderProfile | null | undefined): ProviderPriority {
+  if (!profile) return DEFAULT_PROVIDER_PRIORITY;
+  const employmentType = (profile.employment_type ?? '').trim().toLowerCase();
+  const source = (profile.source ?? '').trim().toLowerCase();
+  const shiftTypes = Array.isArray(profile.shift_types) ? profile.shift_types : [];
+  const haystack = [
+    profile.name,
+    profile.profession,
+    employmentType,
+    source,
+    ...shiftTypes,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+
+  if (
+    haystack.includes('clinical supervisor') ||
+    haystack.includes('clinical lead') ||
+    haystack.includes('supervisor')
+  ) {
+    return { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' };
+  }
+
+  if (
+    employmentType === 'agency' ||
+    source.includes('directshifts') ||
+    source.includes('direct shifts') ||
+    source.includes('access') ||
+    haystack.includes('directshifts') ||
+    haystack.includes('direct shifts') ||
+    haystack.includes('access provider') ||
+    haystack.includes('agency supplied')
+  ) {
+    return { key: 'access_provider', rank: 2, label: 'Access provider' };
+  }
+
+  return DEFAULT_PROVIDER_PRIORITY;
+}
+
 // Stable signature of a parsed_shifts blob for "did anything material change
 // vs the prior submission?" gating. We canonicalize the four widget arrays
 // into ordered tuple lists and serialize. JSON-string blobs are tolerated.
@@ -280,14 +344,19 @@ Deno.serve(async (req: Request) => {
         .filter((id): id is string => Boolean(id)),
     ]));
 
-    // ── Preload provider profession (for MD-only state enforcement) ────
+    // ── Preload provider roster metadata ───────────────────────────────
+    // The evaluator uses the full license-state view for eligibility, then
+    // orders providers by ClinOps priority: supervisors, Vitable internal,
+    // access providers. Within each tier, constrained providers still go first.
+    const providerProfileByProvider = new Map<string, ProviderProfile>();
     const professionByProvider = new Map<string, string | null>();
     if (allEligibilityProviderIds.length > 0) {
       const { data: provs } = await supabase
         .from('providers')
-        .select('id, profession')
+        .select('id, name, profession, employment_type, source, shift_types')
         .in('id', allEligibilityProviderIds);
-      for (const p of provs ?? []) {
+      for (const p of (provs ?? []) as ProviderProfile[]) {
+        providerProfileByProvider.set(p.id, p);
         professionByProvider.set(p.id, p.profession ?? null);
       }
     }
@@ -365,15 +434,17 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ── Sort groups: most-constrained providers first ──────────────────
-    // Process providers with the fewest licensed-states-with-demand first so
-    // they don't get bumped by multi-state providers who have alternatives.
-    // This is the practical heuristic for "maximize utilization across
-    // providers" — single-state providers grab their state's gap before
-    // flexible providers consume it.
+    // ── Sort groups by provider priority, then constrained coverage ─────
+    // Clinical supervisors get first pass at demand, then Vitable internal
+    // providers, then access providers. Within each tier, process providers
+    // with the fewest licensed-states-with-demand first so single-state
+    // providers are not displaced by flexible providers with alternatives.
     const groupKeysSorted = Array.from(submissionsByGroup.keys()).sort((a, b) => {
       const [provA, monthA] = a.split('|');
       const [provB, monthB] = b.split('|');
+      const priorityA = providerPriorityFor(providerProfileByProvider.get(provA));
+      const priorityB = providerPriorityFor(providerProfileByProvider.get(provB));
+      if (priorityA.rank !== priorityB.rank) return priorityA.rank - priorityB.rank;
       const licA = licensedStatesByProvider.get(provA) ?? new Set();
       const licB = licensedStatesByProvider.get(provB) ?? new Set();
       const countWithDemand = (states: Set<string>, month: string) =>
@@ -381,7 +452,9 @@ Deno.serve(async (req: Request) => {
       const cA = countWithDemand(licA, monthA);
       const cB = countWithDemand(licB, monthB);
       if (cA !== cB) return cA - cB;        // fewer licensed-with-demand first
-      return monthA.localeCompare(monthB);  // stable tiebreaker
+      const nameA = providerProfileByProvider.get(provA)?.name ?? provA;
+      const nameB = providerProfileByProvider.get(provB)?.name ?? provB;
+      return monthA.localeCompare(monthB) || nameA.localeCompare(nameB);
     });
 
     // ── Evaluate each group ─────────────────────────────────────────────
@@ -589,6 +662,7 @@ Deno.serve(async (req: Request) => {
         // the telehealth state-demand pipeline. Accept every validated hour
         // and skip the licensed-states + state-gap math.
         const profession = professionByProvider.get(providerId);
+        const providerPriority = providerPriorityFor(providerProfileByProvider.get(providerId));
         if (isMentalHealthProfession(profession)) {
           if (olderIds.length) {
             await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
@@ -596,6 +670,7 @@ Deno.serve(async (req: Request) => {
           }
           const mhNoteParts = [
             `decision=accepted (mental_health_bypass)`,
+            `provider_priority=${providerPriority.key}`,
             `profession=${profession}`,
             `effective_hours=${effectiveHours}h`,
             `raw_hours=${validation.summary.raw_total_hours}h`,
@@ -631,7 +706,10 @@ Deno.serve(async (req: Request) => {
         if (licensed.size === 0) {
           counters.skipped_no_licensed_states++;
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
-          const noLicNoteParts = ['Provider has no allocation-eligible states on file'];
+          const noLicNoteParts = [
+            `provider_priority=${providerPriority.key}`,
+            'Provider has no allocation-eligible states on file',
+          ];
           if (oohDeclined > 0) {
             noLicNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
           }
@@ -715,6 +793,7 @@ Deno.serve(async (req: Request) => {
 
         const noteParts: string[] = [];
         noteParts.push(`group_size=${groupSubs.length}`);
+        noteParts.push(`provider_priority=${providerPriority.key}`);
         noteParts.push(`effective_hours=${effectiveHours}h`);
         noteParts.push(`raw_hours=${validation.summary.raw_total_hours}h`);
         if (validation.summary.intervals_auto_corrected > 0) {
@@ -801,6 +880,7 @@ Deno.serve(async (req: Request) => {
           accepted_hours: accepted,
           declined_hours: declined,
           allocations,
+          provider_priority: providerPriority.key,
           validation_summary: validation.summary,
           validation_report: validation.report,
         });
