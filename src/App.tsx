@@ -60,8 +60,6 @@ import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
 import UsabilityGuidePage from "./pages/UsabilityGuidePage";
 import NotFound from "./pages/NotFound";
 import SchedulingWorkbenchPage from "./pages/scheduling/SchedulingWorkbenchPage";
-import SchedulingForecastPage from "./pages/scheduling/SchedulingForecastPage";
-import JuneMvpPage from "./pages/scheduling/JuneMvpPage";
 
 const queryClient = new QueryClient();
 
@@ -93,9 +91,7 @@ const ROUTE_TITLES: Array<{ match: (p: string) => boolean; title: string }> = [
   { match: p => p === '/admin/shift-plan', title: 'Shift Plan' },
   { match: p => p === '/admin/scheduled-hours', title: 'Scheduled Hours' },
   { match: p => p === '/admin/workbench', title: 'Workbench' },
-  { match: p => p === '/scheduling' || p === '/scheduling/workbench', title: 'Scheduling Workbench' },
-  { match: p => p === '/scheduling/forecast', title: 'Scheduling Forecast' },
-  { match: p => p === '/scheduling/june-mvp', title: 'June MVP' },
+  { match: p => p.startsWith('/scheduling'), title: 'July 2026 Scheduling Workbench' },
   { match: p => p === '/admin/contractor-strategy', title: 'Contractor Strategy' },
   { match: p => p === '/admin/sla-aggregate', title: 'SLA Aggregate' },
   { match: p => p === '/admin/tasks', title: 'Task Repository' },
@@ -407,16 +403,8 @@ const App = () => (
                 <SchedulingWorkbenchPage />
               </ProtectedRoute>
             } />
-            <Route path="/scheduling/forecast" element={
-              <ProtectedRoute requiredRoles={['admin', 'scheduling']}>
-                <SchedulingForecastPage />
-              </ProtectedRoute>
-            } />
-            <Route path="/scheduling/june-mvp" element={
-              <ProtectedRoute requiredRoles={['admin', 'scheduling']}>
-                <JuneMvpPage />
-              </ProtectedRoute>
-            } />
+            <Route path="/scheduling/forecast" element={<Navigate to="/scheduling/workbench?tab=forecast" replace />} />
+            <Route path="/scheduling/june-mvp" element={<Navigate to="/scheduling/workbench" replace />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
