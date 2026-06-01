@@ -106,6 +106,10 @@ import {
 } from '@/hooks/useMonthlyPublish';
 import { useMonthlyDemand, useMonthlySlaRisk } from '@/hooks/useMonthlySchedulingForecast';
 import { useStateCoverage } from '@/hooks/useStateCoverage';
+import {
+  useSchedulingSourceAudit,
+  type SourceAuditSection,
+} from '@/hooks/useSchedulingSourceAudit';
 import { cohortFor, COHORT_BUFFER_PCT, type Cohort } from '@/lib/scheduling/cohorts';
 import { coverageStatusFor, type CoverageStatus } from '@/lib/scheduling/coverage';
 
@@ -3320,8 +3324,9 @@ function MatchingPanel({
               }
               const parsedShifts = r.submission?.parsed_shifts;
               for (const s of Array.isArray(parsedShifts) ? parsedShifts : []) {
-                if (s && typeof s === 'object' && 'state' in s && (s as any).state) {
-                  states.add(String((s as any).state).toUpperCase());
+                if (s && typeof s === 'object' && 'state' in s) {
+                  const state = (s as { state?: unknown }).state;
+                  if (state) states.add(String(state).toUpperCase());
                 }
               }
               const accepted = Number(r.submission?.accepted_hours ?? 0);
@@ -3385,10 +3390,130 @@ function classifyReason(text: string): string {
   return 'Other';
 }
 
+const SOURCE_STATUS_STYLE: Record<SourceAuditSection['status'], string> = {
+  healthy: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+  watch: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+  missing: 'bg-slate-100 text-slate-700 hover:bg-slate-100',
+  error: 'bg-red-100 text-red-800 hover:bg-red-100',
+};
+
+const METRIC_TONE_STYLE: Record<NonNullable<SourceAuditSection['metrics'][number]['tone']>, string> = {
+  good: 'text-emerald-700',
+  warn: 'text-amber-700',
+  bad: 'text-red-700',
+  neutral: 'text-foreground',
+};
+
+function formatAuditTimestamp(iso: string | null) {
+  if (!iso) return 'No timestamp';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function SourceAuditPanel({ month }: { month: string }) {
+  const auditQ = useSchedulingSourceAudit(month);
+
+  if (auditQ.isLoading) {
+    return <LoadingRow label="Loading source audit" />;
+  }
+
+  if (auditQ.isError || !auditQ.data) {
+    return (
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          Source audit could not load. {auditQ.error instanceof Error ? auditQ.error.message : ''}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  const sections = [
+    auditQ.data.homebase,
+    auditQ.data.metabase,
+    auditQ.data.jotform,
+  ];
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      {sections.map(section => (
+        <Card key={section.id}>
+          <CardHeader className="pb-2">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-sm">{section.title}</CardTitle>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Updated {formatAuditTimestamp(section.updatedAt)}
+                </div>
+              </div>
+              <Badge className={SOURCE_STATUS_STYLE[section.status]}>
+                {section.status}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {section.error && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-xs">{section.error}</AlertDescription>
+              </Alert>
+            )}
+            <div className="grid gap-2">
+              {section.metrics.map(metric => (
+                <div key={metric.label} className="flex items-start justify-between gap-3 border-b pb-1.5 last:border-0 last:pb-0">
+                  <div className="text-xs text-muted-foreground">{metric.label}</div>
+                  <div className={`text-xs font-medium text-right ${METRIC_TONE_STYLE[metric.tone ?? 'neutral']}`}>
+                    {metric.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div>
+              <div className="text-xs font-medium mb-1">Fields flowing</div>
+              <div className="space-y-1">
+                {section.fieldCoverage.map(item => (
+                  <div key={item} className="text-xs text-muted-foreground">{item}</div>
+                ))}
+              </div>
+            </div>
+            {section.gaps.length > 0 && (
+              <div>
+                <div className="text-xs font-medium mb-1">Gaps to watch</div>
+                <div className="space-y-1">
+                  {section.gaps.map(item => (
+                    <div key={item} className="text-xs text-amber-700">{item}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {section.details.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {section.details.map(detail => (
+                  <Badge key={`${detail.label}-${detail.count}`} variant="outline" className="text-[11px]">
+                    {detail.label} · {detail.count}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 function DataSourceMapPanel() {
   const rows = [
+    ['Homebase source', 'sync-homebase → homebase_locations / homebase_employees / homebase_shifts; sync-homebase-rates → provider_pay_rates', 'Source audit, scheduled hours, rates, match quality'],
+    ['Metabase source', 'sync-metabase → raw exports / SLA / leftover slots / utilization; compute-demand-forecast → ClinOps forecast tables', 'Forecast, Readiness, Coverage, Source audit'],
+    ['Jotform availability', 'sync-jotform-submissions → schedule_submissions.raw_answers / parsed_shifts', 'Availability, Matching, Audit, Source audit'],
     ['Demand forecast', 'compute-demand-forecast → demand_forecast → state_demand_targets', 'Forecast, Readiness, Coverage'],
-    ['Jotform availability', 'sync-jotform-submissions → schedule_submissions.raw_answers / parsed_shifts', 'Availability, Matching, Audit'],
     ['Provider directory', 'providers', 'Missing submissions, Setup, Matching'],
     ['Licensure', 'provider_licenses', 'Evaluator eligibility, Coverage eligible/missing counts'],
     ['EHR readiness', 'providers.ehr_activation_status plus shift_recommendations.ehr_posted_at', 'Publish Tracker'],
@@ -3661,6 +3786,7 @@ function AuditPanel({
   if (entries.length === 0) {
     return (
       <div className="space-y-4">
+        <SourceAuditPanel month={month} />
         <DataSourceMapPanel />
         <DataQualityPanel
           month={month}
@@ -3686,6 +3812,7 @@ function AuditPanel({
 
   return (
     <div className="space-y-4">
+      <SourceAuditPanel month={month} />
       <DataSourceMapPanel />
       <DataQualityPanel
         month={month}

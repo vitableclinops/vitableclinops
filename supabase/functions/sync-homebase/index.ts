@@ -9,7 +9,9 @@
  *   4. Fuzzy name score ≥ 0.85
  *   5. Unmatched (recorded for review)
  *
- * Sync window: trailing 30 days + next 30 days.
+ * Sync window: explicit start_date/end_date or month when provided;
+ * otherwise trailing 30 days + next 120 days so upcoming schedule builds
+ * have future Homebase shifts available for audit.
  *
  * Scheduled hourly via Supabase cron.
  * Can also be triggered manually via POST /functions/v1/sync-homebase.
@@ -30,6 +32,12 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+
+  const url = new URL(req.url);
+  const body = req.method === 'POST'
+    ? await req.json().catch(() => ({} as Record<string, unknown>))
+    : {};
+  const syncWindow = resolveSyncWindow(url, body);
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -93,14 +101,6 @@ Deno.serve(async (req: Request) => {
 
   try {
     const hb = new HomebaseClient(apiKey);
-
-    // ── Date window ───────────────────────────────────────────────────────────
-    const now = new Date();
-    const past = new Date(now); past.setDate(past.getDate() - 14);
-    const future = new Date(now); future.setDate(future.getDate() + 14);
-    const startDate = past.toISOString().slice(0, 10);
-    const endDate = future.toISOString().slice(0, 10);
-    
 
     // ── Load provider profiles for matching ───────────────────────────────────
     const { data: profiles } = await supabase
@@ -219,7 +219,7 @@ Deno.serve(async (req: Request) => {
       const empIdMap = new Map<number, string>(); // homebase_id → uuid
       for (const e of (empRows ?? [])) empIdMap.set(e.homebase_id, e.id);
 
-      for await (const shift of hb.iterateShifts(loc.uuid, startDate, endDate)) {
+      for await (const shift of hb.iterateShifts(loc.uuid, syncWindow.startDate, syncWindow.endDate)) {
         const { error: shiftErr } = await supabase.from('homebase_shifts').upsert({
           homebase_id: shift.id,
           homebase_user_id: shift.user_id,
@@ -256,11 +256,11 @@ Deno.serve(async (req: Request) => {
     const partial = unmatchedRatio > 0.10;
     await finalizeGenericRun(partial ? 'partial' : 'success', {
       rows_processed: counters.employees_synced + counters.shifts_synced + counters.locations_synced,
-      details: { ...counters, unmatched_ratio: Math.round(unmatchedRatio * 100) / 100 },
+      details: { ...counters, sync_window: syncWindow, unmatched_ratio: Math.round(unmatchedRatio * 100) / 100 },
       error_message: partial ? `High unmatched ratio: ${(unmatchedRatio * 100).toFixed(1)}% (>10% threshold)` : undefined,
     });
 
-    return new Response(JSON.stringify({ ok: true, runId, ...counters }), {
+    return new Response(JSON.stringify({ ok: true, runId, sync_window: syncWindow, ...counters }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
@@ -274,7 +274,7 @@ Deno.serve(async (req: Request) => {
       unmatched_sample: unmatchedSample,
     }).eq('id', runId);
 
-    await finalizeGenericRun('error', { error_message: message, details: counters });
+    await finalizeGenericRun('error', { error_message: message, details: { ...counters, sync_window: syncWindow } });
 
     return new Response(JSON.stringify({ error: message, runId }), {
       status: 500,
@@ -282,3 +282,48 @@ Deno.serve(async (req: Request) => {
     });
   }
 });
+
+function resolveSyncWindow(url: URL, body: Record<string, unknown>) {
+  const fromParam = (key: string) => {
+    const fromUrl = url.searchParams.get(key);
+    if (fromUrl) return fromUrl;
+    const fromBody = body[key];
+    return typeof fromBody === 'string' ? fromBody : null;
+  };
+
+  const explicitStart = fromParam('start_date') ?? fromParam('startDate');
+  const explicitEnd = fromParam('end_date') ?? fromParam('endDate');
+  if (isIsoDate(explicitStart) && isIsoDate(explicitEnd) && explicitStart <= explicitEnd) {
+    return { startDate: explicitStart, endDate: explicitEnd, mode: 'explicit' };
+  }
+
+  const month = fromParam('month') ?? fromParam('target_month') ?? fromParam('targetMonth');
+  if (isMonthStart(month)) {
+    const [year, monthNumber] = month.split('-').map(Number);
+    const endDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+    return {
+      startDate: `${year}-${String(monthNumber).padStart(2, '0')}-01`,
+      endDate: `${year}-${String(monthNumber).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`,
+      mode: 'month',
+    };
+  }
+
+  const now = new Date();
+  const past = new Date(now);
+  past.setUTCDate(past.getUTCDate() - 30);
+  const future = new Date(now);
+  future.setUTCDate(future.getUTCDate() + 120);
+  return {
+    startDate: past.toISOString().slice(0, 10),
+    endDate: future.toISOString().slice(0, 10),
+    mode: 'default_30_back_120_forward',
+  };
+}
+
+function isIsoDate(value: string | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function isMonthStart(value: string | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-01$/.test(value));
+}
