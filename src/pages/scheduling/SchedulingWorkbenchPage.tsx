@@ -1035,8 +1035,10 @@ export default function SchedulingWorkbenchPage({
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            No submissions found for {formatMonthLabel(month)}. Pick a different month or run the
-            schedule builder.
+            No {formatMonthLabel(month)} availability submissions found. Availability comes from
+            the Jotform availability form. Confirm the form has submissions for this month (or
+            upload a Jotform export below to preview one), then click "Recalculate schedule" in
+            the page header.
           </AlertDescription>
         </Alert>
       )}
