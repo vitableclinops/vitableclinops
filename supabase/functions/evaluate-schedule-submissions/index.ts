@@ -315,7 +315,7 @@ function pushProviderPriorityNotes(noteParts: string[], priority: ProviderPriori
   noteParts.push(`provider_priority=${priority.key}`);
   if (priority.key === 'directshifts_brittany_priority') {
     noteParts.push(
-      'provider_priority_reason=Brittany is prioritized above other DirectShifts providers when eligible coverage is needed.',
+      'provider_priority_reason=Brittney Afram is prioritized above other DirectShifts providers when eligible coverage is needed.',
       'directshifts_priority_rank=1',
     );
   }
@@ -476,7 +476,7 @@ Deno.serve(async (req: Request) => {
     // ── Preload provider roster metadata ───────────────────────────────
     // The evaluator uses the full license-state view for eligibility, then
     // orders providers by ClinOps priority: supervisors, Vitable internal,
-    // then access providers. Brittany gets a tie-break only inside the
+    // then access providers. Brittney Afram gets a tie-break only inside the
     // DirectShifts access-provider pool. Within each tier, constrained
     // providers still go first.
     const providerProfileByProvider = new Map<string, ProviderProfile>();
@@ -601,7 +601,7 @@ Deno.serve(async (req: Request) => {
 
     // ── Sort groups by provider priority, then constrained coverage ─────
     // Clinical supervisors get first pass at demand, then Vitable internal
-    // providers, then access providers. Brittany gets first pass only against
+    // providers, then access providers. Brittney Afram gets first pass only against
     // other DirectShifts providers. Within each tier, process providers with
     // the fewest licensed-states-with-demand first so single-state providers
     // are not displaced by flexible providers with alternatives.

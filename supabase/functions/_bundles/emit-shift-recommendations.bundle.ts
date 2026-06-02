@@ -1887,7 +1887,7 @@ export const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPrior
   directshifts_brittany_priority: {
     key: 'directshifts_brittany_priority',
     rank: 2,
-    label: 'DirectShifts Brittany priority',
+    label: 'DirectShifts Brittney Afram priority',
   },
   access_provider: { key: 'access_provider', rank: 2, label: 'Access provider' },
 };
@@ -1914,6 +1914,12 @@ const normalizedProviderText = (profile: ProviderPriorityProfile | null | undefi
     .trim();
 };
 
+function isBrittneyAframName(profile: ProviderPriorityProfile | null | undefined): boolean {
+  const name = (profile?.name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const tokens = new Set(name.split(/\s+/).filter(Boolean));
+  return tokens.has('afram') && (tokens.has('brittney') || tokens.has('brittany'));
+}
+
 export function isDirectShiftsProvider(profile: ProviderPriorityProfile | null | undefined): boolean {
   if (!profile) return false;
   const employmentType = (profile.employment_type ?? '').trim().toLowerCase();
@@ -1925,16 +1931,15 @@ export function isDirectShiftsProvider(profile: ProviderPriorityProfile | null |
     source.includes('direct shifts') ||
     haystack.includes('directshifts') ||
     haystack.includes('direct shifts') ||
-    haystack.includes('agency supplied')
+    haystack.includes('agency supplied') ||
+    isBrittneyAframName(profile)
   );
 }
 
-export function isBrittanyDirectShiftsProvider(
+export function isBrittneyAframDirectShiftsProvider(
   profile: ProviderPriorityProfile | null | undefined,
 ): boolean {
-  if (!profile || !isDirectShiftsProvider(profile)) return false;
-  const name = (profile.name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  return name.split(/\s+/).includes('brittany');
+  return isBrittneyAframName(profile) && isDirectShiftsProvider(profile);
 }
 
 export function providerPriorityFor(
@@ -1953,7 +1958,7 @@ export function providerPriorityFor(
     return PROVIDER_PRIORITY_BY_KEY.clinical_supervisor;
   }
 
-  if (isBrittanyDirectShiftsProvider(profile)) {
+  if (isBrittneyAframDirectShiftsProvider(profile)) {
     return PROVIDER_PRIORITY_BY_KEY.directshifts_brittany_priority;
   }
 
@@ -1983,9 +1988,9 @@ export function compareProviderAllocationPriority(
 
   const bothDirectShifts = isDirectShiftsProvider(a) && isDirectShiftsProvider(b);
   if (bothDirectShifts) {
-    const brittanyRankA = isBrittanyDirectShiftsProvider(a) ? 0 : 1;
-    const brittanyRankB = isBrittanyDirectShiftsProvider(b) ? 0 : 1;
-    if (brittanyRankA !== brittanyRankB) return brittanyRankA - brittanyRankB;
+    const brittneyAframRankA = isBrittneyAframDirectShiftsProvider(a) ? 0 : 1;
+    const brittneyAframRankB = isBrittneyAframDirectShiftsProvider(b) ? 0 : 1;
+    if (brittneyAframRankA !== brittneyAframRankB) return brittneyAframRankA - brittneyAframRankB;
   }
 
   return 0;

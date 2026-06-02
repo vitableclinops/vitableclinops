@@ -1701,7 +1701,7 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   } else if (priority === 'vitable_internal') {
     add('Accepted before external access providers because this provider is on the Vitable team.');
   } else if (priority === 'directshifts_brittany_priority') {
-    add('Brittany is prioritized above other DirectShifts providers when she is eligible for the needed coverage.');
+    add('Brittney Afram is prioritized above other DirectShifts providers when she is eligible for the needed coverage.');
   } else if (priority === 'access_provider') {
     add('Accepted after internal providers because this provider is an access coverage provider.');
   }
@@ -4848,7 +4848,7 @@ const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPriority> = 
   directshifts_brittany_priority: {
     key: 'directshifts_brittany_priority',
     rank: 2,
-    label: 'DirectShifts Brittany priority',
+    label: 'DirectShifts Brittney Afram priority',
   },
   access_provider: { key: 'access_provider', rank: 2, label: 'Access provider' },
 };
@@ -4892,24 +4892,27 @@ function providerPriorityForRow(row: ProviderPublishView): ProviderPriority {
   ) {
     return PROVIDER_PRIORITY_BY_KEY.clinical_supervisor;
   }
-  if (
-    (source.includes('directshifts') ||
-      source.includes('direct shifts') ||
-      haystack.includes('directshifts') ||
-      haystack.includes('direct shifts')) &&
-    row.provider_name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\s+/).includes('brittany')
-  ) {
-    return PROVIDER_PRIORITY_BY_KEY.directshifts_brittany_priority;
-  }
-  if (
+  const providerNameTokens = new Set(
+    row.provider_name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(Boolean),
+  );
+  const isBrittneyAfram =
+    providerNameTokens.has('afram') &&
+    (providerNameTokens.has('brittney') || providerNameTokens.has('brittany'));
+  const isDirectShiftsProvider =
     employmentType === 'agency' ||
     source.includes('directshifts') ||
     source.includes('direct shifts') ||
-    source.includes('access') ||
     haystack.includes('directshifts') ||
     haystack.includes('direct shifts') ||
-    haystack.includes('access provider') ||
-    haystack.includes('agency supplied')
+    haystack.includes('agency supplied') ||
+    isBrittneyAfram;
+  if (isDirectShiftsProvider && isBrittneyAfram) {
+    return PROVIDER_PRIORITY_BY_KEY.directshifts_brittany_priority;
+  }
+  if (
+    isDirectShiftsProvider ||
+    source.includes('access') ||
+    haystack.includes('access provider')
   ) {
     return PROVIDER_PRIORITY_BY_KEY.access_provider;
   }
@@ -5009,7 +5012,7 @@ function MatchingPanel({
         <p className="text-xs text-muted-foreground">
           Who is getting hours, why, and what was cut. The system matches providers to states
           where they can cover visits, then prioritizes clinical supervisors, Vitable internal
-          providers, and access providers. Brittany is first only within eligible DirectShifts coverage.
+          providers, and access providers. Brittney Afram is first only within eligible DirectShifts coverage.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -5110,7 +5113,7 @@ function classifyReason(text: string): string {
   if (t.includes('long_shift_break') || t.includes('mandatory 1-hour break'))
     return 'Required shift break';
   if (t.includes('directshifts_brittany_priority'))
-    return 'DirectShifts Brittany priority';
+    return 'DirectShifts Brittney Afram priority';
   if (t.includes('access_growth_buffer') || t.includes('access buffer'))
     return 'Extra access protection';
   if (t.includes('scarce_window') || t.includes('scarce coverage'))

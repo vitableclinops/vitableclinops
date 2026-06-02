@@ -244,7 +244,7 @@ describe('scheduling-layer break and blackout rules', () => {
     const submission = oneOffSubmission('sub-long', '06-23-2026', '9:00 AM', '9:00 PM');
     const validation = buildSubmissionTimeline(
       [submission],
-      { name: 'Brittany DirectShifts' },
+      { name: 'Brittney Afram' },
       FIXTURE_TARGET_MONTH,
     );
 
@@ -265,7 +265,7 @@ describe('scheduling-layer break and blackout rules', () => {
 
     const rows = buildShiftRecommendationRows({
       providerId: 'p-long',
-      providerName: 'Brittany DirectShifts',
+      providerName: 'Brittney Afram',
       targetMonth: FIXTURE_TARGET_MONTH,
       timeline: validation.timeline,
       forecastTimeline: validation.forecastTimeline,
@@ -307,7 +307,7 @@ describe('scheduling-layer break and blackout rules', () => {
     const submission = oneOffSubmission('sub-both', '06-24-2026', '9:00 AM', '9:00 PM');
     const validation = buildSubmissionTimeline(
       [submission],
-      { name: 'Brittany DirectShifts' },
+      { name: 'Brittney Afram' },
       FIXTURE_TARGET_MONTH,
     );
 
@@ -323,7 +323,7 @@ describe('scheduling-layer break and blackout rules', () => {
 
     const rows = buildShiftRecommendationRows({
       providerId: 'p-brittany',
-      providerName: 'Brittany DirectShifts',
+      providerName: 'Brittney Afram',
       targetMonth: FIXTURE_TARGET_MONTH,
       timeline: validation.timeline,
       forecastTimeline: validation.forecastTimeline,
