@@ -22,10 +22,9 @@ name: ClinOps DB — Push migrations
 #
 # Caveat: this repo's supabase/migrations/ directory contains migrations that
 # reference the primary auth project's app_role / auth.uid() / user_roles —
-# those will fail against the ClinOps project (which has no auth). If the
-# push fails on one of those, mark them as applied with `supabase migration
-# repair --status reverted <version>` once and they'll be skipped going
-# forward.
+# those will fail against the ClinOps project (which has no auth). Remote-only
+# legacy versions are marked reverted; local migrations that intentionally do
+# not belong in ClinOps are marked applied so db push skips them.
 
 on:
   push:
@@ -80,7 +79,11 @@ jobs:
             20260506193208 \
             20260506211752 \
             20260512162717 \
-            20260518182326 \
+            20260518182326 || true
+
+      - name: Mark non-ClinOps local migrations as applied
+        run: |
+          supabase migration repair --status applied \
             20260602130013 || true
 
       - name: List unapplied migrations
