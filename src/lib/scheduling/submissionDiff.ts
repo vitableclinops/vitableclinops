@@ -10,7 +10,7 @@
  * Output:
  *   - normalized canonical shape (recurring / one_off / in_home / unavailable)
  *   - summary deltas: added, removed, modified
- *   - human-readable changelog strings ("Tuesday recurring extended to 7 PM",
+ *   - human-readable changelog strings ("Tuesday recurring extended to 19:00",
  *     "Jun 30 removed", etc.) for the inbox card
  */
 
@@ -49,10 +49,7 @@ const formatTime = (min: number): string => {
   const safe = ((min % 1440) + 1440) % 1440;
   const h24 = Math.floor(safe / 60);
   const m = safe % 60;
-  const ampm = h24 < 12 ? 'AM' : 'PM';
-  let h12 = h24 % 12;
-  if (h12 === 0) h12 = 12;
-  return m === 0 ? `${h12} ${ampm}` : `${h12}:${pad2(m)} ${ampm}`;
+  return `${pad2(h24)}:${pad2(m)}`;
 };
 
 const parseFormDate = (raw: unknown): string | null => {

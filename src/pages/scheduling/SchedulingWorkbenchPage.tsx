@@ -243,6 +243,7 @@ const labelShiftType = (t: string | null | undefined) => {
 const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : []);
 
 export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
+type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
 
 export default function SchedulingWorkbenchPage({
   scope = 'medical',
@@ -273,6 +274,11 @@ export default function SchedulingWorkbenchPage({
     if (v === 'readiness') next.delete('tab');
     else next.set('tab', v);
     setSearchParams(next, { replace: true });
+  };
+  const [availabilityTab, setAvailabilityTab] = useState<AvailabilityTabKey>('submissions');
+  const jumpToAvailability = (tab: AvailabilityTabKey = 'submissions') => {
+    setAvailabilityTab(tab);
+    onTopTabChange('availability');
   };
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -947,7 +953,7 @@ export default function SchedulingWorkbenchPage({
             onReevaluate={reevaluateNow}
             isReevaluating={reevaluate.isPending}
             onJumpToCoverage={() => onTopTabChange('coverage')}
-            onJumpToAvailability={() => onTopTabChange('availability')}
+            onJumpToAvailability={jumpToAvailability}
             onJumpToMatching={() => onTopTabChange('matching')}
             onJumpToPublish={() => onTopTabChange('publish')}
             onJumpToMentalHealth={() => (isMh ? undefined : onTopTabChange('mental-health'))}
@@ -1036,12 +1042,12 @@ export default function SchedulingWorkbenchPage({
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
             No submissions found for {formatMonthLabel(month)}. Pick a different month or run the
-            schedule builder.
+            direct Jotform sync, then click "Recalculate schedule".
           </AlertDescription>
         </Alert>
       )}
 
-      <Tabs defaultValue="submissions">
+      <Tabs value={availabilityTab} onValueChange={(v) => setAvailabilityTab(v as AvailabilityTabKey)}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="submissions">
             <Inbox className="h-3.5 w-3.5 mr-1" /> Submissions
@@ -1142,7 +1148,7 @@ export default function SchedulingWorkbenchPage({
             inboxNeedsReviewCount={scopedInboxActionable}
             unmatchedCount={scopedUnmatched.length}
             missingCount={scopedSummary.missingCount}
-            onJumpToAvailability={() => onTopTabChange('availability')}
+            onJumpToAvailability={jumpToAvailability}
             onJumpToCoverage={() => onTopTabChange('coverage')}
             onJumpToMatching={() => onTopTabChange('matching')}
           />
@@ -1751,6 +1757,18 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   if (valueFromDecisionNote(raw, 'access_growth_buffer_policy')) {
     add('The system intentionally schedules extra hours so July access does not stay too thin.');
   }
+  const accessBufferHours = valueFromDecisionNote(raw, 'access_buffer_hours');
+  if (accessBufferHours) {
+    add(`${accessBufferHours.replace(/h$/, '')} extra hours were added to protect July access.`);
+  }
+  const baseStateDemand = valueFromDecisionNote(raw, 'base_state_demand');
+  if (baseStateDemand) {
+    add(`Historical state need before extra July access protection: ${baseStateDemand}.`);
+  }
+  const unavailableHours = valueFromDecisionNote(raw, 'hours_removed_unavailable');
+  if (unavailableHours) {
+    add(`${unavailableHours.replace(/h$/, '')} hours were intentionally removed because the provider listed those dates as unavailable.`);
+  }
   const allocations = valueFromDecisionNote(raw, 'alloc');
   if (allocations) {
     add(`Accepted hours were assigned by state: ${allocations}.`);
@@ -1766,6 +1784,9 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   }
   if (lower.includes('trimmed') || lower.includes('oversupply') || lower.includes('surplus')) {
     add('Some hours were cut because the assigned state already had enough accepted hours.');
+  }
+  if (lower.includes('unavailable')) {
+    add('Unavailable dates listed in Jotform are intentionally excluded from generated shifts.');
   }
   if (lower.includes('no state allocation')) {
     add('The system could not safely assign this shift to a state; escalate if this affects publishing.');
@@ -1844,7 +1865,8 @@ function AvailabilitySubmissionsPanel({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No Jotform availability submissions are stored for {formatMonthLabel(month)}.
+          No Jotform/drop-form availability submissions are stored for {formatMonthLabel(month)}.
+          If submissions were expected, check Audit → Data quality and confirm the direct Jotform sync.
         </AlertDescription>
       </Alert>
     );
@@ -3430,6 +3452,7 @@ function TimeOffPanel({
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
           Days providers listed as unavailable on their Jotform submission.
+          Generated shifts intentionally omit recurring availability that falls on these dates.
           {' '}
           {entries.length} provider{entries.length === 1 ? '' : 's'} · {totalDays} day
           {totalDays === 1 ? '' : 's'} off this month. Use this when MSS asks who's
@@ -3655,7 +3678,7 @@ function ReadinessPanel({
   onReevaluate: () => void;
   isReevaluating: boolean;
   onJumpToCoverage: () => void;
-  onJumpToAvailability: () => void;
+  onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToMatching: () => void;
   onJumpToPublish: () => void;
   onJumpToMentalHealth: () => void;
@@ -3749,8 +3772,8 @@ function ReadinessPanel({
         label: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
         detail: 'A provider name or email did not match the provider directory. If the match is obvious, fix it; otherwise escalate.',
         category: 'VA can do this',
-        action: 'Open Availability',
-        onClick: onJumpToAvailability,
+        action: 'Open Unmatched',
+        onClick: () => onJumpToAvailability('unmatched'),
       });
     }
     if (reviewCount > 0) {
@@ -3758,8 +3781,8 @@ function ReadinessPanel({
         label: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need manual review`,
         detail: `${summary.needsReviewCount} unusual-hours flag${summary.needsReviewCount === 1 ? '' : 's'} and ${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} need a ClinOps lead decision.`,
         category: 'Escalate to ClinOps lead',
-        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Availability',
-        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : onJumpToAvailability,
+        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Resubmits',
+        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
       });
     }
     if (criticalGapStates.length > 0) {
@@ -3769,6 +3792,15 @@ function ReadinessPanel({
         category: 'Escalate to ClinOps lead',
         action: 'Open Coverage Gaps',
         onClick: onJumpToCoverage,
+      });
+    }
+    if (missingCount > 0) {
+      out.push({
+        label: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing July availability`,
+        detail: 'These active providers have not submitted July availability. Send reminders before publishing so staff can capture any last covered hours.',
+        category: 'VA can do this',
+        action: 'Open Missing',
+        onClick: () => onJumpToAvailability('missing'),
       });
     }
     return out;
@@ -3784,6 +3816,7 @@ function ReadinessPanel({
     summary.needsReviewCount,
     inboxNeedsReviewCount,
     criticalGapStates,
+    missingCount,
     onReevaluate,
     onJumpToAvailability,
     onJumpToCoverage,
@@ -3826,7 +3859,7 @@ function ReadinessPanel({
       return {
         blocker: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
         nextAction: 'Fix unmatched submissions',
-        nextActionJump: onJumpToAvailability,
+        nextActionJump: () => onJumpToAvailability('unmatched'),
         nextCategory: 'VA can do this',
       };
     }
@@ -3834,7 +3867,7 @@ function ReadinessPanel({
       return {
         blocker: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need ClinOps lead review`,
         nextAction: 'Escalate needs-review submissions to ClinOps lead',
-        nextActionJump: summary.needsReviewCount > 0 ? onJumpToMatching : onJumpToAvailability,
+        nextActionJump: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
         nextCategory: 'Escalate to ClinOps lead',
       };
     }
@@ -3850,7 +3883,7 @@ function ReadinessPanel({
       return {
         blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing July availability`,
         nextAction: 'Send missing availability reminders',
-        nextActionJump: onJumpToAvailability,
+        nextActionJump: () => onJumpToAvailability('missing'),
         nextCategory: 'VA can do this',
       };
     }
@@ -3911,7 +3944,7 @@ function ReadinessPanel({
         : 'No expanded availability hours are visible yet.',
       status: submittedHours > 0 ? 'done' : 'blocked',
       action: 'Open Availability',
-      onClick: onJumpToAvailability,
+      onClick: () => onJumpToAvailability('submissions'),
     },
     {
       label: '2. Build the recommended shift list',
@@ -3931,8 +3964,8 @@ function ReadinessPanel({
         ? 'No ambiguous submissions or resubmissions need action.'
         : `${reviewCount} item${reviewCount === 1 ? '' : 's'} need a ClinOps lead decision before publishing.`,
       status: reviewCount === 0 ? 'done' : 'blocked',
-      action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Availability',
-      onClick: summary.needsReviewCount > 0 ? onJumpToMatching : onJumpToAvailability,
+      action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Resubmits',
+      onClick: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
     },
     {
       label: '4. Check state coverage',
@@ -3967,17 +4000,6 @@ function ReadinessPanel({
 
   const softWarnings = useMemo<OperatorBlocker[]>(() => {
     const out: OperatorBlocker[] = [];
-    if (missingCount > 0) {
-      out.push({
-        label: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing availability`,
-        detail: criticalGapStates.length > 0
-          ? 'Chase these now because coverage is already blocked.'
-          : 'Keep chasing, but this is not a stop item if coverage is usable.',
-        category: 'VA can do this',
-        action: 'Open Missing',
-        onClick: onJumpToAvailability,
-      });
-    }
     if (watchGapStates.length > 0 && criticalGapStates.length === 0) {
       out.push({
         label: `${watchGapStates.length} state${watchGapStates.length === 1 ? '' : 's'} with thin coverage`,
@@ -3998,12 +4020,10 @@ function ReadinessPanel({
     }
     return out;
   }, [
-    missingCount,
     criticalGapStates.length,
     watchGapStates.length,
     mentalHealthCount,
     mentalHealthAcceptedCount,
-    onJumpToAvailability,
     onJumpToCoverage,
     onJumpToMentalHealth,
   ]);
@@ -4387,7 +4407,7 @@ function PublishGateBanner({
   inboxNeedsReviewCount: number;
   unmatchedCount: number;
   missingCount: number;
-  onJumpToAvailability: () => void;
+  onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToCoverage: () => void;
   onJumpToMatching: () => void;
 }) {
@@ -4424,21 +4444,21 @@ function PublishGateBanner({
           ? 'No publishable shifts yet. Click Recalculate schedule in the header.'
           : 'No usable availability has been expanded yet.',
         action: 'Open Availability',
-        onClick: onJumpToAvailability,
+        onClick: () => onJumpToAvailability('submissions'),
       });
     }
     if (summary.totalShifts > 0 && unmatchedCount > 0) {
       out.push({
         label: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'} must be fixed or escalated first.`,
-        action: 'Open Availability',
-        onClick: onJumpToAvailability,
+        action: 'Open Unmatched',
+        onClick: () => onJumpToAvailability('unmatched'),
       });
     }
     if (reviewCount > 0) {
       out.push({
         label: `${reviewCount} review item${reviewCount === 1 ? '' : 's'} must be escalated to a ClinOps lead first.`,
-        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Availability',
-        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : onJumpToAvailability,
+        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Resubmits',
+        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
       });
     }
     if (criticalGapStates.length > 0) {
@@ -4451,8 +4471,8 @@ function PublishGateBanner({
     if (missingCount > 0) {
       out.push({
         label: `${missingCount} provider${missingCount === 1 ? '' : 's'} still need July availability reminders.`,
-        action: 'Open Availability',
-        onClick: onJumpToAvailability,
+        action: 'Open Missing',
+        onClick: () => onJumpToAvailability('missing'),
       });
     }
     return out;
