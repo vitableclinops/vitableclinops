@@ -46,21 +46,22 @@ Slot displays are secondary.
 
 | Input | Source | Notes |
 |---|---|---|
-| Scheduled shifts | `homebase_shifts` + `homebase_employees` (Supabase) | Homebase is the schedule source of truth. Employee → provider via `homebase_employees.profile_id`. |
-| Provider licensure / scope | `provider_licenses` (status = active) | `profile_id` space. |
-| Active / EHR-live provider-state | `provider_state_status.ehr_activation_status = 'active'` | Drives confirmed vs tentative. |
-| Active states | `state_activation` (is_active) | Only active states are routed. |
+| Scheduled shifts | `homebase_shifts` + `homebase_employees` (Supabase) | Homebase is the schedule source of truth. Employee → provider via `homebase_employees.profile_id`, whose value is `providers.id`. |
+| Provider licensure / scope | `v_provider_state_eligibility` | Any row counts as licensed/scope-eligible capacity. |
+| Active / EHR-live provider-state | `v_provider_state_eligibility.allocation_eligible = true` | Drives confirmed vs tentative. |
+| Active states | `state_activation` (is_active) | Only active states are routed; if unavailable, the router derives states from demand sources. |
 | Daily state demand | Metabase card **3478** (`Telemedicine Demand Daily`) | Columns `date`, `state`, `demand_hours` or `target_hours`. Fallback → `demand_forecast` (daily) → `state_demand_targets`. |
 | Daily booked appointments | Metabase card **3479** (`Daily Provider Booked Appointments`) | Columns `date`, `provider`, `state`, `appointment_count`, optional `booked_hours`. |
 | Add candidates (outreach) | `schedule_submissions` (Jotform availability) + `provider_utilization_daily` | Used only to suggest add-hours for residual gaps. |
 
 ### ID spaces (important)
 
-The daily router operates entirely in the **`profiles.id`** space (Homebase,
-licensure, EHR status, utilization all key on `profiles.id`). Jotform
-`schedule_submissions` key on `providers.id`, so availability is matched back to
-profiles by **normalized name** — this is best-effort and only feeds the "adds"
-suggestions, never confirmed coverage.
+The daily router operates in the ClinOps **`providers.id`** space. Some legacy
+columns are still named `profile_id` (`homebase_employees.profile_id`, routing
+persistence tables, allocator payloads), but those values are provider IDs.
+Jotform `schedule_submissions.provider_id` feeds add-hour suggestions directly;
+older name-only rows fall back to normalized-name matching. These suggestions
+never count as confirmed coverage.
 
 ---
 
@@ -253,17 +254,17 @@ takes PA; the flexible provider fills NJ → both **OK**.
 ## 10. Known caveats
 
 - **Unmatched Homebase employees** (shift with no `profile_id`) and **unmatched
-  booked rows** (provider name not matched to a profile) are surfaced as
+  booked rows** (provider name not matched to a provider) are surfaced as
   data-quality warnings and **excluded** from confirmed capacity / demand. Fix
   the match in `provider_name_mappings` (Homebase) or the directory so they
   count next run.
 - **Booked = confirmed.** A booked appointment marks the provider-state
-  confirmed even if `provider_state_status` hasn't caught up, because the
-  appointment proves they're live there.
+  confirmed even if the active-state overlay hasn't caught up, because the
+  appointment proves they are live there.
 - **Tentative upside is non-exclusive potential**, capped at the per-state gap;
   it is not additive across states for the same provider.
-- **Jotform availability adds are name-matched** across the providers↔profiles
-  id split and are best-effort suggestions only.
+- **Jotform availability adds** use `schedule_submissions.provider_id` when
+  present; older name-only rows are best-effort suggestions only.
 - **`types.ts` is stale for `demand_forecast` / `state_demand_targets`.** The
   canonical schema is whatever `compute-demand-forecast` writes (`date`,
   `state`, `projected_visits`, `is_baseline`; `daily_target_hours`). The router

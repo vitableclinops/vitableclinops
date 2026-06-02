@@ -2,7 +2,7 @@
  * sync-homebase edge function
  *
  * Pulls all Homebase locations → employees → shifts and upserts into Supabase.
- * Matches Homebase employees to provider profiles via:
+ * Matches Homebase employees to ClinOps providers via:
  *   1. Exact email match
  *   2. Exact canonical name match
  *   3. Manual override (provider_name_mappings table)
@@ -103,23 +103,22 @@ Deno.serve(async (req: Request) => {
   try {
     const hb = new HomebaseClient(apiKey);
 
-    // ── Load provider profiles for matching ───────────────────────────────────
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, email, full_name, first_name, last_name')
-      .eq('employment_status', 'active');
+    // ── Load ClinOps providers for matching ───────────────────────────────────
+    const { data: providers } = await supabase
+      .from('providers')
+      .select('id, email, name, active')
+      .eq('active', true);
 
-    const profilesByEmail = new Map<string, string>(); // email → profile_id
-    const profilesByCanonical = new Map<string, string>(); // canonical_name → profile_id
-    const profilesForFuzzy: { id: string; canonical: string }[] = [];
+    const providersByEmail = new Map<string, string>(); // email → providers.id
+    const providersByCanonical = new Map<string, string>(); // canonical_name → providers.id
+    const providersForFuzzy: { id: string; canonical: string }[] = [];
 
-    for (const p of (profiles ?? [])) {
-      if (p.email) profilesByEmail.set(p.email.toLowerCase(), p.id);
-      const full = p.full_name || [p.first_name, p.last_name].filter(Boolean).join(' ');
-      const c = canonicalName(full);
+    for (const p of (providers ?? [])) {
+      if (p.email) providersByEmail.set(p.email.toLowerCase(), p.id);
+      const c = canonicalName(p.name);
       if (c) {
-        profilesByCanonical.set(c, p.id);
-        profilesForFuzzy.push({ id: p.id, canonical: c });
+        providersByCanonical.set(c, p.id);
+        providersForFuzzy.push({ id: p.id, canonical: c });
       }
     }
 
@@ -128,7 +127,7 @@ Deno.serve(async (req: Request) => {
       .from('provider_name_mappings')
       .select('homebase_name, profile_id');
 
-    const manualOverrides = new Map<string, string>(); // canonical(homebase_name) → profile_id
+    const manualOverrides = new Map<string, string>(); // canonical(homebase_name) → providers.id
     for (const m of (mappings ?? [])) {
       manualOverrides.set(canonicalName(m.homebase_name), m.profile_id);
     }
@@ -154,39 +153,39 @@ Deno.serve(async (req: Request) => {
         const rawName = `${emp.first_name} ${emp.last_name}`;
         const canonical = canonicalName(rawName);
 
-        let profileId: string | null = null;
+        let providerId: string | null = null;
         let confidence = 'unmatched';
 
         // 1. Email
-        if (emp.email && profilesByEmail.has(emp.email.toLowerCase())) {
-          profileId = profilesByEmail.get(emp.email.toLowerCase())!;
+        if (emp.email && providersByEmail.has(emp.email.toLowerCase())) {
+          providerId = providersByEmail.get(emp.email.toLowerCase())!;
           confidence = 'email';
         }
         // 2. Manual override
         else if (manualOverrides.has(canonical)) {
-          profileId = manualOverrides.get(canonical)!;
+          providerId = manualOverrides.get(canonical)!;
           confidence = 'manual';
         }
         // 3. Exact canonical name
-        else if (profilesByCanonical.has(canonical)) {
-          profileId = profilesByCanonical.get(canonical)!;
+        else if (providersByCanonical.has(canonical)) {
+          providerId = providersByCanonical.get(canonical)!;
           confidence = 'name_exact';
         }
         // 4. Fuzzy score
         else {
           let best = 0;
           let bestId: string | null = null;
-          for (const p of profilesForFuzzy) {
+          for (const p of providersForFuzzy) {
             const score = fuzzyScore(canonical, p.canonical);
             if (score > best) { best = score; bestId = p.id; }
           }
           if (best >= FUZZY_MATCH_THRESHOLD && bestId) {
-            profileId = bestId;
+            providerId = bestId;
             confidence = 'name_fuzzy';
           }
         }
 
-        if (profileId) {
+        if (providerId) {
           counters.employees_matched++;
         } else {
           counters.employees_unmatched++;
@@ -202,7 +201,8 @@ Deno.serve(async (req: Request) => {
           first_name: emp.first_name,
           last_name: emp.last_name,
           normalized_name: canonical,
-          profile_id: profileId,
+          // Legacy column name; value is ClinOps providers.id.
+          profile_id: providerId,
           match_confidence: confidence,
           synced_at: new Date().toISOString(),
         }, { onConflict: 'homebase_id' });

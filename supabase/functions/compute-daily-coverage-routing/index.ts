@@ -6,8 +6,8 @@
  *
  * Sources
  *   - Homebase scheduled shifts            → homebase_shifts + homebase_employees (Supabase)
- *   - Provider licensure / scope           → provider_licenses (Supabase, profile_id space)
- *   - Active / EHR-live provider-state     → provider_state_status.ehr_activation_status = 'active'
+ *   - Provider licensure / scope           → v_provider_state_eligibility (ClinOps providers.id space)
+ *   - Active / EHR-live provider-state     → v_provider_state_eligibility.allocation_eligible = true
  *   - Active states                        → state_activation
  *   - Daily state demand (hours)           → Metabase card METABASE_DAILY_DEMAND_CARD_ID (default 3478)
  *                                            fallback → demand_forecast (daily) → state_demand_targets
@@ -110,48 +110,58 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Supabase sources ─────────────────────────────────────────────────────
-    const [activationsRes, profilesRes, licensesRes, statusRes, forecastRes, targetsRes, utilRes, submissionsRes] =
+    const [activationsRes, providersRes, eligibilityRes, forecastRes, targetsRes, utilRes, submissionsRes] =
       await Promise.all([
         supabase.from('state_activation').select('state_abbreviation, is_active'),
-        supabase.from('profiles').select('id, full_name, profession, employment_status'),
-        supabase.from('provider_licenses').select('profile_id, state_abbreviation, status').eq('status', 'active').range(0, 49999),
-        supabase.from('provider_state_status').select('provider_id, state_abbreviation, ehr_activation_status').range(0, 49999),
+        supabase.from('providers').select('id, name, profession, active, employment_status').range(0, 49999),
+        supabase.from('v_provider_state_eligibility').select('provider_id, state, allocation_eligible').range(0, 49999),
         // demand_forecast is daily (date/state/is_baseline/projected_visits) per
         // the canonical compute-demand-forecast producer; types.ts is stale here.
         supabase.from('demand_forecast').select('date, state, projected_visits, is_baseline').in('date', targetDates).eq('is_baseline', true).range(0, 49999),
         supabase.from('state_demand_targets').select('state, month, daily_target_hours, monthly_hours_target').in('month', months),
-        supabase.from('provider_utilization_daily').select('provider_name, util_date, utilization_pct').gte('util_date', addDays(targetDates[0], -14)).range(0, 49999),
-        supabase.from('schedule_submissions').select('provider_name, target_month, accepted_hours, decision_status').in('target_month', months).in('decision_status', ['accepted', 'partial']).range(0, 49999),
+        // Historical deployments have used both util_date/provider_name and
+        // date/provider_id shapes; selecting * lets the parser below tolerate
+        // either without blocking the launch path.
+        supabase.from('provider_utilization_daily').select('*').range(0, 49999),
+        supabase.from('schedule_submissions').select('provider_id, provider_name, target_month, accepted_hours, decision_status').in('target_month', months).in('decision_status', ['accepted', 'partial']).range(0, 49999),
       ]);
 
     const activeStates = new Set<string>(
       (activationsRes.data ?? []).filter((a) => a.is_active).map((a) => String(a.state_abbreviation).toUpperCase()),
     );
-
-    // Profiles index (profiles.id space — matches Homebase + licensure)
-    const profileById = new Map<string, { full_name: string | null; profession: string | null; active: boolean }>();
-    const profileIdByNormName = new Map<string, string>();
-    for (const p of profilesRes.data ?? []) {
-      const active = (p.employment_status ?? 'active') !== 'inactive' && (p.employment_status ?? 'active') !== 'terminated';
-      profileById.set(p.id, { full_name: p.full_name, profession: p.profession, active });
-      if (p.full_name) profileIdByNormName.set(normName(p.full_name), p.id);
+    if (activationsRes.error) {
+      console.warn('state_activation load failed; will derive active states from demand sources:', activationsRes.error.message);
     }
 
-    const licensedByProfile = new Map<string, Set<string>>();
-    for (const l of licensesRes.data ?? []) {
-      if (!l.profile_id || !l.state_abbreviation) continue;
-      const st = String(l.state_abbreviation).toUpperCase();
-      if (!licensedByProfile.has(l.profile_id)) licensedByProfile.set(l.profile_id, new Set());
-      licensedByProfile.get(l.profile_id)!.add(st);
+    // Provider index. The allocator's field is still named profile_id for
+    // backward compatibility, but these values are ClinOps providers.id.
+    const providerById = new Map<string, { name: string | null; profession: string | null; active: boolean }>();
+    const providerIdByNormName = new Map<string, string>();
+    for (const p of providersRes.data ?? []) {
+      const employmentStatus = String(p.employment_status ?? 'active').toLowerCase();
+      const active = p.active !== false && employmentStatus !== 'inactive' && employmentStatus !== 'terminated';
+      providerById.set(p.id, { name: p.name, profession: p.profession, active });
+      if (p.name) providerIdByNormName.set(normName(p.name), p.id);
+    }
+    if (providersRes.error) {
+      console.warn('providers load failed:', providersRes.error.message);
     }
 
-    const ehrActiveByProfile = new Map<string, Set<string>>();
-    for (const s of statusRes.data ?? []) {
-      if (!s.provider_id || !s.state_abbreviation) continue;
-      if (String(s.ehr_activation_status) !== 'active') continue;
-      const st = String(s.state_abbreviation).toUpperCase();
-      if (!ehrActiveByProfile.has(s.provider_id)) ehrActiveByProfile.set(s.provider_id, new Set());
-      ehrActiveByProfile.get(s.provider_id)!.add(st);
+    const licensedByProvider = new Map<string, Set<string>>();
+    const ehrActiveByProvider = new Map<string, Set<string>>();
+    for (const e of eligibilityRes.data ?? []) {
+      if (!e.provider_id || !e.state) continue;
+      const providerId = String(e.provider_id);
+      const st = String(e.state).toUpperCase();
+      if (!licensedByProvider.has(providerId)) licensedByProvider.set(providerId, new Set());
+      licensedByProvider.get(providerId)!.add(st);
+      if (e.allocation_eligible === true) {
+        if (!ehrActiveByProvider.has(providerId)) ehrActiveByProvider.set(providerId, new Set());
+        ehrActiveByProvider.get(providerId)!.add(st);
+      }
+    }
+    if (eligibilityRes.error) {
+      console.warn('v_provider_state_eligibility load failed:', eligibilityRes.error.message);
     }
 
     // Demand fallbacks
@@ -162,6 +172,9 @@ Deno.serve(async (req: Request) => {
       const hrs = Number((r as Record<string, unknown>).projected_visits ?? 0);
       if (date && st && Number.isFinite(hrs)) forecastDaily.set(`${date}|${st}`, hrs);
     }
+    if (forecastRes.error) {
+      console.warn('demand_forecast fallback load failed:', forecastRes.error.message);
+    }
     const targetsDaily = new Map<string, number>(); // `${month}|${state}` → daily hours
     for (const r of targetsRes.data ?? []) {
       const month = String((r as Record<string, unknown>).month);
@@ -169,31 +182,61 @@ Deno.serve(async (req: Request) => {
       const daily = Number((r as Record<string, unknown>).daily_target_hours ?? NaN);
       if (st && Number.isFinite(daily)) targetsDaily.set(`${month}|${st}`, daily);
     }
+    if (targetsRes.error) {
+      console.warn('state_demand_targets fallback load failed:', targetsRes.error.message);
+    }
+    if (activeStates.size === 0) {
+      for (const states of demandByDateState.values()) {
+        for (const st of states.keys()) activeStates.add(st);
+      }
+      for (const key of forecastDaily.keys()) activeStates.add(key.split('|')[1]);
+      for (const key of targetsDaily.keys()) activeStates.add(key.split('|')[1]);
+    }
 
-    // Homebase shifts → per (date, profile) scheduled hours, plus unmatched.
+    // Homebase shifts → per (date, provider) scheduled hours, plus unmatched.
     const { shiftsByDateProfile, unmatchedByDate } = await loadHomebaseShifts(supabase, targetDates);
 
-    // Latest utilization per provider name
+    // Latest utilization per provider name (supports both legacy and ClinOps
+    // provider_utilization_daily schemas).
     const latestUtilByName = new Map<string, { util_date: string; pct: number }>();
     for (const u of utilRes.data ?? []) {
-      const name = u.provider_name ? normName(String(u.provider_name)) : '';
+      const row = u as Record<string, unknown>;
+      const providerId = typeof row.provider_id === 'string' ? row.provider_id : null;
+      const rawName = typeof row.provider_name === 'string'
+        ? row.provider_name
+        : providerId
+        ? providerById.get(providerId)?.name ?? ''
+        : '';
+      const name = rawName ? normName(rawName) : '';
       if (!name) continue;
-      const date = String(u.util_date);
-      const pct = Number(u.utilization_pct ?? NaN);
+      const date = String(row.util_date ?? row.date ?? '');
+      if (!date || date < addDays(targetDates[0], -14)) continue;
+      const pct = Number(row.utilization_pct ?? NaN);
       if (!Number.isFinite(pct)) continue;
       const prev = latestUtilByName.get(name);
       if (!prev || date > prev.util_date) latestUtilByName.set(name, { util_date: date, pct });
     }
+    if (utilRes.error) {
+      console.warn('provider_utilization_daily load failed; low-utilization adds may be omitted:', utilRes.error.message);
+    }
 
     // Jotform availability hours per provider (by month)
+    const availabilityByProviderMonth = new Map<string, number>(); // `${month}|${providerId}` → hours
     const availabilityByNameMonth = new Map<string, number>(); // `${month}|${normName}` → hours
     for (const s of submissionsRes.data ?? []) {
-      if (!s.provider_name || !s.target_month) continue;
-      const key = `${String(s.target_month)}|${normName(String(s.provider_name))}`;
+      if (!s.target_month) continue;
       const hrs = Number(s.accepted_hours ?? 0);
-      if (Number.isFinite(hrs) && hrs > 0) {
+      if (!Number.isFinite(hrs) || hrs <= 0) continue;
+      if (s.provider_id) {
+        const key = `${String(s.target_month)}|${String(s.provider_id)}`;
+        availabilityByProviderMonth.set(key, Math.max(availabilityByProviderMonth.get(key) ?? 0, hrs));
+      } else if (s.provider_name) {
+        const key = `${String(s.target_month)}|${normName(String(s.provider_name))}`;
         availabilityByNameMonth.set(key, Math.max(availabilityByNameMonth.get(key) ?? 0, hrs));
       }
+    }
+    if (submissionsRes.error) {
+      console.warn('schedule_submissions load failed; Jotform adds may be omitted:', submissionsRes.error.message);
     }
 
     // ── Route each date ──────────────────────────────────────────────────────
@@ -220,22 +263,22 @@ Deno.serve(async (req: Request) => {
       const providersInput: RoutingProviderInput[] = [];
       const scheduledProfileIds = new Set<string>();
       for (const [profileId, hours] of shiftMap) {
-        const prof = profileById.get(profileId);
+        const prof = providerById.get(profileId);
         if (!prof) continue;
         scheduledProfileIds.add(profileId);
         providersInput.push({
           profile_id: profileId,
-          name: prof.full_name ?? 'Unknown',
+          name: prof.name ?? 'Unknown',
           profession: prof.profession,
           scheduled_hours: hours,
-          licensed_states: Array.from(licensedByProfile.get(profileId) ?? []),
-          ehr_active_states: Array.from(ehrActiveByProfile.get(profileId) ?? []),
+          licensed_states: Array.from(licensedByProvider.get(profileId) ?? []),
+          ehr_active_states: Array.from(ehrActiveByProvider.get(profileId) ?? []),
         });
       }
 
-      // Booked rows for this date, matched to profiles by name.
+      // Booked rows for this date, matched to providers by name.
       const bookedInput = (bookedRowsByDate.get(date) ?? []).map((b) => {
-        const profileId = profileIdByNormName.get(normName(b.provider_name)) ?? null;
+        const profileId = providerIdByNormName.get(normName(b.provider_name)) ?? null;
         return {
           profile_id: profileId,
           provider_name: b.provider_name,
@@ -250,10 +293,11 @@ Deno.serve(async (req: Request) => {
       const addCandidates = buildAddCandidates({
         month,
         scheduledProfileIds,
-        profileById,
-        profileIdByNormName,
-        licensedByProfile,
-        ehrActiveByProfile,
+        providerById,
+        providerIdByNormName,
+        licensedByProvider,
+        ehrActiveByProvider,
+        availabilityByProviderMonth,
         availabilityByNameMonth,
         latestUtilByName,
       });
@@ -423,10 +467,11 @@ function shiftHours(startIso: string, endIso: string | null, scheduledHours: num
 type AddCandidateCtx = {
   month: string;
   scheduledProfileIds: Set<string>;
-  profileById: Map<string, { full_name: string | null; profession: string | null; active: boolean }>;
-  profileIdByNormName: Map<string, string>;
-  licensedByProfile: Map<string, Set<string>>;
-  ehrActiveByProfile: Map<string, Set<string>>;
+  providerById: Map<string, { name: string | null; profession: string | null; active: boolean }>;
+  providerIdByNormName: Map<string, string>;
+  licensedByProvider: Map<string, Set<string>>;
+  ehrActiveByProvider: Map<string, Set<string>>;
+  availabilityByProviderMonth: Map<string, number>;
   availabilityByNameMonth: Map<string, number>;
   latestUtilByName: Map<string, { util_date: string; pct: number }>;
 };
@@ -434,22 +479,41 @@ function buildAddCandidates(ctx: AddCandidateCtx): RoutingAddCandidateInput[] {
   const out = new Map<string, RoutingAddCandidateInput>();
 
   // Jotform availability: providers who submitted availability for the month.
-  for (const [key, hours] of ctx.availabilityByNameMonth) {
-    const [month, normedName] = key.split('|');
-    if (month !== ctx.month) continue;
-    const profileId = ctx.profileIdByNormName.get(normedName);
-    if (!profileId || ctx.scheduledProfileIds.has(profileId)) continue;
-    const prof = ctx.profileById.get(profileId);
+  for (const [key, hours] of ctx.availabilityByProviderMonth) {
+    const [month, providerId] = key.split('|');
+    if (month !== ctx.month || !providerId || ctx.scheduledProfileIds.has(providerId)) continue;
+    const prof = ctx.providerById.get(providerId);
     if (!prof || !prof.active) continue;
-    const licensed = Array.from(ctx.licensedByProfile.get(profileId) ?? []);
+    const licensed = Array.from(ctx.licensedByProvider.get(providerId) ?? []);
     if (licensed.length === 0) continue;
-    out.set(profileId, {
-      profile_id: profileId,
-      name: prof.full_name ?? 'Unknown',
+    out.set(providerId, {
+      profile_id: providerId,
+      name: prof.name ?? 'Unknown',
       profession: prof.profession,
       available_hours: round2(hours),
       licensed_states: licensed,
-      ehr_active_states: Array.from(ctx.ehrActiveByProfile.get(profileId) ?? []),
+      ehr_active_states: Array.from(ctx.ehrActiveByProvider.get(providerId) ?? []),
+      source: 'jotform_availability',
+    });
+  }
+
+  // Legacy fallback for older rows that only have provider_name.
+  for (const [key, hours] of ctx.availabilityByNameMonth) {
+    const [month, normedName] = key.split('|');
+    if (month !== ctx.month) continue;
+    const profileId = ctx.providerIdByNormName.get(normedName);
+    if (!profileId || ctx.scheduledProfileIds.has(profileId) || out.has(profileId)) continue;
+    const prof = ctx.providerById.get(profileId);
+    if (!prof || !prof.active) continue;
+    const licensed = Array.from(ctx.licensedByProvider.get(profileId) ?? []);
+    if (licensed.length === 0) continue;
+    out.set(profileId, {
+      profile_id: profileId,
+      name: prof.name ?? 'Unknown',
+      profession: prof.profession,
+      available_hours: round2(hours),
+      licensed_states: licensed,
+      ehr_active_states: Array.from(ctx.ehrActiveByProvider.get(profileId) ?? []),
       source: 'jotform_availability',
     });
   }
@@ -457,19 +521,19 @@ function buildAddCandidates(ctx: AddCandidateCtx): RoutingAddCandidateInput[] {
   // Low-utilization providers (not already added via Jotform).
   for (const [normedName, util] of ctx.latestUtilByName) {
     if (util.pct > LOW_UTILIZATION_THRESHOLD) continue;
-    const profileId = ctx.profileIdByNormName.get(normedName);
+    const profileId = ctx.providerIdByNormName.get(normedName);
     if (!profileId || ctx.scheduledProfileIds.has(profileId) || out.has(profileId)) continue;
-    const prof = ctx.profileById.get(profileId);
+    const prof = ctx.providerById.get(profileId);
     if (!prof || !prof.active) continue;
-    const licensed = Array.from(ctx.licensedByProfile.get(profileId) ?? []);
+    const licensed = Array.from(ctx.licensedByProvider.get(profileId) ?? []);
     if (licensed.length === 0) continue;
     out.set(profileId, {
       profile_id: profileId,
-      name: prof.full_name ?? 'Unknown',
+      name: prof.name ?? 'Unknown',
       profession: prof.profession,
       available_hours: null,
       licensed_states: licensed,
-      ehr_active_states: Array.from(ctx.ehrActiveByProfile.get(profileId) ?? []),
+      ehr_active_states: Array.from(ctx.ehrActiveByProvider.get(profileId) ?? []),
       source: 'low_utilization',
       utilization_pct: util.pct,
     });
