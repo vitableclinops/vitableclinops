@@ -1,0 +1,93 @@
+name: ClinOps — Daily coverage routing
+
+# Compute-only morning job that runs BEFORE the Slack post window
+# (daily-availability-report.yml fires at 13:00/14:00 UTC). It refreshes the
+# near-term schedule + Metabase inputs and then runs the deterministic
+# same-day / next-day router so send-ops-dashboard-slack just reads a fresh run.
+#
+# Sequence: sync Homebase → sync Metabase → compute-daily-coverage-routing.
+#
+# Deployment of the function + migration is handled by the existing
+# clinops-deploy-edge-functions.yml and clinops-db-push.yml workflows on push
+# to main; this job only invokes already-deployed functions.
+#
+# Required repo secrets:
+#   SUPABASE_SERVICE_ROLE_KEY  — service-role JWT (already used by daily-availability-report.yml)
+#   SYNC_SECRET                — shared secret accepted by sync-metabase
+
+on:
+  schedule:
+    # 7:00 AM CDT (UTC-5) = 12:00 UTC year-round lower bound — always before
+    # the 13:00/14:00 UTC Slack window in both DST regimes.
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Single target date (YYYY-MM-DD). Blank = today + tomorrow (America/Chicago).'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run — compute without persisting a run.'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clinops-daily-coverage
+  cancel-in-progress: false
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_REF: bbquooftytwprllipcsb
+      SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+      TARGET_DATE: ${{ inputs.date }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - name: Sanity check — required secrets
+        run: |
+          if [ -z "$SERVICE_ROLE_KEY" ]; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY is not set."
+            exit 1
+          fi
+
+      - name: Sync Homebase (near-term shifts)
+        run: |
+          curl -fsSL -X POST \
+            -H "apikey: $SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/sync-homebase" \
+            --data '{}' || echo "::warning::sync-homebase call failed; continuing"
+          echo
+
+      - name: Sync Metabase (demand / utilization / appointments)
+        run: |
+          curl -fsSL -X POST \
+            -H "apikey: $SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "x-sync-secret: $SYNC_SECRET" \
+            -H "Content-Type: application/json" \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/sync-metabase" \
+            --data '{}' || echo "::warning::sync-metabase call failed; continuing"
+          echo
+
+      - name: Compute daily coverage routing
+        run: |
+          if [ -n "$TARGET_DATE" ]; then
+            BODY=$(printf '{"run_label":"scheduled_morning","dry_run":%s,"dates":["%s"]}' "${DRY_RUN:-false}" "$TARGET_DATE")
+          else
+            BODY=$(printf '{"run_label":"scheduled_morning","dry_run":%s}' "${DRY_RUN:-false}")
+          fi
+          curl -fsSL -X POST \
+            -H "apikey: $SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/compute-daily-coverage-routing" \
+            --data "$BODY"
+          echo

@@ -60,6 +60,13 @@ verify_jwt = false
 [functions.compute-coverage-recommendations]
 verify_jwt = false
 
+# Deterministic same-day / next-day coverage router. Invoked by the morning
+# compute job (clinops-daily-coverage.yml) and on-demand by
+# send-ops-dashboard-slack when no fresh run exists. Uses the service role
+# internally for all DB access.
+[functions.compute-daily-coverage-routing]
+verify_jwt = false
+
 [functions.handle-slack-interaction]
 verify_jwt = false
 

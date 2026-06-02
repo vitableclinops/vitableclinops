@@ -31,6 +31,8 @@ DEFAULT_FUNCTIONS=(
   "emit-shift-recommendations"
   "sync-homebase"
   "sync-jotform-submissions"
+  "compute-daily-coverage-routing"
+  "send-ops-dashboard-slack"
 )
 
 if [[ $# -eq 0 ]]; then
