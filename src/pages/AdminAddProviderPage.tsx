@@ -197,6 +197,32 @@ export default function AdminAddProviderPage() {
         auto_trigger: 'admin_add_provider',
       });
 
+      // Mirror to the ClinOps scheduling project's `providers` table so the
+      // Jotform matcher and unmatched-link search find this provider
+      // immediately (instead of waiting for the next roster sync). Best-effort:
+      // a failure here doesn't roll back the directory entry.
+      try {
+        const { error: syncErr } = await clinopsSupabase.functions.invoke(
+          'sync-directory-provider',
+          {
+            body: {
+              email: data.email,
+              name: data.fullName,
+              profession: data.providerType || null,
+              npi: data.npiNumber || null,
+              employment_type: data.employmentType || null,
+              employment_status: 'active',
+              source: 'directory',
+            },
+          },
+        );
+        if (syncErr) {
+          console.warn('sync-directory-provider failed:', syncErr.message);
+        }
+      } catch (err) {
+        console.warn('sync-directory-provider threw:', err);
+      }
+
       return { profileId: newProfile.id, tempPassword };
     },
     onSuccess: (data) => {
