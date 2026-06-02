@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  LayoutDashboard,
   User,
   ChevronDown,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ interface SchedulingSidebarProps {
   userName: string;
   userEmail: string;
   userAvatarUrl?: string;
+  showAdminDashboardLink?: boolean;
 }
 
 const items = [
@@ -35,10 +37,18 @@ const items = [
   { label: 'Declined Hours', icon: CalendarX, href: '/scheduling/workbench?tab=declined' },
 ];
 
-export function SchedulingSidebar({ userName, userEmail, userAvatarUrl }: SchedulingSidebarProps) {
+export function SchedulingSidebar({
+  userName,
+  userEmail,
+  userAvatarUrl,
+  showAdminDashboardLink = false,
+}: SchedulingSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const visibleItems = showAdminDashboardLink
+    ? [{ label: 'Admin Dashboard', icon: LayoutDashboard, href: '/admin' }, ...items]
+    : items;
 
   const initials = userName
     .split(' ')
@@ -78,7 +88,7 @@ export function SchedulingSidebar({ userName, userEmail, userAvatarUrl }: Schedu
         </div>
 
         <nav className="flex-1 px-2 py-4 space-y-1">
-          {items.map(item => {
+          {visibleItems.map(item => {
             const [path, query = ''] = item.href.split('?');
             const active =
               location.pathname === path &&

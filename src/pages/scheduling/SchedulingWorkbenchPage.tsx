@@ -263,7 +263,6 @@ export default function SchedulingWorkbenchPage({
       'publish',
       'declined',
       'audit',
-      ...(isMh ? [] : ['mental-health']),
     ];
     return allowed.includes(t ?? '') ? (t as string) : 'readiness';
   })();
@@ -917,16 +916,6 @@ export default function SchedulingWorkbenchPage({
           <TabsTrigger value="matching"><Users className="h-3.5 w-3.5 mr-1" />Matching</TabsTrigger>
           <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Gaps</TabsTrigger>
           <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
-          {!isMh && (
-            <TabsTrigger value="mental-health">
-              <Brain className="h-3.5 w-3.5 mr-1" />Mental Health
-              {mentalHealthRows.length + mentalHealthUnmatchedSubs.length > 0 && (
-                <span className="ml-1 text-xs">
-                  ({mentalHealthRows.length + mentalHealthUnmatchedSubs.length})
-                </span>
-              )}
-            </TabsTrigger>
-          )}
           <TabsTrigger value="declined">
             <CalendarX className="h-3.5 w-3.5 mr-1" />Declined Hours
             {(isMh ? scopedDeclined.length : allDeclinedRows.length) > 0 && (
@@ -946,8 +935,6 @@ export default function SchedulingWorkbenchPage({
             summary={scopedSummary}
             missingCount={scopedSummary.missingCount}
             submittedHours={scopedSubmittedAvailabilityHours}
-            mentalHealthCount={isMh ? 0 : mentalHealthRows.length}
-            mentalHealthAcceptedCount={isMh ? 0 : mentalHealthAcceptedRows.length}
             inboxNeedsReviewCount={scopedInboxActionable}
             unmatchedCount={scopedUnmatched.length}
             onReevaluate={reevaluateNow}
@@ -956,7 +943,6 @@ export default function SchedulingWorkbenchPage({
             onJumpToAvailability={jumpToAvailability}
             onJumpToMatching={() => onTopTabChange('matching')}
             onJumpToPublish={() => onTopTabChange('publish')}
-            onJumpToMentalHealth={() => (isMh ? undefined : onTopTabChange('mental-health'))}
           />
           <SopCard />
           {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
@@ -1433,54 +1419,6 @@ export default function SchedulingWorkbenchPage({
         </TabsContent>
           </Tabs>
         </TabsContent>
-
-        {/* ============ MENTAL HEALTH (only on main workbench) ============ */}
-        {!isMh && (
-        <TabsContent value="mental-health" className="mt-4 space-y-4">
-          <MentalHealthDashboard
-            month={month}
-            rows={mentalHealthRows}
-            unmatchedSubmissions={mentalHealthUnmatchedSubs}
-            acceptedRows={mentalHealthAcceptedRows}
-            declinedRows={mentalHealthDeclinedRows}
-            needsReviewRows={mentalHealthNeedsReviewRows}
-            summary={mentalHealthSummary}
-            shifts={mentalHealthFlatAccepted}
-            shiftsByProvider={shiftsByProvider}
-            isLoading={isLoading}
-            shiftsLoading={shiftsLoading}
-            onToggleShift={handleToggleShift}
-            onToggleProvider={handleToggleProvider}
-            onBulkShifts={(shifts, step, done) =>
-              bulkPerShift.mutate(
-                { shifts, step, done },
-                {
-                  onSuccess: () =>
-                    toast.success(
-                      `Marked ${shifts.length} mental health shift${shifts.length === 1 ? '' : 's'} ${
-                        done ? 'posted' : 'unposted'
-                      }`,
-                    ),
-                  onError: e => toast.error(`Bulk mark failed: ${(e as Error).message}`),
-                },
-              )
-            }
-            onResolve={(args) =>
-              resolveReview.mutate(args, {
-                onSuccess: () => {
-                  toast.success(`Marked ${args.decision} for ${args.provider_name}`);
-                  refetch();
-                  refetchShifts();
-                },
-                onError: e => toast.error(`Could not resolve: ${(e as Error).message}`),
-              })
-            }
-            isResolvePending={resolveReview.isPending}
-            auditByShift={auditByShift}
-            auditEntries={auditEntries}
-          />
-        </TabsContent>
-        )}
 
         {/* ============ DECLINED HOURS ============ */}
         <TabsContent value="declined" className="mt-4 space-y-4">
@@ -2349,7 +2287,7 @@ function NeedsReviewPanel({
             Needs review · {formatMonthLabel(month)}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Escalate to ClinOps lead. VA staff should not accept or decline these submissions.
+            Escalate to ClinOps lead. Scheduling team members should not accept or decline these submissions.
             The system could not safely decide because the submitted time or scheduling detail needs judgment.
           </p>
         </CardHeader>
@@ -3029,7 +2967,7 @@ function MissingSubmissionsPanel({
               Missing submissions · {formatMonthLabel(month)} · {sortedRows.length}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              VA can do this. These active providers have no Jotform availability for July.
+              Scheduler can do this. These active providers have no Jotform availability for July.
               Copy the BCC-ready email list, then send the reminder template below.
               {missingEmailCount > 0 && (
                 <span className="text-amber-700">
@@ -3646,8 +3584,6 @@ function ReadinessPanel({
   summary,
   missingCount,
   submittedHours,
-  mentalHealthCount,
-  mentalHealthAcceptedCount,
   inboxNeedsReviewCount,
   unmatchedCount,
   onReevaluate,
@@ -3656,7 +3592,6 @@ function ReadinessPanel({
   onJumpToAvailability,
   onJumpToMatching,
   onJumpToPublish,
-  onJumpToMentalHealth,
 }: {
   month: string;
   isLoading: boolean;
@@ -3671,8 +3606,6 @@ function ReadinessPanel({
   };
   missingCount: number;
   submittedHours: number;
-  mentalHealthCount: number;
-  mentalHealthAcceptedCount: number;
   inboxNeedsReviewCount: number;
   unmatchedCount: number;
   onReevaluate: () => void;
@@ -3681,7 +3614,6 @@ function ReadinessPanel({
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToMatching: () => void;
   onJumpToPublish: () => void;
-  onJumpToMentalHealth: () => void;
 }) {
   const coverageQ = useStateCoverage(month);
   const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
@@ -3727,7 +3659,7 @@ function ReadinessPanel({
   const hasPublishRows = summary.totalShifts > 0;
   const checksLoading = isLoading || coverageQ.isLoading;
 
-  type BlockerCategory = 'VA can do this' | 'Escalate to ClinOps lead' | 'System/admin issue';
+  type BlockerCategory = 'Scheduler can do this' | 'Escalate to ClinOps lead' | 'System/admin issue';
 
   type OperatorBlocker = {
     label: string;
@@ -3762,7 +3694,7 @@ function ReadinessPanel({
         detail: submittedHours > 0
           ? 'Availability exists, but the accepted shift list is not ready. Recalculate the schedule from the latest submissions.'
           : 'No usable July availability has been expanded yet.',
-        category: 'VA can do this',
+        category: 'Scheduler can do this',
         action: 'Recalculate schedule',
         onClick: onReevaluate,
       });
@@ -3771,7 +3703,7 @@ function ReadinessPanel({
       out.push({
         label: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
         detail: 'A provider name or email did not match the provider directory. If the match is obvious, fix it; otherwise escalate.',
-        category: 'VA can do this',
+        category: 'Scheduler can do this',
         action: 'Open Unmatched',
         onClick: () => onJumpToAvailability('unmatched'),
       });
@@ -3798,7 +3730,7 @@ function ReadinessPanel({
       out.push({
         label: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing July availability`,
         detail: 'These active providers have not submitted July availability. Send reminders before publishing so staff can capture any last covered hours.',
-        category: 'VA can do this',
+        category: 'Scheduler can do this',
         action: 'Open Missing',
         onClick: () => onJumpToAvailability('missing'),
       });
@@ -3851,7 +3783,7 @@ function ReadinessPanel({
         blocker: 'Accepted shift list is not ready yet',
         nextAction: 'Recalculate schedule from latest submissions',
         nextActionJump: onReevaluate,
-        nextCategory: 'VA can do this',
+        nextCategory: 'Scheduler can do this',
         nextDisabled: isReevaluating,
       };
     }
@@ -3860,7 +3792,7 @@ function ReadinessPanel({
         blocker: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
         nextAction: 'Fix unmatched submissions',
         nextActionJump: () => onJumpToAvailability('unmatched'),
-        nextCategory: 'VA can do this',
+        nextCategory: 'Scheduler can do this',
       };
     }
     if (reviewCount > 0) {
@@ -3884,7 +3816,7 @@ function ReadinessPanel({
         blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing July availability`,
         nextAction: 'Send missing availability reminders',
         nextActionJump: () => onJumpToAvailability('missing'),
-        nextCategory: 'VA can do this',
+        nextCategory: 'Scheduler can do this',
       };
     }
     if (homebasePct < 100) {
@@ -3892,7 +3824,7 @@ function ReadinessPanel({
         blocker: 'None blocking the build',
         nextAction: 'Post accepted shifts to Homebase',
         nextActionJump: onJumpToPublish,
-        nextCategory: 'VA can do this',
+        nextCategory: 'Scheduler can do this',
       };
     }
     if (ehrPct < 100) {
@@ -3900,14 +3832,14 @@ function ReadinessPanel({
         blocker: 'Homebase is done',
         nextAction: 'Post accepted shifts to EHR',
         nextActionJump: onJumpToPublish,
-        nextCategory: 'VA can do this',
+        nextCategory: 'Scheduler can do this',
       };
     }
     return {
       blocker: `None - ${formatMonthLabel(month)} is fully published`,
       nextAction: 'No action needed - July schedule is publish-complete',
       nextActionJump: onJumpToPublish,
-      nextCategory: 'VA can do this',
+      nextCategory: 'Scheduler can do this',
     };
   }, [
     month,
@@ -4009,23 +3941,11 @@ function ReadinessPanel({
         onClick: onJumpToCoverage,
       });
     }
-    if (mentalHealthCount > 0 && mentalHealthAcceptedCount < mentalHealthCount) {
-      out.push({
-        label: 'Mental health is tracked separately',
-        detail: `${mentalHealthAcceptedCount}/${mentalHealthCount} MH providers have accepted availability.`,
-        category: 'VA can do this',
-        action: 'Open Mental Health',
-        onClick: onJumpToMentalHealth,
-      });
-    }
     return out;
   }, [
     criticalGapStates.length,
     watchGapStates.length,
-    mentalHealthCount,
-    mentalHealthAcceptedCount,
     onJumpToCoverage,
-    onJumpToMentalHealth,
   ]);
 
   const lastUpdated = useMemo(() => {
@@ -4162,34 +4082,6 @@ function ReadinessPanel({
           </CardContent>
         </Card>
 
-        {(mentalHealthCount > 0 || mentalHealthAcceptedCount > 0) && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Brain className="h-4 w-4 text-violet-500" />
-              Mental health schedule
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">
-              {mentalHealthAcceptedCount}/{mentalHealthCount}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              MH coaches / LPCs with an accepted submission this month. Staffed separately
-              from telehealth.
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-3"
-              onClick={onJumpToMentalHealth}
-            >
-              Open Mental Health
-              <ArrowRight className="h-3.5 w-3.5 ml-1" />
-            </Button>
-          </CardContent>
-        </Card>
-        )}
       </div>
 
       <div className="text-xs text-muted-foreground">
@@ -4729,7 +4621,7 @@ function CoverageGapsPanel({
       return {
         label: 'Extra',
         className: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
-        action: 'Extra hours accepted. No VA action needed.',
+        action: 'Extra hours accepted. No scheduler action needed.',
       };
     }
     if (row.needed > 0 && row.pct_filled < 60) {
@@ -4749,7 +4641,7 @@ function CoverageGapsPanel({
     return {
       label: 'OK',
       className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
-      action: 'Covered. No VA action needed.',
+      action: 'Covered. No scheduler action needed.',
     };
   };
 
@@ -4760,7 +4652,7 @@ function CoverageGapsPanel({
           State coverage guidance · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          This tells VA staff whether publishing can continue. The system intentionally schedules
+          This tells the scheduling team whether publishing can continue. The system intentionally schedules
           extra hours above historical usage so July access does not stay too thin.
         </p>
       </CardHeader>
@@ -4795,7 +4687,7 @@ function CoverageGapsPanel({
               <TableHead className="text-right">Coverage</TableHead>
               <TableHead className="text-right">Licensed providers</TableHead>
               <TableHead className="text-right">Missing availability</TableHead>
-              <TableHead>VA guidance</TableHead>
+              <TableHead>Scheduler guidance</TableHead>
               <TableHead>Recommended action</TableHead>
             </TableRow>
           </TableHeader>
