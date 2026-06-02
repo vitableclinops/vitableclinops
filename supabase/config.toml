@@ -77,3 +77,9 @@ verify_jwt = false
 # internally.
 [functions.sync-jotform-submissions]
 verify_jwt = false
+
+# Invoked from the Add Provider flow (admin UI) to mirror new directory
+# entries into the ClinOps providers table so Jotform submissions match
+# immediately. Uses the service role internally.
+[functions.sync-directory-provider]
+verify_jwt = false
