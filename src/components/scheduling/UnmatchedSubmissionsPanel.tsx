@@ -74,7 +74,7 @@ const emailFromSubmission = (s: UnmatchedSubmission): string | null => {
 
 export function UnmatchedSubmissionsPanel() {
   const { data: rows = [], isLoading } = useUnmatchedSubmissions();
-  const [linkTarget, setLinkTarget] = useState<UnmatchedSubmission | null>(null);
+  const [linkTarget, setLinkTarget] = useState<UnmatchedSubmission[] | null>(null);
   const [dismissTarget, setDismissTarget] = useState<UnmatchedSubmission | null>(null);
 
   if (isLoading) {
@@ -87,6 +87,8 @@ export function UnmatchedSubmissionsPanel() {
       </Card>
     );
   }
+
+  const groups = useMemo(() => groupByProvider(rows), [rows]);
 
   if (rows.length === 0) {
     return (
@@ -106,81 +108,93 @@ export function UnmatchedSubmissionsPanel() {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <AlertCircle className="h-4 w-4 text-amber-600" />
-            Unmatched Jotform submissions ({rows.length})
+            Unmatched Jotform submissions ({rows.length} across {groups.length} provider
+            {groups.length === 1 ? '' : 's'})
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            These submissions landed in the database but couldn't be matched to a provider
-            via email or fuzzy name match. They're invisible to the evaluator and Workbench
-            until you link them. Most common cause: the provider wasn't in the{' '}
-            <code>providers</code> table yet when they submitted. Link to the right
-            provider (and we'll re-evaluate that month immediately), or dismiss if it was a
-            test / spam.
+            Grouped by submitter (email when available, otherwise name). Link the whole
+            group to the right provider in one shot, or link/dismiss individual rows below.
           </p>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Submission name / email</TableHead>
-                <TableHead>For month</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map(r => {
-                const email = emailFromSubmission(r);
-                return (
-                  <TableRow key={r.id}>
-                    <TableCell>
-                      <div className="font-medium">{r.provider_name || '(no name)'}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {email ?? <span className="italic">no email in submission</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-900">
-                        {formatMonthShort(r.target_month)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      <div>{formatRelative(r.submitted_at)}</div>
-                      <div className="text-[10px] opacity-70">
-                        {new Date(r.submitted_at).toLocaleDateString()}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7"
-                          onClick={() => setLinkTarget(r)}
-                        >
-                          <LinkIcon className="h-3 w-3 mr-1" />
-                          Link
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-red-700"
-                          onClick={() => setDismissTarget(r)}
-                        >
-                          <Trash2 className="h-3 w-3 mr-1" />
-                          Dismiss
-                        </Button>
-                      </div>
-                    </TableCell>
+        <CardContent className="p-0 divide-y">
+          {groups.map(g => (
+            <div key={g.key} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="min-w-0">
+                  <div className="font-medium text-sm truncate">
+                    {g.displayName || '(no name)'}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {g.email ?? <span className="italic">no email in submission</span>}
+                    {' · '}
+                    {g.submissions.length} submission{g.submissions.length === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-7 shrink-0"
+                  onClick={() => setLinkTarget(g.submissions)}
+                >
+                  <LinkIcon className="h-3 w-3 mr-1" />
+                  Link {g.submissions.length === 1 ? '' : `all ${g.submissions.length}`}
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="h-8">For month</TableHead>
+                    <TableHead className="h-8">Submitted</TableHead>
+                    <TableHead className="h-8 text-right">Action</TableHead>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                </TableHeader>
+                <TableBody>
+                  {g.submissions.map(r => (
+                    <TableRow key={r.id}>
+                      <TableCell>
+                        <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-900">
+                          {formatMonthShort(r.target_month)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        <div>{formatRelative(r.submitted_at)}</div>
+                        <div className="text-[10px] opacity-70">
+                          {new Date(r.submitted_at).toLocaleDateString()}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7"
+                            onClick={() => setLinkTarget([r])}
+                          >
+                            <LinkIcon className="h-3 w-3 mr-1" />
+                            Link
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-red-700"
+                            onClick={() => setDismissTarget(r)}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Dismiss
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ))}
         </CardContent>
       </Card>
 
       {linkTarget && (
-        <LinkDialog submission={linkTarget} onClose={() => setLinkTarget(null)} />
+        <LinkDialog submissions={linkTarget} onClose={() => setLinkTarget(null)} />
       )}
       {dismissTarget && (
         <DismissDialog submission={dismissTarget} onClose={() => setDismissTarget(null)} />
@@ -189,39 +203,89 @@ export function UnmatchedSubmissionsPanel() {
   );
 }
 
+type ProviderGroup = {
+  key: string;
+  displayName: string;
+  email: string | null;
+  submissions: UnmatchedSubmission[];
+};
+
+function groupByProvider(rows: UnmatchedSubmission[]): ProviderGroup[] {
+  const map = new Map<string, ProviderGroup>();
+  for (const r of rows) {
+    const email = emailFromSubmission(r);
+    const nameKey = (r.provider_name || '').trim().toLowerCase();
+    const key = email?.toLowerCase() || nameKey || `__row_${r.id}`;
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        key,
+        displayName: r.provider_name || '',
+        email,
+        submissions: [],
+      };
+      map.set(key, g);
+    }
+    if (!g.displayName && r.provider_name) g.displayName = r.provider_name;
+    if (!g.email && email) g.email = email;
+    g.submissions.push(r);
+  }
+  for (const g of map.values()) {
+    g.submissions.sort((a, b) => a.target_month.localeCompare(b.target_month));
+  }
+  return Array.from(map.values()).sort(
+    (a, b) =>
+      b.submissions.length - a.submissions.length ||
+      (a.displayName || a.email || '').localeCompare(b.displayName || b.email || ''),
+  );
+}
+
 function LinkDialog({
-  submission,
+  submissions,
   onClose,
 }: {
-  submission: UnmatchedSubmission;
+  submissions: UnmatchedSubmission[];
   onClose: () => void;
 }) {
-  const [query, setQuery] = useState(submission.provider_name || '');
+  const first = submissions[0];
+  const [query, setQuery] = useState(first?.provider_name || '');
   const [selected, setSelected] = useState<ProviderSearchHit | null>(null);
   const { data: matches = [], isFetching } = useProviderSearch(query);
   const link = useLinkUnmatchedSubmission();
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
-  const email = useMemo(() => emailFromSubmission(submission), [submission]);
+  const email = useMemo(() => emailFromSubmission(first), [first]);
 
-  const handle = () => {
+  const handle = async () => {
     if (!selected) return;
-    link.mutate(
-      {
-        submission_id: submission.id,
-        provider_id: selected.id,
-        provider_name: selected.name,
-        target_month: submission.target_month,
-      },
-      {
-        onSuccess: () => {
-          toast.success(
-            `Linked to ${selected.name} · re-evaluating ${formatMonthShort(submission.target_month)}`,
-          );
-          onClose();
-        },
-        onError: e => toast.error(`Link failed: ${(e as Error).message}`),
-      },
-    );
+    setProgress({ done: 0, total: submissions.length });
+    let ok = 0;
+    let failed = 0;
+    for (const s of submissions) {
+      try {
+        await link.mutateAsync({
+          submission_id: s.id,
+          provider_id: selected.id,
+          provider_name: selected.name,
+          target_month: s.target_month,
+        });
+        ok++;
+      } catch (e) {
+        failed++;
+        toast.error(
+          `Failed ${formatMonthShort(s.target_month)}: ${(e as Error).message}`,
+        );
+      }
+      setProgress({ done: ok + failed, total: submissions.length });
+    }
+    if (ok > 0) {
+      toast.success(
+        `Linked ${ok} submission${ok === 1 ? '' : 's'} to ${selected.name}` +
+          (failed > 0 ? ` · ${failed} failed` : ''),
+      );
+    }
+    if (failed === 0) onClose();
+    setProgress(null);
   };
 
   return (
@@ -230,11 +294,17 @@ function LinkDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="h-4 w-4 text-blue-600" />
-            Link unmatched submission
+            {submissions.length > 1
+              ? `Link ${submissions.length} unmatched submissions`
+              : 'Link unmatched submission'}
           </DialogTitle>
           <DialogDescription>
-            <span className="font-medium">{submission.provider_name || '(no name)'}</span>
-            {email && <> · {email}</>} · submitted for {formatMonthShort(submission.target_month)}
+            <span className="font-medium">{first?.provider_name || '(no name)'}</span>
+            {email && <> · {email}</>}
+            {' · '}
+            {submissions.length === 1
+              ? `submitted for ${formatMonthShort(first.target_month)}`
+              : `months: ${submissions.map(s => formatMonthShort(s.target_month)).join(', ')}`}
           </DialogDescription>
         </DialogHeader>
 
@@ -295,7 +365,11 @@ function LinkDialog({
             ) : (
               <LinkIcon className="h-4 w-4 mr-1" />
             )}
-            Link & re-evaluate
+            {progress
+              ? `Linking ${progress.done}/${progress.total}…`
+              : submissions.length > 1
+                ? `Link all ${submissions.length} & re-evaluate`
+                : 'Link & re-evaluate'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -8,7 +8,8 @@ export type ProviderType =
   | 'registered_nurse'      // RN - Nursing license, no prescriptive authority
   | 'physician'             // MD/DO - Full independent practice
   | 'licensed_counselor'    // LPC - Mental health licensure
-  | 'mental_health_coach';  // Unlicensed - compliance only, no licensure
+  | 'mental_health_coach'   // Unlicensed - compliance only, no licensure
+  | 'health_coach';         // Unlicensed - general health coaching, no licensure
 
 export const PROVIDER_TYPE_CONFIG: Record<ProviderType, {
   label: string;
@@ -69,6 +70,16 @@ export const PROVIDER_TYPE_CONFIG: Record<ProviderType, {
     requiresPrescriptiveAuthority: false,
     licenseTypes: [],
     description: 'Unlicensed mental health coach - compliance requirements only',
+  },
+  health_coach: {
+    label: 'Health Coach',
+    shortLabel: 'Health Coach',
+    requiresLicensure: false,
+    requiresNPI: false,
+    requiresCollaborativeAgreement: false,
+    requiresPrescriptiveAuthority: false,
+    licenseTypes: [],
+    description: 'Unlicensed health coach - compliance requirements only',
   },
 };
 
