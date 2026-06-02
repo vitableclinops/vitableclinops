@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
+import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Button } from '@/components/ui/button';
