@@ -35,6 +35,11 @@ on:
         required: false
         type: boolean
         default: false
+      slack_dry_run:
+        description: 'Also dry-run the Slack coverage payload after compute. Never posts.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -176,6 +181,45 @@ jobs:
               totals: r.totals,
               warnings: Array.isArray(r.warnings) ? r.warnings.length : 0,
             })),
+          };
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+          echo
+
+      - name: Slack dry-run coverage payload
+        if: ${{ inputs.slack_dry_run == true || inputs.slack_dry_run == 'true' }}
+        run: |
+          if [ -n "$TARGET_DATE" ]; then
+            BODY=$(printf '{"dry_run":true,"date":"%s"}' "$TARGET_DATE")
+          else
+            BODY='{"dry_run":true}'
+          fi
+          RESP_FILE="$(mktemp)"
+          curl -fsSL -o "$RESP_FILE" -X POST \
+            -H "apikey: $SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/send-ops-dashboard-slack" \
+            --data "$BODY"
+          node - "$RESP_FILE" <<'NODE'
+          const fs = require('fs');
+          const path = process.argv[2];
+          const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (data.success !== true || data.dry_run !== true) {
+            console.error(JSON.stringify(data, null, 2));
+            process.exit(1);
+          }
+          const summary = {
+            success: data.success,
+            dry_run: data.dry_run,
+            date: data.date,
+            demand_source: data.demand_source,
+            booked_source: data.booked_source,
+            counts: data.counts,
+            attention_count: data.attention_count,
+            block_count: Array.isArray(data.blocks) ? data.blocks.length : 0,
+            thread_groups: Array.isArray(data.thread) ? data.thread.length : 0,
+            text: data.text,
           };
           console.log(JSON.stringify(summary, null, 2));
           NODE
