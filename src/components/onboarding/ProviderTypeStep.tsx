@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { Check, Stethoscope, Heart, Brain, UserCheck, Smile } from 'lucide-react';
+import { Check, Stethoscope, Heart, Brain, UserCheck, Smile, Sparkles } from 'lucide-react';
 import { PROVIDER_TYPE_CONFIG, type ProviderType } from '@/types';
 
 interface ProviderTypeStepProps {
@@ -16,6 +16,7 @@ const typeIcons: Record<ProviderType, React.ComponentType<{ className?: string }
   physician: UserCheck,
   licensed_counselor: Brain,
   mental_health_coach: Smile,
+  health_coach: Sparkles,
 };
 
 export function ProviderTypeStep({ selectedType, onSelect, mode }: ProviderTypeStepProps) {
