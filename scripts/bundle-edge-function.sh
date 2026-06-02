@@ -50,12 +50,14 @@ mkdir -p "$OUT_DIR"
 #   availabilityOverrides (no deps; types + AVAILABILITY_OVERRIDES)
 #   availabilityValidation (depends on the two above)
 #   submissionTimeline    (depends on availabilityValidation)
+#   providerPriority      (no deps; evaluator provider ordering)
 #   <entrypoint>
 SHARED_FILES=(
   "$SHARED_DIR/nameNormalization.ts"
   "$SHARED_DIR/availabilityOverrides.ts"
   "$SHARED_DIR/availabilityValidation.ts"
   "$SHARED_DIR/submissionTimeline.ts"
+  "$SHARED_DIR/providerPriority.ts"
 )
 
 strip_local_imports() {

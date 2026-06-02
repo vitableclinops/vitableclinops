@@ -3,6 +3,8 @@ import {
   buildSubmissionTimeline,
   buildShiftRecommendationRows,
   isScarceCoverageSlot,
+  LONG_SHIFT_BREAK_POLICY,
+  PROVIDER_MEETING_BLACKOUT_WINDOW,
   TELEHEALTH_FORECAST_KINDS,
   type ParsedShiftsBlob,
   type SubmissionRow,
@@ -237,6 +239,132 @@ describe('buildShiftRecommendationRows', () => {
   });
 });
 
+describe('scheduling-layer break and blackout rules', () => {
+  it('turns a 9 AM-9 PM shift into 11 schedulable hours with a mandatory 1-hour break', () => {
+    const submission = oneOffSubmission('sub-long', '06-23-2026', '9:00 AM', '9:00 PM');
+    const validation = buildSubmissionTimeline(
+      [submission],
+      { name: 'Brittany DirectShifts' },
+      FIXTURE_TARGET_MONTH,
+    );
+
+    expect(validation.summary.final_approvable_hours).toBe(11);
+    expect(validation.summary.hours_removed_for_long_shift_breaks).toBe(1);
+    expect(validation.schedulingAdjustments.longShiftBreaks).toHaveLength(1);
+    expect(validation.schedulingAdjustments.longShiftBreaks[0]).toMatchObject({
+      policy: LONG_SHIFT_BREAK_POLICY,
+      originalShiftHours: 12,
+      scheduledHoursAfterBreak: 11,
+      startMin: 14 * 60 + 30,
+      endMin: 15 * 60 + 30,
+    });
+    expect(serializeTimeline(validation.timeline)).toEqual([
+      { date: '2026-06-23', startMin: 540, endMin: 870, kind: 'one_off', submissionId: 'sub-long' },
+      { date: '2026-06-23', startMin: 930, endMin: 1260, kind: 'one_off', submissionId: 'sub-long' },
+    ]);
+
+    const rows = buildShiftRecommendationRows({
+      providerId: 'p-long',
+      providerName: 'Brittany DirectShifts',
+      targetMonth: FIXTURE_TARGET_MONTH,
+      timeline: validation.timeline,
+      forecastTimeline: validation.forecastTimeline,
+      declinedHours: 0,
+      declineAll: false,
+      allocations: [{ state: 'PA', hours: 11 }],
+      decisionRunId: 'run-long',
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.every(row => row.recommendation === 'publish')).toBe(true);
+    expect(rows.every(row => row.hours < 12)).toBe(true);
+    expect(rows[0].recommendation_reason).toContain('Mandatory 1-hour break applied (14:30-15:30 ET)');
+  });
+
+  it('removes the June 24 provider meeting hour from overlapping availability', () => {
+    const submission = oneOffSubmission('sub-meeting', '06-24-2026', '9:00 AM', '5:00 PM');
+    const validation = buildSubmissionTimeline(
+      [submission],
+      { name: 'Meeting Provider' },
+      FIXTURE_TARGET_MONTH,
+    );
+
+    expect(validation.summary.final_approvable_hours).toBe(7);
+    expect(validation.summary.hours_removed_for_provider_meeting_blackouts).toBe(1);
+    expect(validation.schedulingAdjustments.providerMeetingBlackouts).toHaveLength(1);
+    expect(validation.schedulingAdjustments.providerMeetingBlackouts[0]).toMatchObject({
+      blackoutWindow: PROVIDER_MEETING_BLACKOUT_WINDOW,
+      startMin: 720,
+      endMin: 780,
+      hoursRemoved: 1,
+    });
+    expect(serializeTimeline(validation.timeline)).toEqual([
+      { date: '2026-06-24', startMin: 540, endMin: 720, kind: 'one_off', submissionId: 'sub-meeting' },
+      { date: '2026-06-24', startMin: 780, endMin: 1020, kind: 'one_off', submissionId: 'sub-meeting' },
+    ]);
+  });
+
+  it('handles a 12-hour shift on the provider meeting date without emitting continuous 12-hour work', () => {
+    const submission = oneOffSubmission('sub-both', '06-24-2026', '9:00 AM', '9:00 PM');
+    const validation = buildSubmissionTimeline(
+      [submission],
+      { name: 'Brittany DirectShifts' },
+      FIXTURE_TARGET_MONTH,
+    );
+
+    expect(validation.summary.final_approvable_hours).toBe(11);
+    expect(validation.summary.hours_removed_for_provider_meeting_blackouts).toBe(1);
+    expect(validation.schedulingAdjustments.providerMeetingBlackouts).toHaveLength(1);
+    expect(validation.schedulingAdjustments.longShiftBreaks).toHaveLength(0);
+    expect(validation.timeline.every(slot => (slot.endMin - slot.startMin) / 60 < 12)).toBe(true);
+    expect(serializeTimeline(validation.timeline)).toEqual([
+      { date: '2026-06-24', startMin: 540, endMin: 720, kind: 'one_off', submissionId: 'sub-both' },
+      { date: '2026-06-24', startMin: 780, endMin: 1260, kind: 'one_off', submissionId: 'sub-both' },
+    ]);
+
+    const rows = buildShiftRecommendationRows({
+      providerId: 'p-brittany',
+      providerName: 'Brittany DirectShifts',
+      targetMonth: FIXTURE_TARGET_MONTH,
+      timeline: validation.timeline,
+      forecastTimeline: validation.forecastTimeline,
+      declinedHours: 0,
+      declineAll: false,
+      allocations: [{ state: 'PA', hours: 11 }],
+      decisionRunId: 'run-both',
+    });
+    expect(rows.every(row => row.recommendation === 'publish')).toBe(true);
+    expect(rows.every(row => row.hours < 12)).toBe(true);
+    expect(rows[0].recommendation_reason).toContain('Provider meeting blackout removed 12:00-13:00 ET');
+  });
+
+  it('does not emit a continuous 12-hour publishable shift', () => {
+    const submission = oneOffSubmission('sub-no-12h-row', '06-23-2026', '9:00 AM', '9:00 PM');
+    const validation = buildSubmissionTimeline(
+      [submission],
+      { name: 'No Continuous Shift Provider' },
+      FIXTURE_TARGET_MONTH,
+    );
+    const rows = buildShiftRecommendationRows({
+      providerId: 'p-no-12h-row',
+      providerName: 'No Continuous Shift Provider',
+      targetMonth: FIXTURE_TARGET_MONTH,
+      timeline: validation.timeline,
+      forecastTimeline: validation.forecastTimeline,
+      declinedHours: 0,
+      declineAll: false,
+      allocations: [{ state: 'PA', hours: 11 }],
+      decisionRunId: 'run-no-12h-row',
+    });
+
+    expect(rows).not.toContainEqual(expect.objectContaining({
+      recommendation: 'publish',
+      start_min: 540,
+      end_min: 1260,
+    }));
+    expect(rows.filter(row => row.recommendation === 'publish').every(row => row.hours < 12)).toBe(true);
+  });
+});
+
 describe('Evaluator/emitter parity (full pipeline)', () => {
   it('two passes (one simulating evaluator, one simulating emitter) produce the same shift_recommendation rows', () => {
     // First call: "evaluator" — runs validation, decides accepted/declined.
@@ -428,6 +556,23 @@ describe('needs_review scenarios (no auto-decision)', () => {
     expect(result.summary.final_approvable_hours).toBe(0);
   });
 });
+
+function oneOffSubmission(
+  id: string,
+  date: string,
+  start: string,
+  end: string,
+): SubmissionRow {
+  return {
+    id,
+    submitted_at: '2026-05-01T00:00:00Z',
+    parsed_shifts: {
+      one_off_virtual: JSON.stringify([
+        { Date: date, 'Start Time (ET)': start, 'End Time (ET)': end },
+      ]),
+    } as ParsedShiftsBlob,
+  };
+}
 
 function serializeTimeline(slots: { date: string; startMin: number; endMin: number; source: { kind: string; submissionId?: string } }[]) {
   return slots

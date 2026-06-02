@@ -1229,6 +1229,48 @@ export const TELEHEALTH_FORECAST_KINDS: IntervalKind[] = ['recurring', 'one_off'
 
 export type ShiftType = 'virtual_recurring' | 'virtual_oneoff' | 'in_home_clinic';
 
+export const LONG_SHIFT_BREAK_POLICY = 'mandatory_1_hour_break_for_12h_shift';
+export const PROVIDER_MEETING_BLACKOUT_WINDOW =
+  '2026-06-24T12:00:00-05:00/2026-06-24T13:00:00-05:00';
+const LONG_SHIFT_BREAK_MINUTES = 60;
+const LONG_SHIFT_BREAK_THRESHOLD_MINUTES = 12 * 60;
+const PROVIDER_MEETING_BLACKOUT_DATE = '2026-06-24';
+const PROVIDER_MEETING_BLACKOUT_START_MIN = 12 * 60;
+const PROVIDER_MEETING_BLACKOUT_END_MIN = 13 * 60;
+const PROVIDER_MEETING_BLACKOUT_REASON =
+  'Monthly provider meeting; do not schedule providers during this hour.';
+const LONG_SHIFT_BREAK_REASON =
+  'Provider submitted 12-hour availability; system added a required 1-hour break.';
+
+export type SchedulingAdjustmentType = 'long_shift_break' | 'provider_meeting_blackout';
+
+export interface SchedulingAdjustment {
+  type: SchedulingAdjustmentType;
+  date: string;
+  originalStartMin: number;
+  originalEndMin: number;
+  startMin: number;
+  endMin: number;
+  hoursRemoved: number;
+  reason: string;
+  policy?: string;
+  blackoutWindow?: string;
+  originalShiftHours?: number;
+  scheduledHoursAfterBreak?: number;
+}
+
+export interface SchedulingAdjustmentSummary {
+  all: SchedulingAdjustment[];
+  longShiftBreaks: SchedulingAdjustment[];
+  providerMeetingBlackouts: SchedulingAdjustment[];
+  hours_removed_for_long_shift_breaks: number;
+  hours_removed_for_provider_meeting_blackouts: number;
+}
+
+type AdjustedSlot = ExpandedSlot & {
+  schedulingAdjustments?: SchedulingAdjustment[];
+};
+
 export interface ShiftRecommendationRow {
   submission_id: string;
   provider_id: string;
@@ -1252,6 +1294,10 @@ export interface BuildTimelineOptions {
 }
 
 export interface BuildTimelineResult extends NormalizationResult {
+  summary: NormalizationResult['summary'] & {
+    hours_removed_for_long_shift_breaks: number;
+    hours_removed_for_provider_meeting_blackouts: number;
+  };
   /** Subset of `timeline` filtered by forecastKinds (default = telehealth). */
   forecastTimeline: ExpandedSlot[];
   /** Subset of `outOfHoursTimeline` filtered by forecastKinds. In-home /
@@ -1260,6 +1306,8 @@ export interface BuildTimelineResult extends NormalizationResult {
   forecastOutOfHoursTimeline: ExpandedSlot[];
   /** Subset of `policyCutTimeline` filtered by forecastKinds. */
   forecastPolicyCutTimeline: ExpandedSlot[];
+  /** Mandatory scheduling-layer removals applied after availability validation. */
+  schedulingAdjustments: SchedulingAdjustmentSummary;
 }
 
 /**
@@ -1294,16 +1342,39 @@ export function buildSubmissionTimeline(
     config: options.config,
   };
 
-  const result = normalizeProviderAvailability(input);
   const forecastSet = new Set(forecastKinds);
-  const forecastTimeline = result.timeline.filter(s => forecastSet.has(s.source.kind));
+  const result = normalizeProviderAvailability(input);
+  const adjusted = applySchedulingRules(result.timeline);
+  const summary = {
+    ...result.summary,
+    total_normalized_timeline_hours: round2(sumHours(adjusted.timeline)),
+    final_approvable_hours: round2(adjusted.timeline.reduce(
+      (sum, s) => forecastSet.has(s.source.kind)
+        ? sum + (s.endMin - s.startMin) / 60
+        : sum,
+      0,
+    )),
+    hours_removed_for_long_shift_breaks:
+      adjusted.summary.hours_removed_for_long_shift_breaks,
+    hours_removed_for_provider_meeting_blackouts:
+      adjusted.summary.hours_removed_for_provider_meeting_blackouts,
+  };
+  const forecastTimeline = adjusted.timeline.filter(s => forecastSet.has(s.source.kind));
   const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
     forecastSet.has(s.source.kind),
   );
   const forecastPolicyCutTimeline = result.policyCutTimeline.filter(s =>
     forecastSet.has(s.source.kind),
   );
-  return { ...result, forecastTimeline, forecastOutOfHoursTimeline, forecastPolicyCutTimeline };
+  return {
+    ...result,
+    timeline: adjusted.timeline,
+    summary,
+    forecastTimeline,
+    forecastOutOfHoursTimeline,
+    forecastPolicyCutTimeline,
+    schedulingAdjustments: adjusted.summary,
+  };
 }
 
 export function extractRawIntervalsFromParsedShifts(parsed: ParsedShiftsBlob | null): RawInterval[] {
@@ -1517,6 +1588,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
           : (args.unallocatedForecastPublishReason ?? 'Publish (no state allocation; review manually)');
       }
     }
+    reason = appendSchedulingAdjustmentReasons(reason, slot);
 
     return {
       submission_id: slot.source.submissionId ?? '',
@@ -1581,6 +1653,154 @@ export function kindToShiftType(kind: IntervalKind): ShiftType {
   return 'virtual_oneoff';
 }
 
+function applySchedulingRules(slots: ExpandedSlot[]): {
+  timeline: ExpandedSlot[];
+  summary: SchedulingAdjustmentSummary;
+} {
+  const longShiftBreaks: SchedulingAdjustment[] = [];
+  const providerMeetingBlackouts: SchedulingAdjustment[] = [];
+  const out: AdjustedSlot[] = [];
+
+  for (const slot of slots) {
+    const blackoutAdjusted = applyProviderMeetingBlackout(slot);
+    if (blackoutAdjusted.adjustment) {
+      providerMeetingBlackouts.push(blackoutAdjusted.adjustment);
+    }
+
+    for (const blackoutSlot of blackoutAdjusted.slots) {
+      const breakAdjusted = applyLongShiftBreak(blackoutSlot);
+      if (breakAdjusted.adjustment) {
+        longShiftBreaks.push(breakAdjusted.adjustment);
+      }
+      out.push(...breakAdjusted.slots);
+    }
+  }
+
+  const all = [...longShiftBreaks, ...providerMeetingBlackouts].sort((a, b) =>
+    a.date.localeCompare(b.date) ||
+    a.startMin - b.startMin ||
+    a.endMin - b.endMin ||
+    a.type.localeCompare(b.type),
+  );
+
+  return {
+    timeline: out.sort((a, b) =>
+      a.date.localeCompare(b.date) ||
+      a.startMin - b.startMin ||
+      a.endMin - b.endMin,
+    ),
+    summary: {
+      all,
+      longShiftBreaks,
+      providerMeetingBlackouts,
+      hours_removed_for_long_shift_breaks: round2(sumAdjustmentHours(longShiftBreaks)),
+      hours_removed_for_provider_meeting_blackouts: round2(sumAdjustmentHours(providerMeetingBlackouts)),
+    },
+  };
+}
+
+function applyProviderMeetingBlackout(slot: ExpandedSlot): {
+  slots: AdjustedSlot[];
+  adjustment: SchedulingAdjustment | null;
+} {
+  if (slot.date !== PROVIDER_MEETING_BLACKOUT_DATE) {
+    return { slots: [slot as AdjustedSlot], adjustment: null };
+  }
+  const overlapStart = Math.max(slot.startMin, PROVIDER_MEETING_BLACKOUT_START_MIN);
+  const overlapEnd = Math.min(slot.endMin, PROVIDER_MEETING_BLACKOUT_END_MIN);
+  if (overlapEnd <= overlapStart) {
+    return { slots: [slot as AdjustedSlot], adjustment: null };
+  }
+
+  const adjustment: SchedulingAdjustment = {
+    type: 'provider_meeting_blackout',
+    date: slot.date,
+    originalStartMin: slot.startMin,
+    originalEndMin: slot.endMin,
+    startMin: overlapStart,
+    endMin: overlapEnd,
+    hoursRemoved: round2((overlapEnd - overlapStart) / 60),
+    reason: PROVIDER_MEETING_BLACKOUT_REASON,
+    blackoutWindow: PROVIDER_MEETING_BLACKOUT_WINDOW,
+  };
+
+  const parts: AdjustedSlot[] = [];
+  if (slot.startMin < overlapStart) {
+    parts.push(withSchedulingAdjustment({ ...slot, endMin: overlapStart }, adjustment));
+  }
+  if (overlapEnd < slot.endMin) {
+    parts.push(withSchedulingAdjustment({ ...slot, startMin: overlapEnd }, adjustment));
+  }
+
+  return { slots: parts, adjustment };
+}
+
+function applyLongShiftBreak(slot: ExpandedSlot): {
+  slots: AdjustedSlot[];
+  adjustment: SchedulingAdjustment | null;
+} {
+  const durationMin = slot.endMin - slot.startMin;
+  if (durationMin < LONG_SHIFT_BREAK_THRESHOLD_MINUTES) {
+    return { slots: [slot as AdjustedSlot], adjustment: null };
+  }
+
+  const firstWorkMinutes = Math.floor(((durationMin - LONG_SHIFT_BREAK_MINUTES) / 2) / 30) * 30;
+  const breakStart = slot.startMin + firstWorkMinutes;
+  const breakEnd = breakStart + LONG_SHIFT_BREAK_MINUTES;
+  const adjustment: SchedulingAdjustment = {
+    type: 'long_shift_break',
+    date: slot.date,
+    originalStartMin: slot.startMin,
+    originalEndMin: slot.endMin,
+    startMin: breakStart,
+    endMin: breakEnd,
+    hoursRemoved: 1,
+    reason: LONG_SHIFT_BREAK_REASON,
+    policy: LONG_SHIFT_BREAK_POLICY,
+    originalShiftHours: round2(durationMin / 60),
+    scheduledHoursAfterBreak: round2((durationMin - LONG_SHIFT_BREAK_MINUTES) / 60),
+  };
+
+  const slots: AdjustedSlot[] = [];
+  if (slot.startMin < breakStart) {
+    slots.push(withSchedulingAdjustment({ ...slot, endMin: breakStart }, adjustment));
+  }
+  if (breakEnd < slot.endMin) {
+    slots.push(withSchedulingAdjustment({ ...slot, startMin: breakEnd }, adjustment));
+  }
+
+  return { slots, adjustment };
+}
+
+function withSchedulingAdjustment(slot: ExpandedSlot, adjustment: SchedulingAdjustment): AdjustedSlot {
+  const prior = (slot as AdjustedSlot).schedulingAdjustments ?? [];
+  return { ...slot, schedulingAdjustments: [...prior, adjustment] };
+}
+
+function appendSchedulingAdjustmentReasons(reason: string, slot: ExpandedSlot): string {
+  const additions = schedulingAdjustmentReasonLines(slot);
+  if (additions.length === 0) return reason;
+  return [reason, ...additions].join('; ');
+}
+
+function schedulingAdjustmentReasonLines(slot: ExpandedSlot): string[] {
+  const adjustments = (slot as AdjustedSlot).schedulingAdjustments ?? [];
+  const lines: string[] = [];
+  for (const adjustment of adjustments) {
+    if (adjustment.type === 'long_shift_break') {
+      lines.push(
+        `Mandatory 1-hour break applied (${formatClock24(adjustment.startMin)}-${formatClock24(adjustment.endMin)} ET); ` +
+        `${adjustment.scheduledHoursAfterBreak ?? 11} schedulable hours from the original ${adjustment.originalShiftHours ?? 12}-hour block`,
+      );
+    } else if (adjustment.type === 'provider_meeting_blackout') {
+      lines.push(
+        `Provider meeting blackout removed ${formatClock24(adjustment.startMin)}-${formatClock24(adjustment.endMin)} ET`,
+      );
+    }
+  }
+  return Array.from(new Set(lines));
+}
+
 // ─── Local widget helpers ────────────────────────────────────────────────
 
 function parseWidgetArray(raw: unknown): Record<string, string>[] {
@@ -1627,8 +1847,148 @@ function sumHours(slots: ExpandedSlot[]): number {
   return slots.reduce((s, x) => s + (x.endMin - x.startMin) / 60, 0);
 }
 
+function sumAdjustmentHours(adjustments: SchedulingAdjustment[]): number {
+  return adjustments.reduce((sum, adjustment) => sum + adjustment.hoursRemoved, 0);
+}
+
+function formatClock24(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+// === supabase/functions/_shared/providerPriority.ts ===
+export type ProviderPriorityKey =
+  | 'clinical_supervisor'
+  | 'vitable_internal'
+  | 'directshifts_brittany_priority'
+  | 'access_provider';
+
+export type ProviderPriority = {
+  key: ProviderPriorityKey;
+  rank: 0 | 1 | 2;
+  label: string;
+};
+
+export type ProviderPriorityProfile = {
+  name?: string | null;
+  profession?: string | null;
+  employment_type?: string | null;
+  source?: string | null;
+  shift_types?: string[] | null;
+};
+
+export const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPriority> = {
+  clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' },
+  vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Vitable internal' },
+  directshifts_brittany_priority: {
+    key: 'directshifts_brittany_priority',
+    rank: 2,
+    label: 'DirectShifts Brittany priority',
+  },
+  access_provider: { key: 'access_provider', rank: 2, label: 'Access provider' },
+};
+
+const DEFAULT_PROVIDER_PRIORITY = PROVIDER_PRIORITY_BY_KEY.vitable_internal;
+
+const normalizedProviderText = (profile: ProviderPriorityProfile | null | undefined) => {
+  if (!profile) return '';
+  const employmentType = (profile.employment_type ?? '').trim().toLowerCase();
+  const source = (profile.source ?? '').trim().toLowerCase();
+  const shiftTypes = Array.isArray(profile.shift_types) ? profile.shift_types : [];
+  return [
+    profile.name,
+    profile.profession,
+    employmentType,
+    source,
+    ...shiftTypes,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+export function isDirectShiftsProvider(profile: ProviderPriorityProfile | null | undefined): boolean {
+  if (!profile) return false;
+  const employmentType = (profile.employment_type ?? '').trim().toLowerCase();
+  const source = (profile.source ?? '').trim().toLowerCase();
+  const haystack = normalizedProviderText(profile);
+  return (
+    employmentType === 'agency' ||
+    source.includes('directshifts') ||
+    source.includes('direct shifts') ||
+    haystack.includes('directshifts') ||
+    haystack.includes('direct shifts') ||
+    haystack.includes('agency supplied')
+  );
+}
+
+export function isBrittanyDirectShiftsProvider(
+  profile: ProviderPriorityProfile | null | undefined,
+): boolean {
+  if (!profile || !isDirectShiftsProvider(profile)) return false;
+  const name = (profile.name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return name.split(/\s+/).includes('brittany');
+}
+
+export function providerPriorityFor(
+  profile: ProviderPriorityProfile | null | undefined,
+): ProviderPriority {
+  if (!profile) return DEFAULT_PROVIDER_PRIORITY;
+  const employmentType = (profile.employment_type ?? '').trim().toLowerCase();
+  const source = (profile.source ?? '').trim().toLowerCase();
+  const haystack = normalizedProviderText(profile);
+
+  if (
+    haystack.includes('clinical supervisor') ||
+    haystack.includes('clinical lead') ||
+    haystack.includes('supervisor')
+  ) {
+    return PROVIDER_PRIORITY_BY_KEY.clinical_supervisor;
+  }
+
+  if (isBrittanyDirectShiftsProvider(profile)) {
+    return PROVIDER_PRIORITY_BY_KEY.directshifts_brittany_priority;
+  }
+
+  if (
+    employmentType === 'agency' ||
+    source.includes('directshifts') ||
+    source.includes('direct shifts') ||
+    source.includes('access') ||
+    haystack.includes('directshifts') ||
+    haystack.includes('direct shifts') ||
+    haystack.includes('access provider') ||
+    haystack.includes('agency supplied')
+  ) {
+    return PROVIDER_PRIORITY_BY_KEY.access_provider;
+  }
+
+  return DEFAULT_PROVIDER_PRIORITY;
+}
+
+export function compareProviderAllocationPriority(
+  a: ProviderPriorityProfile | null | undefined,
+  b: ProviderPriorityProfile | null | undefined,
+): number {
+  const priorityA = providerPriorityFor(a);
+  const priorityB = providerPriorityFor(b);
+  if (priorityA.rank !== priorityB.rank) return priorityA.rank - priorityB.rank;
+
+  const bothDirectShifts = isDirectShiftsProvider(a) && isDirectShiftsProvider(b);
+  if (bothDirectShifts) {
+    const brittanyRankA = isBrittanyDirectShiftsProvider(a) ? 0 : 1;
+    const brittanyRankB = isBrittanyDirectShiftsProvider(b) ? 0 : 1;
+    if (brittanyRankA !== brittanyRankB) return brittanyRankA - brittanyRankB;
+  }
+
+  return 0;
 }
 // === supabase/functions/evaluate-schedule-submissions/index.ts ===
 /**
@@ -1889,61 +2249,6 @@ type ServiceLineDemandTarget = {
   monthly_hours_target: number | null;
 };
 
-type ProviderPriorityKey = 'clinical_supervisor' | 'vitable_internal' | 'access_provider';
-
-type ProviderPriority = {
-  key: ProviderPriorityKey;
-  rank: 0 | 1 | 2;
-  label: string;
-};
-
-const DEFAULT_PROVIDER_PRIORITY: ProviderPriority = {
-  key: 'vitable_internal',
-  rank: 1,
-  label: 'Vitable internal',
-};
-
-function providerPriorityFor(profile: ProviderProfile | null | undefined): ProviderPriority {
-  if (!profile) return DEFAULT_PROVIDER_PRIORITY;
-  const employmentType = (profile.employment_type ?? '').trim().toLowerCase();
-  const source = (profile.source ?? '').trim().toLowerCase();
-  const shiftTypes = Array.isArray(profile.shift_types) ? profile.shift_types : [];
-  const haystack = [
-    profile.name,
-    profile.profession,
-    employmentType,
-    source,
-    ...shiftTypes,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ');
-
-  if (
-    haystack.includes('clinical supervisor') ||
-    haystack.includes('clinical lead') ||
-    haystack.includes('supervisor')
-  ) {
-    return { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' };
-  }
-
-  if (
-    employmentType === 'agency' ||
-    source.includes('directshifts') ||
-    source.includes('direct shifts') ||
-    source.includes('access') ||
-    haystack.includes('directshifts') ||
-    haystack.includes('direct shifts') ||
-    haystack.includes('access provider') ||
-    haystack.includes('agency supplied')
-  ) {
-    return { key: 'access_provider', rank: 2, label: 'Access provider' };
-  }
-
-  return DEFAULT_PROVIDER_PRIORITY;
-}
-
 // Stable signature of a parsed_shifts blob for "did anything material change
 // vs the prior submission?" gating. We canonicalize the four widget arrays
 // into ordered tuple lists and serialize. JSON-string blobs are tolerated.
@@ -1981,6 +2286,52 @@ function slotHours(slot: ForecastSlot): number {
 
 function sumSlotHours(slots: ForecastSlot[]): number {
   return round2(slots.reduce((sum, slot) => sum + slotHours(slot), 0));
+}
+
+function pushProviderPriorityNotes(noteParts: string[], priority: ProviderPriority) {
+  noteParts.push(`provider_priority=${priority.key}`);
+  if (priority.key === 'directshifts_brittany_priority') {
+    noteParts.push(
+      'provider_priority_reason=Brittany is prioritized above other DirectShifts providers when eligible coverage is needed.',
+      'directshifts_priority_rank=1',
+    );
+  }
+}
+
+function schedulingAdjustmentNoteParts(validation: BuildTimelineResult): string[] {
+  const noteParts: string[] = [];
+  const longBreaks = validation.schedulingAdjustments.longShiftBreaks;
+  if (longBreaks.length > 0) {
+    const first = longBreaks[0];
+    noteParts.push(
+      'long_shift_break_policy=mandatory_1_hour_break_for_12h_shift',
+      `long_shift_break_count=${longBreaks.length}`,
+      `long_shift_break_hours=${round2(validation.schedulingAdjustments.hours_removed_for_long_shift_breaks)}h`,
+      `original_shift_hours=${first.originalShiftHours ?? round2((first.originalEndMin - first.originalStartMin) / 60)}`,
+      `scheduled_hours_after_break=${first.scheduledHoursAfterBreak ?? round2(((first.originalEndMin - first.originalStartMin) / 60) - 1)}`,
+      `break_start=${formatClock24(first.startMin)}`,
+      `break_end=${formatClock24(first.endMin)}`,
+      `break_reason=${first.reason}`,
+    );
+  }
+
+  const meetingBlackouts = validation.schedulingAdjustments.providerMeetingBlackouts;
+  if (meetingBlackouts.length > 0) {
+    const first = meetingBlackouts[0];
+    noteParts.push(
+      `provider_meeting_blackout=${first.blackoutWindow ?? '2026-06-24T12:00:00-05:00/2026-06-24T13:00:00-05:00'}`,
+      `provider_meeting_blackout_hours=${round2(validation.schedulingAdjustments.hours_removed_for_provider_meeting_blackouts)}`,
+      `provider_meeting_blackout_reason=${first.reason}`,
+    );
+  }
+
+  return noteParts;
+}
+
+function formatClock24(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 Deno.serve(async (req: Request) => {
@@ -2102,7 +2453,9 @@ Deno.serve(async (req: Request) => {
     // ── Preload provider roster metadata ───────────────────────────────
     // The evaluator uses the full license-state view for eligibility, then
     // orders providers by ClinOps priority: supervisors, Vitable internal,
-    // access providers. Within each tier, constrained providers still go first.
+    // then access providers. Brittany gets a tie-break only inside the
+    // DirectShifts access-provider pool. Within each tier, constrained
+    // providers still go first.
     const providerProfileByProvider = new Map<string, ProviderProfile>();
     const professionByProvider = new Map<string, string | null>();
     if (allEligibilityProviderIds.length > 0) {
@@ -2225,15 +2578,18 @@ Deno.serve(async (req: Request) => {
 
     // ── Sort groups by provider priority, then constrained coverage ─────
     // Clinical supervisors get first pass at demand, then Vitable internal
-    // providers, then access providers. Within each tier, process providers
-    // with the fewest licensed-states-with-demand first so single-state
-    // providers are not displaced by flexible providers with alternatives.
+    // providers, then access providers. Brittany gets first pass only against
+    // other DirectShifts providers. Within each tier, process providers with
+    // the fewest licensed-states-with-demand first so single-state providers
+    // are not displaced by flexible providers with alternatives.
     const groupKeysSorted = Array.from(submissionsByGroup.keys()).sort((a, b) => {
       const [provA, monthA] = a.split('|');
       const [provB, monthB] = b.split('|');
-      const priorityA = providerPriorityFor(providerProfileByProvider.get(provA));
-      const priorityB = providerPriorityFor(providerProfileByProvider.get(provB));
-      if (priorityA.rank !== priorityB.rank) return priorityA.rank - priorityB.rank;
+      const priorityOrder = compareProviderAllocationPriority(
+        providerProfileByProvider.get(provA),
+        providerProfileByProvider.get(provB),
+      );
+      if (priorityOrder !== 0) return priorityOrder;
       const licA = licensedStatesByProvider.get(provA) ?? new Set();
       const licB = licensedStatesByProvider.get(provB) ?? new Set();
       const countWithDemand = (states: Set<string>, month: string) =>
@@ -2393,19 +2749,21 @@ Deno.serve(async (req: Request) => {
             .filter(r => r.needs_manual_review)
             .map(r => `${r.day_of_week ?? r.date ?? ''} ${r.raw_time_range}: ${r.warnings.join('; ')}`)
             .slice(0, 8);
-          const notes = [
+          const reviewNoteParts = [
             `decision=needs_review`,
             `intervals_needing_review=${validation.summary.intervals_needing_review}`,
             `intervals_rejected=${validation.summary.intervals_rejected}`,
             `raw_hours=${validation.summary.raw_total_hours}h`,
             `forecastable_hours=${effectiveHours}h`,
             `reasons=${reviewReasons.join(' | ') || '(see validation_report)'}`,
-          ].join('; ');
+          ];
+          pushProviderPriorityNotes(reviewNoteParts, providerPriority);
+          reviewNoteParts.push(...schedulingAdjustmentNoteParts(validation));
           await writeDecision(supabase, latest.id, {
             status: 'needs_review',
             accepted_hours: 0,
             declined_hours: 0,
-            notes,
+            notes: reviewNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
           });
@@ -2427,6 +2785,7 @@ Deno.serve(async (req: Request) => {
           // Mark older as superseded; latest becomes 'declined' with note
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; group has 0 effective hours`);
           const noHoursNoteParts = ['No effective hours in any submission for this provider+month'];
+          pushProviderPriorityNotes(noHoursNoteParts, providerPriority);
           if (isMentalHealth) {
             noHoursNoteParts.push(
               `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
@@ -2439,6 +2798,7 @@ Deno.serve(async (req: Request) => {
           if (policyDeclined > 0) {
             noHoursNoteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);
           }
+          noHoursNoteParts.push(...schedulingAdjustmentNoteParts(validation));
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
@@ -2516,7 +2876,6 @@ Deno.serve(async (req: Request) => {
             `decision=${mhStatus} (mental_health_bypass)`,
             `service_line=${serviceLine}`,
             `service_line_label=${mentalHealthServiceLineLabel(serviceLine)}`,
-            `provider_priority=${providerPriority.key}`,
             `profession=${profession}`,
             `effective_hours=${effectiveHours}h`,
             `accepted_hours=${accepted}h`,
@@ -2527,6 +2886,7 @@ Deno.serve(async (req: Request) => {
             `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
             'note=MH uses service-line forecast; bypasses telehealth state allocator',
           ];
+          pushProviderPriorityNotes(mhNoteParts, providerPriority);
           if (targetHours == null) {
             mhNoteParts.push('service_line_forecast=missing');
           } else {
@@ -2541,6 +2901,7 @@ Deno.serve(async (req: Request) => {
           if (policyDeclined > 0) {
             mhNoteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);
           }
+          mhNoteParts.push(...schedulingAdjustmentNoteParts(validation));
           await writeDecision(supabase, latest.id, {
             status: mhStatus,
             accepted_hours: accepted,
@@ -2594,10 +2955,8 @@ Deno.serve(async (req: Request) => {
         if (licensed.size === 0) {
           counters.skipped_no_licensed_states++;
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
-          const noLicNoteParts = [
-            `provider_priority=${providerPriority.key}`,
-            'Provider has no allocation-eligible states on file',
-          ];
+          const noLicNoteParts = ['Provider has no allocation-eligible states on file'];
+          pushProviderPriorityNotes(noLicNoteParts, providerPriority);
           if (isPhysician) {
             noLicNoteParts.push('state_policy=physician_reserved_for_md_only');
           }
@@ -2607,6 +2966,7 @@ Deno.serve(async (req: Request) => {
           if (policyDeclined > 0) {
             noLicNoteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);
           }
+          noLicNoteParts.push(...schedulingAdjustmentNoteParts(validation));
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
@@ -2749,7 +3109,7 @@ Deno.serve(async (req: Request) => {
 
         const noteParts: string[] = [];
         noteParts.push(`group_size=${groupSubs.length}`);
-        noteParts.push(`provider_priority=${providerPriority.key}`);
+        pushProviderPriorityNotes(noteParts, providerPriority);
         if (isPhysician) {
           noteParts.push('state_policy=physician_reserved_for_md_only');
         }
@@ -2776,6 +3136,7 @@ Deno.serve(async (req: Request) => {
         if (policyDeclined > 0) {
           noteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);
         }
+        noteParts.push(...schedulingAdjustmentNoteParts(validation));
         if (scarceCoverageHours > 0) {
           noteParts.push('scarce_window_policy=protected_before_monthly_trim');
           noteParts.push(`scarce_window_hours=${scarceCoverageHours}h`);
@@ -2923,6 +3284,7 @@ async function writeDecision(
     source_submission_id: s.source.submissionId ?? null,
     correction_reason: s.source.correction_reason,
     validation_status: s.source.validation_status,
+    scheduling_adjustments: (s as { schedulingAdjustments?: unknown }).schedulingAdjustments ?? [],
   }));
   const validationWarnings = Array.from(new Set(
     decision.validation.report.flatMap(r => r.warnings),

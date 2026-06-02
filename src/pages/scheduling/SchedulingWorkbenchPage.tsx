@@ -240,6 +240,20 @@ const labelShiftType = (t: string | null | undefined) => {
   return SHIFT_TYPE_LABEL[t] ?? t;
 };
 
+const formatSchedulingShiftNote = (reason: string | null | undefined): string => {
+  const text = reason ?? '';
+  const notes: string[] = [];
+  const breakMatch = text.match(/Mandatory 1-hour break applied \(([^)]+)\)/);
+  if (breakMatch) {
+    notes.push(`Break added: ${breakMatch[1]}. Do not schedule through the break.`);
+  }
+  const meetingMatch = text.match(/Provider meeting blackout removed ([^;]+)/);
+  if (meetingMatch) {
+    notes.push(`Provider meeting blocked: ${meetingMatch[1]}.`);
+  }
+  return notes.join(' ');
+};
+
 const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : []);
 
 export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
@@ -1626,6 +1640,7 @@ function ShiftListInline({
           const hbDone = isHomebaseDone(s);
           const ehrDone = isEhrDone(s);
           const audit = auditByShift?.get(s.id);
+          const schedulingNote = formatSchedulingShiftNote(s.recommendation_reason);
           return (
             <TableRow key={s.id}>
               <TableCell className="text-xs">{formatDateLabel(s.shift_date)}</TableCell>
@@ -1635,7 +1650,14 @@ function ShiftListInline({
               <TableCell className="text-xs text-right tabular-nums">
                 {formatHours(s.hours)}
               </TableCell>
-              <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
+              <TableCell className="text-xs">
+                <div>{labelShiftType(s.shift_type)}</div>
+                {schedulingNote && (
+                  <div className="mt-1 max-w-[260px] text-[11px] leading-snug text-muted-foreground">
+                    {schedulingNote}
+                  </div>
+                )}
+              </TableCell>
               <TableCell className="text-center">
                 <PublishCheckbox
                   shift={s}
@@ -1740,6 +1762,8 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
     add('Accepted first because this provider is a clinical lead.');
   } else if (priority === 'vitable_internal') {
     add('Accepted before external access providers because this provider is on the Vitable team.');
+  } else if (priority === 'directshifts_brittany_priority') {
+    add('Brittany is prioritized above other DirectShifts providers when she is eligible for the needed coverage.');
   } else if (priority === 'access_provider') {
     add('Accepted after internal providers because this provider is an access coverage provider.');
   }
@@ -1756,6 +1780,24 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   }
   if (valueFromDecisionNote(raw, 'access_growth_buffer_policy')) {
     add('The system intentionally schedules extra hours so July access does not stay too thin.');
+  }
+  if (valueFromDecisionNote(raw, 'long_shift_break_policy')) {
+    const breakStart = valueFromDecisionNote(raw, 'break_start');
+    const breakEnd = valueFromDecisionNote(raw, 'break_end');
+    const originalHours = valueFromDecisionNote(raw, 'original_shift_hours');
+    const scheduledHours = valueFromDecisionNote(raw, 'scheduled_hours_after_break');
+    if (breakStart && breakEnd) {
+      add(`A required 1-hour break was added from ${breakStart}-${breakEnd} ET. Publish only the split work blocks.`);
+    } else {
+      add('A required 1-hour break was added to prevent a continuous 12-hour shift.');
+    }
+    if (originalHours && scheduledHours) {
+      add(`The provider submitted ${originalHours} hours; ${scheduledHours} hours are schedulable after the break.`);
+    }
+  }
+  if (valueFromDecisionNote(raw, 'provider_meeting_blackout')) {
+    const blackoutHours = valueFromDecisionNote(raw, 'provider_meeting_blackout_hours');
+    add(`The June 24 provider meeting from 12:00-1:00 PM ET was blocked from scheduling${blackoutHours ? ` (${blackoutHours} hour removed)` : ''}.`);
   }
   const accessBufferHours = valueFromDecisionNote(raw, 'access_buffer_hours');
   if (accessBufferHours) {
@@ -2118,6 +2160,7 @@ function PublishingQueue({
               const hbDone = isHomebaseDone(s);
               const ehrDone = isEhrDone(s);
               const audit = auditByShift?.get(s.id);
+              const schedulingNote = formatSchedulingShiftNote(s.recommendation_reason);
               return (
                 <TableRow key={s.id}>
                   <TableCell className="text-xs">{formatDateLabel(s.shift_date)}</TableCell>
@@ -2128,7 +2171,14 @@ function PublishingQueue({
                   <TableCell className="text-right text-xs tabular-nums">
                     {formatHours(s.hours)}
                   </TableCell>
-                  <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
+                  <TableCell className="text-xs">
+                    <div>{labelShiftType(s.shift_type)}</div>
+                    {schedulingNote && (
+                      <div className="mt-1 max-w-[280px] text-[11px] leading-snug text-muted-foreground">
+                        {schedulingNote}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-center">
                     <PublishCheckbox
                       shift={s}
@@ -4888,7 +4938,11 @@ type ProviderEligibilitySummary = {
   sources: Set<string>;
 };
 
-type ProviderPriorityKey = 'clinical_supervisor' | 'vitable_internal' | 'access_provider';
+type ProviderPriorityKey =
+  | 'clinical_supervisor'
+  | 'vitable_internal'
+  | 'directshifts_brittany_priority'
+  | 'access_provider';
 
 type ProviderPriority = {
   key: ProviderPriorityKey;
@@ -4899,6 +4953,11 @@ type ProviderPriority = {
 const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPriority> = {
   clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' },
   vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Vitable internal' },
+  directshifts_brittany_priority: {
+    key: 'directshifts_brittany_priority',
+    rank: 2,
+    label: 'DirectShifts Brittany priority',
+  },
   access_provider: { key: 'access_provider', rank: 2, label: 'Access provider' },
 };
 
@@ -4940,6 +4999,15 @@ function providerPriorityForRow(row: ProviderPublishView): ProviderPriority {
     haystack.includes('supervisor')
   ) {
     return PROVIDER_PRIORITY_BY_KEY.clinical_supervisor;
+  }
+  if (
+    (source.includes('directshifts') ||
+      source.includes('direct shifts') ||
+      haystack.includes('directshifts') ||
+      haystack.includes('direct shifts')) &&
+    row.provider_name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\s+/).includes('brittany')
+  ) {
+    return PROVIDER_PRIORITY_BY_KEY.directshifts_brittany_priority;
   }
   if (
     employmentType === 'agency' ||
@@ -5049,7 +5117,7 @@ function MatchingPanel({
         <p className="text-xs text-muted-foreground">
           Who is getting hours, why, and what was cut. The system matches providers to states
           where they can cover visits, then prioritizes clinical supervisors, Vitable internal
-          providers, and access providers.
+          providers, and access providers. Brittany is first only within eligible DirectShifts coverage.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -5145,6 +5213,12 @@ function MatchingPanel({
 function classifyReason(text: string): string {
   const t = text.toLowerCase();
   if (!t) return 'No reason recorded';
+  if (t.includes('provider_meeting_blackout') || t.includes('provider meeting blackout'))
+    return 'Provider meeting blocked';
+  if (t.includes('long_shift_break') || t.includes('mandatory 1-hour break'))
+    return 'Required shift break';
+  if (t.includes('directshifts_brittany_priority'))
+    return 'DirectShifts Brittany priority';
   if (t.includes('access_growth_buffer') || t.includes('access buffer'))
     return 'Extra access protection';
   if (t.includes('scarce_window') || t.includes('scarce coverage'))
