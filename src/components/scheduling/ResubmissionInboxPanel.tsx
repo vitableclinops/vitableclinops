@@ -112,10 +112,7 @@ const formatTime = (min: number): string => {
   const safe = ((min % 1440) + 1440) % 1440;
   const h24 = Math.floor(safe / 60);
   const m = safe % 60;
-  const ampm = h24 < 12 ? 'AM' : 'PM';
-  let h12 = h24 % 12;
-  if (h12 === 0) h12 = 12;
-  return m === 0 ? `${h12} ${ampm}` : `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  return `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 };
 
 const describeRange = (startMin: number, endMin: number) =>

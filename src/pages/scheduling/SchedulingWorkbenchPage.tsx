@@ -7,15 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -64,6 +55,10 @@ import {
   ShieldCheck,
   Users,
   HelpCircle,
+  CheckCircle2,
+  ClipboardList,
+  CircleDot,
+  PlayCircle,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
@@ -112,16 +107,13 @@ import {
   useMonthlyServiceLineDemand,
   useMonthlySlaRisk,
 } from '@/hooks/useMonthlySchedulingForecast';
-import { useStateCoverage } from '@/hooks/useStateCoverage';
+import { useStateCoverage, type StateCoverageRow } from '@/hooks/useStateCoverage';
 import {
   useSchedulingSourceAudit,
   type SourceAuditSection,
 } from '@/hooks/useSchedulingSourceAudit';
 import {
-  ACCESS_GROWTH_BUFFER_MULTIPLIER,
-  coverageStatusFor,
   isEligibleForState,
-  type CoverageStatus,
 } from '@/lib/scheduling/coverage';
 import {
   isMentalHealthProvider,
@@ -193,7 +185,7 @@ const attributionLabel = (entry: PublishAuditEntry | undefined): string => {
   const who = entry.actor_label || (entry.actor_id ? 'someone' : 'system');
   const verb =
     entry.action === 'preserved'
-      ? 'preserved through evaluator re-run'
+      ? 'preserved during schedule recalculation'
       : entry.action === 'reverted'
         ? 'reverted'
         : 'marked';
@@ -251,6 +243,7 @@ const labelShiftType = (t: string | null | undefined) => {
 const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : []);
 
 export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
+type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
 
 export default function SchedulingWorkbenchPage({
   scope = 'medical',
@@ -281,6 +274,11 @@ export default function SchedulingWorkbenchPage({
     if (v === 'readiness') next.delete('tab');
     else next.set('tab', v);
     setSearchParams(next, { replace: true });
+  };
+  const [availabilityTab, setAvailabilityTab] = useState<AvailabilityTabKey>('submissions');
+  const jumpToAvailability = (tab: AvailabilityTabKey = 'submissions') => {
+    setAvailabilityTab(tab);
+    onTopTabChange('availability');
   };
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -834,11 +832,11 @@ export default function SchedulingWorkbenchPage({
   const reevaluateNow = () => {
     reevaluate.mutate(month, {
       onSuccess: () => {
-        toast.success(`Re-evaluated ${formatMonthLabel(month)}`);
+        toast.success(`Recalculated ${formatMonthLabel(month)} schedule`);
         refetch();
         refetchShifts();
       },
-      onError: e => toast.error(`Re-evaluation failed: ${(e as Error).message}`),
+      onError: e => toast.error(`Schedule recalculation failed: ${(e as Error).message}`),
     });
   };
 
@@ -899,11 +897,11 @@ export default function SchedulingWorkbenchPage({
                 ) : (
                   <RefreshCw className="h-4 w-4 mr-1" />
                 )}
-                Re-run evaluator
+                Recalculate schedule
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              Re-runs the evaluator against the latest Jotform submissions.
+              Rebuilds the recommended July schedule from the latest Jotform submissions.
               Already-published shifts keep their Homebase / EHR state — only
               shifts that change or disappear lose their progress.
             </TooltipContent>
@@ -944,14 +942,18 @@ export default function SchedulingWorkbenchPage({
         <TabsContent value="readiness" className="mt-4 space-y-4">
           <ReadinessPanel
             month={month}
+            isLoading={isLoading || shiftsLoading}
             summary={scopedSummary}
             missingCount={scopedSummary.missingCount}
             submittedHours={scopedSubmittedAvailabilityHours}
             mentalHealthCount={isMh ? 0 : mentalHealthRows.length}
             mentalHealthAcceptedCount={isMh ? 0 : mentalHealthAcceptedRows.length}
             inboxNeedsReviewCount={scopedInboxActionable}
+            unmatchedCount={scopedUnmatched.length}
+            onReevaluate={reevaluateNow}
+            isReevaluating={reevaluate.isPending}
             onJumpToCoverage={() => onTopTabChange('coverage')}
-            onJumpToAvailability={() => onTopTabChange('availability')}
+            onJumpToAvailability={jumpToAvailability}
             onJumpToMatching={() => onTopTabChange('matching')}
             onJumpToPublish={() => onTopTabChange('publish')}
             onJumpToMentalHealth={() => (isMh ? undefined : onTopTabChange('mental-health'))}
@@ -962,8 +964,8 @@ export default function SchedulingWorkbenchPage({
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
                 No per-shift recommendations have been generated for{' '}
-                {formatMonthLabel(month)}. Click "Re-run evaluator" above to expand the Jotform
-                submissions into individual shifts.
+                {formatMonthLabel(month)}. Click "Recalculate schedule" above to turn the latest
+                Jotform submissions into individual shifts.
               </AlertDescription>
             </Alert>
           )}
@@ -1001,7 +1003,7 @@ export default function SchedulingWorkbenchPage({
               <p className="text-xs text-muted-foreground mt-1">
                 {override
                   ? `Using uploaded file: ${override.fileName} · ${override.totalShifts} shift${override.totalShifts === 1 ? '' : 's'} matched to ${override.matchedProviders} provider${override.matchedProviders === 1 ? '' : 's'}`
-                  : `Showing ${shiftRows.length} shift${shiftRows.length === 1 ? '' : 's'} from the evaluator. Upload a Jotform export only if you need to preview a not-yet-imported file.`}
+                  : `Showing ${shiftRows.length} system-built shift${shiftRows.length === 1 ? '' : 's'}. Upload a Jotform export only if you need to preview a not-yet-imported file.`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1040,12 +1042,12 @@ export default function SchedulingWorkbenchPage({
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
             No submissions found for {formatMonthLabel(month)}. Pick a different month or run the
-            evaluator.
+            direct Jotform sync, then click "Recalculate schedule".
           </AlertDescription>
         </Alert>
       )}
 
-      <Tabs defaultValue="submissions">
+      <Tabs value={availabilityTab} onValueChange={(v) => setAvailabilityTab(v as AvailabilityTabKey)}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="submissions">
             <Inbox className="h-3.5 w-3.5 mr-1" /> Submissions
@@ -1139,6 +1141,18 @@ export default function SchedulingWorkbenchPage({
 
         {/* ============ PUBLISH ============ */}
         <TabsContent value="publish" className="mt-4 space-y-4">
+          <PublishGateBanner
+            month={month}
+            summary={scopedSummary}
+            submittedHours={scopedSubmittedAvailabilityHours}
+            inboxNeedsReviewCount={scopedInboxActionable}
+            unmatchedCount={scopedUnmatched.length}
+            missingCount={scopedSummary.missingCount}
+            onJumpToAvailability={jumpToAvailability}
+            onJumpToCoverage={() => onTopTabChange('coverage')}
+            onJumpToMatching={() => onTopTabChange('matching')}
+          />
+          <PublishInstructionsCard />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard
               label="Shifts to publish"
@@ -1160,7 +1174,7 @@ export default function SchedulingWorkbenchPage({
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              Final step — only publish after Coverage Matching shows no critical gaps.
+              Do not publish unless Readiness says it is OK to publish, or a ClinOps lead explicitly tells you to continue.
               Hover any checked box to see who marked it and when.
             </AlertDescription>
           </Alert>
@@ -1240,6 +1254,7 @@ export default function SchedulingWorkbenchPage({
                       const ehrDone = flats.filter(isEhrDone).length;
                       const isOpen = !!expanded[row.provider_id];
                       const totalShifts = flats.length;
+                      const ehrBulkBlocked = totalShifts > 0 && ehrDone === 0 && hbDone < totalShifts;
                       return (
                         <Fragment key={row.provider_id}>
                           <TableRow
@@ -1300,7 +1315,7 @@ export default function SchedulingWorkbenchPage({
                                     size="sm"
                                     variant="ghost"
                                     className="h-7 text-xs"
-                                    disabled={ehrDone === 0 && hbDone < totalShifts}
+                                    disabled={ehrBulkBlocked}
                                     onClick={() =>
                                       handleBulkAllProviderShifts(
                                         row,
@@ -1313,6 +1328,11 @@ export default function SchedulingWorkbenchPage({
                                   </Button>
                                 )}
                               </div>
+                              {ehrBulkBlocked && (
+                                <div className="mt-1 text-[11px] text-muted-foreground">
+                                  Finish Homebase first. EHR can only be marked after Homebase is complete.
+                                </div>
+                              )}
                             </TableCell>
                           </TableRow>
                           {isOpen && (
@@ -1326,7 +1346,7 @@ export default function SchedulingWorkbenchPage({
                                 {flats.length === 0 ? (
                                   <div className="text-xs text-muted-foreground italic">
                                     No per-shift data — submission hasn't been expanded yet.
-                                    Click "Re-run evaluator" above to generate the shift list.
+                                    Click "Recalculate schedule" above to generate the shift list.
                                   </div>
                                 ) : (
                                   <ShiftListInline
@@ -1634,6 +1654,11 @@ function ShiftListInline({
                   audit={audit?.ehr}
                   onToggle={onToggle}
                 />
+                {!hbDone && (
+                  <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                    Finish Homebase first
+                  </div>
+                )}
               </TableCell>
             </TableRow>
           );
@@ -1696,6 +1721,103 @@ const compactJson = (raw: unknown) => {
   }
 };
 
+const valueFromDecisionNote = (notes: string | null | undefined, key: string): string | null => {
+  const match = (notes ?? '').match(new RegExp(`${key}=([^;\\n]+)`));
+  return match?.[1]?.trim() || null;
+};
+
+function formatDecisionNoteForStaff(notes: string | null | undefined): string {
+  const raw = (notes ?? '').trim();
+  if (!raw) return '';
+
+  const lines: string[] = [];
+  const add = (line: string) => {
+    if (!lines.includes(line)) lines.push(line);
+  };
+
+  const priority = valueFromDecisionNote(raw, 'provider_priority');
+  if (priority === 'clinical_supervisor' || priority === 'clinical_lead') {
+    add('Accepted first because this provider is a clinical lead.');
+  } else if (priority === 'vitable_internal') {
+    add('Accepted before external access providers because this provider is on the Vitable team.');
+  } else if (priority === 'access_provider') {
+    add('Accepted after internal providers because this provider is an access coverage provider.');
+  }
+
+  if (valueFromDecisionNote(raw, 'state_policy') === 'physician_reserved_for_md_only') {
+    add('Physician capacity is reserved for states where only MD/DO providers can cover visits.');
+  }
+  if (valueFromDecisionNote(raw, 'scarce_window_policy') === 'protected_before_monthly_trim') {
+    add('This shift was protected because it helps Friday afternoon or weekend access.');
+  }
+  const scarceHours = valueFromDecisionNote(raw, 'scarce_window_hours');
+  if (scarceHours) {
+    add(`${scarceHours.replace(/h$/, '')} hours were protected for Friday afternoon or weekend access.`);
+  }
+  if (valueFromDecisionNote(raw, 'access_growth_buffer_policy')) {
+    add('The system intentionally schedules extra hours so July access does not stay too thin.');
+  }
+  const accessBufferHours = valueFromDecisionNote(raw, 'access_buffer_hours');
+  if (accessBufferHours) {
+    add(`${accessBufferHours.replace(/h$/, '')} extra hours were added to protect July access.`);
+  }
+  const baseStateDemand = valueFromDecisionNote(raw, 'base_state_demand');
+  if (baseStateDemand) {
+    add(`Historical state need before extra July access protection: ${baseStateDemand}.`);
+  }
+  const unavailableHours = valueFromDecisionNote(raw, 'hours_removed_unavailable');
+  if (unavailableHours) {
+    add(`${unavailableHours.replace(/h$/, '')} hours were intentionally removed because the provider listed those dates as unavailable.`);
+  }
+  const allocations = valueFromDecisionNote(raw, 'alloc');
+  if (allocations) {
+    add(`Accepted hours were assigned by state: ${allocations}.`);
+  }
+  const stateGaps = valueFromDecisionNote(raw, 'state_gaps');
+  if (stateGaps) {
+    add(`States still under-covered during scheduling: ${stateGaps}.`);
+  }
+
+  const lower = raw.toLowerCase();
+  if (lower.includes('outside') && lower.includes('business')) {
+    add('Some hours were cut because they were outside approved scheduling hours.');
+  }
+  if (lower.includes('trimmed') || lower.includes('oversupply') || lower.includes('surplus')) {
+    add('Some hours were cut because the assigned state already had enough accepted hours.');
+  }
+  if (lower.includes('unavailable')) {
+    add('Unavailable dates listed in Jotform are intentionally excluded from generated shifts.');
+  }
+  if (lower.includes('no state allocation')) {
+    add('The system could not safely assign this shift to a state; escalate if this affects publishing.');
+  }
+  if (lower.includes('license') || lower.includes('licensure')) {
+    add('A license or state-coverage issue affected this decision.');
+  }
+  if (lower.includes('malformed') || lower.includes('invalid') || lower.includes('parse')) {
+    add('Provider time looks invalid or could not be read safely.');
+  }
+  if (lower.includes('unrealistic') || lower.includes('too many')) {
+    add('Provider submitted unusually high hours.');
+  }
+
+  return lines.length > 0 ? lines.join('\n') : raw;
+}
+
+function needsReviewReasonLabel(warnings: string[], notes: string | null | undefined): string {
+  const text = [...warnings, notes ?? ''].join(' ').toLowerCase();
+  if (text.includes('state') || text.includes('license') || text.includes('eligib')) {
+    return 'Provider may not be eligible for assigned state';
+  }
+  if (text.includes('unrealistic') || text.includes('too many') || text.includes('high hours')) {
+    return 'Provider submitted unusually high hours';
+  }
+  if (text.includes('invalid') || text.includes('malformed') || text.includes('parse') || text.includes('pm') || text.includes('am')) {
+    return 'Provider time looks invalid';
+  }
+  return 'System could not safely decide';
+}
+
 const formatAvailabilityRows = (
   raw: unknown,
   mode: 'recurring' | 'dated' | 'unavailable',
@@ -1743,7 +1865,8 @@ function AvailabilitySubmissionsPanel({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No Jotform availability submissions are stored for {formatMonthLabel(month)}.
+          No Jotform/drop-form availability submissions are stored for {formatMonthLabel(month)}.
+          If submissions were expected, check Audit → Data quality and confirm the direct Jotform sync.
         </AlertDescription>
       </Alert>
     );
@@ -1895,6 +2018,14 @@ function PublishingQueue({
       ),
     [filtered],
   );
+  const pendingHomebase = useMemo(
+    () => sorted.filter(s => !isHomebaseDone(s)),
+    [sorted],
+  );
+  const pendingEhr = useMemo(
+    () => sorted.filter(s => isHomebaseDone(s) && !isEhrDone(s)),
+    [sorted],
+  );
 
   if (isLoading) {
     return (
@@ -1911,7 +2042,7 @@ function PublishingQueue({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No shift recommendations for {formatMonthLabel(month)}. Run the evaluator first.
+          No accepted shift list for {formatMonthLabel(month)}. Recalculate the schedule first.
         </AlertDescription>
       </Alert>
     );
@@ -1948,19 +2079,24 @@ function PublishingQueue({
             <Button
               size="sm"
               variant="outline"
-              disabled={sorted.length === 0}
-              onClick={() => onBulkShifts(sorted, 'homebase', true)}
+              disabled={pendingHomebase.length === 0}
+              onClick={() => onBulkShifts(pendingHomebase, 'homebase', true)}
             >
-              Mark filtered HB
+              Mark HB ({pendingHomebase.length})
             </Button>
             <Button
               size="sm"
               variant="outline"
-              disabled={sorted.length === 0}
-              onClick={() => onBulkShifts(sorted.filter(isHomebaseDone), 'ehr', true)}
+              disabled={pendingEhr.length === 0}
+              onClick={() => onBulkShifts(pendingEhr, 'ehr', true)}
             >
-              Mark filtered EHR
+              Mark EHR ({pendingEhr.length})
             </Button>
+            {pendingEhr.length === 0 && pendingHomebase.length > 0 && (
+              <div className="basis-full text-[11px] text-muted-foreground">
+                Finish Homebase first. EHR can only be marked after Homebase is complete.
+              </div>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -2011,6 +2147,11 @@ function PublishingQueue({
                       audit={audit?.ehr}
                       onToggle={onToggleShift}
                     />
+                    {!hbDone && (
+                      <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                        Finish Homebase first
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               );
@@ -2140,6 +2281,11 @@ function ByDayPanel({
                             audit={audit?.ehr}
                             onToggle={onToggleShift}
                           />
+                          {!hbDone && (
+                            <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                              Finish Homebase first
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -2168,8 +2314,6 @@ function NeedsReviewPanel({
   month,
   rows,
   isLoading,
-  onResolve,
-  isPending,
 }: {
   month: string;
   rows: ProviderPublishView[];
@@ -2177,12 +2321,6 @@ function NeedsReviewPanel({
   onResolve: (args: ResolveArgs) => void;
   isPending: boolean;
 }) {
-  const [target, setTarget] = useState<{
-    row: ProviderPublishView;
-    decision: 'accepted' | 'declined';
-  } | null>(null);
-  const [reason, setReason] = useState('');
-
   if (isLoading) {
     return (
       <Card>
@@ -2204,43 +2342,15 @@ function NeedsReviewPanel({
     );
   }
 
-  const open = (row: ProviderPublishView, decision: 'accepted' | 'declined') => {
-    setTarget({ row, decision });
-    setReason('');
-  };
-
-  const submit = () => {
-    if (!target) return;
-    const sub = target.row.submission!;
-    const trimmed = reason.trim();
-    if (!trimmed) {
-      toast.error('Please add a reason — every override is logged.');
-      return;
-    }
-    onResolve({
-      submission_id: sub.id,
-      prior_status: sub.decision_status,
-      decision: target.decision,
-      hours_basis: expandedSubmittedHours(sub),
-      reason: trimmed,
-      existing_notes: sub.decision_notes ?? null,
-      provider_name: target.row.provider_name,
-    });
-    setTarget(null);
-    setReason('');
-  };
-
   return (
-    <>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
             Needs review · {formatMonthLabel(month)}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            The evaluator flagged these submissions because the parsed hours look ambiguous (e.g.
-            9 PM to 9 PM, 8 PM to 12 PM). Confirm with the provider, then accept or decline.
-            Anyone with scheduling access can resolve — every override records who and why.
+            Escalate to ClinOps lead. VA staff should not accept or decline these submissions.
+            The system could not safely decide because the submitted time or scheduling detail needs judgment.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -2249,8 +2359,9 @@ function NeedsReviewPanel({
               <TableRow>
                 <TableHead>Provider</TableHead>
                 <TableHead className="text-right">Expanded hrs</TableHead>
-                <TableHead>Reasons</TableHead>
-                <TableHead className="text-right">Resolve</TableHead>
+                <TableHead>What looks wrong</TableHead>
+                <TableHead>Owner</TableHead>
+                <TableHead className="text-right">Next step</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -2259,6 +2370,17 @@ function NeedsReviewPanel({
                 const warnings = Array.isArray(sub.validation_warnings)
                   ? (sub.validation_warnings as string[])
                   : [];
+                const reasonLabel = needsReviewReasonLabel(warnings, sub.decision_notes);
+                const escalationText = [
+                  `Please review July schedule submission for ${r.provider_name}.`,
+                  `Issue: ${reasonLabel}.`,
+                  `Expanded hours: ${formatHours(expandedSubmittedHours(sub))}.`,
+                  warnings.length > 0
+                    ? `System warning: ${warnings.slice(0, 3).join(' · ')}`
+                    : sub.decision_notes
+                      ? `System note: ${formatDecisionNoteForStaff(sub.decision_notes)}`
+                      : 'System note: System could not safely decide.',
+                ].join('\n');
                 return (
                   <TableRow key={r.provider_id}>
                     <TableCell>
@@ -2269,9 +2391,19 @@ function NeedsReviewPanel({
                       {formatHours(expandedSubmittedHours(sub))}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-md">
-                      {warnings.length > 0
-                        ? warnings.slice(0, 3).join(' · ')
-                        : sub.decision_notes ?? '—'}
+                      <Badge variant="outline" className="mb-1 bg-orange-50 text-orange-800">
+                        {reasonLabel}
+                      </Badge>
+                      <div>
+                        {warnings.length > 0
+                          ? warnings.slice(0, 3).join(' · ')
+                          : formatDecisionNoteForStaff(sub.decision_notes) || 'System could not safely decide'}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">
+                        Escalate to ClinOps lead
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -2279,17 +2411,17 @@ function NeedsReviewPanel({
                           size="sm"
                           variant="outline"
                           className="h-7"
-                          onClick={() => open(r, 'accepted')}
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(escalationText);
+                              toast.success('Escalation note copied');
+                            } catch {
+                              toast.error('Clipboard unavailable');
+                            }
+                          }}
                         >
-                          Accept
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7"
-                          onClick={() => open(r, 'declined')}
-                        >
-                          Decline
+                          <Copy className="h-3 w-3 mr-1" />
+                          Copy escalation
                         </Button>
                       </div>
                     </TableCell>
@@ -2300,36 +2432,6 @@ function NeedsReviewPanel({
           </Table>
         </CardContent>
       </Card>
-
-      <Dialog open={!!target} onOpenChange={(o) => !o && setTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {target?.decision === 'accepted' ? 'Accept' : 'Decline'} {target?.row.provider_name}
-            </DialogTitle>
-            <DialogDescription>
-              Note what you confirmed with the provider — this gets logged with your name and
-              attached to the submission notes.
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            placeholder="e.g. Confirmed via Slack — meant 9 AM to 9 PM, treating as standard 12-hour shift"
-            value={reason}
-            onChange={e => setReason(e.target.value)}
-            rows={4}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTarget(null)}>
-              Cancel
-            </Button>
-            <Button onClick={submit} disabled={isPending || reason.trim().length === 0}>
-              {isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
-              Confirm {target?.decision === 'accepted' ? 'accept' : 'decline'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
   );
 }
 
@@ -2757,8 +2859,8 @@ function MentalHealthPanel({
           Mental Health · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
-          MH Coaching and Therapy / LPC use separate service-line forecasts and bypass the
-          telehealth state-by-state allocator.
+          MH Coaching and Therapy / LPC use separate service-line forecasts and are staffed
+          separately from medical state coverage.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -2878,7 +2980,7 @@ function MissingSubmissionsPanel({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          Every active provider has submitted for {formatMonthLabel(month)}.
+          No missing July submissions. No reminder needed.
         </AlertDescription>
       </Alert>
     );
@@ -2924,11 +3026,11 @@ function MissingSubmissionsPanel({
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <CardTitle className="text-base">
-              Missing submissions · {formatMonthLabel(month)}
+              Missing submissions · {formatMonthLabel(month)} · {sortedRows.length}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Active providers with no Jotform submission for this month. Copy all
-              emails at once to BCC a reminder, or grab the reminder text per provider.
+              VA can do this. These active providers have no Jotform availability for July.
+              Copy the BCC-ready email list, then send the reminder template below.
               {missingEmailCount > 0 && (
                 <span className="text-amber-700">
                   {' '}
@@ -2946,7 +3048,7 @@ function MissingSubmissionsPanel({
               disabled={emailsWithAddress.length === 0}
             >
               <Copy className="h-4 w-4 mr-1" />
-              Copy all emails ({emailsWithAddress.length})
+              Copy BCC-ready list ({emailsWithAddress.length})
             </Button>
             <Button size="sm" variant="outline" onClick={copyAll}>
               <Copy className="h-4 w-4 mr-1" />
@@ -2956,6 +3058,12 @@ function MissingSubmissionsPanel({
         </div>
       </CardHeader>
       <CardContent className="p-0">
+        <div className="border-y bg-muted/30 px-4 py-3 text-xs">
+          <div className="font-medium">Reminder template</div>
+          <div className="mt-1 text-muted-foreground">
+            Hi [first name], gentle reminder to submit your {monthLabel} availability when you have a moment. Thanks!
+          </div>
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -3043,8 +3151,8 @@ function DeclinedPanel({
         <p className="text-xs text-muted-foreground mt-1">
           Every submission with declined hours — fully declined, oversupply
           trimmed, or hours dropped for being outside operating hours
-          (9a–9p ET weekdays / 9a–12p ET weekends). The decision_notes
-          column spells out the reason.
+          (9a–9p ET weekdays / 9a–12p ET weekends). The reason column translates
+          system notes into plain English.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -3084,7 +3192,7 @@ function DeclinedPanel({
                     })}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-md whitespace-pre-wrap">
-                    {sub.decision_notes ?? '—'}
+                    {formatDecisionNoteForStaff(sub.decision_notes) || '—'}
                   </TableCell>
                 </TableRow>
               );
@@ -3276,7 +3384,9 @@ function DeclinedHoursPanel({
                           ))}
                         </div>
                       )}
-                      <div className="whitespace-pre-wrap">{sub.decision_notes ?? '—'}</div>
+                      <div className="whitespace-pre-wrap">
+                        {formatDecisionNoteForStaff(sub.decision_notes) || '—'}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -3342,6 +3452,7 @@ function TimeOffPanel({
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
           Days providers listed as unavailable on their Jotform submission.
+          Generated shifts intentionally omit recurring availability that falls on these dates.
           {' '}
           {entries.length} provider{entries.length === 1 ? '' : 's'} · {totalDays} day
           {totalDays === 1 ? '' : 's'} off this month. Use this when MSS asks who's
@@ -3447,7 +3558,7 @@ function PublishHistoryPanel({
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
               Append-only log of every Homebase / EHR mark, revert, and
-              evaluator-driven preservation. {entries.length} event
+              schedule-recalculation preservation. {entries.length} event
               {entries.length === 1 ? '' : 's'} this month.
             </p>
           </div>
@@ -3531,12 +3642,16 @@ function PublishHistoryPanel({
 
 function ReadinessPanel({
   month,
+  isLoading,
   summary,
   missingCount,
   submittedHours,
   mentalHealthCount,
   mentalHealthAcceptedCount,
   inboxNeedsReviewCount,
+  unmatchedCount,
+  onReevaluate,
+  isReevaluating,
   onJumpToCoverage,
   onJumpToAvailability,
   onJumpToMatching,
@@ -3544,6 +3659,7 @@ function ReadinessPanel({
   onJumpToMentalHealth,
 }: {
   month: string;
+  isLoading: boolean;
   summary: {
     totalShifts: number;
     totalProviders: number;
@@ -3558,120 +3674,358 @@ function ReadinessPanel({
   mentalHealthCount: number;
   mentalHealthAcceptedCount: number;
   inboxNeedsReviewCount: number;
+  unmatchedCount: number;
+  onReevaluate: () => void;
+  isReevaluating: boolean;
   onJumpToCoverage: () => void;
-  onJumpToAvailability: () => void;
+  onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToMatching: () => void;
   onJumpToPublish: () => void;
   onJumpToMentalHealth: () => void;
 }) {
   const coverageQ = useStateCoverage(month);
+  const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
 
   const demandHours = useMemo(
-    () => (coverageQ.data?.rows ?? []).reduce((s, r) => s + r.needed, 0),
-    [coverageQ.data],
+    () => coverageRows.reduce((s, r) => s + r.needed, 0),
+    [coverageRows],
   );
 
   const acceptedHours = useMemo(
-    () => (coverageQ.data?.rows ?? []).reduce((s, r) => s + r.filled, 0),
-    [coverageQ.data],
+    () => coverageRows.reduce((s, r) => s + r.filled, 0),
+    [coverageRows],
   );
 
-  const gapHours = demandHours - acceptedHours;
+  const stateGapHours = useMemo(
+    () => coverageRows.reduce((s, r) => s + Math.max(0, r.needed - r.filled), 0),
+    [coverageRows],
+  );
+  const stateSurplusHours = useMemo(
+    () => coverageRows.reduce((s, r) => s + Math.max(0, r.filled - r.needed), 0),
+    [coverageRows],
+  );
   const criticalGapStates = useMemo(
     () =>
-      (coverageQ.data?.rows ?? []).filter(
+      coverageRows.filter(
         r => r.needed > 0 && r.pct_filled < 60,
       ),
-    [coverageQ.data],
+    [coverageRows],
+  );
+  const watchGapStates = useMemo(
+    () =>
+      coverageRows.filter(
+        r => r.needed > 0 && r.pct_filled >= 60 && r.pct_filled < 95,
+      ),
+    [coverageRows],
   );
 
   const homebasePct =
     summary.totalShifts > 0 ? Math.round((summary.homebaseShifts / summary.totalShifts) * 100) : 0;
   const ehrPct =
     summary.totalShifts > 0 ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0;
+  const reviewCount = summary.needsReviewCount + inboxNeedsReviewCount;
+  const hasPublishRows = summary.totalShifts > 0;
+  const checksLoading = isLoading || coverageQ.isLoading;
 
-  // Readiness verdict — three buckets
-  type Readiness = { label: 'Ready' | 'At Risk' | 'Not Ready'; tone: string };
+  type BlockerCategory = 'VA can do this' | 'Escalate to ClinOps lead' | 'System/admin issue';
+
+  type OperatorBlocker = {
+    label: string;
+    detail: string;
+    category: BlockerCategory;
+    action: string;
+    onClick: () => void;
+  };
+
+  const hardBlockers = useMemo<OperatorBlocker[]>(() => {
+    const out: OperatorBlocker[] = [];
+    if (coverageQ.isError) {
+      out.push({
+        label: 'Coverage could not load',
+        detail: 'Do not publish until the Coverage Gaps tab loads successfully.',
+        category: 'System/admin issue',
+        action: 'Open Coverage Gaps',
+        onClick: onJumpToCoverage,
+      });
+    } else if (!coverageQ.isLoading && coverageRows.length === 0) {
+      out.push({
+        label: 'No coverage rows for this month',
+        detail: 'Recalculate the schedule from the latest submissions. If coverage still does not load, ask an admin for help.',
+        category: 'System/admin issue',
+        action: 'Open Coverage Gaps',
+        onClick: onJumpToCoverage,
+      });
+    }
+    if (!checksLoading && !hasPublishRows) {
+      out.push({
+        label: 'No publishable shift list yet',
+        detail: submittedHours > 0
+          ? 'Availability exists, but the accepted shift list is not ready. Recalculate the schedule from the latest submissions.'
+          : 'No usable July availability has been expanded yet.',
+        category: 'VA can do this',
+        action: 'Recalculate schedule',
+        onClick: onReevaluate,
+      });
+    }
+    if (hasPublishRows && unmatchedCount > 0) {
+      out.push({
+        label: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
+        detail: 'A provider name or email did not match the provider directory. If the match is obvious, fix it; otherwise escalate.',
+        category: 'VA can do this',
+        action: 'Open Unmatched',
+        onClick: () => onJumpToAvailability('unmatched'),
+      });
+    }
+    if (reviewCount > 0) {
+      out.push({
+        label: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need manual review`,
+        detail: `${summary.needsReviewCount} unusual-hours flag${summary.needsReviewCount === 1 ? '' : 's'} and ${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} need a ClinOps lead decision.`,
+        category: 'Escalate to ClinOps lead',
+        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Resubmits',
+        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
+      });
+    }
+    if (criticalGapStates.length > 0) {
+      out.push({
+        label: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} critically under-covered`,
+        detail: `Affected states: ${criticalGapStates.slice(0, 6).map(s => `${s.state} ${Math.round(s.pct_filled)}% covered`).join(', ')}${criticalGapStates.length > 6 ? ', plus more' : ''}.`,
+        category: 'Escalate to ClinOps lead',
+        action: 'Open Coverage Gaps',
+        onClick: onJumpToCoverage,
+      });
+    }
+    if (missingCount > 0) {
+      out.push({
+        label: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing July availability`,
+        detail: 'These active providers have not submitted July availability. Send reminders before publishing so staff can capture any last covered hours.',
+        category: 'VA can do this',
+        action: 'Open Missing',
+        onClick: () => onJumpToAvailability('missing'),
+      });
+    }
+    return out;
+  }, [
+    coverageQ.isError,
+    coverageQ.isLoading,
+    coverageRows,
+    checksLoading,
+    hasPublishRows,
+    unmatchedCount,
+    submittedHours,
+    reviewCount,
+    summary.needsReviewCount,
+    inboxNeedsReviewCount,
+    criticalGapStates,
+    missingCount,
+    onReevaluate,
+    onJumpToAvailability,
+    onJumpToCoverage,
+    onJumpToMatching,
+  ]);
+
+  const workbenchReady = !checksLoading && hardBlockers.length === 0 && hasPublishRows;
+  const publishingComplete = workbenchReady && homebasePct === 100 && ehrPct === 100;
+
+  type Readiness = {
+    label: 'Checking' | 'Blocked' | 'Action Needed' | 'Ready to Publish' | 'Publishing' | 'Complete';
+    tone: string;
+  };
   const readiness: Readiness = (() => {
-    if (
-      criticalGapStates.length === 0 &&
-      missingCount === 0 &&
-      summary.needsReviewCount === 0 &&
-      ehrPct === 100
-    ) {
-      return { label: 'Ready', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
-    }
-    if (criticalGapStates.length > 0 || missingCount > 5 || ehrPct < 50) {
-      return { label: 'Not Ready', tone: 'bg-red-100 text-red-800 border-red-200' };
-    }
-    return { label: 'At Risk', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
+    if (checksLoading) return { label: 'Checking', tone: 'bg-slate-100 text-slate-700 border-slate-200' };
+    if (hardBlockers.length > 0) return { label: 'Blocked', tone: 'bg-red-100 text-red-800 border-red-200' };
+    if (missingCount > 0) return { label: 'Action Needed', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
+    if (publishingComplete) return { label: 'Complete', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+    if (homebasePct > 0 || ehrPct > 0) return { label: 'Publishing', tone: 'bg-blue-100 text-blue-800 border-blue-200' };
+    return { label: 'Ready to Publish', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
   })();
 
-  // Biggest blocker + suggested next action
-  const { blocker, nextAction, nextActionJump } = useMemo<{
+  const { blocker, nextAction, nextActionJump, nextCategory, nextDisabled } = useMemo<{
     blocker: string;
     nextAction: string;
     nextActionJump: () => void;
+    nextCategory: BlockerCategory;
+    nextDisabled?: boolean;
   }>(() => {
+    if (!hasPublishRows) {
+      return {
+        blocker: 'Accepted shift list is not ready yet',
+        nextAction: 'Recalculate schedule from latest submissions',
+        nextActionJump: onReevaluate,
+        nextCategory: 'VA can do this',
+        nextDisabled: isReevaluating,
+      };
+    }
+    if (unmatchedCount > 0) {
+      return {
+        blocker: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
+        nextAction: 'Fix unmatched submissions',
+        nextActionJump: () => onJumpToAvailability('unmatched'),
+        nextCategory: 'VA can do this',
+      };
+    }
+    if (reviewCount > 0) {
+      return {
+        blocker: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need ClinOps lead review`,
+        nextAction: 'Escalate needs-review submissions to ClinOps lead',
+        nextActionJump: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
+        nextCategory: 'Escalate to ClinOps lead',
+      };
+    }
     if (criticalGapStates.length > 0) {
       return {
-        blocker: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} below 60% coverage (${criticalGapStates.slice(0, 3).map(s => s.state).join(', ')}${criticalGapStates.length > 3 ? '…' : ''})`,
-        nextAction: 'Open Coverage Gaps and source licensed providers',
+        blocker: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} critically under-covered`,
+        nextAction: 'Escalate coverage gaps to ClinOps lead',
         nextActionJump: onJumpToCoverage,
+        nextCategory: 'Escalate to ClinOps lead',
       };
     }
     if (missingCount > 0) {
       return {
-        blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} have not submitted ${formatMonthLabel(month)} availability`,
-        nextAction: 'Open Availability → Missing and copy BCC list',
-        nextActionJump: onJumpToAvailability,
-      };
-    }
-    if (inboxNeedsReviewCount > 0) {
-      return {
-        blocker: `${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} pending review`,
-        nextAction: 'Resolve resubmissions in Availability → Resubmits',
-        nextActionJump: onJumpToAvailability,
-      };
-    }
-    if (summary.needsReviewCount > 0) {
-      return {
-        blocker: `${summary.needsReviewCount} submission${summary.needsReviewCount === 1 ? '' : 's'} flagged needs-review`,
-        nextAction: 'Triage needs-review in Matching',
-        nextActionJump: onJumpToMatching,
+        blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing July availability`,
+        nextAction: 'Send missing availability reminders',
+        nextActionJump: () => onJumpToAvailability('missing'),
+        nextCategory: 'VA can do this',
       };
     }
     if (homebasePct < 100) {
       return {
-        blocker: `${summary.totalShifts - summary.homebaseShifts} shift${summary.totalShifts - summary.homebaseShifts === 1 ? '' : 's'} not yet posted to Homebase`,
-        nextAction: 'Post remaining shifts in Publish Tracker',
+        blocker: 'None blocking the build',
+        nextAction: 'Post accepted shifts to Homebase',
         nextActionJump: onJumpToPublish,
+        nextCategory: 'VA can do this',
       };
     }
     if (ehrPct < 100) {
       return {
-        blocker: `${summary.totalShifts - summary.ehrShifts} shift${summary.totalShifts - summary.ehrShifts === 1 ? '' : 's'} not yet posted to EHR`,
-        nextAction: 'Finish EHR posts in Publish Tracker',
+        blocker: 'Homebase is done',
+        nextAction: 'Post accepted shifts to EHR',
         nextActionJump: onJumpToPublish,
+        nextCategory: 'VA can do this',
       };
     }
     return {
-      blocker: `None — ${formatMonthLabel(month)} is publish-ready`,
-      nextAction: 'Confirm with ClinOps lead and announce',
+      blocker: `None - ${formatMonthLabel(month)} is fully published`,
+      nextAction: 'No action needed - July schedule is publish-complete',
       nextActionJump: onJumpToPublish,
+      nextCategory: 'VA can do this',
     };
   }, [
     month,
-    criticalGapStates,
+    hasPublishRows,
+    unmatchedCount,
+    reviewCount,
+    summary.needsReviewCount,
+    criticalGapStates.length,
     missingCount,
-    inboxNeedsReviewCount,
-    summary,
     homebasePct,
     ehrPct,
+    isReevaluating,
+    onReevaluate,
     onJumpToAvailability,
     onJumpToCoverage,
     onJumpToMatching,
     onJumpToPublish,
+  ]);
+
+  type OperatorStep = {
+    label: string;
+    detail: string;
+    status: 'done' | 'current' | 'blocked' | 'waiting';
+    action?: string;
+    onClick?: () => void;
+    disabled?: boolean;
+  };
+
+  const workflowSteps: OperatorStep[] = [
+    {
+      label: '1. Confirm Jotform availability',
+      detail: submittedHours > 0
+        ? `${submittedHours.toFixed(0)} expanded availability hours are in the workbench.`
+        : 'No expanded availability hours are visible yet.',
+      status: submittedHours > 0 ? 'done' : 'blocked',
+      action: 'Open Availability',
+      onClick: () => onJumpToAvailability('submissions'),
+    },
+    {
+      label: '2. Build the recommended shift list',
+      detail: hasPublishRows
+        ? `${summary.totalShifts} publishable shift${summary.totalShifts === 1 ? '' : 's'} for ${summary.totalProviders} provider${summary.totalProviders === 1 ? '' : 's'}.`
+        : submittedHours > 0
+          ? 'Click Recalculate schedule, then wait for shift rows to appear.'
+          : 'Wait for availability before recalculating the schedule.',
+      status: hasPublishRows ? 'done' : submittedHours > 0 ? 'current' : 'waiting',
+      action: !hasPublishRows && submittedHours > 0 ? 'Recalculate schedule' : undefined,
+      onClick: !hasPublishRows && submittedHours > 0 ? onReevaluate : undefined,
+      disabled: isReevaluating,
+    },
+    {
+      label: '3. Clear manual review',
+      detail: reviewCount === 0
+        ? 'No ambiguous submissions or resubmissions need action.'
+        : `${reviewCount} item${reviewCount === 1 ? '' : 's'} need a ClinOps lead decision before publishing.`,
+      status: reviewCount === 0 ? 'done' : 'blocked',
+      action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Resubmits',
+      onClick: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
+    },
+    {
+      label: '4. Check state coverage',
+      detail: criticalGapStates.length > 0
+        ? `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} are critically under-covered.`
+        : watchGapStates.length > 0
+          ? `${watchGapStates.length} state${watchGapStates.length === 1 ? '' : 's'} have thin coverage but are not stop-level.`
+          : 'No stop-level under-covered states.',
+      status: coverageQ.isLoading ? 'waiting' : criticalGapStates.length > 0 ? 'blocked' : watchGapStates.length > 0 ? 'current' : 'done',
+      action: 'Open Coverage',
+      onClick: onJumpToCoverage,
+    },
+    {
+      label: '5. Post accepted shifts to Homebase',
+      detail: hasPublishRows
+        ? `${summary.homebaseShifts}/${summary.totalShifts} shifts posted to Homebase.`
+        : 'Homebase posting starts after the shift list is built.',
+      status: !workbenchReady ? 'waiting' : homebasePct === 100 ? 'done' : 'current',
+      action: 'Open Publish',
+      onClick: onJumpToPublish,
+    },
+    {
+      label: '6. Transfer posted shifts to EHR',
+      detail: hasPublishRows
+        ? `${summary.ehrShifts}/${summary.totalShifts} shifts confirmed in EHR.`
+        : 'EHR transfer starts after Homebase posting.',
+      status: !workbenchReady || homebasePct < 100 ? 'waiting' : ehrPct === 100 ? 'done' : 'current',
+      action: 'Open Publish',
+      onClick: onJumpToPublish,
+    },
+  ];
+
+  const softWarnings = useMemo<OperatorBlocker[]>(() => {
+    const out: OperatorBlocker[] = [];
+    if (watchGapStates.length > 0 && criticalGapStates.length === 0) {
+      out.push({
+        label: `${watchGapStates.length} state${watchGapStates.length === 1 ? '' : 's'} with thin coverage`,
+        detail: 'Continue only if approved; ask the ClinOps lead whether extra hours are needed before launch.',
+        category: 'Escalate to ClinOps lead',
+        action: 'Open Coverage',
+        onClick: onJumpToCoverage,
+      });
+    }
+    if (mentalHealthCount > 0 && mentalHealthAcceptedCount < mentalHealthCount) {
+      out.push({
+        label: 'Mental health is tracked separately',
+        detail: `${mentalHealthAcceptedCount}/${mentalHealthCount} MH providers have accepted availability.`,
+        category: 'VA can do this',
+        action: 'Open Mental Health',
+        onClick: onJumpToMentalHealth,
+      });
+    }
+    return out;
+  }, [
+    criticalGapStates.length,
+    watchGapStates.length,
+    mentalHealthCount,
+    mentalHealthAcceptedCount,
+    onJumpToCoverage,
+    onJumpToMentalHealth,
   ]);
 
   const lastUpdated = useMemo(() => {
@@ -3689,16 +4043,20 @@ function ReadinessPanel({
               {formatMonthLabel(month)} status: {readiness.label}
             </Badge>
             <div className="text-sm">
-              <div className="font-medium">Biggest blocker</div>
+              <div className="font-medium">Publish gate</div>
               <div className="text-xs opacity-90">{blocker}</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="text-xs text-right max-w-[260px]">
-              <div className="font-medium">Next action</div>
+              <div className="font-medium">One next action</div>
+              <Badge variant="outline" className="mt-1 bg-white/70 text-[11px]">
+                {nextCategory}
+              </Badge>
               <div className="opacity-90">{nextAction}</div>
             </div>
-            <Button size="sm" variant="outline" onClick={nextActionJump}>
+            <Button size="sm" onClick={nextActionJump} disabled={nextDisabled}>
+              {nextDisabled ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               Go
               <ArrowRight className="h-3.5 w-3.5 ml-1" />
             </Button>
@@ -3706,9 +4064,18 @@ function ReadinessPanel({
         </CardContent>
       </Card>
 
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)] gap-4">
+        <OperatorWorkflowCard steps={workflowSteps} />
+        <OperatorBlockersCard
+          hardBlockers={hardBlockers}
+          softWarnings={softWarnings}
+          isLoading={checksLoading}
+        />
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard
-          label="Forecast demand"
+          label="Hours needed"
           value={demandHours ? `${demandHours.toFixed(0)} hrs` : '—'}
           sub={formatMonthLabel(month)}
         />
@@ -3722,14 +4089,14 @@ function ReadinessPanel({
           value={acceptedHours ? `${acceptedHours.toFixed(0)} hrs` : '—'}
           sub={
             demandHours > 0
-              ? `${Math.min(999, Math.round((acceptedHours / demandHours) * 100))}% of demand`
+              ? `${Math.min(999, Math.round((acceptedHours / demandHours) * 100))}% of needed hours`
               : undefined
           }
         />
         <SummaryCard
-          label={gapHours > 0 ? 'Remaining gap' : 'Surplus'}
-          value={`${Math.abs(gapHours).toFixed(0)} hrs`}
-          sub={gapHours > 0 ? 'Below demand' : 'Above demand'}
+          label={stateGapHours > 0 ? 'Under-covered hours' : 'Extra hours'}
+          value={`${(stateGapHours > 0 ? stateGapHours : stateSurplusHours).toFixed(0)} hrs`}
+          sub={stateGapHours > 0 ? 'Shortage across states' : 'Above access need'}
         />
       </div>
 
@@ -3761,7 +4128,7 @@ function ReadinessPanel({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <AlertCircle className="h-4 w-4 text-amber-600" />
-              States with critical gaps
+              Critically under-covered states
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -3769,7 +4136,7 @@ function ReadinessPanel({
               <div className="text-xs text-muted-foreground">Loading…</div>
             ) : criticalGapStates.length === 0 ? (
               <div className="text-xs text-muted-foreground">
-                No state below 60% coverage. Nice.
+                No state is critically under-covered.
               </div>
             ) : (
               <div className="flex flex-wrap gap-1.5">
@@ -3789,12 +4156,13 @@ function ReadinessPanel({
               className="mt-3"
               onClick={onJumpToCoverage}
             >
-              Review coverage gaps
+              Review coverage
               <ArrowRight className="h-3.5 w-3.5 ml-1" />
             </Button>
           </CardContent>
         </Card>
 
+        {(mentalHealthCount > 0 || mentalHealthAcceptedCount > 0) && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -3821,12 +4189,364 @@ function ReadinessPanel({
             </Button>
           </CardContent>
         </Card>
+        )}
       </div>
 
       <div className="text-xs text-muted-foreground">
         Last updated {lastUpdated}.
       </div>
     </div>
+  );
+}
+
+function OperatorWorkflowCard({
+  steps,
+}: {
+  steps: {
+    label: string;
+    detail: string;
+    status: 'done' | 'current' | 'blocked' | 'waiting';
+    action?: string;
+    onClick?: () => void;
+    disabled?: boolean;
+  }[];
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-emerald-600" />
+          Staff workflow
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Use the publish gate above for the next action. This checklist shows where that action sits in the full process.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {steps.map(step => (
+          <div
+            key={step.label}
+            className="flex flex-col gap-2 border-b pb-3 last:border-b-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between"
+          >
+            <div className="flex items-start gap-2">
+              <OperatorStepIcon status={step.status} />
+              <div>
+                <div className="text-sm font-medium">{step.label}</div>
+                <div className="text-xs text-muted-foreground">{step.detail}</div>
+              </div>
+            </div>
+            {step.action && step.onClick && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 shrink-0"
+                onClick={step.onClick}
+                disabled={step.disabled}
+              >
+                {step.disabled ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                {step.action}
+              </Button>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OperatorStepIcon({
+  status,
+}: {
+  status: 'done' | 'current' | 'blocked' | 'waiting';
+}) {
+  if (status === 'done') return <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />;
+  if (status === 'blocked') return <AlertCircle className="mt-0.5 h-4 w-4 text-red-600" />;
+  if (status === 'current') return <PlayCircle className="mt-0.5 h-4 w-4 text-blue-600" />;
+  return <CircleDot className="mt-0.5 h-4 w-4 text-muted-foreground" />;
+}
+
+function OperatorBlockersCard({
+  hardBlockers,
+  softWarnings,
+  isLoading,
+}: {
+  hardBlockers: {
+    label: string;
+    detail: string;
+    category: string;
+    action: string;
+    onClick: () => void;
+  }[];
+  softWarnings: {
+    label: string;
+    detail: string;
+    category: string;
+    action: string;
+    onClick: () => void;
+  }[];
+  isLoading: boolean;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-emerald-600" />
+          Blockers
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Stop before publishing
+          </div>
+          <div className="mt-2 space-y-2">
+            {isLoading ? (
+              <div className="text-xs text-muted-foreground">Checking readiness data...</div>
+            ) : hardBlockers.length === 0 ? (
+              <div className="flex items-start gap-2 text-xs text-emerald-700">
+                <CheckCircle2 className="mt-0.5 h-4 w-4" />
+                No stop items. Use the Publish tab to work the queue.
+              </div>
+            ) : (
+              hardBlockers.map(item => (
+                <div key={item.label} className="rounded-md border border-red-200 bg-red-50 p-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-medium text-red-800">{item.label}</div>
+                    <Badge variant="outline" className="bg-white text-[11px]">
+                      {item.category}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-red-700 mt-1">{item.detail}</div>
+                  <Button size="sm" variant="outline" className="mt-2 h-7" onClick={item.onClick}>
+                    {item.action}
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Continue while publishing
+          </div>
+          <div className="mt-2 space-y-2">
+            {softWarnings.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No chase list items right now.</div>
+            ) : (
+              softWarnings.map(item => (
+                <div key={item.label} className="rounded-md border border-amber-200 bg-amber-50 p-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-medium text-amber-900">{item.label}</div>
+                    <Badge variant="outline" className="bg-white text-[11px]">
+                      {item.category}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-amber-800 mt-1">{item.detail}</div>
+                  <Button size="sm" variant="outline" className="mt-2 h-7" onClick={item.onClick}>
+                    {item.action}
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PublishInstructionsCard() {
+  const steps = [
+    'Post accepted shifts to Homebase.',
+    'Mark Homebase complete in the Workbench.',
+    'Post the same accepted shifts to EHR.',
+    'Mark EHR complete in the Workbench.',
+  ];
+  return (
+    <Card className="border-blue-200 bg-blue-50/60">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Publish steps</CardTitle>
+        <p className="text-xs text-blue-900">
+          Do not publish until Readiness says it is OK to publish, unless a ClinOps lead explicitly tells you to continue.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-2 md:grid-cols-4">
+          {steps.map((step, index) => (
+            <div key={step} className="rounded-md border border-blue-200 bg-white px-3 py-2 text-xs">
+              <div className="font-medium text-blue-900">Step {index + 1}</div>
+              <div className="mt-1 text-blue-800">{step}</div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PublishGateBanner({
+  month,
+  summary,
+  submittedHours,
+  inboxNeedsReviewCount,
+  unmatchedCount,
+  missingCount,
+  onJumpToAvailability,
+  onJumpToCoverage,
+  onJumpToMatching,
+}: {
+  month: string;
+  summary: {
+    totalShifts: number;
+    homebaseShifts: number;
+    ehrShifts: number;
+    needsReviewCount: number;
+  };
+  submittedHours: number;
+  inboxNeedsReviewCount: number;
+  unmatchedCount: number;
+  missingCount: number;
+  onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
+  onJumpToCoverage: () => void;
+  onJumpToMatching: () => void;
+}) {
+  const coverageQ = useStateCoverage(month);
+  const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
+  const criticalGapStates = useMemo(
+    () => coverageRows.filter(r => r.needed > 0 && r.pct_filled < 60),
+    [coverageRows],
+  );
+  const reviewCount = summary.needsReviewCount + inboxNeedsReviewCount;
+
+  const stopItems = useMemo(() => {
+    const out: {
+      label: string;
+      action: string;
+      onClick: () => void;
+    }[] = [];
+    if (coverageQ.isError) {
+      out.push({
+        label: 'Coverage failed to load. Open Coverage Gaps and reload before publishing.',
+        action: 'Open Coverage',
+        onClick: onJumpToCoverage,
+      });
+    } else if (!coverageQ.isLoading && coverageRows.length === 0) {
+      out.push({
+        label: 'No coverage rows exist for this month.',
+        action: 'Open Coverage',
+        onClick: onJumpToCoverage,
+      });
+    }
+    if (!summary.totalShifts) {
+      out.push({
+        label: submittedHours > 0
+          ? 'No publishable shifts yet. Click Recalculate schedule in the header.'
+          : 'No usable availability has been expanded yet.',
+        action: 'Open Availability',
+        onClick: () => onJumpToAvailability('submissions'),
+      });
+    }
+    if (summary.totalShifts > 0 && unmatchedCount > 0) {
+      out.push({
+        label: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'} must be fixed or escalated first.`,
+        action: 'Open Unmatched',
+        onClick: () => onJumpToAvailability('unmatched'),
+      });
+    }
+    if (reviewCount > 0) {
+      out.push({
+        label: `${reviewCount} review item${reviewCount === 1 ? '' : 's'} must be escalated to a ClinOps lead first.`,
+        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Resubmits',
+        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
+      });
+    }
+    if (criticalGapStates.length > 0) {
+      out.push({
+        label: `Critically under-covered state: ${criticalGapStates.slice(0, 5).map(s => `${s.state} ${Math.round(s.pct_filled)}%`).join(', ')}${criticalGapStates.length > 5 ? ', plus more' : ''}.`,
+        action: 'Open Coverage',
+        onClick: onJumpToCoverage,
+      });
+    }
+    if (missingCount > 0) {
+      out.push({
+        label: `${missingCount} provider${missingCount === 1 ? '' : 's'} still need July availability reminders.`,
+        action: 'Open Missing',
+        onClick: () => onJumpToAvailability('missing'),
+      });
+    }
+    return out;
+  }, [
+    coverageQ.isError,
+    coverageQ.isLoading,
+    coverageRows.length,
+    summary.totalShifts,
+    summary.needsReviewCount,
+    submittedHours,
+    unmatchedCount,
+    missingCount,
+    reviewCount,
+    criticalGapStates,
+    onJumpToAvailability,
+    onJumpToCoverage,
+    onJumpToMatching,
+  ]);
+
+  if (coverageQ.isLoading) {
+    return (
+      <Alert className="border-slate-200 bg-slate-50">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <AlertDescription>
+          Checking coverage before publishing...
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (stopItems.length > 0) {
+    return (
+      <Alert variant="destructive" className="bg-red-50">
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          <div className="font-medium">Stop before publishing</div>
+          <div className="mt-1 text-xs">
+            {stopItems[0].label}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {stopItems.slice(0, 3).map(item => (
+              <Button key={item.label} size="sm" variant="outline" onClick={item.onClick}>
+                {item.action}
+              </Button>
+            ))}
+          </div>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  const homebaseLeft = Math.max(0, summary.totalShifts - summary.homebaseShifts);
+  const ehrLeft = Math.max(0, summary.totalShifts - summary.ehrShifts);
+  const title =
+    homebaseLeft > 0
+      ? 'Ready for Homebase'
+      : ehrLeft > 0
+        ? 'Homebase complete - finish EHR'
+        : 'Publishing complete';
+  const body =
+    homebaseLeft > 0
+      ? `${homebaseLeft} shift${homebaseLeft === 1 ? '' : 's'} still need to be posted to Homebase.`
+      : ehrLeft > 0
+        ? `${ehrLeft} Homebase-posted shift${ehrLeft === 1 ? '' : 's'} still need EHR confirmation.`
+        : `All ${summary.totalShifts} shift${summary.totalShifts === 1 ? '' : 's'} are posted and confirmed.`;
+
+  return (
+    <Alert className="border-emerald-200 bg-emerald-50">
+      <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+      <AlertDescription>
+        <div className="font-medium text-emerald-900">{title}</div>
+        <div className="mt-1 text-xs text-emerald-800">{body}</div>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -3973,13 +4693,6 @@ function ForecastPanel({ month }: { month: string }) {
   );
 }
 
-const COVERAGE_STATUS_STYLE: Record<CoverageStatus, string> = {
-  Covered: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
-  Watch: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
-  Gap: 'bg-orange-100 text-orange-800 hover:bg-orange-100',
-  Critical: 'bg-red-100 text-red-800 hover:bg-red-100',
-};
-
 function CoverageGapsPanel({
   month,
   acceptedRows,
@@ -4000,51 +4713,96 @@ function CoverageGapsPanel({
     return (
       <EmptyState
         title={`No coverage data for ${formatMonthLabel(month)} yet`}
-        body="Coverage comes from shift_recommendations + state_demand_targets. What's missing: an evaluator run after Jotform submissions land. Next: click 'Re-run evaluator' in the header, then come back."
+        body="The accepted shift list has not been connected to state coverage yet. Next: click 'Recalculate schedule' in the header, then come back. If it still does not load, ask an admin for help."
       />
     );
   }
 
   const sorted = [...rows].sort((a, b) => a.pct_filled - b.pct_filled);
+  const criticalRows = sorted.filter(r => r.needed > 0 && r.pct_filled < 60);
+  const watchRows = sorted.filter(r => r.needed > 0 && r.pct_filled >= 60 && r.pct_filled < 95);
+  const totalGap = rows.reduce((sum, r) => sum + Math.max(0, r.needed - r.filled), 0);
 
-  const recommendedFor = (pct: number, gap: number): string => {
-    if (pct >= 95) return 'Hold — keep monitoring';
-    if (pct >= 80) return 'Watch for cancellations';
-    if (pct >= 60) return `Source ${Math.ceil(Math.abs(gap))} more hrs from licensed providers`;
-    return `Critical — open Matching to reassign or hire`;
+  const guidanceFor = (row: StateCoverageRow): { label: 'Stop' | 'Watch' | 'OK' | 'Extra'; className: string; action: string } => {
+    const shortage = Math.max(0, row.needed - row.filled);
+    if (row.filled > row.needed && row.needed > 0) {
+      return {
+        label: 'Extra',
+        className: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
+        action: 'Extra hours accepted. No VA action needed.',
+      };
+    }
+    if (row.needed > 0 && row.pct_filled < 60) {
+      return {
+        label: 'Stop',
+        className: 'bg-red-100 text-red-800 hover:bg-red-100',
+        action: `Escalate to ClinOps lead before publishing. ${Math.ceil(shortage)} more hour${Math.ceil(shortage) === 1 ? '' : 's'} needed.`,
+      };
+    }
+    if (row.needed > 0 && row.pct_filled < 95) {
+      return {
+        label: 'Watch',
+        className: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+        action: `Continue only if approved. ${Math.ceil(shortage)} more hour${Math.ceil(shortage) === 1 ? '' : 's'} would improve coverage.`,
+      };
+    }
+    return {
+      label: 'OK',
+      className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+      action: 'Covered. No VA action needed.',
+    };
   };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          Coverage gaps · {formatMonthLabel(month)}
+          State coverage guidance · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Access target uses Metabase demand × {ACCESS_GROWTH_BUFFER_MULTIPLIER.toFixed(2)}
-          so scheduling can build same-day / next-day headroom instead of merely matching
-          historical utilization.
+          This tells VA staff whether publishing can continue. The system intentionally schedules
+          extra hours above historical usage so July access does not stay too thin.
         </p>
       </CardHeader>
       <CardContent className="p-0">
+        <div className="border-y bg-muted/30 px-4 py-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <CoverageStat label="Stop states" value={String(criticalRows.length)} tone={criticalRows.length > 0 ? 'bad' : 'good'} />
+            <CoverageStat label="Watch states" value={String(watchRows.length)} tone={watchRows.length > 0 ? 'warn' : 'good'} />
+            <CoverageStat label="Hours still needed" value={`${totalGap.toFixed(0)} hrs`} tone={totalGap > 0 ? 'warn' : 'good'} />
+            <CoverageStat label="Accepted providers" value={String(acceptedRows.length)} tone="neutral" />
+            <CoverageStat label="Missing availability" value={String(missingRows.length)} tone={missingRows.length > 0 ? 'warn' : 'good'} />
+          </div>
+          {criticalRows.length > 0 && (
+            <Alert variant="destructive" className="mt-3 bg-red-50">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-xs">
+                Stop before publishing. Escalate these critically under-covered states to the ClinOps lead:
+                {' '}
+                {criticalRows.slice(0, 8).map(r => `${r.state} ${Math.round(r.pct_filled)}%`).join(', ')}
+                {criticalRows.length > 8 ? ', plus more' : ''}.
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>State</TableHead>
-              <TableHead className="text-right">Access target</TableHead>
+              <TableHead className="text-right">Hours needed</TableHead>
               <TableHead className="text-right">Accepted hrs</TableHead>
-              <TableHead className="text-right">Gap / surplus</TableHead>
+              <TableHead className="text-right">Short / extra</TableHead>
               <TableHead className="text-right">Coverage</TableHead>
-              <TableHead className="text-right">Eligible</TableHead>
-              <TableHead className="text-right">Missing</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Licensed providers</TableHead>
+              <TableHead className="text-right">Missing availability</TableHead>
+              <TableHead>VA guidance</TableHead>
               <TableHead>Recommended action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sorted.map(r => {
-              const status = r.status ?? coverageStatusFor(r.pct_filled);
               const diff = r.filled - r.needed;
+              const guidance = guidanceFor(r);
               return (
                 <TableRow key={r.state}>
                   <TableCell className="font-medium">{r.state}</TableCell>
@@ -4052,7 +4810,7 @@ function CoverageGapsPanel({
                     {r.needed.toFixed(0)}
                     {r.access_buffer_hours > 0 && (
                       <div className="text-[11px] text-muted-foreground">
-                        base {r.baseline_needed.toFixed(0)} + buffer
+                        includes extra access protection
                       </div>
                     )}
                   </TableCell>
@@ -4070,10 +4828,10 @@ function CoverageGapsPanel({
                     {r.missing_providers || '—'}
                   </TableCell>
                   <TableCell>
-                    <Badge className={COVERAGE_STATUS_STYLE[status]}>{status}</Badge>
+                    <Badge className={guidance.className}>{guidance.label}</Badge>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-[260px]">
-                    {recommendedFor(r.pct_filled, diff)}
+                    {guidance.action}
                   </TableCell>
                 </TableRow>
               );
@@ -4082,6 +4840,31 @@ function CoverageGapsPanel({
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+function CoverageStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: 'good' | 'warn' | 'bad' | 'neutral';
+}) {
+  const toneClass =
+    tone === 'good'
+      ? 'text-emerald-700'
+      : tone === 'warn'
+        ? 'text-amber-700'
+        : tone === 'bad'
+          ? 'text-red-700'
+          : 'text-foreground';
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`text-xl font-bold tabular-nums ${toneClass}`}>{value}</div>
+    </div>
   );
 }
 
@@ -4205,7 +4988,7 @@ function inferPriorityReason(row: ProviderPublishView): string {
 
 function inferDeclineReason(row: ProviderPublishView): string {
   const notes = (row.submission?.decision_notes ?? '').trim();
-  if (notes) return notes;
+  if (notes) return formatDecisionNoteForStaff(notes);
   const status = row.submission?.decision_status;
   if (status === 'declined') return 'Declined (no reason recorded — see Audit tab)';
   const declined = Number(row.submission?.declined_hours ?? 0);
@@ -4254,7 +5037,7 @@ function MatchingPanel({
     return (
       <EmptyState
         title={`No matching decisions yet for ${formatMonthLabel(month)}`}
-        body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one evaluator run after Jotform submissions. Next: open the Availability tab to confirm submissions are in, then click 'Re-run evaluator' in the page header."
+        body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one schedule recalculation after Jotform submissions. Next: open Availability to confirm submissions are in, then click 'Recalculate schedule' in the page header."
       />
     );
   }
@@ -4264,9 +5047,9 @@ function MatchingPanel({
       <CardHeader>
         <CardTitle className="text-base">Provider recommendations · {formatMonthLabel(month)}</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Who is getting hours, why, and what was cut. Allocation uses Supabase provider-state
-          eligibility, then prioritizes clinical supervisors, Vitable internal providers, and
-          access providers.
+          Who is getting hours, why, and what was cut. The system matches providers to states
+          where they can cover visits, then prioritizes clinical supervisors, Vitable internal
+          providers, and access providers.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -4363,15 +5146,15 @@ function classifyReason(text: string): string {
   const t = text.toLowerCase();
   if (!t) return 'No reason recorded';
   if (t.includes('access_growth_buffer') || t.includes('access buffer'))
-    return 'Access growth buffer';
+    return 'Extra access protection';
   if (t.includes('scarce_window') || t.includes('scarce coverage'))
-    return 'Scarce coverage protected';
+    return 'Friday/weekend access protected';
   if (t.includes('outside') && t.includes('business')) return 'Outside business hours';
   if (t.includes('capacity') || t.includes('oversupply') || t.includes('surplus'))
-    return 'State capacity full';
+    return 'State already covered';
   if (t.includes('unavailable') || t.includes('off-day') || t.includes('off day'))
     return 'Provider unavailable';
-  if (t.includes('license') || t.includes('licensure')) return 'Missing license';
+  if (t.includes('license') || t.includes('licensure')) return 'License issue';
   if (t.includes('np') && (t.includes('restrict') || t.includes('prohibit')))
     return 'NP practice restriction';
   if (t.includes('malformed') || t.includes('parse') || t.includes('invalid')) return 'Malformed time';
@@ -4506,13 +5289,13 @@ function SourceAuditPanel({ month }: { month: string }) {
 function DataSourceMapPanel() {
   const rows = [
     ['Homebase source', 'sync-homebase → near-term homebase_locations / homebase_employees / homebase_shifts; sync-homebase-rates → provider_pay_rates', 'Same-day / next-day calendar visibility, scheduled hours, rates, match quality'],
-    ['Metabase source', 'cards 2974 / 2973 / 2971 / 2940 → compute-demand-forecast → demand_forecast / state_demand_targets / service_line_demand_targets / provider_state_active', 'Forecast, Readiness, Coverage, Source audit, Allocation eligibility'],
+    ['Metabase source', 'cards 2974 / 2973 / 2971 / 2940 → compute-demand-forecast → demand_forecast / state_demand_targets / service_line_demand_targets / provider_state_active', 'Forecast, Readiness, Coverage, Source audit, state coverage'],
     ['Jotform availability', 'sync-jotform-submissions → schedule_submissions.raw_answers / parsed_shifts', 'Source of truth for requested monthly provider hours, Matching, Audit'],
     ['Demand forecast', 'compute-demand-forecast → demand_forecast → state_demand_targets', 'Forecast, Readiness, Coverage'],
     ['Provider directory', 'providers', 'Missing submissions, Setup, Matching'],
-    ['Medallion licensure', 'sync-medallion-licenses → medallion_provider_licenses → v_provider_state_eligibility', 'Evaluator eligibility, Coverage eligible/missing counts, Source audit'],
-    ['DirectShifts licensure', 'directshifts_provider_licenses → v_provider_state_eligibility', 'Evaluator eligibility, Coverage eligible/missing counts, Source audit'],
-    ['ClinOps licensure', 'provider_licenses → v_provider_state_eligibility', 'Evaluator eligibility, Coverage eligible/missing counts'],
+    ['Medallion licensure', 'sync-medallion-licenses → medallion_provider_licenses → v_provider_state_eligibility', 'State coverage, licensed-provider counts, Source audit'],
+    ['DirectShifts licensure', 'directshifts_provider_licenses → v_provider_state_eligibility', 'State coverage, licensed-provider counts, Source audit'],
+    ['ClinOps licensure', 'provider_licenses → v_provider_state_eligibility', 'State coverage, licensed-provider counts'],
     ['EHR readiness', 'providers.ehr_activation_status plus shift_recommendations.ehr_posted_at', 'Publish Tracker'],
     ['Homebase publishing', 'shift_recommendations.publish_status / publish_audit_log', 'Publish Tracker, History'],
     ['Recommendations', 'evaluate-schedule-submissions → shift_recommendations', 'Matching, Coverage, Publish, Audit'],
@@ -4657,14 +5440,14 @@ function DataQualityPanel({
       detail: acceptedExceedsSubmitted.slice(0, 3).map(r => r.provider_name).join(', '),
     },
     {
-      label: 'State demand but no eligible providers',
+      label: 'State needs hours but has no licensed providers',
       count: demandWithoutEligibleProviders.length,
       detail: demandWithoutEligibleProviders.slice(0, 5).map(r => r.state).join(', '),
     },
     {
       label: 'Accepted providers missing publish rows',
       count: missingPublishRows,
-      detail: missingPublishRows ? 'Run evaluator to emit shift_recommendations' : '',
+      detail: missingPublishRows ? 'Recalculate schedule to create accepted shift rows' : '',
     },
   ];
 
@@ -4742,7 +5525,7 @@ function AuditPanel({
         profession: r.profession,
         bucket: declined > 0 ? 'Declined / cut' : 'Accepted',
         reasonClass: classifyReason(note),
-        reasonText: note || 'Accepted in full',
+        reasonText: formatDecisionNoteForStaff(note) || 'Accepted in full',
         hours: declined || Number(r.submission?.accepted_hours ?? 0),
       });
     } else {
@@ -4764,7 +5547,7 @@ function AuditPanel({
       profession: r.profession,
       bucket: 'Declined / cut',
       reasonClass: classifyReason(note),
-      reasonText: note || 'Declined (no reason recorded)',
+      reasonText: formatDecisionNoteForStaff(note) || 'Declined (no reason recorded)',
       hours: Number(r.submission?.declined_hours ?? 0),
     });
   }
@@ -4775,7 +5558,7 @@ function AuditPanel({
       profession: r.profession,
       bucket: 'Needs review',
       reasonClass: classifyReason(note),
-      reasonText: note || 'Flagged for manual review',
+      reasonText: formatDecisionNoteForStaff(note) || 'Flagged for manual review',
       hours: Number(r.submission?.accepted_hours ?? 0),
     });
   }
@@ -4796,7 +5579,7 @@ function AuditPanel({
         />
         <EmptyState
           title="No decisions to explain yet"
-          body="Once submissions are evaluated, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on the Availability tab and re-run the evaluator."
+          body="Once the schedule is recalculated, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on Availability, then click 'Recalculate schedule'."
         />
       </div>
     );
