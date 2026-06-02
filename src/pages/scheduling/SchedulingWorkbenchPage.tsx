@@ -64,6 +64,10 @@ import {
   ShieldCheck,
   Users,
   HelpCircle,
+  CheckCircle2,
+  ClipboardList,
+  CircleDot,
+  PlayCircle,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
@@ -944,12 +948,15 @@ export default function SchedulingWorkbenchPage({
         <TabsContent value="readiness" className="mt-4 space-y-4">
           <ReadinessPanel
             month={month}
+            isLoading={isLoading || shiftsLoading}
             summary={scopedSummary}
             missingCount={scopedSummary.missingCount}
             submittedHours={scopedSubmittedAvailabilityHours}
             mentalHealthCount={isMh ? 0 : mentalHealthRows.length}
             mentalHealthAcceptedCount={isMh ? 0 : mentalHealthAcceptedRows.length}
             inboxNeedsReviewCount={scopedInboxActionable}
+            onReevaluate={reevaluateNow}
+            isReevaluating={reevaluate.isPending}
             onJumpToCoverage={() => onTopTabChange('coverage')}
             onJumpToAvailability={() => onTopTabChange('availability')}
             onJumpToMatching={() => onTopTabChange('matching')}
@@ -1139,6 +1146,15 @@ export default function SchedulingWorkbenchPage({
 
         {/* ============ PUBLISH ============ */}
         <TabsContent value="publish" className="mt-4 space-y-4">
+          <PublishGateBanner
+            month={month}
+            summary={scopedSummary}
+            submittedHours={scopedSubmittedAvailabilityHours}
+            inboxNeedsReviewCount={scopedInboxActionable}
+            onJumpToAvailability={() => onTopTabChange('availability')}
+            onJumpToCoverage={() => onTopTabChange('coverage')}
+            onJumpToMatching={() => onTopTabChange('matching')}
+          />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard
               label="Shifts to publish"
@@ -1895,6 +1911,14 @@ function PublishingQueue({
       ),
     [filtered],
   );
+  const pendingHomebase = useMemo(
+    () => sorted.filter(s => !isHomebaseDone(s)),
+    [sorted],
+  );
+  const pendingEhr = useMemo(
+    () => sorted.filter(s => isHomebaseDone(s) && !isEhrDone(s)),
+    [sorted],
+  );
 
   if (isLoading) {
     return (
@@ -1948,18 +1972,18 @@ function PublishingQueue({
             <Button
               size="sm"
               variant="outline"
-              disabled={sorted.length === 0}
-              onClick={() => onBulkShifts(sorted, 'homebase', true)}
+              disabled={pendingHomebase.length === 0}
+              onClick={() => onBulkShifts(pendingHomebase, 'homebase', true)}
             >
-              Mark filtered HB
+              Mark HB ({pendingHomebase.length})
             </Button>
             <Button
               size="sm"
               variant="outline"
-              disabled={sorted.length === 0}
-              onClick={() => onBulkShifts(sorted.filter(isHomebaseDone), 'ehr', true)}
+              disabled={pendingEhr.length === 0}
+              onClick={() => onBulkShifts(pendingEhr, 'ehr', true)}
             >
-              Mark filtered EHR
+              Mark EHR ({pendingEhr.length})
             </Button>
           </div>
         </div>
@@ -3531,12 +3555,15 @@ function PublishHistoryPanel({
 
 function ReadinessPanel({
   month,
+  isLoading,
   summary,
   missingCount,
   submittedHours,
   mentalHealthCount,
   mentalHealthAcceptedCount,
   inboxNeedsReviewCount,
+  onReevaluate,
+  isReevaluating,
   onJumpToCoverage,
   onJumpToAvailability,
   onJumpToMatching,
@@ -3544,6 +3571,7 @@ function ReadinessPanel({
   onJumpToMentalHealth,
 }: {
   month: string;
+  isLoading: boolean;
   summary: {
     totalShifts: number;
     totalProviders: number;
@@ -3558,6 +3586,8 @@ function ReadinessPanel({
   mentalHealthCount: number;
   mentalHealthAcceptedCount: number;
   inboxNeedsReviewCount: number;
+  onReevaluate: () => void;
+  isReevaluating: boolean;
   onJumpToCoverage: () => void;
   onJumpToAvailability: () => void;
   onJumpToMatching: () => void;
@@ -3565,113 +3595,276 @@ function ReadinessPanel({
   onJumpToMentalHealth: () => void;
 }) {
   const coverageQ = useStateCoverage(month);
+  const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
 
   const demandHours = useMemo(
-    () => (coverageQ.data?.rows ?? []).reduce((s, r) => s + r.needed, 0),
-    [coverageQ.data],
+    () => coverageRows.reduce((s, r) => s + r.needed, 0),
+    [coverageRows],
   );
 
   const acceptedHours = useMemo(
-    () => (coverageQ.data?.rows ?? []).reduce((s, r) => s + r.filled, 0),
-    [coverageQ.data],
+    () => coverageRows.reduce((s, r) => s + r.filled, 0),
+    [coverageRows],
   );
 
-  const gapHours = demandHours - acceptedHours;
+  const stateGapHours = useMemo(
+    () => coverageRows.reduce((s, r) => s + Math.max(0, r.needed - r.filled), 0),
+    [coverageRows],
+  );
+  const stateSurplusHours = useMemo(
+    () => coverageRows.reduce((s, r) => s + Math.max(0, r.filled - r.needed), 0),
+    [coverageRows],
+  );
   const criticalGapStates = useMemo(
     () =>
-      (coverageQ.data?.rows ?? []).filter(
+      coverageRows.filter(
         r => r.needed > 0 && r.pct_filled < 60,
       ),
-    [coverageQ.data],
+    [coverageRows],
+  );
+  const watchGapStates = useMemo(
+    () =>
+      coverageRows.filter(
+        r => r.needed > 0 && r.pct_filled >= 60 && r.pct_filled < 95,
+      ),
+    [coverageRows],
   );
 
   const homebasePct =
     summary.totalShifts > 0 ? Math.round((summary.homebaseShifts / summary.totalShifts) * 100) : 0;
   const ehrPct =
     summary.totalShifts > 0 ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0;
+  const reviewCount = summary.needsReviewCount + inboxNeedsReviewCount;
+  const hasPublishRows = summary.totalShifts > 0;
+  const checksLoading = isLoading || coverageQ.isLoading;
 
-  // Readiness verdict — three buckets
-  type Readiness = { label: 'Ready' | 'At Risk' | 'Not Ready'; tone: string };
+  type OperatorBlocker = {
+    label: string;
+    detail: string;
+    action: string;
+    onClick: () => void;
+  };
+
+  const hardBlockers = useMemo<OperatorBlocker[]>(() => {
+    const out: OperatorBlocker[] = [];
+    if (coverageQ.isError) {
+      out.push({
+        label: 'Coverage could not load',
+        detail: 'Do not publish until the Coverage Gaps tab loads successfully.',
+        action: 'Open Coverage Gaps',
+        onClick: onJumpToCoverage,
+      });
+    } else if (!coverageQ.isLoading && coverageRows.length === 0) {
+      out.push({
+        label: 'No coverage rows for this month',
+        detail: 'Run the evaluator after Jotform submissions are synced, then check coverage again.',
+        action: 'Open Coverage Gaps',
+        onClick: onJumpToCoverage,
+      });
+    }
+    if (!checksLoading && !hasPublishRows) {
+      out.push({
+        label: 'No publishable shift list yet',
+        detail: submittedHours > 0
+          ? 'Availability exists, but no shift_recommendations rows are ready. Click Re-run evaluator in the header.'
+          : 'No usable July availability has been expanded yet.',
+        action: 'Open Availability',
+        onClick: onJumpToAvailability,
+      });
+    }
+    if (reviewCount > 0) {
+      out.push({
+        label: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need manual review`,
+        detail: `${summary.needsReviewCount} parser/evaluator flag${summary.needsReviewCount === 1 ? '' : 's'} and ${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} must be cleared before publishing.`,
+        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Availability',
+        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : onJumpToAvailability,
+      });
+    }
+    if (criticalGapStates.length > 0) {
+      out.push({
+        label: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} below 60% coverage`,
+        detail: `Stop-level gaps: ${criticalGapStates.slice(0, 6).map(s => `${s.state} ${Math.round(s.pct_filled)}%`).join(', ')}${criticalGapStates.length > 6 ? ', plus more' : ''}.`,
+        action: 'Open Coverage Gaps',
+        onClick: onJumpToCoverage,
+      });
+    }
+    return out;
+  }, [
+    coverageQ.isError,
+    coverageQ.isLoading,
+    coverageRows,
+    checksLoading,
+    hasPublishRows,
+    submittedHours,
+    reviewCount,
+    summary.needsReviewCount,
+    inboxNeedsReviewCount,
+    criticalGapStates,
+    onJumpToAvailability,
+    onJumpToCoverage,
+    onJumpToMatching,
+  ]);
+
+  const workbenchReady = !checksLoading && hardBlockers.length === 0 && hasPublishRows;
+  const publishingComplete = workbenchReady && homebasePct === 100 && ehrPct === 100;
+
+  type Readiness = {
+    label: 'Checking' | 'Blocked' | 'Ready to Publish' | 'Publishing' | 'Complete';
+    tone: string;
+  };
   const readiness: Readiness = (() => {
-    if (
-      criticalGapStates.length === 0 &&
-      missingCount === 0 &&
-      summary.needsReviewCount === 0 &&
-      ehrPct === 100
-    ) {
-      return { label: 'Ready', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
-    }
-    if (criticalGapStates.length > 0 || missingCount > 5 || ehrPct < 50) {
-      return { label: 'Not Ready', tone: 'bg-red-100 text-red-800 border-red-200' };
-    }
-    return { label: 'At Risk', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
+    if (checksLoading) return { label: 'Checking', tone: 'bg-slate-100 text-slate-700 border-slate-200' };
+    if (hardBlockers.length > 0) return { label: 'Blocked', tone: 'bg-red-100 text-red-800 border-red-200' };
+    if (publishingComplete) return { label: 'Complete', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+    if (homebasePct > 0 || ehrPct > 0) return { label: 'Publishing', tone: 'bg-blue-100 text-blue-800 border-blue-200' };
+    return { label: 'Ready to Publish', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
   })();
 
-  // Biggest blocker + suggested next action
   const { blocker, nextAction, nextActionJump } = useMemo<{
     blocker: string;
     nextAction: string;
     nextActionJump: () => void;
   }>(() => {
-    if (criticalGapStates.length > 0) {
-      return {
-        blocker: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} below 60% coverage (${criticalGapStates.slice(0, 3).map(s => s.state).join(', ')}${criticalGapStates.length > 3 ? '…' : ''})`,
-        nextAction: 'Open Coverage Gaps and source licensed providers',
-        nextActionJump: onJumpToCoverage,
-      };
-    }
-    if (missingCount > 0) {
-      return {
-        blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} have not submitted ${formatMonthLabel(month)} availability`,
-        nextAction: 'Open Availability → Missing and copy BCC list',
-        nextActionJump: onJumpToAvailability,
-      };
-    }
-    if (inboxNeedsReviewCount > 0) {
-      return {
-        blocker: `${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} pending review`,
-        nextAction: 'Resolve resubmissions in Availability → Resubmits',
-        nextActionJump: onJumpToAvailability,
-      };
-    }
-    if (summary.needsReviewCount > 0) {
-      return {
-        blocker: `${summary.needsReviewCount} submission${summary.needsReviewCount === 1 ? '' : 's'} flagged needs-review`,
-        nextAction: 'Triage needs-review in Matching',
-        nextActionJump: onJumpToMatching,
-      };
+    if (hardBlockers.length > 0) {
+      const first = hardBlockers[0];
+      return { blocker: first.label, nextAction: first.action, nextActionJump: first.onClick };
     }
     if (homebasePct < 100) {
       return {
-        blocker: `${summary.totalShifts - summary.homebaseShifts} shift${summary.totalShifts - summary.homebaseShifts === 1 ? '' : 's'} not yet posted to Homebase`,
-        nextAction: 'Post remaining shifts in Publish Tracker',
+        blocker: 'None blocking the build',
+        nextAction: 'Open Publish and post remaining Homebase shifts',
         nextActionJump: onJumpToPublish,
       };
     }
     if (ehrPct < 100) {
       return {
-        blocker: `${summary.totalShifts - summary.ehrShifts} shift${summary.totalShifts - summary.ehrShifts === 1 ? '' : 's'} not yet posted to EHR`,
-        nextAction: 'Finish EHR posts in Publish Tracker',
+        blocker: 'Homebase is done',
+        nextAction: 'Transfer remaining shifts to EHR',
         nextActionJump: onJumpToPublish,
       };
     }
     return {
-      blocker: `None — ${formatMonthLabel(month)} is publish-ready`,
-      nextAction: 'Confirm with ClinOps lead and announce',
+      blocker: `None - ${formatMonthLabel(month)} is fully published`,
+      nextAction: 'Review publish history',
       nextActionJump: onJumpToPublish,
     };
   }, [
     month,
-    criticalGapStates,
-    missingCount,
-    inboxNeedsReviewCount,
-    summary,
+    hardBlockers,
     homebasePct,
     ehrPct,
+    onJumpToPublish,
+  ]);
+
+  type OperatorStep = {
+    label: string;
+    detail: string;
+    status: 'done' | 'current' | 'blocked' | 'waiting';
+    action?: string;
+    onClick?: () => void;
+    disabled?: boolean;
+  };
+
+  const workflowSteps: OperatorStep[] = [
+    {
+      label: '1. Confirm Jotform availability',
+      detail: submittedHours > 0
+        ? `${submittedHours.toFixed(0)} expanded availability hours are in the workbench.`
+        : 'No expanded availability hours are visible yet.',
+      status: submittedHours > 0 ? 'done' : 'blocked',
+      action: 'Open Availability',
+      onClick: onJumpToAvailability,
+    },
+    {
+      label: '2. Build the recommended shift list',
+      detail: hasPublishRows
+        ? `${summary.totalShifts} publishable shift${summary.totalShifts === 1 ? '' : 's'} for ${summary.totalProviders} provider${summary.totalProviders === 1 ? '' : 's'}.`
+        : submittedHours > 0
+          ? 'Click Re-run evaluator, then wait for shift rows to appear.'
+          : 'Wait for availability before running the evaluator.',
+      status: hasPublishRows ? 'done' : submittedHours > 0 ? 'current' : 'waiting',
+      action: !hasPublishRows && submittedHours > 0 ? 'Re-run evaluator' : undefined,
+      onClick: !hasPublishRows && submittedHours > 0 ? onReevaluate : undefined,
+      disabled: isReevaluating,
+    },
+    {
+      label: '3. Clear manual review',
+      detail: reviewCount === 0
+        ? 'No ambiguous submissions or resubmissions need action.'
+        : `${reviewCount} item${reviewCount === 1 ? '' : 's'} need a decision before publishing.`,
+      status: reviewCount === 0 ? 'done' : 'blocked',
+      action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Availability',
+      onClick: summary.needsReviewCount > 0 ? onJumpToMatching : onJumpToAvailability,
+    },
+    {
+      label: '4. Check state coverage',
+      detail: criticalGapStates.length > 0
+        ? `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} are stop-level gaps.`
+        : watchGapStates.length > 0
+          ? `${watchGapStates.length} state${watchGapStates.length === 1 ? '' : 's'} are below the access target but not stop-level.`
+          : 'No stop-level state coverage gaps.',
+      status: coverageQ.isLoading ? 'waiting' : criticalGapStates.length > 0 ? 'blocked' : watchGapStates.length > 0 ? 'current' : 'done',
+      action: 'Open Coverage',
+      onClick: onJumpToCoverage,
+    },
+    {
+      label: '5. Post accepted shifts to Homebase',
+      detail: hasPublishRows
+        ? `${summary.homebaseShifts}/${summary.totalShifts} shifts posted to Homebase.`
+        : 'Homebase posting starts after the shift list is built.',
+      status: !workbenchReady ? 'waiting' : homebasePct === 100 ? 'done' : 'current',
+      action: 'Open Publish',
+      onClick: onJumpToPublish,
+    },
+    {
+      label: '6. Transfer posted shifts to EHR',
+      detail: hasPublishRows
+        ? `${summary.ehrShifts}/${summary.totalShifts} shifts confirmed in EHR.`
+        : 'EHR transfer starts after Homebase posting.',
+      status: !workbenchReady || homebasePct < 100 ? 'waiting' : ehrPct === 100 ? 'done' : 'current',
+      action: 'Open Publish',
+      onClick: onJumpToPublish,
+    },
+  ];
+
+  const softWarnings = useMemo<OperatorBlocker[]>(() => {
+    const out: OperatorBlocker[] = [];
+    if (missingCount > 0) {
+      out.push({
+        label: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing availability`,
+        detail: criticalGapStates.length > 0
+          ? 'Chase these now because coverage is already blocked.'
+          : 'Keep chasing, but this is not a stop item if coverage is usable.',
+        action: 'Open Missing',
+        onClick: onJumpToAvailability,
+      });
+    }
+    if (watchGapStates.length > 0 && criticalGapStates.length === 0) {
+      out.push({
+        label: `${watchGapStates.length} state${watchGapStates.length === 1 ? '' : 's'} below access target`,
+        detail: 'Publish can continue, but source extra hours before launch if available.',
+        action: 'Open Coverage',
+        onClick: onJumpToCoverage,
+      });
+    }
+    if (mentalHealthCount > 0 && mentalHealthAcceptedCount < mentalHealthCount) {
+      out.push({
+        label: 'Mental health is tracked separately',
+        detail: `${mentalHealthAcceptedCount}/${mentalHealthCount} MH providers have accepted availability.`,
+        action: 'Open Mental Health',
+        onClick: onJumpToMentalHealth,
+      });
+    }
+    return out;
+  }, [
+    missingCount,
+    criticalGapStates.length,
+    watchGapStates.length,
+    mentalHealthCount,
+    mentalHealthAcceptedCount,
     onJumpToAvailability,
     onJumpToCoverage,
-    onJumpToMatching,
-    onJumpToPublish,
+    onJumpToMentalHealth,
   ]);
 
   const lastUpdated = useMemo(() => {
@@ -3689,7 +3882,7 @@ function ReadinessPanel({
               {formatMonthLabel(month)} status: {readiness.label}
             </Badge>
             <div className="text-sm">
-              <div className="font-medium">Biggest blocker</div>
+              <div className="font-medium">Publish gate</div>
               <div className="text-xs opacity-90">{blocker}</div>
             </div>
           </div>
@@ -3705,6 +3898,15 @@ function ReadinessPanel({
           </div>
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)] gap-4">
+        <OperatorWorkflowCard steps={workflowSteps} />
+        <OperatorBlockersCard
+          hardBlockers={hardBlockers}
+          softWarnings={softWarnings}
+          isLoading={checksLoading}
+        />
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard
@@ -3727,9 +3929,9 @@ function ReadinessPanel({
           }
         />
         <SummaryCard
-          label={gapHours > 0 ? 'Remaining gap' : 'Surplus'}
-          value={`${Math.abs(gapHours).toFixed(0)} hrs`}
-          sub={gapHours > 0 ? 'Below demand' : 'Above demand'}
+          label={stateGapHours > 0 ? 'State gaps' : 'Surplus'}
+          value={`${(stateGapHours > 0 ? stateGapHours : stateSurplusHours).toFixed(0)} hrs`}
+          sub={stateGapHours > 0 ? 'Shortage across states' : 'Above assigned targets'}
         />
       </div>
 
@@ -3769,7 +3971,7 @@ function ReadinessPanel({
               <div className="text-xs text-muted-foreground">Loading…</div>
             ) : criticalGapStates.length === 0 ? (
               <div className="text-xs text-muted-foreground">
-                No state below 60% coverage. Nice.
+                No state is below 60% coverage.
               </div>
             ) : (
               <div className="flex flex-wrap gap-1.5">
@@ -3795,6 +3997,7 @@ function ReadinessPanel({
           </CardContent>
         </Card>
 
+        {(mentalHealthCount > 0 || mentalHealthAcceptedCount > 0) && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -3821,12 +4024,303 @@ function ReadinessPanel({
             </Button>
           </CardContent>
         </Card>
+        )}
       </div>
 
       <div className="text-xs text-muted-foreground">
         Last updated {lastUpdated}.
       </div>
     </div>
+  );
+}
+
+function OperatorWorkflowCard({
+  steps,
+}: {
+  steps: {
+    label: string;
+    detail: string;
+    status: 'done' | 'current' | 'blocked' | 'waiting';
+    action?: string;
+    onClick?: () => void;
+    disabled?: boolean;
+  }[];
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-emerald-600" />
+          Staff workflow
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Work from top to bottom. Red items stop publishing; blue is the next normal task.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {steps.map(step => (
+          <div
+            key={step.label}
+            className="flex flex-col gap-2 border-b pb-3 last:border-b-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between"
+          >
+            <div className="flex items-start gap-2">
+              <OperatorStepIcon status={step.status} />
+              <div>
+                <div className="text-sm font-medium">{step.label}</div>
+                <div className="text-xs text-muted-foreground">{step.detail}</div>
+              </div>
+            </div>
+            {step.action && step.onClick && (
+              <Button
+                size="sm"
+                variant={step.status === 'current' || step.status === 'blocked' ? 'default' : 'outline'}
+                className="h-8 shrink-0"
+                onClick={step.onClick}
+                disabled={step.disabled}
+              >
+                {step.disabled ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                {step.action}
+              </Button>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OperatorStepIcon({
+  status,
+}: {
+  status: 'done' | 'current' | 'blocked' | 'waiting';
+}) {
+  if (status === 'done') return <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />;
+  if (status === 'blocked') return <AlertCircle className="mt-0.5 h-4 w-4 text-red-600" />;
+  if (status === 'current') return <PlayCircle className="mt-0.5 h-4 w-4 text-blue-600" />;
+  return <CircleDot className="mt-0.5 h-4 w-4 text-muted-foreground" />;
+}
+
+function OperatorBlockersCard({
+  hardBlockers,
+  softWarnings,
+  isLoading,
+}: {
+  hardBlockers: {
+    label: string;
+    detail: string;
+    action: string;
+    onClick: () => void;
+  }[];
+  softWarnings: {
+    label: string;
+    detail: string;
+    action: string;
+    onClick: () => void;
+  }[];
+  isLoading: boolean;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-emerald-600" />
+          Blockers
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Stop before publishing
+          </div>
+          <div className="mt-2 space-y-2">
+            {isLoading ? (
+              <div className="text-xs text-muted-foreground">Checking readiness data...</div>
+            ) : hardBlockers.length === 0 ? (
+              <div className="flex items-start gap-2 text-xs text-emerald-700">
+                <CheckCircle2 className="mt-0.5 h-4 w-4" />
+                No stop items. Use the Publish tab to work the queue.
+              </div>
+            ) : (
+              hardBlockers.map(item => (
+                <div key={item.label} className="rounded-md border border-red-200 bg-red-50 p-2">
+                  <div className="text-sm font-medium text-red-800">{item.label}</div>
+                  <div className="text-xs text-red-700 mt-1">{item.detail}</div>
+                  <Button size="sm" variant="outline" className="mt-2 h-7" onClick={item.onClick}>
+                    {item.action}
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Continue while publishing
+          </div>
+          <div className="mt-2 space-y-2">
+            {softWarnings.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No chase list items right now.</div>
+            ) : (
+              softWarnings.map(item => (
+                <div key={item.label} className="rounded-md border border-amber-200 bg-amber-50 p-2">
+                  <div className="text-sm font-medium text-amber-900">{item.label}</div>
+                  <div className="text-xs text-amber-800 mt-1">{item.detail}</div>
+                  <Button size="sm" variant="outline" className="mt-2 h-7" onClick={item.onClick}>
+                    {item.action}
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PublishGateBanner({
+  month,
+  summary,
+  submittedHours,
+  inboxNeedsReviewCount,
+  onJumpToAvailability,
+  onJumpToCoverage,
+  onJumpToMatching,
+}: {
+  month: string;
+  summary: {
+    totalShifts: number;
+    homebaseShifts: number;
+    ehrShifts: number;
+    needsReviewCount: number;
+  };
+  submittedHours: number;
+  inboxNeedsReviewCount: number;
+  onJumpToAvailability: () => void;
+  onJumpToCoverage: () => void;
+  onJumpToMatching: () => void;
+}) {
+  const coverageQ = useStateCoverage(month);
+  const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
+  const criticalGapStates = useMemo(
+    () => coverageRows.filter(r => r.needed > 0 && r.pct_filled < 60),
+    [coverageRows],
+  );
+  const reviewCount = summary.needsReviewCount + inboxNeedsReviewCount;
+
+  const stopItems = useMemo(() => {
+    const out: {
+      label: string;
+      action: string;
+      onClick: () => void;
+    }[] = [];
+    if (coverageQ.isError) {
+      out.push({
+        label: 'Coverage failed to load. Open Coverage Gaps and reload before publishing.',
+        action: 'Open Coverage',
+        onClick: onJumpToCoverage,
+      });
+    } else if (!coverageQ.isLoading && coverageRows.length === 0) {
+      out.push({
+        label: 'No coverage rows exist for this month.',
+        action: 'Open Coverage',
+        onClick: onJumpToCoverage,
+      });
+    }
+    if (!summary.totalShifts) {
+      out.push({
+        label: submittedHours > 0
+          ? 'No publishable shifts yet. Click Re-run evaluator in the header.'
+          : 'No usable availability has been expanded yet.',
+        action: 'Open Availability',
+        onClick: onJumpToAvailability,
+      });
+    }
+    if (reviewCount > 0) {
+      out.push({
+        label: `${reviewCount} review item${reviewCount === 1 ? '' : 's'} must be resolved first.`,
+        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Availability',
+        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : onJumpToAvailability,
+      });
+    }
+    if (criticalGapStates.length > 0) {
+      out.push({
+        label: `Critical state gap: ${criticalGapStates.slice(0, 5).map(s => `${s.state} ${Math.round(s.pct_filled)}%`).join(', ')}${criticalGapStates.length > 5 ? ', plus more' : ''}.`,
+        action: 'Open Coverage',
+        onClick: onJumpToCoverage,
+      });
+    }
+    return out;
+  }, [
+    coverageQ.isError,
+    coverageQ.isLoading,
+    coverageRows.length,
+    summary.totalShifts,
+    summary.needsReviewCount,
+    submittedHours,
+    reviewCount,
+    criticalGapStates,
+    onJumpToAvailability,
+    onJumpToCoverage,
+    onJumpToMatching,
+  ]);
+
+  if (coverageQ.isLoading) {
+    return (
+      <Alert className="border-slate-200 bg-slate-50">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <AlertDescription>
+          Checking coverage before publishing...
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (stopItems.length > 0) {
+    return (
+      <Alert variant="destructive" className="bg-red-50">
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          <div className="font-medium">Stop before publishing</div>
+          <div className="mt-1 text-xs">
+            {stopItems[0].label}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {stopItems.slice(0, 3).map(item => (
+              <Button key={item.label} size="sm" variant="outline" onClick={item.onClick}>
+                {item.action}
+              </Button>
+            ))}
+          </div>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  const homebaseLeft = Math.max(0, summary.totalShifts - summary.homebaseShifts);
+  const ehrLeft = Math.max(0, summary.totalShifts - summary.ehrShifts);
+  const title =
+    homebaseLeft > 0
+      ? 'Ready for Homebase'
+      : ehrLeft > 0
+        ? 'Homebase complete - finish EHR'
+        : 'Publishing complete';
+  const body =
+    homebaseLeft > 0
+      ? `${homebaseLeft} shift${homebaseLeft === 1 ? '' : 's'} still need to be posted to Homebase.`
+      : ehrLeft > 0
+        ? `${ehrLeft} Homebase-posted shift${ehrLeft === 1 ? '' : 's'} still need EHR confirmation.`
+        : `All ${summary.totalShifts} shift${summary.totalShifts === 1 ? '' : 's'} are posted and confirmed.`;
+
+  return (
+    <Alert className="border-emerald-200 bg-emerald-50">
+      <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+      <AlertDescription>
+        <div className="font-medium text-emerald-900">{title}</div>
+        <div className="mt-1 text-xs text-emerald-800">{body}</div>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -4006,12 +4500,15 @@ function CoverageGapsPanel({
   }
 
   const sorted = [...rows].sort((a, b) => a.pct_filled - b.pct_filled);
+  const criticalRows = sorted.filter(r => r.needed > 0 && r.pct_filled < 60);
+  const watchRows = sorted.filter(r => r.needed > 0 && r.pct_filled >= 60 && r.pct_filled < 95);
+  const totalGap = rows.reduce((sum, r) => sum + Math.max(0, r.needed - r.filled), 0);
 
   const recommendedFor = (pct: number, gap: number): string => {
-    if (pct >= 95) return 'Hold — keep monitoring';
-    if (pct >= 80) return 'Watch for cancellations';
-    if (pct >= 60) return `Source ${Math.ceil(Math.abs(gap))} more hrs from licensed providers`;
-    return `Critical — open Matching to reassign or hire`;
+    if (pct >= 95) return 'OK to publish; monitor cancellations';
+    if (pct >= 80) return `Publish can continue; chase ${Math.ceil(Math.abs(gap))} extra hrs if available`;
+    if (pct >= 60) return `Source ${Math.ceil(Math.abs(gap))} licensed hrs before launch if possible`;
+    return `STOP: source licensed coverage or escalate before publishing`;
   };
 
   return (
@@ -4027,6 +4524,26 @@ function CoverageGapsPanel({
         </p>
       </CardHeader>
       <CardContent className="p-0">
+        <div className="border-y bg-muted/30 px-4 py-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <CoverageStat label="Stop gaps" value={String(criticalRows.length)} tone={criticalRows.length > 0 ? 'bad' : 'good'} />
+            <CoverageStat label="Watch states" value={String(watchRows.length)} tone={watchRows.length > 0 ? 'warn' : 'good'} />
+            <CoverageStat label="Total gap" value={`${totalGap.toFixed(0)} hrs`} tone={totalGap > 0 ? 'warn' : 'good'} />
+            <CoverageStat label="Accepted providers" value={String(acceptedRows.length)} tone="neutral" />
+            <CoverageStat label="Missing availability" value={String(missingRows.length)} tone={missingRows.length > 0 ? 'warn' : 'good'} />
+          </div>
+          {criticalRows.length > 0 && (
+            <Alert variant="destructive" className="mt-3 bg-red-50">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-xs">
+                Stop before publishing. Critical states need licensed hours added or an escalation note:
+                {' '}
+                {criticalRows.slice(0, 8).map(r => `${r.state} ${Math.round(r.pct_filled)}%`).join(', ')}
+                {criticalRows.length > 8 ? ', plus more' : ''}.
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -4082,6 +4599,31 @@ function CoverageGapsPanel({
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+function CoverageStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: 'good' | 'warn' | 'bad' | 'neutral';
+}) {
+  const toneClass =
+    tone === 'good'
+      ? 'text-emerald-700'
+      : tone === 'warn'
+        ? 'text-amber-700'
+        : tone === 'bad'
+          ? 'text-red-700'
+          : 'text-foreground';
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`text-xl font-bold tabular-nums ${toneClass}`}>{value}</div>
+    </div>
   );
 }
 
