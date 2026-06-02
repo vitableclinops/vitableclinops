@@ -103,23 +103,43 @@ jobs:
 
       - name: Sync Homebase (near-term shifts)
         run: |
-          curl -fsSL -X POST \
+          RESP_FILE="$(mktemp)"
+          set +e
+          STATUS=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST \
             -H "apikey: $SERVICE_ROLE_KEY" \
             -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
             -H "Content-Type: application/json" \
             "https://${PROJECT_REF}.supabase.co/functions/v1/sync-homebase" \
-            --data '{}' || echo "::warning::sync-homebase call failed; continuing"
+            --data '{}')
+          CURL_EXIT=$?
+          set -e
+          if [ "$CURL_EXIT" -ne 0 ] || [ "$STATUS" -ge 400 ]; then
+            echo "::warning::sync-homebase call failed with status ${STATUS}; continuing"
+            head -c 1200 "$RESP_FILE" || true
+          else
+            echo "sync-homebase ok"
+          fi
           echo
 
       - name: Sync Metabase (demand / utilization / appointments)
         run: |
-          curl -fsSL -X POST \
+          RESP_FILE="$(mktemp)"
+          set +e
+          STATUS=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST \
             -H "apikey: $SERVICE_ROLE_KEY" \
             -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
             -H "x-sync-secret: $SYNC_SECRET" \
             -H "Content-Type: application/json" \
             "https://${PROJECT_REF}.supabase.co/functions/v1/sync-metabase" \
-            --data '{}' || echo "::warning::sync-metabase call failed; continuing"
+            --data '{}')
+          CURL_EXIT=$?
+          set -e
+          if [ "$CURL_EXIT" -ne 0 ] || [ "$STATUS" -ge 400 ]; then
+            echo "::warning::sync-metabase call failed with status ${STATUS}; continuing"
+            head -c 1200 "$RESP_FILE" || true
+          else
+            echo "sync-metabase ok"
+          fi
           echo
 
       - name: Compute daily coverage routing
@@ -129,10 +149,34 @@ jobs:
           else
             BODY=$(printf '{"run_label":"scheduled_morning","dry_run":%s}' "${DRY_RUN:-false}")
           fi
-          curl -fsSL -X POST \
+          RESP_FILE="$(mktemp)"
+          curl -fsSL -o "$RESP_FILE" -X POST \
             -H "apikey: $SERVICE_ROLE_KEY" \
             -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
             -H "Content-Type: application/json" \
             "https://${PROJECT_REF}.supabase.co/functions/v1/compute-daily-coverage-routing" \
             --data "$BODY"
+          node - "$RESP_FILE" <<'NODE'
+          const fs = require('fs');
+          const path = process.argv[2];
+          const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (data.ok !== true) {
+            console.error(JSON.stringify(data, null, 2));
+            process.exit(1);
+          }
+          const summary = {
+            ok: data.ok,
+            dry_run: data.dry_run,
+            dates: data.dates,
+            demand_source: data.demand_source,
+            booked_source: data.booked_source,
+            results: (data.results || []).map((r) => ({
+              date: r.date,
+              state_rows: Array.isArray(r.state_coverage) ? r.state_coverage.length : 0,
+              totals: r.totals,
+              warnings: Array.isArray(r.warnings) ? r.warnings.length : 0,
+            })),
+          };
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
           echo

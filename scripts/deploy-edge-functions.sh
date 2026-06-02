@@ -30,6 +30,7 @@ DEFAULT_FUNCTIONS=(
   "evaluate-schedule-submissions"
   "emit-shift-recommendations"
   "sync-homebase"
+  "sync-metabase"
   "sync-jotform-submissions"
   "compute-daily-coverage-routing"
   "send-ops-dashboard-slack"

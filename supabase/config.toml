@@ -24,6 +24,9 @@ verify_jwt = false
 [functions.sync-homebase]
 verify_jwt = false
 
+[functions.sync-metabase]
+verify_jwt = false
+
 [functions.import-leftover-slots]
 verify_jwt = false
 
