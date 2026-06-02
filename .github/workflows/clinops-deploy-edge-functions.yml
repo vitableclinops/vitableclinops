@@ -42,8 +42,6 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
-      METABASE_USERNAME: ${{ secrets.METABASE_USERNAME }}
-      METABASE_PASSWORD: ${{ secrets.METABASE_PASSWORD }}
       PROJECT_REF: bbquooftytwprllipcsb
     steps:
       - uses: actions/checkout@v4
@@ -62,20 +60,10 @@ jobs:
 
       - name: Configure edge function secrets
         run: |
-          secret_args=()
           if [ -n "$SYNC_SECRET" ]; then
-            secret_args+=("SYNC_SECRET=$SYNC_SECRET")
-          fi
-          if [ -n "$METABASE_USERNAME" ]; then
-            secret_args+=("METABASE_USERNAME=$METABASE_USERNAME")
-          fi
-          if [ -n "$METABASE_PASSWORD" ]; then
-            secret_args+=("METABASE_PASSWORD=$METABASE_PASSWORD")
-          fi
-          if [ "${#secret_args[@]}" -gt 0 ]; then
-            supabase secrets set --project-ref "$PROJECT_REF" "${secret_args[@]}"
+            supabase secrets set --project-ref "$PROJECT_REF" "SYNC_SECRET=$SYNC_SECRET"
           else
-            echo "::warning::No optional edge function secrets provided to configure."
+            echo "::warning::SYNC_SECRET repo secret is missing; sync-metabase may reject scheduled calls."
           fi
 
       - name: Deploy via repo script
