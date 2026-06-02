@@ -70,7 +70,8 @@ jobs:
             20260506193208 \
             20260506211752 \
             20260512162717 \
-            20260518182326 || true
+            20260518182326 \
+            20260602130013 || true
 
       - name: Push forecast schema
         run: supabase db push --linked --include-all
