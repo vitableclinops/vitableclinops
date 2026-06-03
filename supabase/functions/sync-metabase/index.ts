@@ -55,8 +55,9 @@ const REPORTS: Array<{ name: string; cardId?: number; handler: Handler }> = [
     handler: handleRawStore('average_sla_attainment'),
   },
   {
+    cardId: 2429,
     name: 'rpt_telemedicine_availability_by_state_per_day',
-    handler: handleRawStore('telemedicine_availability'),
+    handler: handleStateAccessSlotsDaily,
   },
   {
     cardId: 2431,
@@ -332,6 +333,43 @@ function parsePct(raw: string): number | null {
   return n <= 1 ? Math.round(n * 10000) / 100 : Math.round(n * 100) / 100;
 }
 
+function intOrNull(raw: string): number | null {
+  if (!raw) return null;
+  const n = Number(String(raw).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+function stateAccessMetric(header: string): 'booked' | 'available' | null {
+  const h = header.toLowerCase();
+  if (/\bbook/.test(h) || /\bappointment/.test(h)) return 'booked';
+  if (/\bremain/.test(h) || /\bavail/.test(h) || /same_next_day_available_slots/.test(h)) return 'available';
+  if (stateAccessDateFromHeader(header, new Date().toISOString().slice(0, 10))) return 'available';
+  return null;
+}
+
+function stateAccessDateFromHeader(header: string, today: string): string | null {
+  const cleaned = header.replace(/\b(booked|remaining|available|avail|slots|appointments?)\b/ig, ' ').replace(/\s+/g, ' ').trim();
+  const explicit = parseDate(cleaned);
+  if (explicit) return explicit;
+
+  const monthDayYear = /(?:sun|mon|tue|wed|thu|fri|sat)?[,]?\s*([A-Z][a-z]{2,8})\s+(\d{1,2})(?:,\s*(\d{4}))?/i.exec(cleaned);
+  if (monthDayYear) {
+    const year = monthDayYear[3] ?? today.slice(0, 4);
+    const parsed = parseDate(`${monthDayYear[1]} ${monthDayYear[2]}, ${year}`);
+    if (parsed) return parsed;
+  }
+
+  const dowMatch = /^(sun|mon|tue|wed|thu|fri|sat)\b/i.exec(cleaned);
+  if (!dowMatch) return null;
+  const targetDow = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(dowMatch[1].toLowerCase().slice(0, 3));
+  if (targetDow < 0) return null;
+  const base = new Date(today + 'T00:00:00Z');
+  const baseDow = base.getUTCDay();
+  const diff = (targetDow - baseDow + 7) % 7;
+  base.setUTCDate(base.getUTCDate() + diff);
+  return base.toISOString().slice(0, 10);
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -419,6 +457,139 @@ async function handleLeftoverSlots(rows: Row[], supabase: SupabaseClient): Promi
   if (error) throw new Error(error.message);
 
   return { inserted: records.length, errors };
+}
+
+async function handleStateAccessSlotsDaily(rows: Row[], supabase: SupabaseClient): Promise<ImportResult> {
+  const nowIso = new Date().toISOString();
+  const today = new Date().toISOString().slice(0, 10);
+  const errors: string[] = [];
+
+  try {
+    await storeRawExport(supabase, 'telemedicine_availability', rows, today);
+  } catch (e) {
+    errors.push(`Raw export store failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  const byKey = new Map<string, {
+    access_date: string;
+    state: string;
+    booked_slots: number | null;
+    available_slots: number | null;
+    total_slots: number | null;
+    source: string;
+    source_card_id: number;
+    raw_payload: Record<string, string>;
+    synced_at: string;
+  }>();
+
+  for (const row of rows) {
+    const stateName = col(row, 'State', 'state', 'Appointment State', 'appointment_state', 'service_state');
+    const state = toAbbreviation(stateName);
+    if (!state) { errors.push(`Unknown state: "${stateName}"`); continue; }
+
+    const explicitDate = parseDate(col(row, 'Date', 'date', 'Day', 'day', 'report_date', 'date_actual', 'date_actual: Day'));
+    if (explicitDate) {
+      const booked = intOrNull(col(row, 'same_next_day_booked_slots', 'Same Next Day Booked Slots', 'Booked', 'booked', 'Booked Slots', 'booked_slots', 'Appointments', 'appointments', 'appointment_count', 'Appointment Count'));
+      const available = intOrNull(col(row, 'same_next_day_available_slots', 'Sum of same_next_day_available_slots', 'Same Next Day Available Slots', 'Remaining', 'remaining', 'Available', 'available', 'Available Slots', 'available_slots'));
+      const total = booked !== null && available !== null
+        ? booked + available
+        : intOrNull(col(row, 'same_next_day_total_slots', 'Same Next Day Total Slots', 'Total', 'total', 'Total Slots', 'total_slots'));
+      if (booked === null && available === null && total === null) {
+        errors.push(`No state access counts for ${state} on ${explicitDate}`);
+        continue;
+      }
+      mergeStateAccess(byKey, {
+        access_date: explicitDate,
+        state,
+        booked_slots: booked,
+        available_slots: available,
+        total_slots: total,
+        source: 'metabase_sync',
+        source_card_id: 2429,
+        raw_payload: row,
+        synced_at: nowIso,
+      });
+      continue;
+    }
+
+    for (const [header, rawValue] of Object.entries(row)) {
+      const metric = stateAccessMetric(header);
+      if (!metric) continue;
+      const accessDate = stateAccessDateFromHeader(header, today);
+      if (!accessDate) continue;
+      const value = intOrNull(String(rawValue ?? ''));
+      if (value === null) continue;
+      const key = `${accessDate}|${state}`;
+      const current = byKey.get(key) ?? {
+        access_date: accessDate,
+        state,
+        booked_slots: null,
+        available_slots: null,
+        total_slots: null,
+        source: 'metabase_sync',
+        source_card_id: 2429,
+        raw_payload: row,
+        synced_at: nowIso,
+      };
+      if (metric === 'booked') current.booked_slots = value;
+      else current.available_slots = value;
+      if (current.booked_slots !== null && current.available_slots !== null) {
+        current.total_slots = current.booked_slots + current.available_slots;
+      }
+      byKey.set(key, current);
+    }
+  }
+
+  const records = Array.from(byKey.values()).filter((row) =>
+    row.booked_slots !== null || row.available_slots !== null || row.total_slots !== null
+  );
+  if (records.length === 0) return { inserted: 0, errors };
+
+  const { error } = await supabase
+    .from('state_access_slots_daily')
+    .upsert(records, { onConflict: 'access_date,state,source' });
+  if (error) throw new Error(error.message);
+
+  return { inserted: records.length, errors };
+}
+
+function mergeStateAccess(
+  byKey: Map<string, {
+    access_date: string;
+    state: string;
+    booked_slots: number | null;
+    available_slots: number | null;
+    total_slots: number | null;
+    source: string;
+    source_card_id: number;
+    raw_payload: Record<string, string>;
+    synced_at: string;
+  }>,
+  row: {
+    access_date: string;
+    state: string;
+    booked_slots: number | null;
+    available_slots: number | null;
+    total_slots: number | null;
+    source: string;
+    source_card_id: number;
+    raw_payload: Record<string, string>;
+    synced_at: string;
+  },
+) {
+  const key = `${row.access_date}|${row.state}`;
+  const existing = byKey.get(key);
+  if (!existing) {
+    byKey.set(key, row);
+    return;
+  }
+  existing.booked_slots = row.booked_slots ?? existing.booked_slots;
+  existing.available_slots = row.available_slots ?? existing.available_slots;
+  existing.total_slots = row.total_slots ?? (
+    existing.booked_slots !== null && existing.available_slots !== null
+      ? existing.booked_slots + existing.available_slots
+      : existing.total_slots
+  );
 }
 
 async function handleDemandForecast(rows: Row[], supabase: SupabaseClient): Promise<ImportResult> {
@@ -652,15 +823,19 @@ async function handleProviderUtilizationDaily(rows: Row[], supabase: SupabaseCli
 function handleRawStore(reportKey: string): Handler {
   return async (rows: Row[], supabase: SupabaseClient): Promise<ImportResult> => {
     const today = new Date().toISOString().slice(0, 10);
-    const { error } = await supabase
-      .from('metabase_raw_exports')
-      .upsert(
-        { report_key: reportKey, pulled_date: today, rows, row_count: rows.length, pulled_at: new Date().toISOString() },
-        { onConflict: 'report_key,pulled_date' },
-      );
-    if (error) throw new Error(error.message);
+    await storeRawExport(supabase, reportKey, rows, today);
     return { inserted: rows.length, errors: [] };
   };
+}
+
+async function storeRawExport(supabase: SupabaseClient, reportKey: string, rows: Row[], pulledDate: string) {
+  const { error } = await supabase
+    .from('metabase_raw_exports')
+    .upsert(
+      { report_key: reportKey, pulled_date: pulledDate, rows, row_count: rows.length, pulled_at: new Date().toISOString() },
+      { onConflict: 'report_key,pulled_date' },
+    );
+  if (error) throw new Error(error.message);
 }
 
 // ---------------------------------------------------------------------------

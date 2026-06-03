@@ -226,7 +226,7 @@ Deno.serve(async (req) => {
           success: true, dry_run: true, date: today, demand_source: demandSource, booked_source: bookedSource,
           counts, attention_count: attention.length, access_snapshot: accessSnapshot, state_access: stateAccessToday,
           blocks: messageBlocks, text: fallbackText,
-          thread: buildThreadBlocks(todayResult, tomorrowResult, accessSnapshot, tomorrowAccessSnapshot),
+          thread: buildThreadBlocks(todayResult, tomorrowResult, accessSnapshot, tomorrowAccessSnapshot, stateAccessToday),
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
@@ -250,7 +250,7 @@ Deno.serve(async (req) => {
     // ── Threaded detail ──────────────────────────────────────────────────────
     const replyTs: string[] = [];
     try {
-      const threadGroups = buildThreadBlocks(todayResult, tomorrowResult, accessSnapshot, tomorrowAccessSnapshot);
+      const threadGroups = buildThreadBlocks(todayResult, tomorrowResult, accessSnapshot, tomorrowAccessSnapshot, stateAccessToday);
       for (const group of threadGroups) {
         const reply = await postFn({ channel: OPS_CHANNEL_ID, thread_ts: data.ts, text: group.text, blocks: group.blocks });
         const r = await reply.json();
@@ -329,6 +329,34 @@ async function loadStateAccessSnapshot(
   supabase: ReturnType<typeof createClient>,
   date: string,
 ): Promise<StateAccessSnapshot | null> {
+  const { data: parsedRows, error: parsedError } = await supabase
+    .from('state_access_slots_daily')
+    .select('access_date, state, booked_slots, available_slots, total_slots, synced_at, source')
+    .eq('access_date', date)
+    .range(0, 49999);
+  if (parsedError) {
+    console.warn('state_access_slots_daily load failed:', parsedError.message);
+  } else if ((parsedRows ?? []).length > 0) {
+    const rows = (parsedRows ?? [])
+      .map((row): StateAccessRow | null => {
+        const state = toAbbreviation(String(row.state ?? ''));
+        if (!state) return null;
+        const booked = numOrNull(row.booked_slots);
+        const available = numOrNull(row.available_slots);
+        const total = numOrNull(row.total_slots) ?? (booked !== null && available !== null ? booked + available : null);
+        return {
+          state,
+          bookedSlots: booked,
+          availableSlots: available,
+          totalSlots: total,
+          utilizationPct: total && total > 0 && booked !== null ? (booked / total) * 100 : null,
+        };
+      })
+      .filter((row): row is StateAccessRow => row !== null);
+    const synced = (parsedRows ?? []).map((row) => String(row.synced_at ?? '')).filter(Boolean).sort();
+    return { date, source: 'state_access_slots_daily', syncedAt: synced[synced.length - 1] ?? null, rows };
+  }
+
   const { data: exports, error: exportError } = await supabase
     .from('metabase_raw_exports')
     .select('rows, pulled_at, pulled_date')
@@ -403,7 +431,7 @@ function buildStateAccessText(
   useRoutingFallback: boolean,
 ): string {
   if (snapshot && snapshot.rows.length > 0) {
-    const rows = snapshot.rows
+    const rows = applyBookedVisitsByState(snapshot.rows, routingRows)
       .filter((row) => row.availableSlots !== null || row.bookedSlots !== null)
       .sort((a, b) =>
         (a.availableSlots ?? Number.MAX_SAFE_INTEGER) - (b.availableSlots ?? Number.MAX_SAFE_INTEGER) ||
@@ -413,14 +441,25 @@ function buildStateAccessText(
     const totalStates = rows.length;
     const openStates = rows.filter((row) => (row.availableSlots ?? 0) > 0).length;
     const zeroStates = rows.filter((row) => row.availableSlots === 0).map((row) => row.state);
-    const watchlist = rows
+    const lowestAvailability = rows
       .filter((row) => row.availableSlots !== null)
       .slice(0, 8)
       .map(formatStateAccessRow);
+    const highestUtilization = [...rows]
+      .filter((row) => row.bookedSlots !== null && row.availableSlots !== null && (row.totalSlots ?? 0) > 0)
+      .sort((a, b) =>
+        (b.utilizationPct ?? -1) - (a.utilizationPct ?? -1) ||
+        (a.availableSlots ?? Number.MAX_SAFE_INTEGER) - (b.availableSlots ?? Number.MAX_SAFE_INTEGER) ||
+        a.state.localeCompare(b.state),
+      )
+      .slice(0, 5)
+      .map(formatStateAccessRow);
     return [
-      '*State access*',
+      '*State access by state*',
       `${openStates}/${totalStates} states have availability · ${zeroStates.length} at zero availability`,
-      watchlist.length ? `Light watchlist: ${watchlist.join(' · ')}` : 'No low-cushion states in the state availability view.',
+      lowestAvailability.length ? `Lowest availability: ${lowestAvailability.join(' · ')}` : 'No low-cushion states in the state availability view.',
+      highestUtilization.length ? `Highest utilization: ${highestUtilization.join(' · ')}` : '',
+      '_Full by-state table is in the thread. State rows are directional and non-additive._',
       zeroStates.length ? `Zero availability: ${zeroStates.join(', ')}` : '',
     ].filter(Boolean).join('\n');
   }
@@ -466,9 +505,28 @@ function buildProviderWatchlistText(snapshot: AccessSnapshot | null): string | n
 }
 
 function formatStateAccessRow(row: StateAccessRow): string {
-  const parts = [`${row.state} ${fmtSlots(row.availableSlots ?? 0)} avail`];
+  const booked = row.bookedSlots !== null ? fmtSlots(row.bookedSlots) : '—';
+  const available = row.availableSlots !== null ? fmtSlots(row.availableSlots) : '—';
+  const parts = [`${row.state}: ${booked} booked / ${available} avail`];
   if (row.utilizationPct !== null) parts.push(`${fmtPct(row.utilizationPct)} used`);
   return parts.join(' / ');
+}
+
+function applyBookedVisitsByState(stateRows: StateAccessRow[], routingRows: StateRow[]): StateAccessRow[] {
+  const bookedByState = new Map<string, number>();
+  for (const row of routingRows) {
+    if (row.booked_locked_hours > 0) bookedByState.set(row.state, Math.round(row.booked_locked_hours * 2));
+  }
+  return stateRows.map((row) => {
+    const booked = bookedByState.has(row.state) ? bookedByState.get(row.state)! : row.bookedSlots;
+    const total = booked !== null && row.availableSlots !== null ? booked + row.availableSlots : row.totalSlots;
+    return {
+      ...row,
+      bookedSlots: booked,
+      totalSlots: total,
+      utilizationPct: total && total > 0 && booked !== null ? (booked / total) * 100 : row.utilizationPct,
+    };
+  });
 }
 
 function parseStateAccessRows(rawRows: unknown, date: string): StateAccessRow[] {
@@ -542,6 +600,7 @@ function buildThreadBlocks(
   tomorrow: DateResult | null,
   accessSnapshot: AccessSnapshot | null,
   tomorrowAccessSnapshot: AccessSnapshot | null,
+  stateAccessSnapshot: StateAccessSnapshot | null,
 ): { text: string; blocks: unknown[] }[] {
   const groups: { text: string; blocks: unknown[] }[] = [];
 
@@ -565,6 +624,11 @@ function buildThreadBlocks(
   const providerWatchlist = buildProviderWatchlistText(accessSnapshot);
   if (providerWatchlist) {
     groups.push({ text: 'Provider utilization watchlist', blocks: [section(providerWatchlist)] });
+  }
+
+  const stateTable = buildStateAccessThreadText(stateAccessSnapshot, today.state_coverage);
+  if (stateTable) {
+    groups.push({ text: 'State access by state', blocks: [section(stateTable)] });
   }
 
   // Reply 2: gaps + recommended moves + tentative upside.
@@ -645,6 +709,25 @@ function buildThreadBlocks(
   }
 
   return groups;
+}
+
+function buildStateAccessThreadText(snapshot: StateAccessSnapshot | null, routingRows: StateRow[]): string | null {
+  if (!snapshot || snapshot.rows.length === 0) return null;
+  const rows = applyBookedVisitsByState(snapshot.rows, routingRows)
+    .filter((row) => row.availableSlots !== null || row.bookedSlots !== null)
+    .sort((a, b) =>
+      (a.availableSlots ?? Number.MAX_SAFE_INTEGER) - (b.availableSlots ?? Number.MAX_SAFE_INTEGER) ||
+      (b.utilizationPct ?? -1) - (a.utilizationPct ?? -1) ||
+      a.state.localeCompare(b.state),
+    );
+  if (rows.length === 0) return null;
+  const lines = [
+    '*State access by state*',
+    '_Booked = unique booked visits from the booked-appointments/routing feed. Available = state-level open slots; do not sum available slots across states._',
+    '',
+    ...rows.map(formatStateAccessRow),
+  ];
+  return lines.join('\n');
 }
 
 function section(text: string) {

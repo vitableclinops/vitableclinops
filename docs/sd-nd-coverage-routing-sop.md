@@ -64,6 +64,7 @@ rows can be used as a state breadth/cushion watchlist only.
 | Daily state demand | Metabase card **3478** (`Telemedicine Demand Daily`) | Columns `date`, `state`, `demand_hours` or `target_hours`. Fallback → `demand_forecast` (daily) → `state_demand_targets`. |
 | Daily booked appointments | Metabase card **3479** (`Daily Provider Booked Appointments`) | Columns `date`, `provider`, `state`, `appointment_count`, optional `booked_hours`. |
 | Daily unique provider slots | Metabase card **3295** (`Daily Provider Utilization`) → `provider_utilization_daily` | Columns `Provider Full Name`, `Sum of Distinct values of Time Slot ID`, `Average of Utilization rate`. Used for the Slack access headline. |
+| State same/next-day slots | Metabase card **2429** (`rpt_telemedicine_availability_by_state_per_day`) → `state_access_slots_daily` | Uses `same_next_day_booked_slots`, `same_next_day_available_slots`, and `same_next_day_total_slots`. State rows are displayed individually and are not summed. |
 | Add candidates (outreach) | `schedule_submissions` (Jotform availability) + `provider_utilization_daily` | Used only to suggest add-hours for residual gaps. |
 
 ### ID spaces (important)
@@ -191,8 +192,9 @@ assignments) versus demand:
 
 **Main post** — access-first. The headline states whether same/next-day access
 is healthy, then shows unique booked slots, unique available slots, total unique
-slots, and booked/available percentages. State rows are shown only as
-breadth/cushion watchlists when a state availability snapshot is loaded.
+slots, and booked/available percentages. The state section shows lowest
+availability and highest utilization by state using same/next-day state slots.
+State rows are directional and non-additive.
 
 **Thread:**
 
@@ -200,7 +202,10 @@ breadth/cushion watchlists when a state availability snapshot is loaded.
    booked hours, routed states, and free hours.
 2. **Provider utilization watchlist** — fully booked and nearly full providers
    from the unique provider-slot snapshot.
-3. **Tomorrow preview** + **data-quality notes** when present.
+3. **State access by state** — full state table. Booked values are unique booked
+   visits from the booked-appointments/routing feed; available values are
+   state-level same/next-day open slots.
+4. **Tomorrow preview** + **data-quality notes** when present.
 
 If the unique provider-slot snapshot is missing, the bot may show routing
 fallback detail. Treat that as temporary/debug output, not the access headline.
