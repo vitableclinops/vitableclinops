@@ -1,7 +1,7 @@
 /** Deno-compatible copy of src/lib/nameNormalization.ts */
 
 const CREDENTIAL_PATTERN =
-  /\b(md|do|np|aprn|pa-c|pa|rn|bsn|msn|dnp|phd|fnp|fnp-c|fnp-bc|agacnp|agpcnp|pmhnp|crna|cnm|dnp-c|lcsw|lpc|mft|psyd)\b\.?/gi;
+  /\b(md|do|np|aprn|crnp|pa-c|pa|rn|bsn|msn|dnp|phd|fnp|fnp-c|fnp-bc|agacnp|agpcnp|pmhnp|crna|cnm|dnp-c|lcsw|lpc|mft|psyd)\b\.?/gi;
 
 const SUFFIX_PATTERN = /\b(jr\.?|sr\.?|ii|iii|iv)\b\.?/gi;
 

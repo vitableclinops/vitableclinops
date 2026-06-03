@@ -34,6 +34,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { toAbbreviation } from '../_shared/stateNormalization.ts';
+import { canonicalName, fuzzyScore, FUZZY_MATCH_THRESHOLD } from '../_shared/nameNormalization.ts';
 import {
   routeDailyCoverage,
   type RoutingInput,
@@ -110,7 +111,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Supabase sources ─────────────────────────────────────────────────────
-    const [activationsRes, providersRes, eligibilityRes, forecastRes, targetsRes, utilRes, submissionsRes] =
+    const [activationsRes, providersRes, eligibilityRes, forecastRes, targetsRes, utilRes, submissionsRes, mappingsRes] =
       await Promise.all([
         supabase.from('state_activation').select('state_abbreviation, is_active'),
         supabase.from('providers').select('id, name, profession, active, employment_status').range(0, 49999),
@@ -124,6 +125,7 @@ Deno.serve(async (req: Request) => {
         // either without blocking the launch path.
         supabase.from('provider_utilization_daily').select('*').range(0, 49999),
         supabase.from('schedule_submissions').select('provider_id, provider_name, target_month, accepted_hours, decision_status').in('target_month', months).in('decision_status', ['accepted', 'partial']).range(0, 49999),
+        supabase.from('provider_name_mappings').select('homebase_name, profile_id').range(0, 49999),
       ]);
 
     const activeStates = new Set<string>(
@@ -137,14 +139,32 @@ Deno.serve(async (req: Request) => {
     // backward compatibility, but these values are ClinOps providers.id.
     const providerById = new Map<string, { name: string | null; profession: string | null; active: boolean }>();
     const providerIdByNormName = new Map<string, string>();
+    const providerIdByCanonicalName = new Map<string, string>();
+    const providersForFuzzy: { id: string; canonical: string }[] = [];
     for (const p of providersRes.data ?? []) {
       const employmentStatus = String(p.employment_status ?? 'active').toLowerCase();
       const active = p.active !== false && employmentStatus !== 'inactive' && employmentStatus !== 'terminated';
       providerById.set(p.id, { name: p.name, profession: p.profession, active });
-      if (p.name) providerIdByNormName.set(normName(p.name), p.id);
+      if (p.name) {
+        providerIdByNormName.set(normName(p.name), p.id);
+        const canonical = canonicalName(p.name);
+        if (canonical) {
+          providerIdByCanonicalName.set(canonical, p.id);
+          providersForFuzzy.push({ id: p.id, canonical });
+        }
+      }
     }
     if (providersRes.error) {
       console.warn('providers load failed:', providersRes.error.message);
+    }
+    const providerIdByManualAlias = new Map<string, string>();
+    for (const m of mappingsRes.data ?? []) {
+      const alias = canonicalName(String(m.homebase_name ?? ''));
+      const providerId = String(m.profile_id ?? '');
+      if (alias && providerId) providerIdByManualAlias.set(alias, providerId);
+    }
+    if (mappingsRes.error) {
+      console.warn('provider_name_mappings load failed; using automatic provider-name matching only:', mappingsRes.error.message);
     }
 
     const licensedByProvider = new Map<string, Set<string>>();
@@ -278,7 +298,12 @@ Deno.serve(async (req: Request) => {
 
       // Booked rows for this date, matched to providers by name.
       const bookedInput = (bookedRowsByDate.get(date) ?? []).map((b) => {
-        const profileId = providerIdByNormName.get(normName(b.provider_name)) ?? null;
+        const profileId = matchProviderName(b.provider_name, {
+          providerIdByNormName,
+          providerIdByCanonicalName,
+          providerIdByManualAlias,
+          providersForFuzzy,
+        });
         return {
           profile_id: profileId,
           provider_name: b.provider_name,
@@ -692,6 +717,38 @@ function parseDailyDemandCard(csv: string, targetDates: string[]): Map<string, M
 }
 
 type ParsedBookedRow = { date: string; provider_name: string; state: string; appointment_count: number; booked_hours: number | null };
+type ProviderNameMatchContext = {
+  providerIdByNormName: Map<string, string>;
+  providerIdByCanonicalName: Map<string, string>;
+  providerIdByManualAlias: Map<string, string>;
+  providersForFuzzy: { id: string; canonical: string }[];
+};
+
+function matchProviderName(rawName: string, ctx: ProviderNameMatchContext): string | null {
+  const norm = normName(rawName);
+  if (norm && ctx.providerIdByNormName.has(norm)) return ctx.providerIdByNormName.get(norm)!;
+
+  const canonical = canonicalName(rawName);
+  if (!canonical) return null;
+
+  const manual = ctx.providerIdByManualAlias.get(canonical);
+  if (manual) return manual;
+
+  const exactCanonical = ctx.providerIdByCanonicalName.get(canonical);
+  if (exactCanonical) return exactCanonical;
+
+  let bestScore = 0;
+  let bestId: string | null = null;
+  for (const p of ctx.providersForFuzzy) {
+    const score = fuzzyScore(canonical, p.canonical);
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = p.id;
+    }
+  }
+  return bestScore >= FUZZY_MATCH_THRESHOLD ? bestId : null;
+}
+
 function parseDailyBookedCard(csv: string, targetDates: string[]): { ok: boolean; rows: ParsedBookedRow[] } {
   const rows = parseCSV(csv);
   if (rows.length === 0) return { ok: false, rows: [] };

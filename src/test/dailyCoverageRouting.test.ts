@@ -5,6 +5,7 @@ import {
   SD_ND_BOOKED_APPOINTMENT_HOURS,
   type RoutingInput,
 } from '@/lib/scheduling/dailyCoverageRouting';
+import { canonicalName } from '@/lib/nameNormalization';
 
 const base = (overrides: Partial<RoutingInput> = {}): RoutingInput => ({
   date: '2026-06-02',
@@ -28,6 +29,12 @@ describe('canCoverState', () => {
     expect(canCoverState('MD', 'GA')).toBe(true);
     expect(canCoverState('DO', 'TN')).toBe(true);
     expect(canCoverState('mental_health_coach', 'AL')).toBe(false);
+  });
+});
+
+describe('canonicalName', () => {
+  it('strips CRNP credentials from Homebase names', () => {
+    expect(canonicalName('Van Tu, CRNP')).toBe('van tu');
   });
 });
 

@@ -83,7 +83,9 @@ columns (case/space-insensitive): `date` (`Date`, `Day`, `date_actual: Day`),
 **Card 3479 — daily provider booked appointments.** One row per (date,
 provider, state). Recognized columns: `date`, `provider` (`Provider Full Name`),
 `state`, `appointment_count` (`Appointments`, `Count`), and optional
-`booked_hours` (`Booked Hrs`).
+`booked_hours` (`Booked Hrs`). Provider names are matched to `providers.name`
+using exact normalized name, `provider_name_mappings` aliases, canonical name
+matching, then high-confidence fuzzy matching.
 
 ### Fallback behavior (launch-safe)
 
