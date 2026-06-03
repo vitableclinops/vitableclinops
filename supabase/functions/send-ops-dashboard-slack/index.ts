@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { toAbbreviation } from '../_shared/stateNormalization.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,6 +50,36 @@ type DateResult = {
   adds: AddRow[];
   warnings: { type: string; detail: string }[];
 };
+type AccessProviderRow = {
+  name: string;
+  bookedSlots: number;
+  availableSlots: number;
+  totalSlots: number;
+  utilizationPct: number;
+};
+type AccessSnapshot = {
+  date: string;
+  bookedSlots: number;
+  availableSlots: number;
+  totalSlots: number;
+  utilizationPct: number;
+  providerCount: number;
+  syncedAt: string | null;
+  providers: AccessProviderRow[];
+};
+type StateAccessRow = {
+  state: string;
+  bookedSlots: number | null;
+  availableSlots: number | null;
+  totalSlots: number | null;
+  utilizationPct: number | null;
+};
+type StateAccessSnapshot = {
+  date: string;
+  source: string;
+  syncedAt: string | null;
+  rows: StateAccessRow[];
+};
 
 function getChicagoDate(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -71,6 +102,8 @@ function statusEmoji(s: Status): string {
 }
 const STATUS_ORDER: Record<Status, number> = { zero: 0, critical: 1, low: 2, ok: 3, no_data: 4 };
 const fmtH = (n: number) => `${(Math.round(n * 10) / 10).toFixed(1)}h`;
+const fmtSlots = (n: number) => Math.round(n).toLocaleString('en-US');
+const fmtPct = (n: number) => `${(Math.round(n * 10) / 10).toFixed(1)}%`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -137,7 +170,13 @@ Deno.serve(async (req) => {
     }
 
     const todayResult = results.find((r) => r.date === today) ?? { date: today, state_coverage: [], provider_assignments: [], moves: [], adds: [], warnings: [] };
+    const tomorrowResult = results.find((r) => r.date !== today) ?? null;
     const rows = todayResult.state_coverage;
+    const [accessSnapshot, tomorrowAccessSnapshot, stateAccessToday] = await Promise.all([
+      loadAccessSnapshot(supabase, today),
+      tomorrowResult ? loadAccessSnapshot(supabase, tomorrowResult.date) : Promise.resolve(null),
+      loadStateAccessSnapshot(supabase, today),
+    ]);
 
     const counts = {
       total: rows.length,
@@ -160,40 +199,34 @@ Deno.serve(async (req) => {
     const headerDate = new Date(today + 'T00:00:00').toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     });
-    const summaryLine =
-      `🟢 ${counts.ok} OK · 🟡 ${counts.low} LOW · 🟠 ${counts.critical} CRITICAL · 🔴 ${counts.zero} ZERO` +
-      (counts.noData > 0 ? ` · ⚪ ${counts.noData} NO DATA` : '');
-
-    const attentionLines = attention.length === 0
-      ? ['_All active states have confirmed same-day coverage today._ ✨']
-      : attention.slice(0, 20).map((r) => {
-          const ratioPct = r.coverage_ratio !== null ? `${Math.round(r.coverage_ratio * 100)}%` : '—';
-          const demandStr = r.demand_hours !== null ? fmtH(r.demand_hours) : 'no demand';
-          const tentative = r.tentative_upside_hours > 0 ? ` · +${fmtH(r.tentative_upside_hours)} tentative` : '';
-          return `${statusEmoji(r.status)} *${r.state}* — confirmed ${fmtH(r.confirmed_coverage_hours)} of ${demandStr} (${ratioPct}) · gap ${fmtH(r.gap_hours)}${tentative}`;
-        });
-    const attentionOverflow = attention.length > 20 ? `\n_…and ${attention.length - 20} more states needing attention._` : '';
-    const noDataLine = noData.length > 0 ? `\n\n⚪ *No demand data:* ${noData.map((r) => r.state).join(', ')}` : '';
-
-    const sourceNote = `_Confirmed coverage drives status. Demand: ${demandSource} · booked: ${bookedSource}${generatedAt ? ` · computed ${timeAgo(generatedAt)}` : ''}._`;
+    const accessText = buildAccessSummaryText(accessSnapshot);
+    const stateText = buildStateAccessText(stateAccessToday, rows, attention, noData, accessSnapshot === null);
+    const providerText = buildProviderWatchlistText(accessSnapshot);
+    const sourceNote = accessSnapshot
+      ? `_Unique slot headline: Daily Provider Utilization (card 3295)${accessSnapshot.syncedAt ? ` · synced ${timeAgo(accessSnapshot.syncedAt)}` : ''}. State rows are used for breadth/cushion only, not summed into network totals._`
+      : `_Unique provider-slot data for ${today} is not loaded yet. Routing fallback: demand ${demandSource} · booked ${bookedSource}${generatedAt ? ` · computed ${timeAgo(generatedAt)}` : ''}._`;
 
     const messageBlocks: unknown[] = [
-      { type: 'header', text: { type: 'plain_text', text: `📊 Same/Next-Day Coverage — ${headerDate}`, emoji: true } },
-      { type: 'section', text: { type: 'mrkdwn', text: `*${counts.total} active states*\n${summaryLine}` } },
+      { type: 'header', text: { type: 'plain_text', text: `📊 Same/Next-Day Access — ${headerDate}`, emoji: true } },
+      { type: 'section', text: { type: 'mrkdwn', text: accessText } },
       { type: 'context', elements: [{ type: 'mrkdwn', text: sourceNote }] },
       { type: 'divider' },
-      { type: 'section', text: { type: 'mrkdwn', text: `*States needing attention*\n${attentionLines.join('\n')}${attentionOverflow}${noDataLine}` } },
-      { type: 'context', elements: [{ type: 'mrkdwn', text: `<${DASHBOARD_URL}|Open Ops Dashboard →> · 🧵 assignments, moves & outreach in thread` }] },
+      { type: 'section', text: { type: 'mrkdwn', text: stateText } },
     ];
+    if (providerText) messageBlocks.push({ type: 'section', text: { type: 'mrkdwn', text: providerText } });
+    messageBlocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `<${DASHBOARD_URL}|Open Ops Dashboard →> · 🧵 provider detail in thread` }] });
 
-    const fallbackText = `Same/Next-Day Coverage — ${headerDate}: ${summaryLine}`;
+    const fallbackText = accessSnapshot
+      ? `Same/Next-Day Access — ${headerDate}: ${fmtSlots(accessSnapshot.bookedSlots)} booked, ${fmtSlots(accessSnapshot.availableSlots)} available, ${fmtSlots(accessSnapshot.totalSlots)} total unique slots`
+      : `Same/Next-Day Access — ${headerDate}: unique slot data not loaded yet`;
 
     if (isDryRun) {
       return new Response(
         JSON.stringify({
           success: true, dry_run: true, date: today, demand_source: demandSource, booked_source: bookedSource,
-          counts, attention_count: attention.length, blocks: messageBlocks, text: fallbackText,
-          thread: buildThreadBlocks(todayResult, results.find((r) => r.date !== today) ?? null),
+          counts, attention_count: attention.length, access_snapshot: accessSnapshot, state_access: stateAccessToday,
+          blocks: messageBlocks, text: fallbackText,
+          thread: buildThreadBlocks(todayResult, tomorrowResult, accessSnapshot, tomorrowAccessSnapshot),
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
@@ -217,8 +250,7 @@ Deno.serve(async (req) => {
     // ── Threaded detail ──────────────────────────────────────────────────────
     const replyTs: string[] = [];
     try {
-      const tomorrowResult = results.find((r) => r.date !== today) ?? null;
-      const threadGroups = buildThreadBlocks(todayResult, tomorrowResult);
+      const threadGroups = buildThreadBlocks(todayResult, tomorrowResult, accessSnapshot, tomorrowAccessSnapshot);
       for (const group of threadGroups) {
         const reply = await postFn({ channel: OPS_CHANNEL_ID, thread_ts: data.ts, text: group.text, blocks: group.blocks });
         const r = await reply.json();
@@ -240,8 +272,277 @@ Deno.serve(async (req) => {
   }
 });
 
+// ── Access snapshots ─────────────────────────────────────────────────────────
+async function loadAccessSnapshot(
+  supabase: ReturnType<typeof createClient>,
+  date: string,
+): Promise<AccessSnapshot | null> {
+  const { data, error } = await supabase
+    .from('provider_utilization_daily')
+    .select('provider_name, util_date, booked_timeslots, total_timeslots, utilization_pct, synced_at, imported_at')
+    .eq('util_date', date)
+    .range(0, 49999);
+  if (error) {
+    console.warn('provider_utilization_daily load failed:', error.message);
+    return null;
+  }
+
+  const providers: AccessProviderRow[] = [];
+  const syncedCandidates: string[] = [];
+  for (const row of data ?? []) {
+    const total = numOrNull(row.total_timeslots);
+    if (total === null || total <= 0) continue;
+    const utilizationPct = numOrNull(row.utilization_pct);
+    let booked = numOrNull(row.booked_timeslots);
+    if (booked === null && utilizationPct !== null) booked = Math.round(total * (utilizationPct / 100));
+    booked = Math.max(0, Math.min(total, booked ?? 0));
+    const available = Math.max(0, total - booked);
+    providers.push({
+      name: String(row.provider_name ?? 'Unknown'),
+      bookedSlots: booked,
+      availableSlots: available,
+      totalSlots: total,
+      utilizationPct: total > 0 ? (booked / total) * 100 : utilizationPct ?? 0,
+    });
+    const synced = String(row.synced_at ?? row.imported_at ?? '');
+    if (synced) syncedCandidates.push(synced);
+  }
+
+  const totalSlots = providers.reduce((sum, row) => sum + row.totalSlots, 0);
+  if (providers.length === 0 || totalSlots <= 0) return null;
+  const bookedSlots = providers.reduce((sum, row) => sum + row.bookedSlots, 0);
+  const availableSlots = providers.reduce((sum, row) => sum + row.availableSlots, 0);
+  syncedCandidates.sort();
+  return {
+    date,
+    bookedSlots,
+    availableSlots,
+    totalSlots,
+    utilizationPct: (bookedSlots / totalSlots) * 100,
+    providerCount: providers.length,
+    syncedAt: syncedCandidates.length ? syncedCandidates[syncedCandidates.length - 1] : null,
+    providers,
+  };
+}
+
+async function loadStateAccessSnapshot(
+  supabase: ReturnType<typeof createClient>,
+  date: string,
+): Promise<StateAccessSnapshot | null> {
+  const { data: exports, error: exportError } = await supabase
+    .from('metabase_raw_exports')
+    .select('rows, pulled_at, pulled_date')
+    .eq('report_key', 'telemedicine_availability')
+    .order('pulled_at', { ascending: false })
+    .limit(5);
+  if (exportError) {
+    console.warn('metabase_raw_exports state access load failed:', exportError.message);
+  }
+  for (const exp of exports ?? []) {
+    const rows = parseStateAccessRows(exp.rows, date);
+    if (rows.length > 0) {
+      return { date, source: 'rpt_telemedicine_availability_by_state_per_day', syncedAt: String(exp.pulled_at ?? ''), rows };
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('telemedicine_availability')
+    .select('state_abbreviation, report_date, available_count, availability_pct, imported_at')
+    .eq('report_date', date)
+    .range(0, 49999);
+  if (error) {
+    console.warn('telemedicine_availability load failed:', error.message);
+    return null;
+  }
+  const rows = (data ?? [])
+    .map((row): StateAccessRow | null => {
+      const state = toAbbreviation(String(row.state_abbreviation ?? ''));
+      if (!state) return null;
+      return {
+        state,
+        bookedSlots: null,
+        availableSlots: numOrNull(row.available_count),
+        totalSlots: null,
+        utilizationPct: null,
+      };
+    })
+    .filter((row): row is StateAccessRow => row !== null);
+  if (rows.length === 0) return null;
+  const synced = (data ?? []).map((row) => String(row.imported_at ?? '')).filter(Boolean).sort();
+  return { date, source: 'telemedicine_availability', syncedAt: synced[synced.length - 1] ?? null, rows };
+}
+
+function buildAccessSummaryText(snapshot: AccessSnapshot | null): string {
+  if (!snapshot) {
+    return [
+      '*Same/next-day access*',
+      'Unique provider-slot data has not loaded yet for this date.',
+      'Use the state/provider detail below as a temporary routing fallback, but do not sum state rows as the network total.',
+    ].join('\n');
+  }
+
+  const availablePct = snapshot.totalSlots > 0 ? (snapshot.availableSlots / snapshot.totalSlots) * 100 : 0;
+  const posture = availablePct >= 25
+    ? "We're in good shape for same/next-day access."
+    : snapshot.availableSlots > 0
+    ? 'Access is tighter than usual, but there are still appointment slots open.'
+    : 'No open same/next-day appointment slots are showing in the unique-slot view.';
+  return [
+    `*${posture}*`,
+    '*Unique appointment capacity*',
+    `${fmtSlots(snapshot.bookedSlots)} booked · ${fmtSlots(snapshot.availableSlots)} still available · ${fmtSlots(snapshot.totalSlots)} total slots`,
+    `${fmtPct(snapshot.utilizationPct)} booked · ${fmtPct(availablePct)} available`,
+  ].join('\n');
+}
+
+function buildStateAccessText(
+  snapshot: StateAccessSnapshot | null,
+  routingRows: StateRow[],
+  attention: StateRow[],
+  noData: StateRow[],
+  useRoutingFallback: boolean,
+): string {
+  if (snapshot && snapshot.rows.length > 0) {
+    const rows = snapshot.rows
+      .filter((row) => row.availableSlots !== null || row.bookedSlots !== null)
+      .sort((a, b) =>
+        (a.availableSlots ?? Number.MAX_SAFE_INTEGER) - (b.availableSlots ?? Number.MAX_SAFE_INTEGER) ||
+        (b.utilizationPct ?? -1) - (a.utilizationPct ?? -1) ||
+        a.state.localeCompare(b.state),
+      );
+    const totalStates = rows.length;
+    const openStates = rows.filter((row) => (row.availableSlots ?? 0) > 0).length;
+    const zeroStates = rows.filter((row) => row.availableSlots === 0).map((row) => row.state);
+    const watchlist = rows
+      .filter((row) => row.availableSlots !== null)
+      .slice(0, 8)
+      .map(formatStateAccessRow);
+    return [
+      '*State access*',
+      `${openStates}/${totalStates} states have availability · ${zeroStates.length} at zero availability`,
+      watchlist.length ? `Light watchlist: ${watchlist.join(' · ')}` : 'No low-cushion states in the state availability view.',
+      zeroStates.length ? `Zero availability: ${zeroStates.join(', ')}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (!useRoutingFallback) {
+    return [
+      '*State access*',
+      'State-level availability data is not loaded in the durable snapshot yet.',
+      'Use the unique appointment capacity above for the overall read; state rows should stay watchlist-only.',
+    ].join('\n');
+  }
+
+  const trackedStates = routingRows.filter((row) => row.status !== 'no_data').length;
+  const watchStates = attention.slice(0, 10).map((row) => row.state);
+  return [
+    '*State access*',
+    `${trackedStates}/${routingRows.length} active states have routing data${noData.length ? ` · ${noData.length} missing demand data` : ''}.`,
+    watchStates.length ? `Routing watchlist: ${watchStates.join(', ')}` : 'No routing watchlist states today.',
+  ].join('\n');
+}
+
+function buildProviderWatchlistText(snapshot: AccessSnapshot | null): string | null {
+  if (!snapshot) return null;
+  const providers = [...snapshot.providers].sort((a, b) =>
+    a.availableSlots - b.availableSlots ||
+    b.utilizationPct - a.utilizationPct ||
+    b.totalSlots - a.totalSlots ||
+    a.name.localeCompare(b.name),
+  );
+  const full = providers.filter((row) => row.availableSlots === 0).slice(0, 8);
+  const nearlyFull = providers
+    .filter((row) => row.availableSlots > 0 && row.utilizationPct >= 80)
+    .slice(0, 6);
+
+  const lines = ['*Provider utilization watchlist*'];
+  lines.push(full.length
+    ? `Fully booked today: ${full.map((row) => row.name).join(', ')}`
+    : 'No providers are fully booked in the unique-slot view.');
+  if (nearlyFull.length > 0) {
+    lines.push(`Nearly full: ${nearlyFull.map((row) => `${row.name} ${fmtPct(row.utilizationPct)}`).join(' · ')}`);
+  }
+  return lines.join('\n');
+}
+
+function formatStateAccessRow(row: StateAccessRow): string {
+  const parts = [`${row.state} ${fmtSlots(row.availableSlots ?? 0)} avail`];
+  if (row.utilizationPct !== null) parts.push(`${fmtPct(row.utilizationPct)} used`);
+  return parts.join(' / ');
+}
+
+function parseStateAccessRows(rawRows: unknown, date: string): StateAccessRow[] {
+  if (!Array.isArray(rawRows)) return [];
+  const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' }).format(new Date(date + 'T00:00:00Z'));
+  const rows: StateAccessRow[] = [];
+  for (const raw of rawRows) {
+    if (!raw || typeof raw !== 'object') continue;
+    const row = raw as Record<string, unknown>;
+    const rowDate = parseDateValue(colValue(row, 'Date', 'date', 'Day', 'day', 'report_date', 'date_actual', 'date_actual: Day'));
+    if (rowDate && rowDate !== date) continue;
+    const state = toAbbreviation(colValue(row, 'state', 'State', 'Appointment State', 'appointment_state', 'service_state'));
+    if (!state) continue;
+    const booked = numOrNull(colValue(
+      row,
+      `${weekday} Booked`, 'Booked', 'booked', 'booked_slots', 'Booked Slots', 'appointments', 'Appointments',
+      'appointment_count', 'Appointment Count',
+    ));
+    const available = numOrNull(colValue(
+      row,
+      `${weekday} Remaining`, 'Remaining', 'remaining', 'available', 'Available', 'available_slots',
+      'Available Slots', 'same_next_day_available_slots', 'Sum of same_next_day_available_slots',
+    ));
+    const total = booked !== null && available !== null ? booked + available : numOrNull(colValue(row, 'Total', 'total', 'total_slots', 'Total Slots'));
+    const utilization = total && total > 0 && booked !== null
+      ? (booked / total) * 100
+      : pctOrNull(colValue(row, 'Utilization', 'utilization', 'utilization_pct', 'Booking Rate', 'booking_rate'));
+    if (booked === null && available === null && total === null && utilization === null) continue;
+    rows.push({ state, bookedSlots: booked, availableSlots: available, totalSlots: total, utilizationPct: utilization });
+  }
+  return rows;
+}
+
+function colValue(row: Record<string, unknown>, ...candidates: string[]): string {
+  const normalize = (s: string) =>
+    s.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  for (const candidate of candidates) {
+    const target = normalize(candidate);
+    const key = Object.keys(row).find((k) => normalize(k) === target);
+    if (key) return String(row[key] ?? '').trim();
+  }
+  return '';
+}
+
+function numOrNull(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(String(raw).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function pctOrNull(raw: unknown): number | null {
+  const n = numOrNull(raw);
+  if (n === null) return null;
+  return String(raw).includes('%') || n > 1 ? n : n * 100;
+}
+
+function parseDateValue(raw: string): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (slash) return `${slash[3]}-${slash[1].padStart(2, '0')}-${slash[2].padStart(2, '0')}`;
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+}
+
 // ── Thread builders ───────────────────────────────────────────────────────────
-function buildThreadBlocks(today: DateResult, tomorrow: DateResult | null): { text: string; blocks: unknown[] }[] {
+function buildThreadBlocks(
+  today: DateResult,
+  tomorrow: DateResult | null,
+  accessSnapshot: AccessSnapshot | null,
+  tomorrowAccessSnapshot: AccessSnapshot | null,
+): { text: string; blocks: unknown[] }[] {
   const groups: { text: string; blocks: unknown[] }[] = [];
 
   // Reply 1: who's confirmed working today + their routed states.
@@ -261,11 +562,16 @@ function buildThreadBlocks(today: DateResult, tomorrow: DateResult | null): { te
     groups.push({ text: 'Confirmed providers scheduled today', blocks: [section(lines.join('\n'))] });
   }
 
+  const providerWatchlist = buildProviderWatchlistText(accessSnapshot);
+  if (providerWatchlist) {
+    groups.push({ text: 'Provider utilization watchlist', blocks: [section(providerWatchlist)] });
+  }
+
   // Reply 2: gaps + recommended moves + tentative upside.
   const gapStates = today.state_coverage
     .filter((r) => (r.status === 'zero' || r.status === 'critical' || r.status === 'low') && r.demand_hours !== null)
     .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || b.gap_hours - a.gap_hours);
-  if (gapStates.length > 0) {
+  if (!accessSnapshot && gapStates.length > 0) {
     const movesByState = new Map<string, MoveRow[]>();
     for (const m of today.moves) {
       if (!movesByState.has(m.state)) movesByState.set(m.state, []);
@@ -287,7 +593,7 @@ function buildThreadBlocks(today: DateResult, tomorrow: DateResult | null): { te
   }
 
   // Reply 3: recommended adds / outreach for residual gaps.
-  if (today.adds.length > 0) {
+  if (!accessSnapshot && today.adds.length > 0) {
     const addsByState = new Map<string, AddRow[]>();
     for (const a of today.adds) {
       if (!addsByState.has(a.state)) addsByState.set(a.state, []);
@@ -313,17 +619,19 @@ function buildThreadBlocks(today: DateResult, tomorrow: DateResult | null): { te
 
   // Optional: tomorrow preview.
   if (tomorrow) {
-    const t = tomorrow.state_coverage;
-    const att = t.filter((r) => r.status === 'zero' || r.status === 'critical' || r.status === 'low')
-      .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || b.gap_hours - a.gap_hours);
-    const tCounts = {
-      ok: t.filter((r) => r.status === 'ok').length, low: t.filter((r) => r.status === 'low').length,
-      critical: t.filter((r) => r.status === 'critical').length, zero: t.filter((r) => r.status === 'zero').length,
-    };
-    const lines = [`*🔮 Tomorrow (${tomorrow.date}) preview*`, `🟢 ${tCounts.ok} OK · 🟡 ${tCounts.low} LOW · 🟠 ${tCounts.critical} CRITICAL · 🔴 ${tCounts.zero} ZERO`];
-    if (att.length > 0) {
-      lines.push('');
-      for (const r of att.slice(0, 10)) lines.push(`${statusEmoji(r.status)} *${r.state}* — gap ${fmtH(r.gap_hours)}`);
+    const lines = [`*🔮 Tomorrow (${tomorrow.date}) preview*`];
+    if (tomorrowAccessSnapshot) {
+      const availablePct = tomorrowAccessSnapshot.totalSlots > 0
+        ? (tomorrowAccessSnapshot.availableSlots / tomorrowAccessSnapshot.totalSlots) * 100
+        : 0;
+      lines.push(`${fmtSlots(tomorrowAccessSnapshot.bookedSlots)} booked · ${fmtSlots(tomorrowAccessSnapshot.availableSlots)} available · ${fmtSlots(tomorrowAccessSnapshot.totalSlots)} total unique slots`);
+      lines.push(`${fmtPct(tomorrowAccessSnapshot.utilizationPct)} booked · ${fmtPct(availablePct)} available`);
+    } else {
+      const t = tomorrow.state_coverage;
+      const att = t.filter((r) => r.status === 'zero' || r.status === 'critical' || r.status === 'low')
+        .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.state.localeCompare(b.state));
+      lines.push(`${t.length} active states in routing preview.`);
+      if (att.length > 0) lines.push(`Watchlist: ${att.slice(0, 10).map((r) => r.state).join(', ')}`);
     }
     groups.push({ text: 'Tomorrow preview', blocks: [section(lines.join('\n'))] });
   }

@@ -19,14 +19,16 @@ Every morning (before the Slack post window) a compute job:
    (America/Chicago).
 
 The router answers, per active state per day: _"How many hours of confirmed
-provider coverage do we have versus demand, where are the gaps, and what's the
-cheapest way to close them?"_
+provider coverage do we have versus demand, where are the routing risks, and
+what add/move options exist?"_
 
 `send-ops-dashboard-slack` then reads the freshest run and posts:
 
-- a **main message** with active-state status counts + attention states, and
-- a **thread** with provider assignments, remaining gaps, tentative upside,
-  recommended moves, and recommended add-hours / outreach.
+- a **main message** with the same/next-day **access** headline: unique booked
+  appointment slots, unique available appointment slots, and total unique slots
+  from Daily Provider Utilization; and
+- a **thread** with provider detail and data-quality notes. Routed state gaps are
+  fallback/debug detail only and should not be the headline access read.
 
 The routed same/next-day path is **separate** from the legacy
 `state_leftover_slots` forecast path, which stays available for dashboard /
@@ -34,11 +36,20 @@ legacy context but is **not** used for routed decisions.
 
 ---
 
-## 2. Canonical unit: hours
+## 2. Canonical units
 
-Everything is **hours of provider availability**. One booked appointment is
-assumed to be **0.5 hours** unless Metabase supplies explicit booked hours.
-Slot displays are secondary.
+The routing engine still uses **hours of provider availability** internally. One
+booked appointment is assumed to be **0.5 hours** unless Metabase supplies
+explicit booked hours.
+
+The Slack access headline uses **unique appointment slots**:
+
+- unique booked slots = `provider_utilization_daily.booked_timeslots`
+- unique available slots = `total_timeslots - booked_timeslots`
+- one provider hour = two appointment slots
+
+Do **not** sum booked/available state-slot rows as the network total. State-slot
+rows can be used as a state breadth/cushion watchlist only.
 
 ---
 
@@ -52,6 +63,7 @@ Slot displays are secondary.
 | Active states | `state_activation` (is_active) | Only active states are routed; if unavailable, the router derives states from demand sources. |
 | Daily state demand | Metabase card **3478** (`Telemedicine Demand Daily`) | Columns `date`, `state`, `demand_hours` or `target_hours`. Fallback → `demand_forecast` (daily) → `state_demand_targets`. |
 | Daily booked appointments | Metabase card **3479** (`Daily Provider Booked Appointments`) | Columns `date`, `provider`, `state`, `appointment_count`, optional `booked_hours`. |
+| Daily unique provider slots | Metabase card **3295** (`Daily Provider Utilization`) → `provider_utilization_daily` | Columns `Provider Full Name`, `Sum of Distinct values of Time Slot ID`, `Average of Utilization rate`. Used for the Slack access headline. |
 | Add candidates (outreach) | `schedule_submissions` (Jotform availability) + `provider_utilization_daily` | Used only to suggest add-hours for residual gaps. |
 
 ### ID spaces (important)
@@ -103,14 +115,12 @@ If card 3479 is missing, there are simply no booked locks that day (the run
 still completes). Missing Metabase credentials → demand uses fallbacks and no
 booked locks.
 
-### Supporting cards (context / diagnostics — not engine inputs)
+### Supporting cards (context / diagnostics)
 
-Synced by `sync-metabase` and used for the dashboard, utilization adds, and SLA
-context: 3295 (Daily Provider Utilization → `provider_utilization_daily`,
-feeds low-utilization adds), 2973 / 2971 / 2972 (service-line demand), 1415
-(active members), 3287 / 2614 (utilization baselines), 2691 / 2457 (slot &
-appointment counts), 2957 / 2111 / 2440 / 2445 / 2474 / 2470 / 1178 / 2460
-(diagnostics).
+Synced by `sync-metabase` and used for the dashboard, state watchlists, and SLA
+context: 2973 / 2971 / 2972 (service-line demand), 1415 (active members), 3287 /
+2614 (utilization baselines), 2691 / 2457 (slot & appointment counts), 2957 /
+2111 / 2440 / 2445 / 2474 / 2470 / 1178 / 2460 (diagnostics).
 
 ---
 
@@ -179,19 +189,21 @@ assignments) versus demand:
 
 ## 7. Reading the Slack digest
 
-**Main post** — `*N active states*` then the status counts, then attention
-states (ZERO → CRITICAL → LOW, worst first). Each attention line shows
-`confirmed Xh of Yh (Z%) · gap Gh · +T tentative`. The context line states the
-demand/booked source and when the run was computed.
+**Main post** — access-first. The headline states whether same/next-day access
+is healthy, then shows unique booked slots, unique available slots, total unique
+slots, and booked/available percentages. State rows are shown only as
+breadth/cushion watchlists when a state availability snapshot is loaded.
 
 **Thread:**
 
 1. **Confirmed providers scheduled today** — each provider's scheduled hours,
    booked hours, routed states, and free hours.
-2. **Remaining gaps, routed moves & tentative upside** — per attention state.
-3. **Recommended add-hours / outreach** — suggestions only; contact via your
-   usual channel.
-4. **Tomorrow preview** + **data-quality notes** when present.
+2. **Provider utilization watchlist** — fully booked and nearly full providers
+   from the unique provider-slot snapshot.
+3. **Tomorrow preview** + **data-quality notes** when present.
+
+If the unique provider-slot snapshot is missing, the bot may show routing
+fallback detail. Treat that as temporary/debug output, not the access headline.
 
 ---
 

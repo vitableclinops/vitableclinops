@@ -604,10 +604,12 @@ async function handleProviderUtilizationDaily(rows: Row[], supabase: SupabaseCli
     // Prefer an explicit date; if absent (card shows "today"), default to today.
     const utilDate = parseDate(dateRaw) ?? today;
 
-    const booked = bookedRaw ? parseInt(bookedRaw.replace(/[^0-9]/g, ''), 10) : null;
-    const total = totalRaw ? parseInt(totalRaw.replace(/[^0-9]/g, ''), 10) : null;
+    const parsedBooked = bookedRaw ? parseInt(bookedRaw.replace(/[^0-9]/g, ''), 10) : NaN;
+    const parsedTotal = totalRaw ? parseInt(totalRaw.replace(/[^0-9]/g, ''), 10) : NaN;
+    const total = Number.isFinite(parsedTotal) ? parsedTotal : null;
 
     let utilizationPct = parsePct(utilRaw);
+    let booked = Number.isFinite(parsedBooked) ? parsedBooked : null;
     if (utilizationPct === null && booked !== null && total && total > 0) {
       utilizationPct = Math.round((booked / total) * 10000) / 100;
     }
@@ -615,14 +617,19 @@ async function handleProviderUtilizationDaily(rows: Row[], supabase: SupabaseCli
       errors.push(`Unparseable utilization for ${providerName} on ${utilDate}`);
       continue;
     }
+    if (booked === null && total && total > 0) {
+      booked = Math.round(total * (utilizationPct / 100));
+    }
 
     records.push({
+      date: utilDate,
       provider_name: providerName,
       util_date: utilDate,
-      booked_timeslots: isNaN(booked ?? NaN) ? null : booked,
-      total_timeslots: isNaN(total ?? NaN) ? null : total,
+      booked_timeslots: booked,
+      total_timeslots: total,
       utilization_pct: utilizationPct,
       imported_at: nowIso,
+      data_source: 'daily',
       source: 'metabase_sync',
       synced_at: nowIso,
     });
