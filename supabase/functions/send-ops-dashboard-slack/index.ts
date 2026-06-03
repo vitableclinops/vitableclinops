@@ -80,6 +80,15 @@ type StateAccessSnapshot = {
   syncedAt: string | null;
   rows: StateAccessRow[];
 };
+type StateAccessStatus = Status;
+type StateAccessSummary = {
+  total: number;
+  ok: number;
+  low: number;
+  critical: number;
+  zero: number;
+  noData: number;
+};
 
 function getChicagoDate(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -104,6 +113,7 @@ const STATUS_ORDER: Record<Status, number> = { zero: 0, critical: 1, low: 2, ok:
 const fmtH = (n: number) => `${(Math.round(n * 10) / 10).toFixed(1)}h`;
 const fmtSlots = (n: number) => Math.round(n).toLocaleString('en-US');
 const fmtPct = (n: number) => `${(Math.round(n * 10) / 10).toFixed(1)}%`;
+const slotsToHours = (slots: number) => `${(Math.round((slots / 2) * 10) / 10).toFixed(1)}h`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -199,26 +209,30 @@ Deno.serve(async (req) => {
     const headerDate = new Date(today + 'T00:00:00').toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     });
-    const accessText = buildAccessSummaryText(accessSnapshot);
+    const stateSummary = buildStateAccessSummary(stateAccessToday, rows);
+    const summaryText = buildDailyOpsSummaryText(stateSummary, accessSnapshot);
     const stateText = buildStateAccessText(stateAccessToday, rows, attention, noData, accessSnapshot === null);
-    const providerText = buildProviderWatchlistText(accessSnapshot);
+    const suggestedText = buildSuggestedProvidersText(stateAccessToday, todayResult);
     const sourceNote = accessSnapshot
-      ? `_Unique slot headline: Daily Provider Utilization (card 3295)${accessSnapshot.syncedAt ? ` · synced ${timeAgo(accessSnapshot.syncedAt)}` : ''}. State rows are used for breadth/cushion only, not summed into network totals._`
+      ? `_Network headline uses unique provider slots from Daily Provider Utilization (card 3295)${accessSnapshot.syncedAt ? ` · synced ${timeAgo(accessSnapshot.syncedAt)}` : ''}. State rows are state-level and non-additive._`
       : `_Unique provider-slot data for ${today} is not loaded yet. Routing fallback: demand ${demandSource} · booked ${bookedSource}${generatedAt ? ` · computed ${timeAgo(generatedAt)}` : ''}._`;
 
     const messageBlocks: unknown[] = [
-      { type: 'header', text: { type: 'plain_text', text: `📊 Same/Next-Day Access — ${headerDate}`, emoji: true } },
-      { type: 'section', text: { type: 'mrkdwn', text: accessText } },
+      { type: 'header', text: { type: 'plain_text', text: `📊 Daily Ops Coverage — ${headerDate}`, emoji: true } },
+      { type: 'section', text: { type: 'mrkdwn', text: summaryText } },
       { type: 'context', elements: [{ type: 'mrkdwn', text: sourceNote }] },
       { type: 'divider' },
       { type: 'section', text: { type: 'mrkdwn', text: stateText } },
     ];
-    if (providerText) messageBlocks.push({ type: 'section', text: { type: 'mrkdwn', text: providerText } });
-    messageBlocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `<${DASHBOARD_URL}|Open Ops Dashboard →> · 🧵 provider detail in thread` }] });
+    if (suggestedText) {
+      messageBlocks.push({ type: 'divider' });
+      messageBlocks.push({ type: 'section', text: { type: 'mrkdwn', text: suggestedText } });
+    }
+    messageBlocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `<${DASHBOARD_URL}|Open Ops Dashboard →> · 🧵 full state/provider detail in thread` }] });
 
     const fallbackText = accessSnapshot
-      ? `Same/Next-Day Access — ${headerDate}: ${fmtSlots(accessSnapshot.bookedSlots)} booked, ${fmtSlots(accessSnapshot.availableSlots)} available, ${fmtSlots(accessSnapshot.totalSlots)} total unique slots`
-      : `Same/Next-Day Access — ${headerDate}: unique slot data not loaded yet`;
+      ? `Daily Ops Coverage — ${headerDate}: ${stateSummary.total} active states; ${fmtSlots(accessSnapshot.bookedSlots)} booked, ${fmtSlots(accessSnapshot.availableSlots)} available, ${fmtSlots(accessSnapshot.totalSlots)} total unique slots`
+      : `Daily Ops Coverage — ${headerDate}: ${stateSummary.total} active states; unique slot data not loaded yet`;
 
     if (isDryRun) {
       return new Response(
@@ -400,27 +414,51 @@ async function loadStateAccessSnapshot(
   return { date, source: 'telemedicine_availability', syncedAt: synced[synced.length - 1] ?? null, rows };
 }
 
-function buildAccessSummaryText(snapshot: AccessSnapshot | null): string {
-  if (!snapshot) {
-    return [
-      '*Same/next-day access*',
-      'Unique provider-slot data has not loaded yet for this date.',
-      'Use the state/provider detail below as a temporary routing fallback, but do not sum state rows as the network total.',
-    ].join('\n');
+function buildStateAccessSummary(snapshot: StateAccessSnapshot | null, routingRows: StateRow[]): StateAccessSummary {
+  if (snapshot && snapshot.rows.length > 0) {
+    const summary: StateAccessSummary = { total: 0, ok: 0, low: 0, critical: 0, zero: 0, noData: 0 };
+    for (const row of snapshot.rows) {
+      summary.total += 1;
+      const status = classifyStateAccess(row);
+      if (status === 'no_data') summary.noData += 1;
+      else summary[status] += 1;
+    }
+    return summary;
   }
 
-  const availablePct = snapshot.totalSlots > 0 ? (snapshot.availableSlots / snapshot.totalSlots) * 100 : 0;
-  const posture = availablePct >= 25
-    ? "We're in good shape for same/next-day access."
-    : snapshot.availableSlots > 0
-    ? 'Access is tighter than usual, but there are still appointment slots open.'
-    : 'No open same/next-day appointment slots are showing in the unique-slot view.';
-  return [
-    `*${posture}*`,
-    '*Unique appointment capacity*',
-    `${fmtSlots(snapshot.bookedSlots)} booked · ${fmtSlots(snapshot.availableSlots)} still available · ${fmtSlots(snapshot.totalSlots)} total slots`,
-    `${fmtPct(snapshot.utilizationPct)} booked · ${fmtPct(availablePct)} available`,
-  ].join('\n');
+  return {
+    total: routingRows.length,
+    ok: routingRows.filter((row) => row.status === 'ok').length,
+    low: routingRows.filter((row) => row.status === 'low').length,
+    critical: routingRows.filter((row) => row.status === 'critical').length,
+    zero: routingRows.filter((row) => row.status === 'zero').length,
+    noData: routingRows.filter((row) => row.status === 'no_data').length,
+  };
+}
+
+function buildDailyOpsSummaryText(summary: StateAccessSummary, snapshot: AccessSnapshot | null): string {
+  const lines = [
+    `*${summary.total} active states*`,
+    `${statusEmoji('ok')} ${summary.ok} OK · ${statusEmoji('low')} ${summary.low} LOW · ${statusEmoji('critical')} ${summary.critical} CRITICAL · ${statusEmoji('zero')} ${summary.zero} ZERO · ${statusEmoji('no_data')} ${summary.noData} NO DATA`,
+  ];
+
+  if (snapshot) {
+    const availablePct = snapshot.totalSlots > 0 ? (snapshot.availableSlots / snapshot.totalSlots) * 100 : 0;
+    const posture = availablePct >= 20 && summary.zero === 0
+      ? `Overall: good to go; ${fmtSlots(snapshot.availableSlots)} unique slots remain open today.`
+      : snapshot.availableSlots > 0
+      ? 'Overall: workable; focus outreach on the states below.'
+      : 'Overall: tight; prioritize reopening same-day slots in the states below.';
+    lines.push(
+      posture,
+      `Unique capacity: ${fmtSlots(snapshot.bookedSlots)} booked · ${fmtSlots(snapshot.availableSlots)} available (${slotsToHours(snapshot.availableSlots)}) · ${fmtSlots(snapshot.totalSlots)} total slots`,
+      `${fmtPct(snapshot.utilizationPct)} booked · ${fmtPct(availablePct)} available across ${fmtSlots(snapshot.providerCount)} providers`,
+    );
+  } else {
+    lines.push('Unique capacity is still loading; state rows below are the temporary operating view.');
+  }
+
+  return lines.join('\n');
 }
 
 function buildStateAccessText(
@@ -431,36 +469,15 @@ function buildStateAccessText(
   useRoutingFallback: boolean,
 ): string {
   if (snapshot && snapshot.rows.length > 0) {
-    const rows = applyBookedVisitsByState(snapshot.rows, routingRows)
-      .filter((row) => row.availableSlots !== null || row.bookedSlots !== null)
-      .sort((a, b) =>
-        (a.availableSlots ?? Number.MAX_SAFE_INTEGER) - (b.availableSlots ?? Number.MAX_SAFE_INTEGER) ||
-        (b.utilizationPct ?? -1) - (a.utilizationPct ?? -1) ||
-        a.state.localeCompare(b.state),
-      );
-    const totalStates = rows.length;
-    const openStates = rows.filter((row) => (row.availableSlots ?? 0) > 0).length;
-    const zeroStates = rows.filter((row) => row.availableSlots === 0).map((row) => row.state);
-    const lowestAvailability = rows
-      .filter((row) => row.availableSlots !== null)
-      .slice(0, 8)
-      .map(formatStateAccessRow);
-    const highestUtilization = [...rows]
-      .filter((row) => row.bookedSlots !== null && row.availableSlots !== null && (row.totalSlots ?? 0) > 0)
-      .sort((a, b) =>
-        (b.utilizationPct ?? -1) - (a.utilizationPct ?? -1) ||
-        (a.availableSlots ?? Number.MAX_SAFE_INTEGER) - (b.availableSlots ?? Number.MAX_SAFE_INTEGER) ||
-        a.state.localeCompare(b.state),
-      )
-      .slice(0, 5)
-      .map(formatStateAccessRow);
+    const rows = sortStateAccessRows(snapshot.rows)
+      .filter((row) => classifyStateAccess(row) !== 'ok')
+      .slice(0, 8);
     return [
-      '*State access by state*',
-      `${openStates}/${totalStates} states have availability · ${zeroStates.length} at zero availability`,
-      lowestAvailability.length ? `Lowest availability: ${lowestAvailability.join(' · ')}` : 'No low-cushion states in the state availability view.',
-      highestUtilization.length ? `Highest utilization: ${highestUtilization.join(' · ')}` : '',
-      '_Full by-state table is in the thread. State rows are directional and non-additive._',
-      zeroStates.length ? `Zero availability: ${zeroStates.join(', ')}` : '',
+      '*States needing attention*',
+      rows.length
+        ? rows.map(formatStateAttentionRow).join('\n')
+        : `${statusEmoji('ok')} No states need attention right now.`,
+      '_Full by-state table is in the thread._',
     ].filter(Boolean).join('\n');
   }
 
@@ -479,6 +496,37 @@ function buildStateAccessText(
     `${trackedStates}/${routingRows.length} active states have routing data${noData.length ? ` · ${noData.length} missing demand data` : ''}.`,
     watchStates.length ? `Routing watchlist: ${watchStates.join(', ')}` : 'No routing watchlist states today.',
   ].join('\n');
+}
+
+function buildSuggestedProvidersText(snapshot: StateAccessSnapshot | null, today: DateResult): string | null {
+  if (!snapshot || snapshot.rows.length === 0) return null;
+
+  const attentionRows = sortStateAccessRows(snapshot.rows)
+    .filter((row) => classifyStateAccess(row) !== 'ok' && classifyStateAccess(row) !== 'no_data')
+    .slice(0, 6);
+  const addsByState = new Map<string, AddRow[]>();
+  for (const add of today.adds) {
+    if (!addsByState.has(add.state)) addsByState.set(add.state, []);
+    addsByState.get(add.state)!.push(add);
+  }
+  for (const [state, adds] of addsByState) {
+    addsByState.set(state, sortAddRows(dedupeAdds(adds)));
+  }
+
+  const lines = ['*🎯 Suggested providers to ping today*'];
+  if (attentionRows.length === 0) {
+    lines.push('No provider pings suggested from the current state view.');
+  } else {
+    for (const row of attentionRows) {
+      const candidates = addsByState.get(row.state) ?? [];
+      lines.push(`${stateAccessStatusEmoji(classifyStateAccess(row))} *${row.state}* — ${formatStateAccessCapacity(row)}`);
+      lines.push(candidates.length
+        ? `→ Ping: ${candidates.slice(0, 3).map(formatAddPing).join(', ')}`
+        : '→ No specific ping suggested from routing data; monitor availability and reopen slots as needed.');
+    }
+  }
+  lines.push('', '_Suggestions only — review and contact via your usual channel (Slack DM, text, etc.)._');
+  return lines.join('\n');
 }
 
 function buildProviderWatchlistText(snapshot: AccessSnapshot | null): string | null {
@@ -505,28 +553,92 @@ function buildProviderWatchlistText(snapshot: AccessSnapshot | null): string | n
 }
 
 function formatStateAccessRow(row: StateAccessRow): string {
-  const booked = row.bookedSlots !== null ? fmtSlots(row.bookedSlots) : '—';
-  const available = row.availableSlots !== null ? fmtSlots(row.availableSlots) : '—';
-  const parts = [`${row.state}: ${booked} booked / ${available} avail`];
-  if (row.utilizationPct !== null) parts.push(`${fmtPct(row.utilizationPct)} used`);
-  return parts.join(' / ');
+  return `${row.state}: ${formatStateAccessCapacity(row)}`;
 }
 
-function applyBookedVisitsByState(stateRows: StateAccessRow[], routingRows: StateRow[]): StateAccessRow[] {
-  const bookedByState = new Map<string, number>();
-  for (const row of routingRows) {
-    if (row.booked_locked_hours > 0) bookedByState.set(row.state, Math.round(row.booked_locked_hours * 2));
+function formatStateAttentionRow(row: StateAccessRow): string {
+  const status = classifyStateAccess(row);
+  return `${stateAccessStatusEmoji(status)} *${row.state}* — ${formatStateAccessCapacity(row)}`;
+}
+
+function formatStateAccessCapacity(row: StateAccessRow): string {
+  const booked = row.bookedSlots !== null ? fmtSlots(row.bookedSlots) : '—';
+  const available = row.availableSlots !== null ? fmtSlots(row.availableSlots) : '—';
+  const total = row.totalSlots !== null ? fmtSlots(row.totalSlots) : '—';
+  const parts = [`${booked} booked`, `${available} avail`];
+  if (row.availableSlots !== null) parts[1] += ` (${slotsToHours(row.availableSlots)})`;
+  parts.push(`${total} total`);
+  if (row.utilizationPct !== null) parts.push(`${fmtPct(row.utilizationPct)} used`);
+  return parts.join(' · ');
+}
+
+function classifyStateAccess(row: StateAccessRow): StateAccessStatus {
+  const hasAnyData = row.bookedSlots !== null || row.availableSlots !== null || row.totalSlots !== null || row.utilizationPct !== null;
+  if (!hasAnyData) return 'no_data';
+  if (row.availableSlots === null && row.utilizationPct === null) return 'no_data';
+  if (row.availableSlots !== null && row.availableSlots <= 0) return 'zero';
+  if (row.utilizationPct !== null && row.utilizationPct >= 40) return 'critical';
+  if (
+    (row.availableSlots !== null && row.availableSlots < 30) ||
+    (row.utilizationPct !== null && row.utilizationPct >= 30 && row.availableSlots !== null && row.availableSlots <= 40)
+  ) return 'low';
+  return 'ok';
+}
+
+function stateAccessStatusEmoji(status: StateAccessStatus): string {
+  return statusEmoji(status);
+}
+
+function sortStateAccessRows(rows: StateAccessRow[]): StateAccessRow[] {
+  return [...rows]
+    .filter((row) => row.availableSlots !== null || row.bookedSlots !== null || row.totalSlots !== null)
+    .sort((a, b) => {
+      const statusDiff = STATUS_ORDER[classifyStateAccess(a)] - STATUS_ORDER[classifyStateAccess(b)];
+      if (statusDiff !== 0) return statusDiff;
+      return (a.availableSlots ?? Number.MAX_SAFE_INTEGER) - (b.availableSlots ?? Number.MAX_SAFE_INTEGER) ||
+        (b.utilizationPct ?? -1) - (a.utilizationPct ?? -1) ||
+        a.state.localeCompare(b.state);
+    });
+}
+
+function sortAddRows(adds: AddRow[]): AddRow[] {
+  const sourceRank: Record<string, number> = {
+    low_utilization: 0,
+    tentative_scheduled: 1,
+    jotform_availability: 2,
+  };
+  return [...adds].sort((a, b) =>
+    (sourceRank[a.source] ?? 9) - (sourceRank[b.source] ?? 9) ||
+    (b.available_hours ?? -1) - (a.available_hours ?? -1) ||
+    (a.utilization_pct ?? 999) - (b.utilization_pct ?? 999) ||
+    a.name.localeCompare(b.name),
+  );
+}
+
+function dedupeAdds(adds: AddRow[]): AddRow[] {
+  const byName = new Map<string, AddRow>();
+  for (const add of adds) {
+    const existing = byName.get(add.name);
+    if (!existing) {
+      byName.set(add.name, add);
+      continue;
+    }
+    if ((add.available_hours ?? -1) > (existing.available_hours ?? -1)) {
+      byName.set(add.name, add);
+    }
   }
-  return stateRows.map((row) => {
-    const booked = bookedByState.has(row.state) ? bookedByState.get(row.state)! : row.bookedSlots;
-    const total = booked !== null && row.availableSlots !== null ? booked + row.availableSlots : row.totalSlots;
-    return {
-      ...row,
-      bookedSlots: booked,
-      totalSlots: total,
-      utilizationPct: total && total > 0 && booked !== null ? (booked / total) * 100 : row.utilizationPct,
-    };
-  });
+  return [...byName.values()];
+}
+
+function formatAddPing(add: AddRow): string {
+  const context: string[] = [];
+  if (add.source === 'tentative_scheduled') context.push('scheduled but not EHR-live');
+  else if (add.source === 'jotform_availability') context.push('available per Jotform');
+  else if (add.source === 'low_utilization') context.push('low utilization');
+  if (add.available_hours !== null) context.push(`${fmtH(add.available_hours)} avail`);
+  if (add.utilization_pct !== null) context.push(`${fmtPct(add.utilization_pct)} util`);
+  if (add.tentative) context.push('needs activation');
+  return `${add.name}${context.length ? ` (${context.join(', ')})` : ''}`;
 }
 
 function parseStateAccessRows(rawRows: unknown, date: string): StateAccessRow[] {
@@ -626,7 +738,7 @@ function buildThreadBlocks(
     groups.push({ text: 'Provider utilization watchlist', blocks: [section(providerWatchlist)] });
   }
 
-  const stateTable = buildStateAccessThreadText(stateAccessSnapshot, today.state_coverage);
+  const stateTable = buildStateAccessThreadText(stateAccessSnapshot);
   if (stateTable) {
     groups.push({ text: 'State access by state', blocks: [section(stateTable)] });
   }
@@ -711,19 +823,13 @@ function buildThreadBlocks(
   return groups;
 }
 
-function buildStateAccessThreadText(snapshot: StateAccessSnapshot | null, routingRows: StateRow[]): string | null {
+function buildStateAccessThreadText(snapshot: StateAccessSnapshot | null): string | null {
   if (!snapshot || snapshot.rows.length === 0) return null;
-  const rows = applyBookedVisitsByState(snapshot.rows, routingRows)
-    .filter((row) => row.availableSlots !== null || row.bookedSlots !== null)
-    .sort((a, b) =>
-      (a.availableSlots ?? Number.MAX_SAFE_INTEGER) - (b.availableSlots ?? Number.MAX_SAFE_INTEGER) ||
-      (b.utilizationPct ?? -1) - (a.utilizationPct ?? -1) ||
-      a.state.localeCompare(b.state),
-    );
+  const rows = sortStateAccessRows(snapshot.rows);
   if (rows.length === 0) return null;
   const lines = [
     '*State access by state*',
-    '_Booked = unique booked visits from the booked-appointments/routing feed. Available = state-level open slots; do not sum available slots across states._',
+    '_Booked and available are state-level same/next-day slot counts from Metabase; rows are non-additive across states._',
     '',
     ...rows.map(formatStateAccessRow),
   ];
