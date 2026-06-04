@@ -6,6 +6,7 @@ export type CoverageDemandInput = {
 };
 
 export type CoverageShiftInput = {
+  submission_id?: string | null;
   assigned_state: string | null;
   hours: number | string | null;
   shift_type?: string | null;
@@ -26,8 +27,11 @@ export type CoverageLicenseInput = {
 };
 
 export type CoverageSubmissionInput = {
+  id?: string | null;
   provider_id: string | null;
+  target_month?: string | null;
   decision_status: string | null;
+  submitted_at?: string | null;
 };
 
 export type StateCoverageComputedRow = {

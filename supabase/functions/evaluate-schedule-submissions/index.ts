@@ -1484,11 +1484,24 @@ const shiftKey = (r: {
 }) =>
   `${r.submission_id}|${r.shift_date}|${r.start_min}|${r.end_min}|${r.shift_type}`;
 
+function assertUniqueShiftRecommendationRows(rows: ShiftRecommendationRow[]) {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = shiftKey(row);
+    if (seen.has(key)) {
+      throw new Error(`duplicate shift_recommendations row generated for ${key}`);
+    }
+    seen.add(key);
+  }
+}
+
 async function writeShiftRecommendations(
   supabase: SupabaseClientAny,
   submissionIds: string[],
   rows: ShiftRecommendationRow[],
 ) {
+  assertUniqueShiftRecommendationRows(rows);
+
   // Snapshot the existing publish state for this group BEFORE we wipe, so a
   // re-run of the evaluator doesn't reset Sarabjeet's "Posted to Homebase /
   // EHR" progress. We carry the state forward onto any freshly emitted shift
@@ -1508,10 +1521,13 @@ async function writeShiftRecommendations(
   const priorByKey = new Map<string, typeof priorRows[number]>();
   for (const r of priorRows ?? []) priorByKey.set(shiftKey(r), r);
 
-  await supabase
+  const { error: deleteErr } = await supabase
     .from('shift_recommendations')
-    .delete()
+    .delete({ count: 'exact' })
     .in('submission_id', submissionIds);
+  if (deleteErr) {
+    throw new Error(`shift_recommendations delete failed: ${deleteErr.message}`);
+  }
 
   if (rows.length === 0) return;
 
@@ -1604,6 +1620,13 @@ async function markSuperseded(
     })
     .in('id', ids);
   if (error) throw new Error(error.message);
+  const { error: recErr } = await supabase
+    .from('shift_recommendations')
+    .delete({ count: 'exact' })
+    .in('submission_id', ids);
+  if (recErr) {
+    throw new Error(`failed to delete superseded shift_recommendations: ${recErr.message}`);
+  }
 }
 
 function round2(n: number): number {

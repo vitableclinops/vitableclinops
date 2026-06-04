@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  dedupeShiftRecommendationRows,
+  filterRowsToLatestAcceptedSubmissions,
+  filterRowsToLatestSubmissions,
+  type LatestSchedulingSubmission,
+} from '@/lib/scheduling/latestSubmissions';
 
 export type DecisionStatus =
   | 'pending'
@@ -820,18 +826,32 @@ export function useShiftRecommendationsInboxWindow(anchorMonth: string) {
   return useQuery({
     queryKey: ['workbench', 'shift-recommendations-inbox', fromMonth, toMonth],
     queryFn: async (): Promise<ShiftRow[]> => {
-      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
-        .from('shift_recommendations')
-        .select(
-          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
-        )
-        .gte('target_month', fromMonth)
-        .lte('target_month', toMonth)
-        .eq('recommendation', 'publish')
-        .order('shift_date', { ascending: true })
-        .range(0, 19999);
-      if (error) throw error;
-      return attachProviderSchedulingPreferences((data ?? []) as ShiftRow[]);
+      const [shiftsRes, submissionsRes] = await Promise.all([
+        (clinopsSupabase as unknown as { from: (t: string) => any })
+          .from('shift_recommendations')
+          .select(
+            'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
+          )
+          .gte('target_month', fromMonth)
+          .lte('target_month', toMonth)
+          .eq('recommendation', 'publish')
+          .order('shift_date', { ascending: true })
+          .range(0, 19999),
+        (clinopsSupabase as unknown as { from: (t: string) => any })
+          .from('schedule_submissions')
+          .select('id, provider_id, target_month, decision_status, submitted_at')
+          .gte('target_month', fromMonth)
+          .lte('target_month', toMonth)
+          .range(0, 19999),
+      ]);
+      if (shiftsRes.error) throw shiftsRes.error;
+      if (submissionsRes.error) throw submissionsRes.error;
+      const rawRows = (shiftsRes.data ?? []) as ShiftRow[];
+      const submissions = (submissionsRes.data ?? []) as LatestSchedulingSubmission[];
+      const scopedRows = dedupeShiftRecommendationRows(
+        filterRowsToLatestAcceptedSubmissions(rawRows, submissions),
+      );
+      return attachProviderSchedulingPreferences(scopedRows);
     },
     staleTime: 30_000,
   });
@@ -852,12 +872,27 @@ export function useShiftRecommendationsForMonth(
         )
         .eq('target_month', monthStart);
       if (recommendation !== 'all') query = query.eq('recommendation', recommendation);
-      const { data, error } = await query
-        .order('shift_date', { ascending: true })
-        .order('start_min', { ascending: true })
-        .range(0, 9999);
-      if (error) throw error;
-      return attachProviderSchedulingPreferences((data ?? []) as ShiftRow[]);
+      const [shiftsRes, submissionsRes] = await Promise.all([
+        query
+          .order('shift_date', { ascending: true })
+          .order('start_min', { ascending: true })
+          .range(0, 9999),
+        (clinopsSupabase as unknown as { from: (t: string) => any })
+          .from('schedule_submissions')
+          .select('id, provider_id, target_month, decision_status, submitted_at')
+          .eq('target_month', monthStart)
+          .range(0, 9999),
+      ]);
+      if (shiftsRes.error) throw shiftsRes.error;
+      if (submissionsRes.error) throw submissionsRes.error;
+      const rawRows = (shiftsRes.data ?? []) as ShiftRow[];
+      const submissions = (submissionsRes.data ?? []) as LatestSchedulingSubmission[];
+      const scopedRows =
+        recommendation === 'publish'
+          ? filterRowsToLatestAcceptedSubmissions(rawRows, submissions)
+          : filterRowsToLatestSubmissions(rawRows, submissions);
+      const dedupedRows = dedupeShiftRecommendationRows(scopedRows);
+      return attachProviderSchedulingPreferences(dedupedRows);
     },
     staleTime: 30_000,
     enabled: Boolean(monthStart),

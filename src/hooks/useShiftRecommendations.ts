@@ -1,6 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import type { ClinOpsTables, ClinOpsViews } from '@/integrations/supabase/clinopsTypes';
+import {
+  dedupeShiftRecommendationRows,
+  filterRowsToLatestSubmissions,
+  type LatestSchedulingSubmission,
+} from '@/lib/scheduling/latestSubmissions';
 
 export type ShiftRecommendation = ClinOpsTables<'shift_recommendations'>;
 export type ProviderShiftSummary = ClinOpsViews<'v_provider_shift_summary'>;
@@ -35,9 +40,23 @@ export function useShiftRecommendations(month: string, providerId?: string | nul
         .order('shift_date', { ascending: true })
         .order('start_min', { ascending: true });
       if (providerId) q = q.eq('provider_id', providerId);
-      const { data, error } = await q.range(0, 9999);
-      if (error) throw error;
-      return data ?? [];
+      let submissionsQuery = clinopsSupabase
+        .from('schedule_submissions')
+        .select('id, provider_id, target_month, decision_status, submitted_at')
+        .eq('target_month', monthStart);
+      if (providerId) submissionsQuery = submissionsQuery.eq('provider_id', providerId);
+      const [shiftsRes, submissionsRes] = await Promise.all([
+        q.range(0, 9999),
+        submissionsQuery.range(0, 9999),
+      ]);
+      if (shiftsRes.error) throw shiftsRes.error;
+      if (submissionsRes.error) throw submissionsRes.error;
+      return dedupeShiftRecommendationRows(
+        filterRowsToLatestSubmissions(
+          shiftsRes.data ?? [],
+          (submissionsRes.data ?? []) as LatestSchedulingSubmission[],
+        ),
+      );
     },
     staleTime: 30_000,
     enabled: Boolean(monthStart),

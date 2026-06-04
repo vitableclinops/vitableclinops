@@ -30,6 +30,7 @@ import {
   isScarceCoverageSlot,
   parseAllocationsFromNotes,
   type ParsedShiftsBlob,
+  type ShiftRecommendationRow,
 } from '../_shared/submissionTimeline.ts';
 import { DEFAULT_VALIDATION_CONFIG } from '../_shared/availabilityValidation.ts';
 
@@ -100,6 +101,26 @@ const MH_POLICY_CUT_REASON =
   'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
+
+const shiftKey = (r: {
+  submission_id: string;
+  shift_date: string;
+  start_min: number;
+  end_min: number;
+  shift_type: string;
+}) =>
+  `${r.submission_id}|${r.shift_date}|${r.start_min}|${r.end_min}|${r.shift_type}`;
+
+function assertUniqueShiftRecommendationRows(rows: ShiftRecommendationRow[]) {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = shiftKey(row);
+    if (seen.has(key)) {
+      throw new Error(`duplicate shift_recommendations row generated for ${key}`);
+    }
+    seen.add(key);
+  }
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -296,6 +317,7 @@ Deno.serve(async (req: Request) => {
           allocations,
           decisionRunId: decided.decision_run_id ?? crypto.randomUUID(),
         });
+        assertUniqueShiftRecommendationRows(rows);
 
         const CHUNK = 500;
         for (let i = 0; i < rows.length; i += CHUNK) {

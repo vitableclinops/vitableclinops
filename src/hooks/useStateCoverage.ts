@@ -4,9 +4,16 @@ import {
   ACCESS_GROWTH_BUFFER_MULTIPLIER,
   computeStateCoverage,
   type CoverageStatus,
+  type CoverageShiftInput,
   type InHomeProviderHours,
   type StateCoverageComputedRow,
 } from '@/lib/scheduling/coverage';
+import {
+  dedupeShiftRecommendationRows,
+  filterRowsToLatestAcceptedSubmissions,
+  type LatestSchedulingSubmission,
+  type ShiftRecommendationNaturalIdentity,
+} from '@/lib/scheduling/latestSubmissions';
 
 export type StateCoverageRow = StateCoverageComputedRow;
 export type { CoverageStatus, InHomeProviderHours };
@@ -30,7 +37,7 @@ export function useStateCoverage(month: string) {
           .eq('month', monthStart),
         clinopsSupabase
           .from('shift_recommendations')
-          .select('assigned_state, hours, shift_type, provider_name')
+          .select('submission_id, target_month, shift_date, start_min, end_min, assigned_state, hours, shift_type, provider_name')
           .eq('target_month', monthStart)
           .eq('recommendation', 'publish')
           .range(0, 9999),
@@ -46,7 +53,7 @@ export function useStateCoverage(month: string) {
           .range(0, 49999),
         clinopsSupabase
           .from('schedule_submissions')
-          .select('provider_id, decision_status')
+          .select('id, provider_id, target_month, decision_status, submitted_at')
           .eq('target_month', monthStart)
           .range(0, 49999),
       ]);
@@ -57,16 +64,24 @@ export function useStateCoverage(month: string) {
       if (licensesRes.error) throw licensesRes.error;
       if (submissionsRes.error) throw submissionsRes.error;
 
+      const submissions = (submissionsRes.data ?? []) as LatestSchedulingSubmission[];
+      const scopedShifts = dedupeShiftRecommendationRows(
+        filterRowsToLatestAcceptedSubmissions(
+          (shiftsRes.data ?? []) as Array<CoverageShiftInput & ShiftRecommendationNaturalIdentity>,
+          submissions,
+        ),
+      );
+
       return computeStateCoverage({
         targets: targetsRes.data ?? [],
-        shifts: shiftsRes.data ?? [],
+        shifts: scopedShifts,
         providers: providersRes.data ?? [],
         licenses: (licensesRes.data ?? []).map(row => ({
           provider_id: row.provider_id,
           state: row.state,
           status: row.allocation_eligible ? 'active' : 'inactive',
         })),
-        submissions: submissionsRes.data ?? [],
+        submissions,
         demandMultiplier: ACCESS_GROWTH_BUFFER_MULTIPLIER,
       });
     },
