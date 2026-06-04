@@ -972,7 +972,7 @@ export default function SchedulingWorkbenchPage({
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="exceptions"><ClipboardList className="h-3.5 w-3.5 mr-1" />Exceptions</TabsTrigger>
+          <TabsTrigger value="exceptions"><ClipboardList className="h-3.5 w-3.5 mr-1" />Known Exceptions</TabsTrigger>
           <TabsTrigger value="audit"><HelpCircle className="h-3.5 w-3.5 mr-1" />Audit</TabsTrigger>
         </TabsList>
 
@@ -992,6 +992,7 @@ export default function SchedulingWorkbenchPage({
             onJumpToAvailability={jumpToAvailability}
             onJumpToMatching={() => onTopTabChange('matching')}
             onJumpToPublish={() => onTopTabChange('publish')}
+            onJumpToExceptions={() => onTopTabChange('exceptions')}
           />
           <SopCard />
           {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
@@ -3987,6 +3988,7 @@ function ReadinessPanel({
   onJumpToAvailability,
   onJumpToMatching,
   onJumpToPublish,
+  onJumpToExceptions,
 }: {
   month: string;
   isLoading: boolean;
@@ -4009,6 +4011,7 @@ function ReadinessPanel({
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToMatching: () => void;
   onJumpToPublish: () => void;
+  onJumpToExceptions: () => void;
 }) {
   const coverageQ = useStateCoverage(month);
   const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
@@ -4377,6 +4380,24 @@ function ReadinessPanel({
               <ArrowRight className="h-3.5 w-3.5 ml-1" />
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-sky-200 bg-sky-50/40">
+        <CardContent className="py-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-sm font-medium flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-sky-700" />
+              Known scheduling exceptions
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Richard Rash, Margo / Margaret Mulgrew, Shashai, and admin-only provider exemptions are tracked in the Known Exceptions tab.
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={onJumpToExceptions}>
+            Open Known Exceptions
+            <ArrowRight className="h-3.5 w-3.5 ml-1" />
+          </Button>
         </CardContent>
       </Card>
 
@@ -5338,6 +5359,42 @@ function inferDeclineReason(row: ProviderPublishView): string {
   return '';
 }
 
+function ProviderPriorityPolicyCard() {
+  return (
+    <Card className="border-emerald-200 bg-emerald-50/40">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <CircleDot className="h-4 w-4 text-emerald-700" />
+          Priority policy
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Provider source does not decide priority by itself. After clinical leads, scheduling ranks all eligible providers by current hourly rate, lowest first, whether they are internal, DirectShifts, or another access source.
+        </p>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+          <div>
+            <div className="font-medium">1. Clinical leads</div>
+            <div className="text-muted-foreground">Clinical lead/supervisor coverage is considered before rate.</div>
+          </div>
+          <div>
+            <div className="font-medium">2. Lowest rate</div>
+            <div className="text-muted-foreground">Known current hourly rate is the main ranking rule across provider sources.</div>
+          </div>
+          <div>
+            <div className="font-medium">3. Utilization</div>
+            <div className="text-muted-foreground">If rate does not decide, lower recent utilization is the fairness tie-break.</div>
+          </div>
+          <div>
+            <div className="font-medium">4. Final tie-breaks</div>
+            <div className="text-muted-foreground">DirectShifts labels and Brittney Afram's compatibility key only matter after rate and utilization do not decide.</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function MatchingPanel({
   month,
   acceptedRows,
@@ -5383,27 +5440,29 @@ function MatchingPanel({
 
   if (all.length === 0) {
     return (
-      <EmptyState
-        title={`No matching decisions yet for ${formatMonthLabel(month)}`}
-        body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one schedule recalculation after Jotform submissions. Next: open Availability to confirm submissions are in, then click 'Recalculate schedule' in the page header."
-      />
+      <>
+        <ProviderPriorityPolicyCard />
+        <EmptyState
+          title={`No matching decisions yet for ${formatMonthLabel(month)}`}
+          body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one schedule recalculation after Jotform submissions. Next: open Availability to confirm submissions are in, then click 'Recalculate schedule' in the page header."
+        />
+      </>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Provider recommendations · {formatMonthLabel(month)}</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Who is getting hours, why, and what was cut. The system matches providers to states
-          where they can cover visits, then prioritizes clinical leads followed by the lowest
-          current hourly rates regardless of internal or DirectShifts source. Recent utilization
-          is the secondary fairness tie-break. Brittney Afram keeps a DirectShifts compatibility
-          tie-break only when rate and utilization do not decide.
-        </p>
-      </CardHeader>
-      <CardContent className="p-0">
-        <Table>
+    <>
+      <ProviderPriorityPolicyCard />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Provider recommendations · {formatMonthLabel(month)}</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Who is getting hours, why, and what was cut. The system matches providers to states
+            where they can cover visits, then applies the priority policy above.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Provider</TableHead>
@@ -5482,9 +5541,10 @@ function MatchingPanel({
               );
             })}
           </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          </Table>
+        </CardContent>
+      </Card>
+    </>
   );
 }
 
