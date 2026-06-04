@@ -97,7 +97,7 @@ const MENTAL_HEALTH_VALIDATION_CONFIG = {
   min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const MH_POLICY_CUT_REASON =
-  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m with 10m breaks)';
+  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
 

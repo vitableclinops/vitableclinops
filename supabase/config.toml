@@ -93,3 +93,9 @@ verify_jwt = false
 # immediately. Uses the service role internally.
 [functions.sync-directory-provider]
 verify_jwt = false
+
+# External booking systems call this after appointment creation to enforce
+# last-minute cutoff windows and notify providers about late bookings. The
+# function authenticates with BOOKING_SYNC_SECRET or the service-role bearer.
+[functions.notify-late-booking]
+verify_jwt = false

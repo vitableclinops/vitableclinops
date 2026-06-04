@@ -16,17 +16,19 @@ export type ProviderPriorityProfile = {
   employment_type?: string | null;
   source?: string | null;
   shift_types?: string[] | null;
+  hourly_rate?: number | string | null;
+  utilization_pct?: number | string | null;
 };
 
 export const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPriority> = {
   clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' },
-  vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Vitable internal' },
+  vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Rate-ranked Vitable provider' },
   directshifts_brittany_priority: {
     key: 'directshifts_brittany_priority',
-    rank: 2,
-    label: 'DirectShifts Brittney Afram priority',
+    rank: 1,
+    label: 'Rate-ranked DirectShifts Brittney Afram',
   },
-  access_provider: { key: 'access_provider', rank: 2, label: 'Access provider' },
+  access_provider: { key: 'access_provider', rank: 1, label: 'Rate-ranked access provider' },
 };
 
 const DEFAULT_PROVIDER_PRIORITY = PROVIDER_PRIORITY_BY_KEY.vitable_internal;
@@ -115,6 +117,22 @@ export function providerPriorityFor(
   return DEFAULT_PROVIDER_PRIORITY;
 }
 
+export function providerHourlyRate(profile: ProviderPriorityProfile | null | undefined): number | null {
+  const raw = profile?.hourly_rate;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(/[$,]/g, ''));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+export function providerUtilizationPct(
+  profile: ProviderPriorityProfile | null | undefined,
+): number | null {
+  const raw = profile?.utilization_pct;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(/[%,$]/g, ''));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 export function compareProviderAllocationPriority(
   a: ProviderPriorityProfile | null | undefined,
   b: ProviderPriorityProfile | null | undefined,
@@ -122,6 +140,18 @@ export function compareProviderAllocationPriority(
   const priorityA = providerPriorityFor(a);
   const priorityB = providerPriorityFor(b);
   if (priorityA.rank !== priorityB.rank) return priorityA.rank - priorityB.rank;
+
+  const rateA = providerHourlyRate(a);
+  const rateB = providerHourlyRate(b);
+  const rateSortA = rateA ?? Number.POSITIVE_INFINITY;
+  const rateSortB = rateB ?? Number.POSITIVE_INFINITY;
+  if (rateSortA !== rateSortB) return rateSortA - rateSortB;
+
+  const utilizationA = providerUtilizationPct(a);
+  const utilizationB = providerUtilizationPct(b);
+  const utilizationSortA = utilizationA ?? Number.POSITIVE_INFINITY;
+  const utilizationSortB = utilizationB ?? Number.POSITIVE_INFINITY;
+  if (utilizationSortA !== utilizationSortB) return utilizationSortA - utilizationSortB;
 
   const bothDirectShifts = isDirectShiftsProvider(a) && isDirectShiftsProvider(b);
   if (bothDirectShifts) {

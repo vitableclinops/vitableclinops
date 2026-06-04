@@ -31,7 +31,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sync-secret',
 };
 
-const METABASE_URL = 'https://metabase.vitablehealth.com';
+const METABASE_URL = Deno.env.get('METABASE_URL') ?? 'https://metabase.vitablehealth.com';
 
 // ---------------------------------------------------------------------------
 // Report config: name → handler

@@ -149,7 +149,8 @@ Deno.serve(async (req: Request) => {
 
       for (const sub of subs) {
         try {
-          const submittedDate = new Date(jotformDateToIso(sub.created_at));
+          const submittedIso = jotformDateToIso(sub.created_at);
+          const submittedDate = new Date(submittedIso);
           const parsed = parseSubmission(sub, submittedDate);
 
           if (!parsed.targetMonth) {
@@ -235,7 +236,7 @@ Deno.serve(async (req: Request) => {
               provider_id: providerId,
               provider_name: parsed.name ?? '(unknown)',
               target_month: parsed.targetMonth,
-              submitted_at: jotformDateToIso(sub.created_at),
+              submitted_at: submittedIso,
               raw_answers: sub.answers,
               parsed_shifts: parsedShiftsPayload,
             }, { onConflict: 'jotform_submission_id' });
@@ -270,10 +271,82 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-// Jotform returns "YYYY-MM-DD HH:MM:SS" UTC.
+// Jotform usually returns account-local "YYYY-MM-DD HH:MM:SS" timestamps with
+// no offset. Interpret those in JOTFORM_TIME_ZONE (default ET) so late-night
+// submissions do not drift into the wrong cycle when converted to UTC.
 function jotformDateToIso(s: string): string {
   if (!s) return new Date().toISOString();
-  return new Date(s.replace(' ', 'T') + 'Z').toISOString();
+  const trimmed = s.trim();
+  if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:?\d{2}$/.test(trimmed)) {
+    const explicit = new Date(trimmed.replace(' ', 'T'));
+    if (!Number.isNaN(explicit.getTime())) return explicit.toISOString();
+  }
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) {
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+  }
+  const [, year, month, day, hour, minute, second = '0'] = match;
+  const timeZone = Deno.env.get('JOTFORM_TIME_ZONE') ?? 'America/New_York';
+  try {
+    return zonedLocalToUtcDate(
+      Number(year),
+      Number(month),
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+      timeZone,
+    ).toISOString();
+  } catch {
+    return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`).toISOString();
+  }
+}
+
+function zonedLocalToUtcDate(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  timeZone: string,
+): Date {
+  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  let utcMillis = localAsUtc;
+  for (let i = 0; i < 3; i++) {
+    const offset = timeZoneOffsetMinutes(new Date(utcMillis), timeZone);
+    const next = localAsUtc - offset * 60_000;
+    if (Math.abs(next - utcMillis) < 1000) {
+      utcMillis = next;
+      break;
+    }
+    utcMillis = next;
+  }
+  return new Date(utcMillis);
+}
+
+function timeZoneOffsetMinutes(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const lookup = new Map(parts.map(part => [part.type, part.value]));
+  const asUtc = Date.UTC(
+    Number(lookup.get('year')),
+    Number(lookup.get('month')) - 1,
+    Number(lookup.get('day')),
+    Number(lookup.get('hour')),
+    Number(lookup.get('minute')),
+    Number(lookup.get('second')),
+  );
+  return (asUtc - date.getTime()) / 60_000;
 }
 
 type ParsedSubmission = {

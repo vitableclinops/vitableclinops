@@ -51,6 +51,8 @@ export type ProviderRow = {
   readiness_status: string | null;
   shift_types: string[] | null;
   source: string | null;
+  scheduling_outreach_exempt: boolean | null;
+  scheduling_outreach_exemption_reason: string | null;
   active: boolean | null;
 };
 
@@ -74,8 +76,29 @@ export type ProviderPublishView = {
   readiness_status: string | null;
   shift_types: string[] | null;
   provider_source: string | null;
+  scheduling_outreach_exempt: boolean | null;
+  scheduling_outreach_exemption_reason: string | null;
   submission: SubmissionRow | null;
   publish: PublishStatusRow | null;
+};
+
+export type ProviderOutreachLog = {
+  id: string;
+  provider_id: string | null;
+  provider_name: string;
+  provider_email: string | null;
+  target_month: string;
+  outreach_type: string;
+  status: string;
+  channel: string;
+  subject: string | null;
+  body: string | null;
+  batch_id: string | null;
+  sent_at: string;
+  sent_by: string | null;
+  sent_by_label: string | null;
+  notes: string | null;
+  created_at: string;
 };
 
 export type ProviderStateEligibilityRow = {
@@ -210,7 +233,7 @@ export function useMonthlyPublishView(month: string) {
         clinopsSupabase
           .from('providers')
           .select(
-            'id, name, email, profession, employment_type, employment_status, readiness_status, shift_types, source, active',
+            'id, name, email, profession, employment_type, employment_status, readiness_status, shift_types, source, scheduling_outreach_exempt, scheduling_outreach_exemption_reason, active',
           ),
         (clinopsSupabase as unknown as { from: (t: string) => any })
           .from('publish_status')
@@ -250,6 +273,8 @@ export function useMonthlyPublishView(month: string) {
           readiness_status: p.readiness_status,
           shift_types: p.shift_types,
           provider_source: p.source,
+          scheduling_outreach_exempt: p.scheduling_outreach_exempt ?? false,
+          scheduling_outreach_exemption_reason: p.scheduling_outreach_exemption_reason ?? null,
           submission,
           publish: publishByProvider.get(p.id) ?? null,
         });
@@ -270,6 +295,80 @@ export function useMonthlyPublishView(month: string) {
     },
     staleTime: 30_000,
     enabled: Boolean(monthStart),
+  });
+}
+
+export function useProviderOutreachLog(month: string | null) {
+  const monthStart = month ? monthIso(month) : null;
+  return useQuery({
+    queryKey: ['workbench', 'provider-outreach-log', monthStart],
+    queryFn: async (): Promise<ProviderOutreachLog[]> => {
+      if (!monthStart) return [];
+      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('provider_outreach_log')
+        .select(
+          'id, provider_id, provider_name, provider_email, target_month, outreach_type, status, channel, subject, body, batch_id, sent_at, sent_by, sent_by_label, notes, created_at',
+        )
+        .eq('target_month', monthStart)
+        .eq('outreach_type', 'missing_availability')
+        .order('sent_at', { ascending: false })
+        .range(0, 49999);
+      if (error) throw error;
+      return (data ?? []) as ProviderOutreachLog[];
+    },
+    staleTime: 30_000,
+    enabled: Boolean(monthStart),
+  });
+}
+
+export function useMarkProviderOutreachSent() {
+  const queryClient = useQueryClient();
+  const { user, profile } = useAuth();
+  return useMutation({
+    mutationFn: async (args: {
+      month: string;
+      providers: Pick<ProviderPublishView, 'provider_id' | 'provider_name' | 'provider_email'>[];
+      subject: string;
+      body: string;
+      notes?: string | null;
+    }) => {
+      const monthStart = monthIso(args.month);
+      const providers = args.providers.filter(p => p.provider_id);
+      if (providers.length === 0) return;
+
+      const nowIso = new Date().toISOString();
+      const batchId = crypto.randomUUID();
+      const actor = (
+        (profile as unknown as { full_name?: string | null; email?: string | null } | null)?.full_name ||
+        (profile as unknown as { full_name?: string | null; email?: string | null } | null)?.email ||
+        user?.email ||
+        'Scheduling team'
+      );
+      const rows = providers.map(provider => ({
+        provider_id: provider.provider_id,
+        provider_name: provider.provider_name,
+        provider_email: provider.provider_email ?? null,
+        target_month: monthStart,
+        outreach_type: 'missing_availability',
+        status: 'sent',
+        channel: 'email',
+        subject: args.subject,
+        body: args.body,
+        batch_id: batchId,
+        sent_at: nowIso,
+        sent_by: user?.id ?? null,
+        sent_by_label: actor,
+        notes: args.notes ?? null,
+      }));
+
+      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('provider_outreach_log')
+        .insert(rows);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-outreach-log'] });
+    },
   });
 }
 
@@ -494,6 +593,7 @@ export type ShiftRow = {
   submission_id: string;
   provider_id: string | null;
   provider_name: string;
+  provider_time_zone?: string | null;
   target_month: string;
   shift_date: string;
   start_min: number;
@@ -511,6 +611,36 @@ export type ShiftRow = {
 };
 
 export type ShiftPublishStep = 'homebase' | 'ehr';
+
+type ProviderSchedulingPreferenceRow = {
+  provider_id: string | null;
+  time_zone: string | null;
+};
+
+const attachProviderSchedulingPreferences = async (shifts: ShiftRow[]): Promise<ShiftRow[]> => {
+  const providerIds = Array.from(new Set(
+    shifts.map(s => s.provider_id).filter((id): id is string => Boolean(id)),
+  ));
+  if (providerIds.length === 0) return shifts;
+  const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+    .from('provider_scheduling_preferences')
+    .select('provider_id, time_zone')
+    .in('provider_id', providerIds)
+    .range(0, 9999);
+  if (error) {
+    console.warn('provider_scheduling_preferences read failed:', error.message);
+    return shifts;
+  }
+  const timeZoneByProvider = new Map(
+    ((data ?? []) as ProviderSchedulingPreferenceRow[])
+      .filter(row => row.provider_id)
+      .map(row => [row.provider_id!, row.time_zone]),
+  );
+  return shifts.map(shift => ({
+    ...shift,
+    provider_time_zone: shift.provider_id ? timeZoneByProvider.get(shift.provider_id) ?? null : null,
+  }));
+};
 
 const padMin = (mins: number) => {
   const h = Math.floor(mins / 60);
@@ -547,7 +677,7 @@ export function useShiftRecommendationsInboxWindow(anchorMonth: string) {
         .order('shift_date', { ascending: true })
         .range(0, 19999);
       if (error) throw error;
-      return (data ?? []) as ShiftRow[];
+      return attachProviderSchedulingPreferences((data ?? []) as ShiftRow[]);
     },
     staleTime: 30_000,
   });
@@ -573,7 +703,7 @@ export function useShiftRecommendationsForMonth(
         .order('start_min', { ascending: true })
         .range(0, 9999);
       if (error) throw error;
-      return (data ?? []) as ShiftRow[];
+      return attachProviderSchedulingPreferences((data ?? []) as ShiftRow[]);
     },
     staleTime: 30_000,
     enabled: Boolean(monthStart),

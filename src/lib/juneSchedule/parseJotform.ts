@@ -18,6 +18,7 @@ export interface SubmissionRow {
 const DOW_TO_IDX: Record<string, number> = {
   sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
 };
+const JOTFORM_EXPORT_TIME_ZONE = 'America/New_York';
 
 function parseRecurringBlock(text: string): SubmissionRow['recurring'] {
   if (!text) return [];
@@ -64,9 +65,73 @@ function parseBlackouts(text: string): SubmissionRow['blackouts'] {
 }
 
 function parseSubmittedAt(s: string): number {
-  const d = new Date(s);
+  const trimmed = s.trim();
+  if (!trimmed) return 0;
+  if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:?\d{2}$/.test(trimmed)) {
+    const explicit = new Date(trimmed.replace(' ', 'T'));
+    const explicitTime = explicit.getTime();
+    if (Number.isFinite(explicitTime)) return explicitTime;
+  }
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  const d = match
+    ? zonedLocalToUtcDate(
+        Number(match[1]),
+        Number(match[2]),
+        Number(match[3]),
+        Number(match[4]),
+        Number(match[5]),
+        Number(match[6] ?? '0'),
+        JOTFORM_EXPORT_TIME_ZONE,
+      )
+    : new Date(trimmed);
   const t = d.getTime();
   return Number.isFinite(t) ? t : 0;
+}
+
+function zonedLocalToUtcDate(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  timeZone: string,
+): Date {
+  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  let utcMillis = localAsUtc;
+  for (let i = 0; i < 3; i++) {
+    const offset = timeZoneOffsetMinutes(new Date(utcMillis), timeZone);
+    const next = localAsUtc - offset * 60_000;
+    if (Math.abs(next - utcMillis) < 1000) {
+      utcMillis = next;
+      break;
+    }
+    utcMillis = next;
+  }
+  return new Date(utcMillis);
+}
+
+function timeZoneOffsetMinutes(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const lookup = new Map(parts.map(part => [part.type, part.value]));
+  const asUtc = Date.UTC(
+    Number(lookup.get('year')),
+    Number(lookup.get('month')) - 1,
+    Number(lookup.get('day')),
+    Number(lookup.get('hour')),
+    Number(lookup.get('minute')),
+    Number(lookup.get('second')),
+  );
+  return (asUtc - date.getTime()) / 60_000;
 }
 
 export function parseJotformCsv(text: string): SubmissionRow[] {

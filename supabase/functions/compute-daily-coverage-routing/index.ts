@@ -43,7 +43,7 @@ import {
   type RoutingAddCandidateInput,
 } from '../_shared/dailyCoverageRouting.ts';
 
-const METABASE_URL = 'https://metabase.vitablehealth.com';
+const METABASE_URL = Deno.env.get('METABASE_URL') ?? 'https://metabase.vitablehealth.com';
 const DAILY_DEMAND_CARD = Number(Deno.env.get('METABASE_DAILY_DEMAND_CARD_ID') ?? '3478');
 const DAILY_BOOKED_CARD = Number(Deno.env.get('METABASE_DAILY_BOOKED_CARD_ID') ?? '3479');
 const LOW_UTILIZATION_THRESHOLD = Number(Deno.env.get('SD_ND_LOW_UTIL_THRESHOLD') ?? '50');

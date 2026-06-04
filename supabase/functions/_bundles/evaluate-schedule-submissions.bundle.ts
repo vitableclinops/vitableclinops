@@ -8,7 +8,7 @@
 /** Deno-compatible copy of src/lib/nameNormalization.ts */
 
 const CREDENTIAL_PATTERN =
-  /\b(md|do|np|aprn|pa-c|pa|rn|bsn|msn|dnp|phd|fnp|fnp-c|fnp-bc|agacnp|agpcnp|pmhnp|crna|cnm|dnp-c|lcsw|lpc|mft|psyd)\b\.?/gi;
+  /\b(md|do|np|aprn|crnp|pa-c|pa|rn|bsn|msn|dnp|phd|fnp|fnp-c|fnp-bc|agacnp|agpcnp|pmhnp|crna|cnm|dnp-c|lcsw|lpc|mft|psyd)\b\.?/gi;
 
 const SUFFIX_PATTERN = /\b(jr\.?|sr\.?|ii|iii|iv)\b\.?/gi;
 
@@ -1879,17 +1879,19 @@ export type ProviderPriorityProfile = {
   employment_type?: string | null;
   source?: string | null;
   shift_types?: string[] | null;
+  hourly_rate?: number | string | null;
+  utilization_pct?: number | string | null;
 };
 
 export const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPriority> = {
   clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' },
-  vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Vitable internal' },
+  vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Rate-ranked Vitable provider' },
   directshifts_brittany_priority: {
     key: 'directshifts_brittany_priority',
-    rank: 2,
-    label: 'DirectShifts Brittney Afram priority',
+    rank: 1,
+    label: 'Rate-ranked DirectShifts Brittney Afram',
   },
-  access_provider: { key: 'access_provider', rank: 2, label: 'Access provider' },
+  access_provider: { key: 'access_provider', rank: 1, label: 'Rate-ranked access provider' },
 };
 
 const DEFAULT_PROVIDER_PRIORITY = PROVIDER_PRIORITY_BY_KEY.vitable_internal;
@@ -1978,6 +1980,22 @@ export function providerPriorityFor(
   return DEFAULT_PROVIDER_PRIORITY;
 }
 
+export function providerHourlyRate(profile: ProviderPriorityProfile | null | undefined): number | null {
+  const raw = profile?.hourly_rate;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(/[$,]/g, ''));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+export function providerUtilizationPct(
+  profile: ProviderPriorityProfile | null | undefined,
+): number | null {
+  const raw = profile?.utilization_pct;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(/[%,$]/g, ''));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 export function compareProviderAllocationPriority(
   a: ProviderPriorityProfile | null | undefined,
   b: ProviderPriorityProfile | null | undefined,
@@ -1985,6 +2003,18 @@ export function compareProviderAllocationPriority(
   const priorityA = providerPriorityFor(a);
   const priorityB = providerPriorityFor(b);
   if (priorityA.rank !== priorityB.rank) return priorityA.rank - priorityB.rank;
+
+  const rateA = providerHourlyRate(a);
+  const rateB = providerHourlyRate(b);
+  const rateSortA = rateA ?? Number.POSITIVE_INFINITY;
+  const rateSortB = rateB ?? Number.POSITIVE_INFINITY;
+  if (rateSortA !== rateSortB) return rateSortA - rateSortB;
+
+  const utilizationA = providerUtilizationPct(a);
+  const utilizationB = providerUtilizationPct(b);
+  const utilizationSortA = utilizationA ?? Number.POSITIVE_INFINITY;
+  const utilizationSortB = utilizationB ?? Number.POSITIVE_INFINITY;
+  if (utilizationSortA !== utilizationSortB) return utilizationSortA - utilizationSortB;
 
   const bothDirectShifts = isDirectShiftsProvider(a) && isDirectShiftsProvider(b);
   if (bothDirectShifts) {
@@ -2067,6 +2097,8 @@ export function compareProviderAllocationPriority(
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+type SupabaseClientAny = ReturnType<typeof createClient<any, 'public', any>>;
+
 // States that can only be served by physicians per Vitable scope-of-practice
 // rules. For now, physician hours are also reserved for these states so broad
 // state demand does not consume scarce MD/DO capacity.
@@ -2181,15 +2213,16 @@ const mentalHealthServiceLineLabel = (serviceLine: MentalHealthServiceLine) =>
   serviceLine === 'mh_coaching' ? 'MH Coaching' : 'Therapy / LPC';
 
 const MH_VISIT_MINUTES = 40;
-const MH_BREAK_MINUTES = 10;
-const MH_VISIT_CADENCE_MINUTES = MH_VISIT_MINUTES + MH_BREAK_MINUTES;
+const MH_CHARTING_BUFFER_MINUTES = 10;
+const MH_EHR_SLOT_GAP_MINUTES = 0;
+const MH_VISIT_CADENCE_MINUTES = MH_VISIT_MINUTES + MH_CHARTING_BUFFER_MINUTES;
 const MH_MIN_SHIFT_HOURS = 2.5;
 const MENTAL_HEALTH_VALIDATION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
   min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const MH_POLICY_CUT_REASON =
-  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m with 10m breaks)';
+  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
 const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1.25;
@@ -2246,6 +2279,23 @@ type ProviderProfile = {
   employment_type: string | null;
   source: string | null;
   shift_types: string[] | null;
+  hourly_rate?: number | null;
+  utilization_pct?: number | null;
+};
+
+type ProviderPayRateRow = {
+  provider_id: string | null;
+  hourly_rate: number | string | null;
+  effective_from: string | null;
+  effective_to: string | null;
+};
+
+type ProviderUtilizationRow = {
+  profile_id: string | null;
+  avg_utilization_pct: number | string | null;
+  window_start: string | null;
+  window_end: string | null;
+  imported_at: string | null;
 };
 
 type ServiceLineDemandTarget = {
@@ -2293,12 +2343,30 @@ function sumSlotHours(slots: ForecastSlot[]): number {
   return round2(slots.reduce((sum, slot) => sum + slotHours(slot), 0));
 }
 
-function pushProviderPriorityNotes(noteParts: string[], priority: ProviderPriority) {
+function pushProviderPriorityNotes(
+  noteParts: string[],
+  priority: ProviderPriority,
+  providerProfile?: ProviderProfile | null,
+) {
   noteParts.push(`provider_priority=${priority.key}`);
+  noteParts.push('provider_rate_policy=clinical_leads_then_lowest_hourly_rate');
+  const hourlyRate = providerHourlyRate(providerProfile);
+  if (hourlyRate == null) {
+    noteParts.push('provider_hourly_rate=missing');
+  } else {
+    noteParts.push(`provider_hourly_rate=${hourlyRate}`);
+  }
+  noteParts.push('provider_utilization_policy=lower_utilization_secondary_after_rate');
+  const utilizationPct = providerUtilizationPct(providerProfile);
+  if (utilizationPct == null) {
+    noteParts.push('provider_utilization_pct=missing');
+  } else {
+    noteParts.push(`provider_utilization_pct=${utilizationPct}`);
+  }
   if (priority.key === 'directshifts_brittany_priority') {
     noteParts.push(
-      'provider_priority_reason=Brittney Afram is prioritized above other DirectShifts providers when eligible coverage is needed.',
-      'directshifts_priority_rank=1',
+      'provider_priority_reason=Brittney Afram keeps the DirectShifts compatibility key; lowest hourly rate still decides before this tie-break.',
+      'directshifts_priority_tiebreak=1',
     );
   }
 }
@@ -2457,10 +2525,11 @@ Deno.serve(async (req: Request) => {
 
     // ── Preload provider roster metadata ───────────────────────────────
     // The evaluator uses the full license-state view for eligibility, then
-    // orders providers by ClinOps priority: supervisors, Vitable internal,
-    // then access providers. Brittney Afram gets a tie-break only inside the
-    // DirectShifts access-provider pool. Within each tier, constrained
-    // providers still go first.
+    // orders providers by ClinOps priority: clinical leads first, then the
+    // lowest active hourly rate regardless of Vitable vs DirectShifts source.
+    // Brittney Afram keeps a compatibility key only as a DirectShifts tie-break
+    // when rates do not decide. Within each tier, constrained providers still
+    // go first.
     const providerProfileByProvider = new Map<string, ProviderProfile>();
     const professionByProvider = new Map<string, string | null>();
     if (allEligibilityProviderIds.length > 0) {
@@ -2473,6 +2542,80 @@ Deno.serve(async (req: Request) => {
         professionByProvider.set(p.id, p.profession ?? null);
       }
     }
+
+    const providerRateRowsByProvider = new Map<string, ProviderPayRateRow[]>();
+    if (allEligibilityProviderIds.length > 0) {
+      const { data: rateRows, error: rateErr } = await supabase
+        .from('provider_pay_rates')
+        .select('provider_id, hourly_rate, effective_from, effective_to')
+        .in('provider_id', allEligibilityProviderIds)
+        .range(0, 49999);
+      if (rateErr) {
+        console.warn(`Provider pay rates load failed; continuing with missing rates: ${rateErr.message}`);
+      } else {
+        for (const row of (rateRows ?? []) as ProviderPayRateRow[]) {
+          if (!row.provider_id) continue;
+          if (!providerRateRowsByProvider.has(row.provider_id)) {
+            providerRateRowsByProvider.set(row.provider_id, []);
+          }
+          providerRateRowsByProvider.get(row.provider_id)!.push(row);
+        }
+      }
+    }
+
+    const rateForProviderMonth = (providerId: string, targetMonth: string): number | null => {
+      const rows = providerRateRowsByProvider.get(providerId) ?? [];
+      let chosen: number | null = null;
+      for (const row of rows) {
+        const rate = providerHourlyRate({ hourly_rate: row.hourly_rate });
+        if (rate == null) continue;
+        const effectiveFrom = (row.effective_from ?? '0000-01-01').slice(0, 10);
+        const effectiveTo = (row.effective_to ?? '9999-12-31').slice(0, 10);
+        if (effectiveFrom > targetMonth || effectiveTo < targetMonth) continue;
+        chosen = chosen == null ? rate : Math.min(chosen, rate);
+      }
+      return chosen;
+    };
+
+    const utilizationByProvider = new Map<string, number>();
+    if (allEligibilityProviderIds.length > 0) {
+      const { data: utilizationRows, error: utilizationErr } = await supabase
+        .from('provider_utilization')
+        .select('profile_id, avg_utilization_pct, window_start, window_end, imported_at')
+        .in('profile_id', allEligibilityProviderIds)
+        .range(0, 49999);
+      if (utilizationErr) {
+        console.warn(`Provider utilization load failed; continuing with missing utilization: ${utilizationErr.message}`);
+      } else {
+        const latestByProvider = new Map<string, ProviderUtilizationRow>();
+        for (const row of (utilizationRows ?? []) as ProviderUtilizationRow[]) {
+          if (!row.profile_id) continue;
+          const utilization = providerUtilizationPct({ utilization_pct: row.avg_utilization_pct });
+          if (utilization == null) continue;
+          const current = latestByProvider.get(row.profile_id);
+          const currentStamp = current?.imported_at ?? current?.window_end ?? current?.window_start ?? '';
+          const rowStamp = row.imported_at ?? row.window_end ?? row.window_start ?? '';
+          if (!current || rowStamp > currentStamp) latestByProvider.set(row.profile_id, row);
+        }
+        for (const [providerId, row] of latestByProvider) {
+          const utilization = providerUtilizationPct({ utilization_pct: row.avg_utilization_pct });
+          if (utilization != null) utilizationByProvider.set(providerId, utilization);
+        }
+      }
+    }
+
+    const providerProfileForMonth = (
+      providerId: string,
+      targetMonth: string,
+    ): ProviderProfile | undefined => {
+      const profile = providerProfileByProvider.get(providerId);
+      if (!profile) return undefined;
+      return {
+        ...profile,
+        hourly_rate: rateForProviderMonth(providerId, targetMonth),
+        utilization_pct: utilizationByProvider.get(providerId) ?? null,
+      };
+    };
 
     // ── Preload provider-state eligibility from canonical view ─────────
     // The view rolls up ClinOps manual licenses, Medallion API licenses,
@@ -2582,17 +2725,17 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Sort groups by provider priority, then constrained coverage ─────
-    // Clinical supervisors get first pass at demand, then Vitable internal
-    // providers, then access providers. Brittney Afram gets first pass only against
-    // other DirectShifts providers. Within each tier, process providers with
-    // the fewest licensed-states-with-demand first so single-state providers
-    // are not displaced by flexible providers with alternatives.
+    // Clinical supervisors get first pass at demand, then lower-rate providers
+    // across both internal and DirectShifts/access sources, then lower recent
+    // utilization as a fairness tie-break. Within each tier, process providers
+    // with the fewest licensed-states-with-demand first so single-state
+    // providers are not displaced by flexible providers with alternatives.
     const groupKeysSorted = Array.from(submissionsByGroup.keys()).sort((a, b) => {
       const [provA, monthA] = a.split('|');
       const [provB, monthB] = b.split('|');
       const priorityOrder = compareProviderAllocationPriority(
-        providerProfileByProvider.get(provA),
-        providerProfileByProvider.get(provB),
+        providerProfileForMonth(provA, monthA),
+        providerProfileForMonth(provB, monthB),
       );
       if (priorityOrder !== 0) return priorityOrder;
       const licA = licensedStatesByProvider.get(provA) ?? new Set();
@@ -2634,7 +2777,7 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        const providerProfile = providerProfileByProvider.get(providerId);
+        const providerProfile = providerProfileForMonth(providerId, targetMonth);
         const profession = providerProfile?.profession ?? professionByProvider.get(providerId);
         const providerPriority = providerPriorityFor(providerProfile);
         const isPhysician = isPhysicianProfession(profession);
@@ -2762,7 +2905,7 @@ Deno.serve(async (req: Request) => {
             `forecastable_hours=${effectiveHours}h`,
             `reasons=${reviewReasons.join(' | ') || '(see validation_report)'}`,
           ];
-          pushProviderPriorityNotes(reviewNoteParts, providerPriority);
+          pushProviderPriorityNotes(reviewNoteParts, providerPriority, providerProfile);
           reviewNoteParts.push(...schedulingAdjustmentNoteParts(validation));
           await writeDecision(supabase, latest.id, {
             status: 'needs_review',
@@ -2790,11 +2933,12 @@ Deno.serve(async (req: Request) => {
           // Mark older as superseded; latest becomes 'declined' with note
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; group has 0 effective hours`);
           const noHoursNoteParts = ['No effective hours in any submission for this provider+month'];
-          pushProviderPriorityNotes(noHoursNoteParts, providerPriority);
+          pushProviderPriorityNotes(noHoursNoteParts, providerPriority, providerProfile);
           if (isMentalHealth) {
             noHoursNoteParts.push(
               `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
-              `mh_visit_cadence=${MH_VISIT_MINUTES}m_visit+${MH_BREAK_MINUTES}m_break`,
+              `mh_visit_cadence=${MH_VISIT_MINUTES}m_visit+${MH_CHARTING_BUFFER_MINUTES}m_charting_buffer`,
+              `mh_ehr_slot_gap_minutes=${MH_EHR_SLOT_GAP_MINUTES}`,
             );
           }
           if (oohDeclined > 0) {
@@ -2886,12 +3030,13 @@ Deno.serve(async (req: Request) => {
             `accepted_hours=${accepted}h`,
             `raw_hours=${validation.summary.raw_total_hours}h`,
             `mh_visit_length_minutes=${MH_VISIT_MINUTES}`,
-            `mh_break_minutes=${MH_BREAK_MINUTES}`,
+            `mh_charting_buffer_minutes=${MH_CHARTING_BUFFER_MINUTES}`,
+            `mh_ehr_slot_gap_minutes=${MH_EHR_SLOT_GAP_MINUTES}`,
             `mh_visit_capacity=${mhVisitCapacity}`,
             `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
             'note=MH uses service-line forecast; bypasses telehealth state allocator',
           ];
-          pushProviderPriorityNotes(mhNoteParts, providerPriority);
+          pushProviderPriorityNotes(mhNoteParts, providerPriority, providerProfile);
           if (targetHours == null) {
             mhNoteParts.push('service_line_forecast=missing');
           } else {
@@ -2961,7 +3106,7 @@ Deno.serve(async (req: Request) => {
           counters.skipped_no_licensed_states++;
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
           const noLicNoteParts = ['Provider has no allocation-eligible states on file'];
-          pushProviderPriorityNotes(noLicNoteParts, providerPriority);
+          pushProviderPriorityNotes(noLicNoteParts, providerPriority, providerProfile);
           if (isPhysician) {
             noLicNoteParts.push('state_policy=physician_reserved_for_md_only');
           }
@@ -3114,7 +3259,7 @@ Deno.serve(async (req: Request) => {
 
         const noteParts: string[] = [];
         noteParts.push(`group_size=${groupSubs.length}`);
-        pushProviderPriorityNotes(noteParts, providerPriority);
+        pushProviderPriorityNotes(noteParts, providerPriority, providerProfile);
         if (isPhysician) {
           noteParts.push('state_policy=physician_reserved_for_md_only');
         }
@@ -3268,7 +3413,7 @@ Deno.serve(async (req: Request) => {
 
 // ── DB writes ─────────────────────────────────────────────────────────────
 async function writeDecision(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClientAny,
   submissionId: string,
   decision: {
     status: 'accepted' | 'partial' | 'declined' | 'needs_review';
@@ -3350,7 +3495,7 @@ const shiftKey = (r: {
   `${r.submission_id}|${r.shift_date}|${r.start_min}|${r.end_min}|${r.shift_type}`;
 
 async function writeShiftRecommendations(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClientAny,
   submissionIds: string[],
   rows: ShiftRecommendationRow[],
 ) {
@@ -3451,7 +3596,7 @@ async function writeShiftRecommendations(
 }
 
 async function markSuperseded(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClientAny,
   ids: string[],
   decisionRunId: string,
   note: string,

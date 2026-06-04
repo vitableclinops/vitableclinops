@@ -38,10 +38,99 @@ const directShiftsPeer: Candidate = {
 };
 
 describe('DirectShifts Brittney Afram priority', () => {
-  it('selects Brittney Afram before another DirectShifts provider when both are eligible', () => {
+  it('selects Brittney Afram before another DirectShifts provider when both are eligible and rates do not decide', () => {
     expect(selectProviderForState([directShiftsPeer, brittneyAfram], 'PA', '2026-06-23')?.id)
       .toBe('brittney-afram');
     expect(providerPriorityFor(brittneyAfram.profile).key).toBe('directshifts_brittany_priority');
+  });
+
+  it('prioritizes clinical leads first, then the lowest hourly rate regardless of provider source', () => {
+    const lowerRateDirectShifts: Candidate = {
+      ...directShiftsPeer,
+      id: 'low-rate-ds',
+      profile: {
+        ...directShiftsPeer.profile,
+        name: 'Lower Rate DS',
+        hourly_rate: 72,
+      },
+    };
+    const higherRateInternal: Candidate = {
+      id: 'high-rate-internal',
+      profile: {
+        name: 'Higher Rate Internal',
+        profession: 'NP',
+        employment_type: 'employee',
+        source: 'Vitable',
+        hourly_rate: 95,
+      },
+      licensedStates: ['PA'],
+    };
+    const clinicalLead: Candidate = {
+      id: 'clinical-lead',
+      profile: {
+        name: 'Clinical Lead NP',
+        profession: 'Clinical Lead NP',
+        employment_type: 'employee',
+        source: 'Vitable',
+        hourly_rate: 140,
+      },
+      licensedStates: ['PA'],
+    };
+
+    expect(selectProviderForState([higherRateInternal, lowerRateDirectShifts], 'PA', '2026-06-23')?.id)
+      .toBe('low-rate-ds');
+    expect(selectProviderForState([higherRateInternal, lowerRateDirectShifts, clinicalLead], 'PA', '2026-06-23')?.id)
+      .toBe('clinical-lead');
+  });
+
+  it('lets a lower-rate DirectShifts provider outrank Brittney Afram when cost decides', () => {
+    const lowerRatePeer: Candidate = {
+      ...directShiftsPeer,
+      profile: {
+        ...directShiftsPeer.profile,
+        hourly_rate: 70,
+      },
+    };
+    const higherRateBrittney: Candidate = {
+      ...brittneyAfram,
+      profile: {
+        ...brittneyAfram.profile,
+        hourly_rate: 90,
+      },
+    };
+
+    expect(selectProviderForState([higherRateBrittney, lowerRatePeer], 'PA', '2026-06-23')?.id)
+      .toBe('peer');
+  });
+
+  it('uses lower utilization as the secondary tie-break after hourly rate', () => {
+    const highUtilization: Candidate = {
+      id: 'high-utilization',
+      profile: {
+        name: 'High Utilization',
+        profession: 'NP',
+        employment_type: 'employee',
+        source: 'Vitable',
+        hourly_rate: 80,
+        utilization_pct: 92,
+      },
+      licensedStates: ['PA'],
+    };
+    const lowUtilization: Candidate = {
+      id: 'low-utilization',
+      profile: {
+        name: 'Low Utilization',
+        profession: 'NP',
+        employment_type: 'agency',
+        source: 'DirectShifts',
+        hourly_rate: 80,
+        utilization_pct: 41,
+      },
+      licensedStates: ['PA'],
+    };
+
+    expect(selectProviderForState([highUtilization, lowUtilization], 'PA', '2026-06-23')?.id)
+      .toBe('low-utilization');
   });
 
   it('does not treat a different first-name-only Brittany as the priority provider', () => {

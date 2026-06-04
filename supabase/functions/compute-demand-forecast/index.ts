@@ -49,7 +49,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { toAbbreviation } from '../_shared/stateNormalization.ts';
 
-const METABASE_URL = 'https://metabase.vitablehealth.com';
+const METABASE_URL = Deno.env.get('METABASE_URL') ?? 'https://metabase.vitablehealth.com';
 
 const TELEHEALTH_CARD = Number(Deno.env.get('METABASE_BASELINE_CARD_ID') ?? '2974');
 const COACHING_CARD = Number(Deno.env.get('METABASE_COACHING_CARD_ID') ?? '2973');

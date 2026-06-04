@@ -75,10 +75,13 @@ import {
   useResolveNeedsReview,
   useMonthlyAvailabilitySubmissions,
   useProviderStateEligibility,
+  useProviderOutreachLog,
+  useMarkProviderOutreachSent,
   formatShiftTime,
   isHomebaseDone,
   isEhrDone,
   type AvailabilitySubmissionRow,
+  type ProviderOutreachLog,
   type ProviderPublishView,
   type ProviderStateEligibilityRow,
   type SubmissionRow,
@@ -121,6 +124,11 @@ import {
   SERVICE_LINE_LABEL,
   type MentalHealthServiceLine,
 } from '@/lib/scheduling/mentalHealth';
+import {
+  formatShiftDateKeyInProviderTime,
+  formatShiftDateLabelInProviderTime,
+  formatShiftTimeRangeInProviderTime,
+} from '@/lib/scheduling/timeZone';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 
@@ -202,6 +210,28 @@ const formatDateLabel = (iso: string) => {
   });
 };
 
+const formatProviderShiftDate = (shift: ShiftRow) =>
+  formatShiftDateLabelInProviderTime(
+    shift.shift_date,
+    shift.start_min,
+    shift.provider_time_zone,
+  );
+
+const formatProviderShiftDateKey = (shift: ShiftRow) =>
+  formatShiftDateKeyInProviderTime(
+    shift.shift_date,
+    shift.start_min,
+    shift.provider_time_zone,
+  );
+
+const formatProviderShiftTime = (shift: ShiftRow) =>
+  formatShiftTimeRangeInProviderTime(
+    shift.shift_date,
+    shift.start_min,
+    shift.end_min,
+    shift.provider_time_zone,
+  );
+
 const STATUS_STYLE: Record<DecisionStatus, { label: string; className: string }> = {
   accepted: { label: 'Accepted', className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100' },
   partial: { label: 'Partial', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
@@ -276,6 +306,7 @@ export default function SchedulingWorkbenchPage({
       'coverage',
       'publish',
       'declined',
+      'exceptions',
       'audit',
     ];
     return allowed.includes(t ?? '') ? (t as string) : 'readiness';
@@ -310,6 +341,7 @@ export default function SchedulingWorkbenchPage({
   const { data: availabilitySubmissionsData = [], isLoading: availabilityLoading } =
     useMonthlyAvailabilitySubmissions(month);
   const { data: providerEligibilityData = [] } = useProviderStateEligibility();
+  const { data: outreachLogsData = [] } = useProviderOutreachLog(month);
   const { data: readinessRowsData = [] } = useOnboardingReadiness(30);
 
   const dbRows = safeArray<ProviderPublishView>(dbRowsData);
@@ -320,6 +352,7 @@ export default function SchedulingWorkbenchPage({
   const unmatchedSubs = safeArray<UnmatchedSubmission>(unmatchedSubsData);
   const availabilitySubmissions = safeArray<AvailabilitySubmissionRow>(availabilitySubmissionsData);
   const providerEligibility = safeArray<ProviderStateEligibilityRow>(providerEligibilityData);
+  const outreachLogs = safeArray<ProviderOutreachLog>(outreachLogsData);
   const readinessRows = safeArray<{ readyForSubmissions: boolean }>(readinessRowsData);
   const setupIssuesCount = useMemo(
     () => readinessRows.filter(r => !r.readyForSubmissions).length,
@@ -342,6 +375,7 @@ export default function SchedulingWorkbenchPage({
   const togglePerShift = useTogglePublishShift();
   const bulkPerShift = useBulkMarkPublishShifts();
   const resolveReview = useResolveNeedsReview();
+  const markOutreachSent = useMarkProviderOutreachSent();
   const reevaluate = useReevaluateMonth();
 
   // Optional: override parsed_shifts from an uploaded Jotform availability file.
@@ -547,15 +581,15 @@ export default function SchedulingWorkbenchPage({
   );
 
   const missingRows = useMemo(
-    () => rows.filter(r => !r.submission),
+    () => rows.filter(r => !r.submission && !r.scheduling_outreach_exempt),
     [rows],
   );
   const telehealthMissingRows = useMemo(
-    () => telehealthRows.filter(r => !r.submission),
+    () => telehealthRows.filter(r => !r.submission && !r.scheduling_outreach_exempt),
     [telehealthRows],
   );
   const mentalHealthMissingRows = useMemo(
-    () => mentalHealthRows.filter(r => !r.submission),
+    () => mentalHealthRows.filter(r => !r.submission && !r.scheduling_outreach_exempt),
     [mentalHealthRows],
   );
 
@@ -704,7 +738,7 @@ export default function SchedulingWorkbenchPage({
     [scopedRows],
   );
   const scopedMissing = useMemo(
-    () => scopedRows.filter(r => !r.submission),
+    () => scopedRows.filter(r => !r.submission && !r.scheduling_outreach_exempt),
     [scopedRows],
   );
   const scopedFlatAccepted = useMemo(() => {
@@ -914,7 +948,7 @@ export default function SchedulingWorkbenchPage({
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              Rebuilds the recommended July schedule from the latest Jotform submissions.
+              Rebuilds the recommended {formatMonthLabel(month)} schedule from the latest Jotform submissions.
               Already-published shifts keep their Homebase / EHR state — only
               shifts that change or disappear lose their progress.
             </TooltipContent>
@@ -938,6 +972,7 @@ export default function SchedulingWorkbenchPage({
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="exceptions"><ClipboardList className="h-3.5 w-3.5 mr-1" />Exceptions</TabsTrigger>
           <TabsTrigger value="audit"><HelpCircle className="h-3.5 w-3.5 mr-1" />Audit</TabsTrigger>
         </TabsList>
 
@@ -1125,7 +1160,22 @@ export default function SchedulingWorkbenchPage({
           <MissingSubmissionsPanel
             month={month}
             rows={scopedMissing}
+            outreachLogs={outreachLogs}
             isLoading={isLoading}
+            isMarkingSent={markOutreachSent.isPending}
+            onMarkSent={(providers, subject, body) =>
+              markOutreachSent.mutate(
+                { month, providers, subject, body },
+                {
+                  onSuccess: () => {
+                    toast.success(
+                      `Marked ${providers.length} provider${providers.length === 1 ? '' : 's'} contacted`,
+                    );
+                  },
+                  onError: e => toast.error(`Could not mark sent: ${(e as Error).message}`),
+                },
+              )
+            }
           />
         </TabsContent>
 
@@ -1445,6 +1495,11 @@ export default function SchedulingWorkbenchPage({
           />
         </TabsContent>
 
+        {/* ============ EXCEPTIONS ============ */}
+        <TabsContent value="exceptions" className="mt-4 space-y-4">
+          <SchedulingExceptionsPanel month={month} rows={rows} isLoading={isLoading} />
+        </TabsContent>
+
         {/* ============ AUDIT / WHY ============ */}
         <TabsContent value="audit" className="mt-4 space-y-4">
           <AuditPanel
@@ -1581,9 +1636,9 @@ function ShiftListInline({
           const schedulingNote = formatSchedulingShiftNote(s.recommendation_reason);
           return (
             <TableRow key={s.id}>
-              <TableCell className="text-xs">{formatDateLabel(s.shift_date)}</TableCell>
+              <TableCell className="text-xs">{formatProviderShiftDate(s)}</TableCell>
               <TableCell className="text-xs tabular-nums">
-                {formatShiftTime(s.start_min)}–{formatShiftTime(s.end_min)}
+                {formatProviderShiftTime(s)}
               </TableCell>
               <TableCell className="text-xs text-right tabular-nums">
                 {formatHours(s.hours)}
@@ -1696,14 +1751,36 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   };
 
   const priority = valueFromDecisionNote(raw, 'provider_priority');
+  const providerRatePolicy = valueFromDecisionNote(raw, 'provider_rate_policy');
+  const providerHourlyRate = valueFromDecisionNote(raw, 'provider_hourly_rate');
+  const providerUtilizationPolicy = valueFromDecisionNote(raw, 'provider_utilization_policy');
+  const providerUtilizationPct = valueFromDecisionNote(raw, 'provider_utilization_pct');
   if (priority === 'clinical_supervisor' || priority === 'clinical_lead') {
     add('Accepted first because this provider is a clinical lead.');
   } else if (priority === 'vitable_internal') {
-    add('Accepted before external access providers because this provider is on the Vitable team.');
+    add('This provider is in the rate-ranked scheduling pool.');
   } else if (priority === 'directshifts_brittany_priority') {
-    add('Brittney Afram is prioritized above other DirectShifts providers when she is eligible for the needed coverage.');
+    add('Brittney Afram keeps the DirectShifts compatibility key; hourly rate still decides before that tie-break.');
   } else if (priority === 'access_provider') {
-    add('Accepted after internal providers because this provider is an access coverage provider.');
+    add('This access provider is in the same rate-ranked pool as internal providers.');
+  }
+  if (providerRatePolicy === 'clinical_leads_then_lowest_hourly_rate') {
+    add('After clinical leads, providers are ranked by lowest current hourly rate regardless of internal or DirectShifts source.');
+  }
+  if (providerHourlyRate && providerHourlyRate !== 'missing') {
+    const rate = Number(providerHourlyRate);
+    if (Number.isFinite(rate)) add(`Current scheduling rate used: $${rate.toFixed(2)}/hr.`);
+  } else if (providerHourlyRate === 'missing') {
+    add('No current hourly rate was found, so this provider sorts after providers with known rates in the same tier.');
+  }
+  if (providerUtilizationPolicy === 'lower_utilization_secondary_after_rate') {
+    add('For providers with the same rate tier, lower recent utilization is used as the fairness tie-break.');
+  }
+  if (providerUtilizationPct && providerUtilizationPct !== 'missing') {
+    const utilization = Number(providerUtilizationPct);
+    if (Number.isFinite(utilization)) add(`Recent utilization used: ${utilization.toFixed(1)}%.`);
+  } else if (providerUtilizationPct === 'missing') {
+    add('No recent utilization was found, so this provider sorts after providers with known utilization in the same rate tier.');
   }
 
   if (valueFromDecisionNote(raw, 'state_policy') === 'physician_reserved_for_md_only') {
@@ -1717,7 +1794,7 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
     add(`${scarceHours.replace(/h$/, '')} hours were protected for Friday afternoon or weekend access.`);
   }
   if (valueFromDecisionNote(raw, 'access_growth_buffer_policy')) {
-    add('The system intentionally schedules extra hours so July access does not stay too thin.');
+    add('The system intentionally schedules extra hours so monthly access does not stay too thin.');
   }
   if (valueFromDecisionNote(raw, 'long_shift_break_policy')) {
     const breakStart = valueFromDecisionNote(raw, 'break_start');
@@ -1737,13 +1814,16 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
     const blackoutHours = valueFromDecisionNote(raw, 'provider_meeting_blackout_hours');
     add(`The June 24 provider meeting from 12:00-1:00 PM ET was blocked from scheduling${blackoutHours ? ` (${blackoutHours} hour removed)` : ''}.`);
   }
+  if (valueFromDecisionNote(raw, 'mh_ehr_slot_gap_minutes') === '0') {
+    add('Mental health EHR slots should stay back-to-back; the 10-minute buffer is for capacity/charting, not a patient-facing gap.');
+  }
   const accessBufferHours = valueFromDecisionNote(raw, 'access_buffer_hours');
   if (accessBufferHours) {
-    add(`${accessBufferHours.replace(/h$/, '')} extra hours were added to protect July access.`);
+    add(`${accessBufferHours.replace(/h$/, '')} extra hours were added to protect monthly access.`);
   }
   const baseStateDemand = valueFromDecisionNote(raw, 'base_state_demand');
   if (baseStateDemand) {
-    add(`Historical state need before extra July access protection: ${baseStateDemand}.`);
+    add(`Historical state need before extra monthly access protection: ${baseStateDemand}.`);
   }
   const unavailableHours = valueFromDecisionNote(raw, 'hours_removed_unavailable');
   if (unavailableHours) {
@@ -2101,10 +2181,10 @@ function PublishingQueue({
               const schedulingNote = formatSchedulingShiftNote(s.recommendation_reason);
               return (
                 <TableRow key={s.id}>
-                  <TableCell className="text-xs">{formatDateLabel(s.shift_date)}</TableCell>
+                  <TableCell className="text-xs">{formatProviderShiftDate(s)}</TableCell>
                   <TableCell className="font-medium">{s.provider_name}</TableCell>
                   <TableCell className="text-xs tabular-nums">
-                    {formatShiftTime(s.start_min)}–{formatShiftTime(s.end_min)}
+                    {formatProviderShiftTime(s)}
                   </TableCell>
                   <TableCell className="text-right text-xs tabular-nums">
                     {formatHours(s.hours)}
@@ -2174,8 +2254,9 @@ function ByDayPanel({
   const days = useMemo(() => {
     const map = new Map<string, ShiftRow[]>();
     for (const s of shifts) {
-      if (!map.has(s.shift_date)) map.set(s.shift_date, []);
-      map.get(s.shift_date)!.push(s);
+      const dateKey = formatProviderShiftDateKey(s);
+      if (!map.has(dateKey)) map.set(dateKey, []);
+      map.get(dateKey)!.push(s);
     }
     return Array.from(map.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -2216,7 +2297,9 @@ function ByDayPanel({
             <CardHeader>
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div>
-                  <CardTitle className="text-base">{formatDateLabel(day.date)}</CardTitle>
+                  <CardTitle className="text-base">
+                    {formatProviderShiftDate(day.entries[0])}
+                  </CardTitle>
                   <div className="text-xs text-muted-foreground mt-1">
                     {day.entries.length} shift{day.entries.length === 1 ? '' : 's'} ·{' '}
                     {hbLeft} not yet on Homebase · {ehrLeft} awaiting EHR
@@ -2245,7 +2328,7 @@ function ByDayPanel({
                       <TableRow key={s.id}>
                         <TableCell className="font-medium">{s.provider_name}</TableCell>
                         <TableCell className="text-xs">
-                          {formatShiftTime(s.start_min)}–{formatShiftTime(s.end_min)}
+                          {formatProviderShiftTime(s)}
                         </TableCell>
                         <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
                         <TableCell className="text-right text-xs tabular-nums">
@@ -2360,7 +2443,7 @@ function NeedsReviewPanel({
                   : [];
                 const reasonLabel = needsReviewReasonLabel(warnings, sub.decision_notes);
                 const escalationText = [
-                  `Please review July schedule submission for ${r.provider_name}.`,
+                  `Please review ${formatMonthLabel(month)} schedule submission for ${r.provider_name}.`,
                   `Issue: ${reasonLabel}.`,
                   `Expanded hours: ${formatHours(expandedSubmittedHours(sub))}.`,
                   warnings.length > 0
@@ -2553,7 +2636,7 @@ function MentalHealthDashboard({
         <SummaryCard
           label="Accepted MH hours"
           value={`${acceptedHours.toFixed(1)} hrs`}
-          sub={`${visitCapacity} visit slot${visitCapacity === 1 ? '' : 's'} at 40m + 10m`}
+          sub={`${visitCapacity} visit slot${visitCapacity === 1 ? '' : 's'} at 40m + charting buffer`}
         />
         <SummaryCard
           label="Posted to Homebase"
@@ -2934,12 +3017,23 @@ function MentalHealthPanel({
 function MissingSubmissionsPanel({
   month,
   rows,
+  outreachLogs,
   isLoading,
+  isMarkingSent,
+  onMarkSent,
 }: {
   month: string;
   rows: ProviderPublishView[];
+  outreachLogs: ProviderOutreachLog[];
   isLoading: boolean;
+  isMarkingSent: boolean;
+  onMarkSent: (
+    providers: Pick<ProviderPublishView, 'provider_id' | 'provider_name' | 'provider_email'>[],
+    subject: string,
+    body: string,
+  ) => void;
 }) {
+  const [selectedProviderIds, setSelectedProviderIds] = useState<Set<string>>(() => new Set());
   const sortedRows = useMemo(
     () =>
       [...rows].sort((a, b) =>
@@ -2952,6 +3046,57 @@ function MissingSubmissionsPanel({
     () => sortedRows.filter(r => r.provider_email && r.provider_email.includes('@')),
     [sortedRows],
   );
+  const selectedRows = useMemo(
+    () => sortedRows.filter(r => selectedProviderIds.has(r.provider_id)),
+    [sortedRows, selectedProviderIds],
+  );
+  const selectedRowsWithAddress = useMemo(
+    () => selectedRows.filter(r => r.provider_email && r.provider_email.includes('@')),
+    [selectedRows],
+  );
+  const latestLogByProvider = useMemo(() => {
+    const map = new Map<string, ProviderOutreachLog>();
+    for (const log of outreachLogs) {
+      if (!log.provider_id) continue;
+      const current = map.get(log.provider_id);
+      if (!current || log.sent_at > current.sent_at) map.set(log.provider_id, log);
+    }
+    return map;
+  }, [outreachLogs]);
+  const monthLabel = formatMonthLabel(month);
+  const reminderSubject = `${monthLabel} availability reminder`;
+  const reminderTemplate = (name: string) =>
+    `Hi ${name.split(' ')[0]}, gentle reminder to submit your ${monthLabel} availability when you have a moment. Thanks!`;
+  const bulkReminderBody = [
+    'Hi,',
+    '',
+    `Gentle reminder to submit your ${monthLabel} availability when you have a moment.`,
+    '',
+    'Jotform: https://form.jotform.com/252224341308043',
+    '',
+    'Thanks!',
+  ].join('\n');
+  const allWithEmailSelected =
+    emailsWithAddress.length > 0 &&
+    emailsWithAddress.every(r => selectedProviderIds.has(r.provider_id));
+  const toggleProvider = (providerId: string, checked: boolean) => {
+    setSelectedProviderIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(providerId);
+      else next.delete(providerId);
+      return next;
+    });
+  };
+  const toggleAllWithEmail = (checked: boolean) => {
+    setSelectedProviderIds(prev => {
+      const next = new Set(prev);
+      for (const row of emailsWithAddress) {
+        if (checked) next.add(row.provider_id);
+        else next.delete(row.provider_id);
+      }
+      return next;
+    });
+  };
 
   if (isLoading) {
     return (
@@ -2968,15 +3113,11 @@ function MissingSubmissionsPanel({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No missing July submissions. No reminder needed.
+          No missing {monthLabel} submissions. No reminder needed.
         </AlertDescription>
       </Alert>
     );
   }
-
-  const monthLabel = formatMonthLabel(month);
-  const reminderTemplate = (name: string) =>
-    `Hi ${name.split(' ')[0]}, gentle reminder to submit your ${monthLabel} availability when you have a moment. Thanks!`;
 
   const copyAll = async () => {
     const text = sortedRows
@@ -3006,6 +3147,27 @@ function MissingSubmissionsPanel({
     }
   };
 
+  const emailSelected = () => {
+    if (selectedRowsWithAddress.length === 0) {
+      toast.error('Select at least one provider with an email address.');
+      return;
+    }
+    const bcc = selectedRowsWithAddress.map(r => r.provider_email!).join(',');
+    const href = `mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(reminderSubject)}&body=${encodeURIComponent(bulkReminderBody)}`;
+    window.location.href = href;
+    toast.success(
+      `Opened BCC draft for ${selectedRowsWithAddress.length} provider${selectedRowsWithAddress.length === 1 ? '' : 's'}`,
+    );
+  };
+
+  const markSelectedSent = () => {
+    if (selectedRowsWithAddress.length === 0) {
+      toast.error('Select at least one provider with an email address.');
+      return;
+    }
+    onMarkSent(selectedRowsWithAddress, reminderSubject, bulkReminderBody);
+  };
+
   const missingEmailCount = sortedRows.length - emailsWithAddress.length;
 
   return (
@@ -3017,8 +3179,8 @@ function MissingSubmissionsPanel({
               Missing submissions · {formatMonthLabel(month)} · {sortedRows.length}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Scheduler can do this. These active providers have no Jotform availability for July.
-              Copy the BCC-ready email list, then send the reminder template below.
+              Scheduler can do this. These active providers have no Jotform availability for {monthLabel}.
+              Select providers, open a BCC reminder draft, then mark sent once it leaves your email client.
               {missingEmailCount > 0 && (
                 <span className="text-amber-700">
                   {' '}
@@ -3029,6 +3191,28 @@ function MissingSubmissionsPanel({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              onClick={emailSelected}
+              disabled={selectedRowsWithAddress.length === 0}
+            >
+              <Send className="h-4 w-4 mr-1" />
+              Email selected ({selectedRowsWithAddress.length})
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={markSelectedSent}
+              disabled={selectedRowsWithAddress.length === 0 || isMarkingSent}
+            >
+              {isMarkingSent ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+              )}
+              Mark selected sent
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -3049,53 +3233,214 @@ function MissingSubmissionsPanel({
         <div className="border-y bg-muted/30 px-4 py-3 text-xs">
           <div className="font-medium">Reminder template</div>
           <div className="mt-1 text-muted-foreground">
-            Hi [first name], gentle reminder to submit your {monthLabel} availability when you have a moment. Thanks!
+            Hi [first name], gentle reminder to submit your {monthLabel} availability when you have a moment. Jotform: https://form.jotform.com/252224341308043
           </div>
         </div>
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={allWithEmailSelected}
+                  disabled={emailsWithAddress.length === 0}
+                  onCheckedChange={c => toggleAllWithEmail(!!c)}
+                />
+              </TableHead>
               <TableHead>Provider</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Profession</TableHead>
               <TableHead>Employment</TableHead>
+              <TableHead>Last contacted</TableHead>
               <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedRows.map(r => (
-              <TableRow key={r.provider_id}>
-                <TableCell className="font-medium">{r.provider_name}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {r.provider_email ?? <span className="italic">no email on file</span>}
-                </TableCell>
-                <TableCell className="text-xs">{r.profession ?? '—'}</TableCell>
-                <TableCell className="text-xs">{r.employment_type ?? '—'}</TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(
-                          reminderTemplate(r.provider_name),
-                        );
-                        toast.success('Reminder copied');
-                      } catch {
-                        toast.error('Clipboard unavailable');
-                      }
-                    }}
-                  >
-                    <Copy className="h-3 w-3 mr-1" /> Copy reminder
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {sortedRows.map(r => {
+              const latestLog = latestLogByProvider.get(r.provider_id);
+              return (
+                <TableRow key={r.provider_id}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedProviderIds.has(r.provider_id)}
+                      disabled={!r.provider_email || !r.provider_email.includes('@')}
+                      onCheckedChange={c => toggleProvider(r.provider_id, !!c)}
+                    />
+                  </TableCell>
+                  <TableCell className="font-medium">{r.provider_name}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {r.provider_email ?? <span className="italic">no email on file</span>}
+                  </TableCell>
+                  <TableCell className="text-xs">{r.profession ?? '—'}</TableCell>
+                  <TableCell className="text-xs">{r.employment_type ?? '—'}</TableCell>
+                  <TableCell className="text-xs">
+                    {latestLog ? (
+                      <div>
+                        <div>{formatRelativeTime(latestLog.sent_at)}</div>
+                        <div className="text-muted-foreground">
+                          {latestLog.sent_by_label || latestLog.channel || 'Scheduling team'}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">No record</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(
+                            reminderTemplate(r.provider_name),
+                          );
+                          toast.success('Reminder copied');
+                        } catch {
+                          toast.error('Clipboard unavailable');
+                        }
+                      }}
+                    >
+                      <Copy className="h-3 w-3 mr-1" /> Copy reminder
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+function SchedulingExceptionsPanel({
+  month,
+  rows,
+  isLoading,
+}: {
+  month: string;
+  rows: ProviderPublishView[];
+  isLoading: boolean;
+}) {
+  const monthLabel = formatMonthLabel(month);
+  const adminOnlyRows = useMemo(
+    () =>
+      rows
+        .filter(r => r.scheduling_outreach_exempt)
+        .sort((a, b) =>
+          a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
+        ),
+    [rows],
+  );
+  const documentedExceptions = [
+    {
+      name: 'Richard Rash',
+      type: 'Therapy / LPC',
+      rule: 'Route through the mental health therapy service-line forecast, not the telehealth state allocator.',
+      action: 'Confirm 2.5h minimum shift blocks and keep EHR visit slots back-to-back with charting buffers.',
+    },
+    {
+      name: 'Margo / Margaret Mulgrew',
+      type: 'Therapy / LPC alias',
+      rule: 'Treat Margo and Margaret Mulgrew as the same provider for Jotform matching.',
+      action: 'Use the therapy forecast pool and check name aliases before marking a submission unmatched.',
+    },
+    {
+      name: 'Shashai',
+      type: 'Licensure / state check',
+      rule: 'Do not assume all submitted states are schedulable without active-state confirmation.',
+      action: 'Check active licensure and EHR readiness before publishing shifts.',
+    },
+  ];
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent>
+          <LoadingRow label="Loading scheduling exceptions" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Scheduling exceptions · {monthLabel}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Standing edge cases the scheduling team should check before matching, outreach, or publishing.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider / case</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Rule</TableHead>
+                <TableHead>Scheduling action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {documentedExceptions.map(item => (
+                <TableRow key={item.name}>
+                  <TableCell className="font-medium">{item.name}</TableCell>
+                  <TableCell className="text-xs">{item.type}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{item.rule}</TableCell>
+                  <TableCell className="text-xs">{item.action}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Admin-only provider profile flags</CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Providers with this profile indicator are excluded from missing-submission counts and outreach lists.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          {adminOnlyRows.length === 0 ? (
+            <div className="px-4 py-6 text-sm text-muted-foreground">
+              No admin-only scheduling outreach exemptions are set.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Profession</TableHead>
+                  <TableHead>Employment</TableHead>
+                  <TableHead>Profile indicator</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {adminOnlyRows.map(row => (
+                  <TableRow key={row.provider_id}>
+                    <TableCell className="font-medium">{row.provider_name}</TableCell>
+                    <TableCell className="text-xs">{row.profession ?? '—'}</TableCell>
+                    <TableCell className="text-xs">{row.employment_type ?? '—'}</TableCell>
+                    <TableCell className="text-xs">
+                      <Badge variant="outline" className="bg-slate-50">Admin-only</Badge>
+                      <span className="ml-2 text-muted-foreground">
+                        {row.scheduling_outreach_exemption_reason ||
+                          'Not expected to submit monthly scheduling availability.'}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </>
   );
 }
 
@@ -3345,7 +3690,7 @@ function DeclinedHoursPanel({
                           {cuts.slice(0, 4).map(cut => (
                             <div key={cut.id} className="rounded border px-2 py-1">
                               <div className="font-medium">
-                                {formatDateLabel(cut.shift_date)} · {formatShiftTime(cut.start_min)}-{formatShiftTime(cut.end_min)}
+                                {formatProviderShiftDate(cut)} · {formatProviderShiftTime(cut)}
                               </div>
                               <div className="text-muted-foreground">
                                 {formatHours(cut.hours)}h · {labelShiftType(cut.shift_type)}
@@ -3625,7 +3970,7 @@ function PublishHistoryPanel({
 }
 
 // ============================================================================
-// July 2026 Workbench — new top-level tab panels
+// Scheduling workbench readiness and top-level tab panels
 // ============================================================================
 
 function ReadinessPanel({
@@ -3743,7 +4088,7 @@ function ReadinessPanel({
         label: 'No publishable shift list yet',
         detail: submittedHours > 0
           ? 'Availability exists, but the accepted shift list is not ready. Recalculate the schedule from the latest submissions.'
-          : 'No usable July availability has been expanded yet.',
+          : `No usable ${formatMonthLabel(month)} availability has been expanded yet.`,
         category: 'Scheduler can do this',
         action: 'Recalculate schedule',
         onClick: onReevaluate,
@@ -3778,8 +4123,8 @@ function ReadinessPanel({
     }
     if (missingCount > 0) {
       out.push({
-        label: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing July availability`,
-        detail: 'These active providers have not submitted July availability. Send reminders before publishing so staff can capture any last covered hours.',
+        label: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing ${formatMonthLabel(month)} availability`,
+        detail: `These active providers have not submitted ${formatMonthLabel(month)} availability. Send reminders before publishing so staff can capture any last covered hours.`,
         category: 'Scheduler can do this',
         action: 'Open Missing',
         onClick: () => onJumpToAvailability('missing'),
@@ -3799,6 +4144,7 @@ function ReadinessPanel({
     inboxNeedsReviewCount,
     criticalGapStates,
     missingCount,
+    month,
     onReevaluate,
     onJumpToAvailability,
     onJumpToCoverage,
@@ -3863,7 +4209,7 @@ function ReadinessPanel({
     }
     if (missingCount > 0) {
       return {
-        blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing July availability`,
+        blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing ${formatMonthLabel(month)} availability`,
         nextAction: 'Send missing availability reminders',
         nextActionJump: () => onJumpToAvailability('missing'),
         nextCategory: 'Scheduler can do this',
@@ -3887,7 +4233,7 @@ function ReadinessPanel({
     }
     return {
       blocker: `None - ${formatMonthLabel(month)} is fully published`,
-      nextAction: 'No action needed - July schedule is publish-complete',
+      nextAction: `No action needed - ${formatMonthLabel(month)} schedule is publish-complete`,
       nextActionJump: onJumpToPublish,
       nextCategory: 'Scheduler can do this',
     };
@@ -4412,7 +4758,7 @@ function PublishGateBanner({
     }
     if (missingCount > 0) {
       out.push({
-        label: `${missingCount} provider${missingCount === 1 ? '' : 's'} still need July availability reminders.`,
+        label: `${missingCount} provider${missingCount === 1 ? '' : 's'} still need ${formatMonthLabel(month)} availability reminders.`,
         action: 'Open Missing',
         onClick: () => onJumpToAvailability('missing'),
       });
@@ -4429,6 +4775,7 @@ function PublishGateBanner({
     missingCount,
     reviewCount,
     criticalGapStates,
+    month,
     onJumpToAvailability,
     onJumpToCoverage,
     onJumpToMatching,
@@ -4703,7 +5050,7 @@ function CoverageGapsPanel({
         </CardTitle>
         <p className="text-xs text-muted-foreground">
           This tells the scheduling team whether publishing can continue. The system intentionally schedules
-          extra hours above historical usage so July access does not stay too thin.
+          extra hours above historical usage so monthly access does not stay too thin.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -4844,13 +5191,13 @@ type ProviderPriority = {
 
 const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPriority> = {
   clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' },
-  vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Vitable internal' },
+  vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Rate-ranked Vitable provider' },
   directshifts_brittany_priority: {
     key: 'directshifts_brittany_priority',
-    rank: 2,
-    label: 'DirectShifts Brittney Afram priority',
+    rank: 1,
+    label: 'Rate-ranked DirectShifts Brittney Afram',
   },
-  access_provider: { key: 'access_provider', rank: 2, label: 'Access provider' },
+  access_provider: { key: 'access_provider', rank: 1, label: 'Rate-ranked access provider' },
 };
 
 const LICENSE_SOURCE_LABELS: Record<string, string> = {
@@ -4940,6 +5287,16 @@ function inferPriorityReason(row: ProviderPublishView): string {
   const priority = providerPriorityForRow(row);
   const reasons: string[] = [];
   reasons.push(`P${priority.rank + 1} ${priority.label}`);
+  const rate = providerRateFromNotes(row.submission?.decision_notes);
+  if (rate != null) reasons.push(`$${rate.toFixed(2)}/hr`);
+  else if (valueFromDecisionNote(row.submission?.decision_notes, 'provider_hourly_rate') === 'missing') {
+    reasons.push('rate missing');
+  }
+  const utilization = providerUtilizationFromNotes(row.submission?.decision_notes);
+  if (utilization != null) reasons.push(`${utilization.toFixed(1)}% util`);
+  else if (valueFromDecisionNote(row.submission?.decision_notes, 'provider_utilization_pct') === 'missing') {
+    reasons.push('util missing');
+  }
   const emp = (row.employment_type ?? '').trim();
   if (emp) reasons.push(emp.toUpperCase());
   const accepted = Number(row.submission?.accepted_hours ?? 0);
@@ -4947,6 +5304,28 @@ function inferPriorityReason(row: ProviderPublishView): string {
   if (accepted > 0 && declined === 0) reasons.push('Full accept');
   if (declined > 0 && accepted > 0) reasons.push('Partial accept');
   return reasons.join(' · ') || '—';
+}
+
+function providerRateFromNotes(notes: string | null | undefined): number | null {
+  const raw = valueFromDecisionNote(notes, 'provider_hourly_rate');
+  if (!raw || raw === 'missing') return null;
+  const rate = Number(raw);
+  return Number.isFinite(rate) ? rate : null;
+}
+
+function providerRateSortValue(row: ProviderPublishView): number {
+  return providerRateFromNotes(row.submission?.decision_notes) ?? Number.POSITIVE_INFINITY;
+}
+
+function providerUtilizationFromNotes(notes: string | null | undefined): number | null {
+  const raw = valueFromDecisionNote(notes, 'provider_utilization_pct');
+  if (!raw || raw === 'missing') return null;
+  const utilization = Number(raw);
+  return Number.isFinite(utilization) ? utilization : null;
+}
+
+function providerUtilizationSortValue(row: ProviderPublishView): number {
+  return providerUtilizationFromNotes(row.submission?.decision_notes) ?? Number.POSITIVE_INFINITY;
 }
 
 function inferDeclineReason(row: ProviderPublishView): string {
@@ -4986,6 +5365,12 @@ function MatchingPanel({
       const pa = providerPriorityForRow(a);
       const pb = providerPriorityForRow(b);
       if (pa.rank !== pb.rank) return pa.rank - pb.rank;
+      const ra = providerRateSortValue(a);
+      const rb = providerRateSortValue(b);
+      if (ra !== rb) return ra - rb;
+      const ua = providerUtilizationSortValue(a);
+      const ub = providerUtilizationSortValue(b);
+      if (ua !== ub) return ua - ub;
       const sa = statusSort(a);
       const sb = statusSort(b);
       if (sa !== sb) return sa - sb;
@@ -5011,8 +5396,10 @@ function MatchingPanel({
         <CardTitle className="text-base">Provider recommendations · {formatMonthLabel(month)}</CardTitle>
         <p className="text-xs text-muted-foreground">
           Who is getting hours, why, and what was cut. The system matches providers to states
-          where they can cover visits, then prioritizes clinical supervisors, Vitable internal
-          providers, and access providers. Brittney Afram is first only within eligible DirectShifts coverage.
+          where they can cover visits, then prioritizes clinical leads followed by the lowest
+          current hourly rates regardless of internal or DirectShifts source. Recent utilization
+          is the secondary fairness tie-break. Brittney Afram keeps a DirectShifts compatibility
+          tie-break only when rate and utilization do not decide.
         </p>
       </CardHeader>
       <CardContent className="p-0">

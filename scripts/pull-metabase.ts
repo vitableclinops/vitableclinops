@@ -36,7 +36,7 @@ loadEnvFile(join(PROJECT_ROOT, ".env.metabase"));
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const METABASE_URL = "https://metabase.vitablehealth.com";
+const METABASE_URL = process.env.METABASE_URL || "https://metabase.vitablehealth.com";
 const SUPABASE_URL = "https://saksjvmqyudkowxypoce.supabase.co";
 // Anon key is intentionally public — safe to hardcode
 const SUPABASE_ANON_KEY =
