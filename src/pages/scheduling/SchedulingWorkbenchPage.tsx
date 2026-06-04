@@ -1,4 +1,4 @@
-import { useMemo, useState, Fragment } from 'react';
+import { useEffect, useMemo, useState, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import SchedulingShell from './SchedulingShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -59,6 +61,11 @@ import {
   ClipboardList,
   CircleDot,
   PlayCircle,
+  Plus,
+  Search,
+  Pencil,
+  Trash2,
+  Save,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
@@ -77,6 +84,9 @@ import {
   useProviderStateEligibility,
   useProviderOutreachLog,
   useMarkProviderOutreachSent,
+  useProviderSchedulingExceptions,
+  useProviderSearch,
+  useUpdateProviderSchedulingException,
   formatShiftTime,
   isHomebaseDone,
   isEhrDone,
@@ -91,6 +101,8 @@ import {
   type ParsedShift,
   type ShiftRow,
   type ShiftPublishStep,
+  type ProviderSearchHit,
+  type ProviderSchedulingExceptionRow,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -288,35 +300,41 @@ const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : [
 
 export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
 type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
+const TOP_TAB_VALUES = [
+  'readiness',
+  'forecast',
+  'availability',
+  'matching',
+  'coverage',
+  'publish',
+  'declined',
+  'exceptions',
+  'audit',
+] as const;
+type TopTabKey = (typeof TOP_TAB_VALUES)[number];
+
+const topTabFromParam = (tab: string | null): TopTabKey =>
+  TOP_TAB_VALUES.includes(tab as TopTabKey) ? (tab as TopTabKey) : 'readiness';
 
 export default function SchedulingWorkbenchPage({
   scope = 'medical',
 }: { scope?: SchedulingWorkbenchScope } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
   const [month, setMonth] = useState('2026-07-01');
   const isMh = scope === 'mental_health';
   const [mhServiceLine, setMhServiceLine] = useState<'all' | MentalHealthServiceLine>('all');
-  const initialTab = (() => {
-    const t = searchParams.get('tab');
-    const allowed = [
-      'readiness',
-      'forecast',
-      'availability',
-      'matching',
-      'coverage',
-      'publish',
-      'declined',
-      'exceptions',
-      'audit',
-    ];
-    return allowed.includes(t ?? '') ? (t as string) : 'readiness';
-  })();
-  const [topTab, setTopTab] = useState(initialTab);
+  const [topTab, setTopTab] = useState<TopTabKey>(() => topTabFromParam(tabParam));
+  useEffect(() => {
+    const nextTab = topTabFromParam(tabParam);
+    setTopTab(current => (current === nextTab ? current : nextTab));
+  }, [tabParam]);
   const onTopTabChange = (v: string) => {
-    setTopTab(v);
+    const nextTab = topTabFromParam(v);
+    setTopTab(nextTab);
     const next = new URLSearchParams(searchParams);
-    if (v === 'readiness') next.delete('tab');
-    else next.set('tab', v);
+    if (nextTab === 'readiness') next.delete('tab');
+    else next.set('tab', nextTab);
     setSearchParams(next, { replace: true });
   };
   const [availabilityTab, setAvailabilityTab] = useState<AvailabilityTabKey>('submissions');
@@ -1498,7 +1516,7 @@ export default function SchedulingWorkbenchPage({
 
         {/* ============ EXCEPTIONS ============ */}
         <TabsContent value="exceptions" className="mt-4 space-y-4">
-          <SchedulingExceptionsPanel month={month} rows={rows} isLoading={isLoading} />
+          <SchedulingExceptionsPanel month={month} />
         </TabsContent>
 
         {/* ============ AUDIT / WHY ============ */}
@@ -3316,23 +3334,35 @@ function MissingSubmissionsPanel({
 
 function SchedulingExceptionsPanel({
   month,
-  rows,
-  isLoading,
 }: {
   month: string;
-  rows: ProviderPublishView[];
-  isLoading: boolean;
 }) {
   const monthLabel = formatMonthLabel(month);
+  const defaultExceptionReason = 'Not expected to submit monthly scheduling availability.';
+  const [providerQuery, setProviderQuery] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState<ProviderSearchHit | null>(null);
+  const [reasonDraft, setReasonDraft] = useState(defaultExceptionReason);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [editingReason, setEditingReason] = useState('');
+  const { data: exceptionRowsData = [], isLoading } = useProviderSchedulingExceptions();
+  const { data: providerMatches = [], isFetching: isSearchingProviders } = useProviderSearch(providerQuery);
+  const updateProviderException = useUpdateProviderSchedulingException();
   const adminOnlyRows = useMemo(
     () =>
-      rows
-        .filter(r => r.scheduling_outreach_exempt)
-        .sort((a, b) =>
-          a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
-        ),
-    [rows],
+      [...exceptionRowsData].sort((a, b) =>
+        a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
+      ),
+    [exceptionRowsData],
   );
+  const exceptionsByProvider = useMemo(() => {
+    const map = new Map<string, ProviderSchedulingExceptionRow>();
+    for (const row of adminOnlyRows) map.set(row.provider_id, row);
+    return map;
+  }, [adminOnlyRows]);
+  const selectedExistingException = selectedProvider
+    ? exceptionsByProvider.get(selectedProvider.id)
+    : null;
+  const visibleProviderMatches = providerMatches.filter(p => p.id !== selectedProvider?.id);
   const documentedExceptions = [
     {
       name: 'Richard Rash',
@@ -3353,6 +3383,69 @@ function SchedulingExceptionsPanel({
       action: 'Check active licensure and EHR readiness before publishing shifts.',
     },
   ];
+
+  const selectProviderForException = (provider: ProviderSearchHit) => {
+    const existing = exceptionsByProvider.get(provider.id);
+    setSelectedProvider(provider);
+    setReasonDraft(
+      existing?.scheduling_outreach_exemption_reason ||
+        defaultExceptionReason,
+    );
+  };
+
+  const saveSelectedProviderException = async () => {
+    if (!selectedProvider) return;
+    try {
+      await updateProviderException.mutateAsync({
+        providerId: selectedProvider.id,
+        exempt: true,
+        reason: reasonDraft,
+      });
+      toast.success(
+        `${selectedProvider.name} ${selectedExistingException ? 'updated' : 'added'} in Known Exceptions`,
+      );
+      setProviderQuery('');
+      setSelectedProvider(null);
+      setReasonDraft(defaultExceptionReason);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to update provider exception');
+    }
+  };
+
+  const startEditingProviderException = (row: ProviderSchedulingExceptionRow) => {
+    setEditingProviderId(row.provider_id);
+    setEditingReason(row.scheduling_outreach_exemption_reason || defaultExceptionReason);
+  };
+
+  const saveProviderExceptionEdit = async (row: ProviderSchedulingExceptionRow) => {
+    try {
+      await updateProviderException.mutateAsync({
+        providerId: row.provider_id,
+        exempt: true,
+        reason: editingReason,
+      });
+      toast.success(`${row.provider_name} exception updated`);
+      setEditingProviderId(null);
+      setEditingReason('');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to update provider exception');
+    }
+  };
+
+  const removeProviderException = async (row: ProviderSchedulingExceptionRow) => {
+    const confirmed = window.confirm(`Remove ${row.provider_name} from Known Exceptions?`);
+    if (!confirmed) return;
+    try {
+      await updateProviderException.mutateAsync({
+        providerId: row.provider_id,
+        exempt: false,
+        reason: null,
+      });
+      toast.success(`${row.provider_name} removed from Known Exceptions`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to remove provider exception');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -3406,9 +3499,106 @@ function SchedulingExceptionsPanel({
             Providers with this profile indicator are excluded from missing-submission counts and outreach lists.
           </p>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="space-y-4">
+          <div className="rounded-md border p-3 space-y-3">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)_auto] lg:items-end">
+              <div className="space-y-2">
+                <Label htmlFor="exception-provider-search">Provider</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="exception-provider-search"
+                    value={providerQuery}
+                    onChange={e => {
+                      setProviderQuery(e.target.value);
+                      setSelectedProvider(null);
+                    }}
+                    placeholder="Search name or email"
+                    className="pl-9"
+                  />
+                </div>
+                {selectedProvider && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm">
+                    <span className="font-medium">{selectedProvider.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedProvider.email ?? 'No email'} · {selectedProvider.profession ?? '—'}
+                    </span>
+                    {selectedExistingException && (
+                      <Badge variant="outline" className="bg-white">Already listed</Badge>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="ml-auto h-7 w-7"
+                      title="Clear selection"
+                      aria-label="Clear provider selection"
+                      onClick={() => {
+                        setSelectedProvider(null);
+                        setReasonDraft(defaultExceptionReason);
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+                {providerQuery.trim().length >= 2 && !selectedProvider && (
+                  <div className="max-h-56 overflow-y-auto rounded-md border bg-background">
+                    {isSearchingProviders ? (
+                      <div className="px-3 py-3 text-sm text-muted-foreground">Searching providers...</div>
+                    ) : visibleProviderMatches.length === 0 ? (
+                      <div className="px-3 py-3 text-sm text-muted-foreground">No matching providers.</div>
+                    ) : (
+                      visibleProviderMatches.map(provider => {
+                        const alreadyListed = exceptionsByProvider.has(provider.id);
+                        return (
+                          <button
+                            key={provider.id}
+                            type="button"
+                            className="flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
+                            onClick={() => selectProviderForException(provider)}
+                          >
+                            <span>
+                              <span className="block font-medium">{provider.name}</span>
+                              <span className="block text-xs text-muted-foreground">
+                                {provider.email ?? 'No email'} · {provider.profession ?? '—'}
+                              </span>
+                            </span>
+                            {alreadyListed && <Badge variant="outline">Listed</Badge>}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="exception-reason">Exception reason</Label>
+                <Textarea
+                  id="exception-reason"
+                  value={reasonDraft}
+                  onChange={e => setReasonDraft(e.target.value)}
+                  className="min-h-[72px]"
+                />
+              </div>
+
+              <Button
+                onClick={saveSelectedProviderException}
+                disabled={!selectedProvider || updateProviderException.isPending}
+                className="lg:mb-0"
+              >
+                {updateProviderException.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-1" />
+                )}
+                {selectedExistingException ? 'Update Exception' : 'Add Exception'}
+              </Button>
+            </div>
+          </div>
+
           {adminOnlyRows.length === 0 ? (
-            <div className="px-4 py-6 text-sm text-muted-foreground">
+            <div className="rounded-md border px-4 py-6 text-sm text-muted-foreground">
               No admin-only scheduling outreach exemptions are set.
             </div>
           ) : (
@@ -3419,20 +3609,95 @@ function SchedulingExceptionsPanel({
                   <TableHead>Profession</TableHead>
                   <TableHead>Employment</TableHead>
                   <TableHead>Profile indicator</TableHead>
+                  <TableHead className="w-[120px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {adminOnlyRows.map(row => (
                   <TableRow key={row.provider_id}>
-                    <TableCell className="font-medium">{row.provider_name}</TableCell>
+                    <TableCell>
+                      <div className="font-medium">{row.provider_name}</div>
+                      <div className="text-xs text-muted-foreground">{row.provider_email ?? 'No email'}</div>
+                    </TableCell>
                     <TableCell className="text-xs">{row.profession ?? '—'}</TableCell>
-                    <TableCell className="text-xs">{row.employment_type ?? '—'}</TableCell>
                     <TableCell className="text-xs">
-                      <Badge variant="outline" className="bg-slate-50">Admin-only</Badge>
-                      <span className="ml-2 text-muted-foreground">
-                        {row.scheduling_outreach_exemption_reason ||
-                          'Not expected to submit monthly scheduling availability.'}
-                      </span>
+                      <div>{row.employment_type ?? '—'}</div>
+                      <div className="text-muted-foreground">{row.active === false ? 'Inactive' : row.employment_status ?? ''}</div>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {editingProviderId === row.provider_id ? (
+                        <Textarea
+                          value={editingReason}
+                          onChange={e => setEditingReason(e.target.value)}
+                          className="min-h-[72px]"
+                        />
+                      ) : (
+                        <>
+                          <Badge variant="outline" className="bg-slate-50">Admin-only</Badge>
+                          <span className="ml-2 text-muted-foreground">
+                            {row.scheduling_outreach_exemption_reason || defaultExceptionReason}
+                          </span>
+                        </>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {editingProviderId === row.provider_id ? (
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Save exception"
+                            aria-label={`Save exception for ${row.provider_name}`}
+                            disabled={updateProviderException.isPending}
+                            onClick={() => saveProviderExceptionEdit(row)}
+                          >
+                            {updateProviderException.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Cancel edit"
+                            aria-label={`Cancel editing ${row.provider_name}`}
+                            disabled={updateProviderException.isPending}
+                            onClick={() => {
+                              setEditingProviderId(null);
+                              setEditingReason('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Edit exception"
+                            aria-label={`Edit exception for ${row.provider_name}`}
+                            onClick={() => startEditingProviderException(row)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-600 hover:text-red-700"
+                            title="Remove exception"
+                            aria-label={`Remove ${row.provider_name} from Known Exceptions`}
+                            disabled={updateProviderException.isPending}
+                            onClick={() => removeProviderException(row)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

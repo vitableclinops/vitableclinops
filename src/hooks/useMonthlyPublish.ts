@@ -101,6 +101,18 @@ export type ProviderOutreachLog = {
   created_at: string;
 };
 
+export type ProviderSchedulingExceptionRow = {
+  provider_id: string;
+  provider_name: string;
+  provider_email: string | null;
+  profession: string | null;
+  employment_type: string | null;
+  employment_status: string | null;
+  scheduling_outreach_exempt: boolean | null;
+  scheduling_outreach_exemption_reason: string | null;
+  active: boolean | null;
+};
+
 export type ProviderStateEligibilityRow = {
   provider_id: string | null;
   state: string | null;
@@ -369,6 +381,44 @@ export function useMarkProviderOutreachSent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-outreach-log'] });
     },
+  });
+}
+
+export function useProviderSchedulingExceptions() {
+  return useQuery({
+    queryKey: ['workbench', 'provider-scheduling-exceptions'],
+    queryFn: async (): Promise<ProviderSchedulingExceptionRow[]> => {
+      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('providers')
+        .select(
+          'id, name, email, profession, employment_type, employment_status, scheduling_outreach_exempt, scheduling_outreach_exemption_reason, active',
+        )
+        .eq('scheduling_outreach_exempt', true)
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map((p: {
+        id: string;
+        name: string;
+        email: string | null;
+        profession: string | null;
+        employment_type: string | null;
+        employment_status: string | null;
+        scheduling_outreach_exempt: boolean | null;
+        scheduling_outreach_exemption_reason: string | null;
+        active: boolean | null;
+      }) => ({
+        provider_id: p.id,
+        provider_name: p.name,
+        provider_email: p.email ?? null,
+        profession: p.profession ?? null,
+        employment_type: p.employment_type ?? null,
+        employment_status: p.employment_status ?? null,
+        scheduling_outreach_exempt: p.scheduling_outreach_exempt ?? false,
+        scheduling_outreach_exemption_reason: p.scheduling_outreach_exemption_reason ?? null,
+        active: p.active ?? null,
+      }));
+    },
+    staleTime: 30_000,
   });
 }
 
@@ -1342,6 +1392,32 @@ export function useProviderSearch(query: string) {
     },
     enabled: trimmed.length >= 2,
     staleTime: 30_000,
+  });
+}
+
+export function useUpdateProviderSchedulingException() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      providerId: string;
+      exempt: boolean;
+      reason?: string | null;
+    }) => {
+      const reason = args.reason?.trim() || null;
+      const { error } = await (clinopsSupabase as unknown as {
+        rpc: (fn: string, args: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
+      }).rpc('set_provider_scheduling_exception', {
+        p_provider_id: args.providerId,
+        p_scheduling_outreach_exempt: args.exempt,
+        p_scheduling_outreach_exemption_reason: args.exempt ? reason : null,
+      });
+      if (error) throw new Error(error.message || 'Unable to update provider exception');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-search'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-scheduling-exceptions'] });
+    },
   });
 }
 
