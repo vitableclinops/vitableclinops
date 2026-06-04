@@ -17,6 +17,7 @@ import {
   Brain,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   LogOut,
   LayoutDashboard,
   User,
@@ -35,6 +36,7 @@ const items = [
   { label: 'Scheduling Workbench', icon: CalendarCheck, href: '/scheduling/workbench' },
   { label: 'Mental Health', icon: Brain, href: '/scheduling/mental-health' },
   { label: 'Declined Hours', icon: CalendarX, href: '/scheduling/workbench?tab=declined' },
+  { label: 'Known Exceptions', icon: ClipboardList, href: '/scheduling/workbench?tab=exceptions' },
 ];
 
 export function SchedulingSidebar({
