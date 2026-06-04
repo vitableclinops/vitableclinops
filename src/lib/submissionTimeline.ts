@@ -333,11 +333,13 @@ function dayOfWeekUtc(dateIso: string): number {
  * Cut/publish row generator shared by evaluator and emitter.
  *
  * Forecast slots (recurring_virtual / virtual_oneoff) participate in the
- * cut budget: latest-first, cut until `declinedHours` is satisfied. Protected
- * forecast slots are skipped by monthly oversupply trims, which lets the
- * evaluator preserve scarce coverage windows before cutting less useful hours.
- * In-home/clinic slots are not in the forecast scope, so they are always
- * `publish` and don't consume the cut budget.
+ * cut budget: latest-first, cut until `declinedHours` is satisfied. Partial
+ * cut budgets split a block into publish/cut fragments instead of rounding up
+ * to the whole block. Protected forecast slots are skipped by monthly
+ * oversupply trims, which lets the evaluator preserve scarce coverage windows
+ * before cutting less useful hours. In-home/clinic slots are not in the
+ * forecast scope, so they are always `publish` and don't consume the cut
+ * budget.
  *
  * Out-of-hours fragments (passed via `outOfHoursTimeline`) are emitted as
  * their own `cut` rows so the workbench surfaces hours declined for being
@@ -362,74 +364,139 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
   const sortedDesc = [...cutCandidates].sort((a, b) =>
     b.date.localeCompare(a.date) || b.startMin - a.startMin,
   );
-  const cutSet = new Set<ExpandedSlot>();
-  let remainingCut = round2(cutBudgetTotal);
+  const cutTailMinutes = new Map<ExpandedSlot, number>();
+  let remainingCutMinutes = Math.max(0, Math.round(cutBudgetTotal * 60));
   for (const slot of sortedDesc) {
-    if (remainingCut <= 0.001) break;
-    cutSet.add(slot);
-    remainingCut = round2(remainingCut - (slot.endMin - slot.startMin) / 60);
+    if (remainingCutMinutes <= 0) break;
+    const slotMinutes = Math.max(0, slot.endMin - slot.startMin);
+    const cutMinutes = Math.min(slotMinutes, remainingCutMinutes);
+    if (cutMinutes > 0) {
+      cutTailMinutes.set(slot, cutMinutes);
+      remainingCutMinutes -= cutMinutes;
+    }
   }
 
   // Buckets for state assignment, only consumed by published forecast slots.
   const buckets = new Map<string, number>(args.allocations.map(a => [a.state, a.hours]));
 
-  const timelineRows = args.timeline.map(slot => {
-    const slotHours = round2((slot.endMin - slot.startMin) / 60);
-    const isForecastSlot = forecastSlots.has(slot);
-    const isCut = isForecastSlot && cutSet.has(slot);
-    const isProtected = isForecastSlot && protectedForecastSlots.has(slot);
+  const makeRow = (
+    slot: ExpandedSlot,
+    startMin: number,
+    endMin: number,
+    recommendation: 'publish' | 'cut',
+    assignedState: string | null,
+    reason: string,
+  ): ShiftRecommendationRow => ({
+    submission_id: slot.source.submissionId ?? '',
+    provider_id: args.providerId,
+    provider_name: args.providerName,
+    target_month: args.targetMonth,
+    shift_date: slot.date,
+    start_min: startMin,
+    end_min: endMin,
+    hours: round2((endMin - startMin) / 60),
+    shift_type: kindToShiftType(slot.source.kind),
+    assigned_state: assignedState,
+    recommendation,
+    recommendation_reason: appendSchedulingAdjustmentReasons(reason, slot),
+    decision_run_id: args.decisionRunId,
+    publish_status: 'pending',
+  });
 
-    let assignedState: string | null = null;
-    let reason: string;
-
-    if (isCut) {
-      reason = args.declineAll
-        ? 'Declined — no demand-hour gap remained in any licensed state when allocator processed this provider'
-        : 'Trimmed as oversupply — accepted hours capped at network demand';
-    } else if (!isForecastSlot) {
-      // In-home / clinic shifts: not part of the telehealth forecast.
-      reason = 'Publish (in-home/clinic — not part of telehealth forecast scope)';
-    } else {
-      let bestState: string | null = null;
-      let bestRemaining = -1;
-      for (const [state, remaining] of buckets) {
-        if (remaining > bestRemaining) {
-          bestState = state;
-          bestRemaining = remaining;
-        }
-      }
-      assignedState = bestState;
-      if (bestState) {
-        buckets.set(bestState, round2((buckets.get(bestState) ?? 0) - slotHours));
-      }
-      if (isProtected) {
-        reason = bestState
-          ? `Publish to ${bestState} (scarce coverage window protected before monthly demand trim)`
-          : (args.unallocatedForecastPublishReason ?? 'Publish (scarce coverage window; no state allocation, review manually)');
-      } else {
-        reason = bestState
-          ? `Publish to ${bestState} (largest remaining state gap at time of allocation)`
-          : (args.unallocatedForecastPublishReason ?? 'Publish (no state allocation; review manually)');
+  const bestBucket = () => {
+    let bestState: string | null = null;
+    let bestRemaining = 0;
+    for (const [state, remaining] of buckets) {
+      if (remaining > bestRemaining) {
+        bestState = state;
+        bestRemaining = remaining;
       }
     }
-    reason = appendSchedulingAdjustmentReasons(reason, slot);
+    return { state: bestState, remaining: bestRemaining };
+  };
 
-    return {
-      submission_id: slot.source.submissionId ?? '',
-      provider_id: args.providerId,
-      provider_name: args.providerName,
-      target_month: args.targetMonth,
-      shift_date: slot.date,
-      start_min: slot.startMin,
-      end_min: slot.endMin,
-      hours: slotHours,
-      shift_type: kindToShiftType(slot.source.kind),
-      assigned_state: assignedState,
-      recommendation: (isCut ? 'cut' : 'publish') as 'cut' | 'publish',
-      recommendation_reason: reason,
-      decision_run_id: args.decisionRunId,
-      publish_status: 'pending' as const,
-    };
+  const publishForecastSegment = (
+    slot: ExpandedSlot,
+    startMin: number,
+    endMin: number,
+    isProtected: boolean,
+  ): ShiftRecommendationRow[] => {
+    const rows: ShiftRecommendationRow[] = [];
+    let cursor = startMin;
+    while (cursor < endMin) {
+      const segmentMinutes = endMin - cursor;
+      const { state, remaining } = bestBucket();
+      if (!state || remaining <= 0.001) {
+        if (args.allocations.length === 0 && args.unallocatedForecastPublishReason) {
+          rows.push(makeRow(slot, cursor, endMin, 'publish', null, args.unallocatedForecastPublishReason));
+          break;
+        }
+        const reason = isProtected
+          ? (args.unallocatedForecastPublishReason ?? 'Publish (scarce coverage window; no state allocation, review manually)')
+          : 'Split block and trimmed as state-specific surplus — no remaining state allocation';
+        rows.push(makeRow(slot, cursor, endMin, isProtected ? 'publish' : 'cut', null, reason));
+        break;
+      }
+
+      const remainingMinutes = Math.max(0, Math.round(remaining * 60));
+      const publishMinutes = Math.min(segmentMinutes, remainingMinutes);
+      if (publishMinutes <= 0) {
+        rows.push(makeRow(
+          slot,
+          cursor,
+          endMin,
+          isProtected ? 'publish' : 'cut',
+          isProtected ? state : null,
+          isProtected
+            ? `Publish to ${state} (scarce coverage window protected before monthly demand trim)`
+            : 'Split block and trimmed as state-specific surplus — no remaining state allocation',
+        ));
+        break;
+      }
+
+      const next = cursor + publishMinutes;
+      const splitSuffix = next < endMin ? '; split block to avoid state surplus' : '';
+      const reason = isProtected
+        ? `Publish to ${state} (scarce coverage window protected before monthly demand trim${splitSuffix})`
+        : `Publish to ${state} (largest remaining state gap at time of allocation${splitSuffix})`;
+      rows.push(makeRow(slot, cursor, next, 'publish', state, reason));
+      buckets.set(state, round2(remaining - publishMinutes / 60));
+      cursor = next;
+    }
+    return rows;
+  };
+
+  const timelineRows = args.timeline.flatMap(slot => {
+    const isForecastSlot = forecastSlots.has(slot);
+    const isProtected = isForecastSlot && protectedForecastSlots.has(slot);
+
+    if (!isForecastSlot) {
+      return [
+        makeRow(
+          slot,
+          slot.startMin,
+          slot.endMin,
+          'publish',
+          null,
+          'Publish (in-home/clinic — not part of telehealth forecast scope)',
+        ),
+      ];
+    }
+
+    const cutMinutes = cutTailMinutes.get(slot) ?? 0;
+    const publishEndMin = Math.max(slot.startMin, slot.endMin - cutMinutes);
+    const rows: ShiftRecommendationRow[] = [];
+
+    if (publishEndMin > slot.startMin) {
+      rows.push(...publishForecastSegment(slot, slot.startMin, publishEndMin, isProtected));
+    }
+    if (cutMinutes > 0) {
+      const reason = args.declineAll
+        ? 'Declined — no demand-hour gap remained in any licensed state when allocator processed this provider'
+        : 'Trimmed as oversupply — accepted hours capped at network demand';
+      rows.push(makeRow(slot, publishEndMin, slot.endMin, 'cut', null, reason));
+    }
+    return rows;
   });
 
   const outOfHoursRows: ShiftRecommendationRow[] = outOfHours.map(slot => ({

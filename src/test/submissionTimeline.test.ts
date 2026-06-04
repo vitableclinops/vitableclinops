@@ -158,6 +158,87 @@ describe('buildShiftRecommendationRows', () => {
     expect(cutHoursSum).toBeGreaterThanOrEqual(8);
   });
 
+  it('splits a forecast block when only part of the block should be cut', () => {
+    const submission = oneOffSubmission('sub-split-cut', '06-04-2026', '9:00 AM', '5:00 PM');
+    const validation = buildSubmissionTimeline(
+      [submission],
+      { name: 'Split Cut Provider' },
+      FIXTURE_TARGET_MONTH,
+    );
+
+    const rows = buildShiftRecommendationRows({
+      providerId: 'p-split-cut',
+      providerName: 'Split Cut Provider',
+      targetMonth: FIXTURE_TARGET_MONTH,
+      timeline: validation.timeline,
+      forecastTimeline: validation.forecastTimeline,
+      declinedHours: 3,
+      declineAll: false,
+      allocations: [{ state: 'PA', hours: 5 }],
+      decisionRunId: 'run-split-cut',
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        start_min: 9 * 60,
+        end_min: 14 * 60,
+        hours: 5,
+        recommendation: 'publish',
+        assigned_state: 'PA',
+      }),
+      expect.objectContaining({
+        start_min: 14 * 60,
+        end_min: 17 * 60,
+        hours: 3,
+        recommendation: 'cut',
+        assigned_state: null,
+      }),
+    ]);
+    expect(rows[1].recommendation_reason).toContain('Trimmed as oversupply');
+  });
+
+  it('splits a published block across state allocations instead of overfilling one state', () => {
+    const submission = oneOffSubmission('sub-split-state', '06-04-2026', '9:00 AM', '5:00 PM');
+    const validation = buildSubmissionTimeline(
+      [submission],
+      { name: 'Split State Provider' },
+      FIXTURE_TARGET_MONTH,
+    );
+
+    const rows = buildShiftRecommendationRows({
+      providerId: 'p-split-state',
+      providerName: 'Split State Provider',
+      targetMonth: FIXTURE_TARGET_MONTH,
+      timeline: validation.timeline,
+      forecastTimeline: validation.forecastTimeline,
+      declinedHours: 0,
+      declineAll: false,
+      allocations: [
+        { state: 'PA', hours: 2 },
+        { state: 'NJ', hours: 6 },
+      ],
+      decisionRunId: 'run-split-state',
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        start_min: 9 * 60,
+        end_min: 15 * 60,
+        hours: 6,
+        recommendation: 'publish',
+        assigned_state: 'NJ',
+      }),
+      expect.objectContaining({
+        start_min: 15 * 60,
+        end_min: 17 * 60,
+        hours: 2,
+        recommendation: 'publish',
+        assigned_state: 'PA',
+      }),
+    ]);
+    expect(rows[0].recommendation_reason).toContain('split block to avoid state surplus');
+  });
+
   it('protects scarce coverage windows from monthly oversupply cuts', () => {
     const scarceSubmission: SubmissionRow = {
       id: 'sub-scarce',

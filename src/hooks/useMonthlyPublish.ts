@@ -113,6 +113,18 @@ export type ProviderSchedulingExceptionRow = {
   active: boolean | null;
 };
 
+export type SchedulingExceptionRow = {
+  id: string;
+  slug: string;
+  name: string;
+  exception_type: string | null;
+  rule: string;
+  scheduling_action: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ProviderStateEligibilityRow = {
   provider_id: string | null;
   state: string | null;
@@ -419,6 +431,98 @@ export function useProviderSchedulingExceptions() {
       }));
     },
     staleTime: 30_000,
+  });
+}
+
+const schedulingExceptionSlug = (name: string) => {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+  return `${base || 'scheduling-exception'}-${crypto.randomUUID().slice(0, 8)}`;
+};
+
+export function useSchedulingExceptions() {
+  return useQuery({
+    queryKey: ['workbench', 'scheduling-exceptions'],
+    queryFn: async (): Promise<SchedulingExceptionRow[]> => {
+      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('scheduling_exceptions')
+        .select('id, slug, name, exception_type, rule, scheduling_action, active, created_at, updated_at')
+        .eq('active', true)
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as SchedulingExceptionRow[];
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useUpsertSchedulingException() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      id?: string | null;
+      name: string;
+      exceptionType?: string | null;
+      rule: string;
+      schedulingAction: string;
+    }) => {
+      const name = args.name.trim();
+      const rule = args.rule.trim();
+      const schedulingAction = args.schedulingAction.trim();
+      const exceptionType = args.exceptionType?.trim() || null;
+      if (!name) throw new Error('Add a provider or case name.');
+      if (!rule) throw new Error('Add the scheduling rule.');
+      if (!schedulingAction) throw new Error('Add the scheduling action.');
+
+      const payload = {
+        name,
+        exception_type: exceptionType,
+        rule,
+        scheduling_action: schedulingAction,
+        active: true,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (args.id) {
+        const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+          .from('scheduling_exceptions')
+          .update(payload)
+          .eq('id', args.id);
+        if (error) throw error;
+        return;
+      }
+
+      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('scheduling_exceptions')
+        .insert({
+          ...payload,
+          slug: schedulingExceptionSlug(name),
+        });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-exceptions'] });
+    },
+  });
+}
+
+export function useDeleteSchedulingException() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        .from('scheduling_exceptions')
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-exceptions'] });
+    },
   });
 }
 

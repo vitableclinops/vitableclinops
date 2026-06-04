@@ -86,7 +86,10 @@ import {
   useMarkProviderOutreachSent,
   useProviderSchedulingExceptions,
   useProviderSearch,
+  useSchedulingExceptions,
   useUpdateProviderSchedulingException,
+  useUpsertSchedulingException,
+  useDeleteSchedulingException,
   formatShiftTime,
   isHomebaseDone,
   isEhrDone,
@@ -103,6 +106,7 @@ import {
   type ShiftPublishStep,
   type ProviderSearchHit,
   type ProviderSchedulingExceptionRow,
+  type SchedulingExceptionRow,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -1813,7 +1817,7 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
     add(`${scarceHours.replace(/h$/, '')} hours were protected for Friday afternoon or weekend access.`);
   }
   if (valueFromDecisionNote(raw, 'access_growth_buffer_policy')) {
-    add('The system intentionally schedules extra hours so monthly access does not stay too thin.');
+    add('Monthly targets include an access buffer; non-protected surplus blocks are split or cut before publish.');
   }
   if (valueFromDecisionNote(raw, 'long_shift_break_policy')) {
     const breakStart = valueFromDecisionNote(raw, 'break_start');
@@ -1838,7 +1842,7 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   }
   const accessBufferHours = valueFromDecisionNote(raw, 'access_buffer_hours');
   if (accessBufferHours) {
-    add(`${accessBufferHours.replace(/h$/, '')} extra hours were added to protect monthly access.`);
+    add(`${accessBufferHours.replace(/h$/, '')} buffer hours were added to protect monthly access.`);
   }
   const baseStateDemand = valueFromDecisionNote(raw, 'base_state_demand');
   if (baseStateDemand) {
@@ -3332,6 +3336,20 @@ function MissingSubmissionsPanel({
   );
 }
 
+type SchedulingExceptionDraft = {
+  name: string;
+  exceptionType: string;
+  rule: string;
+  schedulingAction: string;
+};
+
+const emptySchedulingExceptionDraft = (): SchedulingExceptionDraft => ({
+  name: '',
+  exceptionType: '',
+  rule: '',
+  schedulingAction: '',
+});
+
 function SchedulingExceptionsPanel({
   month,
 }: {
@@ -3339,13 +3357,20 @@ function SchedulingExceptionsPanel({
 }) {
   const monthLabel = formatMonthLabel(month);
   const defaultExceptionReason = 'Not expected to submit monthly scheduling availability.';
+  const [exceptionDraft, setExceptionDraft] = useState<SchedulingExceptionDraft>(() => emptySchedulingExceptionDraft());
+  const [editingExceptionId, setEditingExceptionId] = useState<string | null>(null);
+  const [editingExceptionDraft, setEditingExceptionDraft] =
+    useState<SchedulingExceptionDraft>(() => emptySchedulingExceptionDraft());
   const [providerQuery, setProviderQuery] = useState('');
   const [selectedProvider, setSelectedProvider] = useState<ProviderSearchHit | null>(null);
   const [reasonDraft, setReasonDraft] = useState(defaultExceptionReason);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingReason, setEditingReason] = useState('');
-  const { data: exceptionRowsData = [], isLoading } = useProviderSchedulingExceptions();
+  const { data: schedulingExceptions = [], isLoading: exceptionsLoading } = useSchedulingExceptions();
+  const { data: exceptionRowsData = [], isLoading: providerExceptionsLoading } = useProviderSchedulingExceptions();
   const { data: providerMatches = [], isFetching: isSearchingProviders } = useProviderSearch(providerQuery);
+  const upsertSchedulingException = useUpsertSchedulingException();
+  const deleteSchedulingException = useDeleteSchedulingException();
   const updateProviderException = useUpdateProviderSchedulingException();
   const adminOnlyRows = useMemo(
     () =>
@@ -3363,26 +3388,71 @@ function SchedulingExceptionsPanel({
     ? exceptionsByProvider.get(selectedProvider.id)
     : null;
   const visibleProviderMatches = providerMatches.filter(p => p.id !== selectedProvider?.id);
-  const documentedExceptions = [
-    {
-      name: 'Richard Rash',
-      type: 'Therapy / LPC',
-      rule: 'Route through the mental health therapy service-line forecast, not the telehealth state allocator.',
-      action: 'Confirm 2.5h minimum shift blocks and keep EHR visit slots back-to-back with charting buffers.',
-    },
-    {
-      name: 'Margo / Margaret Mulgrew',
-      type: 'Therapy / LPC alias',
-      rule: 'Treat Margo and Margaret Mulgrew as the same provider for Jotform matching.',
-      action: 'Use the therapy forecast pool and check name aliases before marking a submission unmatched.',
-    },
-    {
-      name: 'Shashai',
-      type: 'Licensure / state check',
-      rule: 'Do not assume all submitted states are schedulable without active-state confirmation.',
-      action: 'Check active licensure and EHR readiness before publishing shifts.',
-    },
-  ];
+  const exceptionIsSaving =
+    upsertSchedulingException.isPending || deleteSchedulingException.isPending;
+
+  const updateExceptionDraft = (
+    field: keyof SchedulingExceptionDraft,
+    value: string,
+  ) => {
+    setExceptionDraft(current => ({ ...current, [field]: value }));
+  };
+
+  const updateEditingExceptionDraft = (
+    field: keyof SchedulingExceptionDraft,
+    value: string,
+  ) => {
+    setEditingExceptionDraft(current => ({ ...current, [field]: value }));
+  };
+
+  const draftFromSchedulingException = (
+    row: SchedulingExceptionRow,
+  ): SchedulingExceptionDraft => ({
+    name: row.name,
+    exceptionType: row.exception_type ?? '',
+    rule: row.rule,
+    schedulingAction: row.scheduling_action,
+  });
+
+  const saveSchedulingException = async () => {
+    try {
+      await upsertSchedulingException.mutateAsync(exceptionDraft);
+      toast.success(`${exceptionDraft.name.trim()} added to scheduling exceptions`);
+      setExceptionDraft(emptySchedulingExceptionDraft());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to save scheduling exception');
+    }
+  };
+
+  const startEditingSchedulingException = (row: SchedulingExceptionRow) => {
+    setEditingExceptionId(row.id);
+    setEditingExceptionDraft(draftFromSchedulingException(row));
+  };
+
+  const saveSchedulingExceptionEdit = async (row: SchedulingExceptionRow) => {
+    try {
+      await upsertSchedulingException.mutateAsync({
+        id: row.id,
+        ...editingExceptionDraft,
+      });
+      toast.success(`${editingExceptionDraft.name.trim()} updated`);
+      setEditingExceptionId(null);
+      setEditingExceptionDraft(emptySchedulingExceptionDraft());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to update scheduling exception');
+    }
+  };
+
+  const removeSchedulingException = async (row: SchedulingExceptionRow) => {
+    const confirmed = window.confirm(`Remove ${row.name} from scheduling exceptions?`);
+    if (!confirmed) return;
+    try {
+      await deleteSchedulingException.mutateAsync(row.id);
+      toast.success(`${row.name} removed from scheduling exceptions`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to remove scheduling exception');
+    }
+  };
 
   const selectProviderForException = (provider: ProviderSearchHit) => {
     const existing = exceptionsByProvider.get(provider.id);
@@ -3402,7 +3472,7 @@ function SchedulingExceptionsPanel({
         reason: reasonDraft,
       });
       toast.success(
-        `${selectedProvider.name} ${selectedExistingException ? 'updated' : 'added'} in Known Exceptions`,
+        `${selectedProvider.name} provider exemption ${selectedExistingException ? 'updated' : 'added'}`,
       );
       setProviderQuery('');
       setSelectedProvider(null);
@@ -3424,7 +3494,7 @@ function SchedulingExceptionsPanel({
         exempt: true,
         reason: editingReason,
       });
-      toast.success(`${row.provider_name} exception updated`);
+      toast.success(`${row.provider_name} provider exemption updated`);
       setEditingProviderId(null);
       setEditingReason('');
     } catch (error) {
@@ -3433,7 +3503,7 @@ function SchedulingExceptionsPanel({
   };
 
   const removeProviderException = async (row: ProviderSchedulingExceptionRow) => {
-    const confirmed = window.confirm(`Remove ${row.provider_name} from Known Exceptions?`);
+    const confirmed = window.confirm(`Remove ${row.provider_name} from provider exemptions?`);
     if (!confirmed) return;
     try {
       await updateProviderException.mutateAsync({
@@ -3441,13 +3511,13 @@ function SchedulingExceptionsPanel({
         exempt: false,
         reason: null,
       });
-      toast.success(`${row.provider_name} removed from Known Exceptions`);
+      toast.success(`${row.provider_name} removed from provider exemptions`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to remove provider exception');
     }
   };
 
-  if (isLoading) {
+  if (exceptionsLoading || providerExceptionsLoading) {
     return (
       <Card>
         <CardContent>
@@ -3468,33 +3538,189 @@ function SchedulingExceptionsPanel({
             Standing edge cases the scheduling team should check before matching, outreach, or publishing.
           </p>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Provider / case</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Rule</TableHead>
-                <TableHead>Scheduling action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {documentedExceptions.map(item => (
-                <TableRow key={item.name}>
-                  <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell className="text-xs">{item.type}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{item.rule}</TableCell>
-                  <TableCell className="text-xs">{item.action}</TableCell>
+        <CardContent className="space-y-4">
+          <div className="rounded-md border p-3 space-y-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,0.8fr)_minmax(160px,0.6fr)_minmax(260px,1fr)_minmax(260px,1fr)_auto] xl:items-end">
+              <div className="space-y-2">
+                <Label htmlFor="scheduling-exception-name">Provider / case</Label>
+                <Input
+                  id="scheduling-exception-name"
+                  value={exceptionDraft.name}
+                  onChange={e => updateExceptionDraft('name', e.target.value)}
+                  placeholder="Name or case"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="scheduling-exception-type">Type</Label>
+                <Input
+                  id="scheduling-exception-type"
+                  value={exceptionDraft.exceptionType}
+                  onChange={e => updateExceptionDraft('exceptionType', e.target.value)}
+                  placeholder="Category"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="scheduling-exception-rule">Rule</Label>
+                <Textarea
+                  id="scheduling-exception-rule"
+                  value={exceptionDraft.rule}
+                  onChange={e => updateExceptionDraft('rule', e.target.value)}
+                  className="min-h-[72px]"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="scheduling-exception-action">Scheduling action</Label>
+                <Textarea
+                  id="scheduling-exception-action"
+                  value={exceptionDraft.schedulingAction}
+                  onChange={e => updateExceptionDraft('schedulingAction', e.target.value)}
+                  className="min-h-[72px]"
+                />
+              </div>
+              <Button
+                onClick={saveSchedulingException}
+                disabled={exceptionIsSaving}
+              >
+                {upsertSchedulingException.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-1" />
+                )}
+                Add Scheduling Exception
+              </Button>
+            </div>
+          </div>
+
+          {schedulingExceptions.length === 0 ? (
+            <div className="rounded-md border px-4 py-6 text-sm text-muted-foreground">
+              No standing scheduling exceptions are listed.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider / case</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Rule</TableHead>
+                  <TableHead>Scheduling action</TableHead>
+                  <TableHead className="w-[120px] text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {schedulingExceptions.map(item => (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-medium">
+                      {editingExceptionId === item.id ? (
+                        <Input
+                          value={editingExceptionDraft.name}
+                          onChange={e => updateEditingExceptionDraft('name', e.target.value)}
+                        />
+                      ) : (
+                        item.name
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {editingExceptionId === item.id ? (
+                        <Input
+                          value={editingExceptionDraft.exceptionType}
+                          onChange={e => updateEditingExceptionDraft('exceptionType', e.target.value)}
+                        />
+                      ) : (
+                        item.exception_type ?? '—'
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {editingExceptionId === item.id ? (
+                        <Textarea
+                          value={editingExceptionDraft.rule}
+                          onChange={e => updateEditingExceptionDraft('rule', e.target.value)}
+                          className="min-h-[72px]"
+                        />
+                      ) : (
+                        item.rule
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {editingExceptionId === item.id ? (
+                        <Textarea
+                          value={editingExceptionDraft.schedulingAction}
+                          onChange={e => updateEditingExceptionDraft('schedulingAction', e.target.value)}
+                          className="min-h-[72px]"
+                        />
+                      ) : (
+                        item.scheduling_action
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {editingExceptionId === item.id ? (
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Save scheduling exception"
+                            aria-label={`Save scheduling exception for ${item.name}`}
+                            disabled={exceptionIsSaving}
+                            onClick={() => saveSchedulingExceptionEdit(item)}
+                          >
+                            {upsertSchedulingException.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Cancel edit"
+                            aria-label={`Cancel editing ${item.name}`}
+                            disabled={exceptionIsSaving}
+                            onClick={() => {
+                              setEditingExceptionId(null);
+                              setEditingExceptionDraft(emptySchedulingExceptionDraft());
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Edit scheduling exception"
+                            aria-label={`Edit scheduling exception for ${item.name}`}
+                            onClick={() => startEditingSchedulingException(item)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-600 hover:text-red-700"
+                            title="Remove scheduling exception"
+                            aria-label={`Remove ${item.name} from scheduling exceptions`}
+                            disabled={exceptionIsSaving}
+                            onClick={() => removeSchedulingException(item)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Admin-only provider profile flags</CardTitle>
+          <CardTitle className="text-base">Admin-only provider exemptions</CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
             Providers with this profile indicator are excluded from missing-submission counts and outreach lists.
           </p>
@@ -3503,11 +3729,11 @@ function SchedulingExceptionsPanel({
           <div className="rounded-md border p-3 space-y-3">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)_auto] lg:items-end">
               <div className="space-y-2">
-                <Label htmlFor="exception-provider-search">Provider</Label>
+                <Label htmlFor="provider-exemption-search">Provider</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="exception-provider-search"
+                    id="provider-exemption-search"
                     value={providerQuery}
                     onChange={e => {
                       setProviderQuery(e.target.value);
@@ -3531,7 +3757,7 @@ function SchedulingExceptionsPanel({
                       size="icon"
                       className="ml-auto h-7 w-7"
                       title="Clear selection"
-                      aria-label="Clear provider selection"
+                      aria-label="Clear provider exemption selection"
                       onClick={() => {
                         setSelectedProvider(null);
                         setReasonDraft(defaultExceptionReason);
@@ -3573,9 +3799,9 @@ function SchedulingExceptionsPanel({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="exception-reason">Exception reason</Label>
+                <Label htmlFor="provider-exemption-reason">Exemption reason</Label>
                 <Textarea
-                  id="exception-reason"
+                  id="provider-exemption-reason"
                   value={reasonDraft}
                   onChange={e => setReasonDraft(e.target.value)}
                   className="min-h-[72px]"
@@ -3592,7 +3818,7 @@ function SchedulingExceptionsPanel({
                 ) : (
                   <Plus className="h-4 w-4 mr-1" />
                 )}
-                {selectedExistingException ? 'Update Exception' : 'Add Exception'}
+                {selectedExistingException ? 'Update Provider Exemption' : 'Add Provider Exemption'}
               </Button>
             </div>
           </div>
@@ -3647,8 +3873,8 @@ function SchedulingExceptionsPanel({
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
-                            title="Save exception"
-                            aria-label={`Save exception for ${row.provider_name}`}
+                            title="Save provider exemption"
+                            aria-label={`Save provider exemption for ${row.provider_name}`}
                             disabled={updateProviderException.isPending}
                             onClick={() => saveProviderExceptionEdit(row)}
                           >
@@ -3679,8 +3905,8 @@ function SchedulingExceptionsPanel({
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
-                            title="Edit exception"
-                            aria-label={`Edit exception for ${row.provider_name}`}
+                            title="Edit provider exemption"
+                            aria-label={`Edit provider exemption for ${row.provider_name}`}
                             onClick={() => startEditingProviderException(row)}
                           >
                             <Pencil className="h-4 w-4" />
@@ -3689,8 +3915,8 @@ function SchedulingExceptionsPanel({
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-red-600 hover:text-red-700"
-                            title="Remove exception"
-                            aria-label={`Remove ${row.provider_name} from Known Exceptions`}
+                            title="Remove provider exemption"
+                            aria-label={`Remove ${row.provider_name} from provider exemptions`}
                             disabled={updateProviderException.isPending}
                             onClick={() => removeProviderException(row)}
                           >
@@ -4299,6 +4525,27 @@ function ReadinessPanel({
     () => coverageRows.reduce((s, r) => s + Math.max(0, r.filled - r.needed), 0),
     [coverageRows],
   );
+  const shortStateRows = useMemo(
+    () =>
+      coverageRows
+        .map(r => ({ ...r, shortage: Math.max(0, r.needed - r.filled) }))
+        .filter(r => r.shortage > 0.05)
+        .sort((a, b) => b.shortage - a.shortage),
+    [coverageRows],
+  );
+  const surplusStateRows = useMemo(
+    () =>
+      coverageRows
+        .map(r => ({ ...r, surplus: Math.max(0, r.filled - r.needed) }))
+        .filter(r => r.surplus > 0.05)
+        .sort((a, b) => b.surplus - a.surplus),
+    [coverageRows],
+  );
+  const netCoverageHours = acceptedHours - demandHours;
+  const acceptedPct =
+    demandHours > 0 ? Math.min(999, Math.round((acceptedHours / demandHours) * 100)) : null;
+  const formatSignedCoverageHours = (hours: number) =>
+    `${hours >= 0 ? '+' : '-'}${Math.abs(hours).toFixed(0)} hrs`;
   const criticalGapStates = useMemo(
     () =>
       coverageRows.filter(
@@ -4679,7 +4926,7 @@ function ReadinessPanel({
         <SummaryCard
           label="Hours needed"
           value={demandHours ? `${demandHours.toFixed(0)} hrs` : '—'}
-          sub={formatMonthLabel(month)}
+          sub={`${formatMonthLabel(month)} state targets incl. access buffer`}
         />
         <SummaryCard
           label="Expanded submitted"
@@ -4689,18 +4936,65 @@ function ReadinessPanel({
         <SummaryCard
           label="Accepted usable"
           value={acceptedHours ? `${acceptedHours.toFixed(0)} hrs` : '—'}
-          sub={
-            demandHours > 0
-              ? `${Math.min(999, Math.round((acceptedHours / demandHours) * 100))}% of needed hours`
-              : undefined
-          }
+          sub={acceptedPct !== null ? `${acceptedPct}% total · ${formatSignedCoverageHours(netCoverageHours)} net` : undefined}
         />
         <SummaryCard
-          label={stateGapHours > 0 ? 'Under-covered hours' : 'Extra hours'}
+          label={stateGapHours > 0 ? 'State-specific shortage' : 'State coverage surplus'}
           value={`${(stateGapHours > 0 ? stateGapHours : stateSurplusHours).toFixed(0)} hrs`}
-          sub={stateGapHours > 0 ? 'Shortage across states' : 'Above access need'}
+          sub={
+            stateGapHours > 0
+              ? `${stateSurplusHours.toFixed(0)} hrs extra elsewhere`
+              : `${formatSignedCoverageHours(netCoverageHours)} net accepted`
+          }
         />
       </div>
+
+      {stateGapHours > 0 && acceptedPct !== null && (
+        <Card className="border-amber-200 bg-amber-50/60">
+          <CardContent className="py-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+              <div className="space-y-3">
+                <div className="text-sm font-medium">
+                  Total accepted can be over target while specific states are still short.
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {formatMonthLabel(month)} is {acceptedPct}% accepted overall, but {stateGapHours.toFixed(0)} hrs are still short in
+                  specific states. The {stateSurplusHours.toFixed(0)} extra hrs in over-covered states do not cover those gaps because
+                  hours only count where the shift is assigned and the provider is eligible. Non-protected surplus blocks are split or cut;
+                  remaining extra should come from Friday PM/weekend coverage protected before monthly trimming or explicit out-of-forecast scope.
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <div className="text-xs font-medium text-red-800">Short states</div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {shortStateRows.slice(0, 6).map(row => (
+                        <Badge key={row.state} variant="outline" className="bg-white/80 text-red-800">
+                          {row.state} {row.shortage.toFixed(0)} hrs short
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-blue-800">Remaining extra by state</div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {surplusStateRows.slice(0, 6).map(row => (
+                        <Badge key={row.state} variant="outline" className="bg-white/80 text-blue-800">
+                          {row.state} +{row.surplus.toFixed(0)} hrs
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={onJumpToCoverage} className="shrink-0">
+              Open State Breakdown
+              <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard
@@ -5304,7 +5598,7 @@ function CoverageGapsPanel({
       return {
         label: 'Extra',
         className: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
-        action: 'Extra hours accepted. No scheduler action needed.',
+        action: 'Over target after split/cut pass. Check for protected Friday/weekend coverage or out-of-forecast scope.',
       };
     }
     if (row.needed > 0 && row.pct_filled < 60) {
@@ -5335,8 +5629,8 @@ function CoverageGapsPanel({
           State coverage guidance · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          This tells the scheduling team whether publishing can continue. The system intentionally schedules
-          extra hours above historical usage so monthly access does not stay too thin.
+          This tells the scheduling team whether publishing can continue. Non-protected surplus blocks are split or cut before publish;
+          any remaining extra should be protected Friday/weekend coverage, access-buffer coverage, or explicit out-of-forecast scope.
         </p>
       </CardHeader>
       <CardContent className="p-0">
