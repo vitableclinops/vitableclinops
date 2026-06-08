@@ -1204,7 +1204,11 @@ export function useResolveNeedsReview() {
         });
       if (logErr) throw logErr;
 
-      if (args.provider_id && args.target_month) {
+      // Corrected approvals are followed by a full month recalculation in the
+      // workbench. That run is the source of truth for rebalancing provider
+      // priority and rebuilding publish rows, so do not block the saved
+      // correction on this narrower per-provider emitter.
+      if (args.provider_id && args.target_month && args.corrected_parsed_shifts === undefined) {
         const monthStart = monthIso(args.target_month);
         const providerParam = encodeURIComponent(args.provider_id);
         const monthParam = encodeURIComponent(monthStart);
