@@ -1255,6 +1255,102 @@ export type ScheduleRecalculationResult = {
   }>;
 };
 
+export type SchedulingRecalculationChange = {
+  id: string;
+  run_id: string;
+  decision_run_id: string;
+  target_month: string;
+  provider_id: string | null;
+  provider_name: string;
+  before_status: string | null;
+  after_status: string | null;
+  decision_accepted_before: number;
+  decision_accepted_after: number;
+  decision_accepted_delta: number;
+  decision_declined_before: number;
+  decision_declined_after: number;
+  decision_declined_delta: number;
+  publishable_hours_before: number;
+  publishable_hours_after: number;
+  publishable_hours_delta: number;
+  cut_hours_before: number;
+  cut_hours_after: number;
+  cut_hours_delta: number;
+  publishable_shifts_before: number;
+  publishable_shifts_after: number;
+  cut_shifts_before: number;
+  cut_shifts_after: number;
+  before_allocations: unknown;
+  after_allocations: unknown;
+  reason: string | null;
+  created_at: string;
+};
+
+export type SchedulingRecalculationRun = {
+  id: string;
+  decision_run_id: string;
+  target_month: string;
+  trigger_source: string;
+  groups_count: number;
+  changed_provider_count: number;
+  decision_accepted_delta_hours: number;
+  decision_declined_delta_hours: number;
+  publishable_delta_hours: number;
+  cut_delta_hours: number;
+  result_summary: unknown;
+  created_at: string;
+  changes: SchedulingRecalculationChange[];
+};
+
+export function useSchedulingRecalculationHistory(month: string) {
+  const monthStart = monthIso(month);
+  return useQuery({
+    queryKey: ['workbench', 'scheduling-recalculation-history', monthStart],
+    queryFn: async (): Promise<SchedulingRecalculationRun[]> => {
+      const { data: runsData, error: runsError } = await clinopsDb
+        .from('scheduling_recalculation_runs')
+        .select(
+          'id, decision_run_id, target_month, trigger_source, groups_count, changed_provider_count, decision_accepted_delta_hours, decision_declined_delta_hours, publishable_delta_hours, cut_delta_hours, result_summary, created_at',
+        )
+        .eq('target_month', monthStart)
+        .order('created_at', { ascending: false })
+        .range(0, 24);
+      if (runsError) throw runsError;
+
+      const runs = (runsData ?? []) as Omit<SchedulingRecalculationRun, 'changes'>[];
+      if (runs.length === 0) return [];
+      const runIds = runs.map(run => run.id);
+      const { data: changesData, error: changesError } = await clinopsDb
+        .from('scheduling_recalculation_changes')
+        .select(
+          'id, run_id, decision_run_id, target_month, provider_id, provider_name, before_status, after_status, decision_accepted_before, decision_accepted_after, decision_accepted_delta, decision_declined_before, decision_declined_after, decision_declined_delta, publishable_hours_before, publishable_hours_after, publishable_hours_delta, cut_hours_before, cut_hours_after, cut_hours_delta, publishable_shifts_before, publishable_shifts_after, cut_shifts_before, cut_shifts_after, before_allocations, after_allocations, reason, created_at',
+        )
+        .in('run_id', runIds)
+        .order('created_at', { ascending: false })
+        .range(0, 999);
+      if (changesError) throw changesError;
+
+      const changesByRun = new Map<string, SchedulingRecalculationChange[]>();
+      for (const change of (changesData ?? []) as SchedulingRecalculationChange[]) {
+        const list = changesByRun.get(change.run_id) ?? [];
+        list.push(change);
+        changesByRun.set(change.run_id, list);
+      }
+
+      return runs.map(run => ({
+        ...run,
+        changes: (changesByRun.get(run.id) ?? []).sort((a, b) =>
+          Math.abs(b.publishable_hours_delta) - Math.abs(a.publishable_hours_delta) ||
+          Math.abs(b.decision_accepted_delta) - Math.abs(a.decision_accepted_delta) ||
+          a.provider_name.localeCompare(b.provider_name),
+        ),
+      }));
+    },
+    staleTime: 30_000,
+    enabled: Boolean(monthStart),
+  });
+}
+
 export function useReevaluateMonth() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -1273,6 +1369,7 @@ export function useReevaluateMonth() {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'state-coverage'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-search'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-recalculation-history'] });
     },
   });
 }

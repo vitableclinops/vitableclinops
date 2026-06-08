@@ -95,6 +95,7 @@ import {
   useProviderSchedulingExceptions,
   useProviderSearch,
   useSchedulingExceptions,
+  useSchedulingRecalculationHistory,
   useUpdateProviderSchedulingException,
   useUpsertSchedulingException,
   useDeleteSchedulingException,
@@ -116,6 +117,8 @@ import {
   type ProviderSchedulingExceptionRow,
   type SchedulingExceptionRow,
   type ScheduleRecalculationResult,
+  type SchedulingRecalculationChange,
+  type SchedulingRecalculationRun,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -3342,6 +3345,125 @@ const explainRecalculationRow = (
   return 'The evaluator did not return a more specific reason for this provider.';
 };
 
+type RecalculationMetricLine = {
+  label: string;
+  value: string;
+  muted?: boolean;
+};
+
+const changedMetric = (
+  label: string,
+  before: number | undefined,
+  after: number | undefined,
+  muted = false,
+): RecalculationMetricLine | null => {
+  if (Math.abs(Number(after ?? 0) - Number(before ?? 0)) <= 0.05) return null;
+  return { label, value: formatHourChange(before, after), muted };
+};
+
+const localChangedMetricLines = (
+  before: RecalculationSnapshotRow | null,
+  after: RecalculationSnapshotRow | null,
+): RecalculationMetricLine[] => {
+  const lines = [
+    changedMetric('Decision accepted', before?.acceptedHours, after?.acceptedHours),
+    changedMetric('Decision cut / declined', before?.declinedHours, after?.declinedHours, true),
+    changedMetric('Publishable', before?.publishHours, after?.publishHours),
+    changedMetric('Cut rows only', before?.cutHours, after?.cutHours, true),
+  ].filter((line): line is RecalculationMetricLine => Boolean(line));
+  if (lines.length > 0) return lines;
+  if (rowAllocationChanged(before, after)) {
+    return [{ label: 'State allocation', value: 'Changed while total hours stayed about the same.' }];
+  }
+  return [{ label: 'Change', value: 'No hour delta recorded.' }];
+};
+
+const historyChangedMetricLines = (
+  change: SchedulingRecalculationChange,
+): RecalculationMetricLine[] => {
+  const lines = [
+    changedMetric(
+      'Decision accepted',
+      change.decision_accepted_before,
+      change.decision_accepted_after,
+    ),
+    changedMetric(
+      'Decision cut / declined',
+      change.decision_declined_before,
+      change.decision_declined_after,
+      true,
+    ),
+    changedMetric(
+      'Publishable',
+      change.publishable_hours_before,
+      change.publishable_hours_after,
+    ),
+    changedMetric('Cut rows only', change.cut_hours_before, change.cut_hours_after, true),
+  ].filter((line): line is RecalculationMetricLine => Boolean(line));
+  return lines.length > 0 ? lines : [{ label: 'State allocation', value: 'Changed while total hours stayed about the same.' }];
+};
+
+const signedDeltaHours = (hours: number) => {
+  const rounded = Math.round(Number(hours ?? 0) * 100) / 100;
+  const sign = rounded > 0 ? '+' : '';
+  return `${sign}${formatHours(rounded)} hrs`;
+};
+
+const runDeltaSummary = (run: SchedulingRecalculationRun) => {
+  const parts: string[] = [];
+  if (Math.abs(Number(run.publishable_delta_hours ?? 0)) > 0.05) {
+    parts.push(`${signedDeltaHours(run.publishable_delta_hours)} publishable`);
+  }
+  if (Math.abs(Number(run.cut_delta_hours ?? 0)) > 0.05) {
+    parts.push(`${signedDeltaHours(run.cut_delta_hours)} cut rows`);
+  }
+  if (Math.abs(Number(run.decision_accepted_delta_hours ?? 0)) > 0.05) {
+    parts.push(`${signedDeltaHours(run.decision_accepted_delta_hours)} decision accepted`);
+  }
+  if (Math.abs(Number(run.decision_declined_delta_hours ?? 0)) > 0.05) {
+    parts.push(`${signedDeltaHours(run.decision_declined_delta_hours)} decision cut`);
+  }
+  return parts.join(' · ') || 'No hour changes';
+};
+
+const allocationText = (raw: unknown) => {
+  if (!Array.isArray(raw)) return 'No state allocation';
+  const parts = raw
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const row = item as { state?: unknown; hours?: unknown };
+      const state = typeof row.state === 'string' ? row.state : '';
+      const hours = Number(row.hours ?? 0);
+      if (!state || !Number.isFinite(hours) || hours <= 0) return null;
+      return `${state} ${formatHours(hours)}h`;
+    })
+    .filter((item): item is string => Boolean(item));
+  return parts.length > 0 ? parts.join(', ') : 'No state allocation';
+};
+
+const historyChangeSummary = (change: SchedulingRecalculationChange) => {
+  const parts: string[] = [];
+  if (change.before_status !== change.after_status) {
+    parts.push(`Decision changed from ${change.before_status ?? 'none'} to ${change.after_status ?? 'none'}.`);
+  }
+  if (Math.abs(Number(change.publishable_hours_delta ?? 0)) > 0.05) {
+    parts.push(`Publishable hours moved ${signedDeltaHours(change.publishable_hours_delta)}.`);
+  }
+  if (Math.abs(Number(change.decision_accepted_delta ?? 0)) > 0.05) {
+    parts.push(`Decision accepted hours moved ${signedDeltaHours(change.decision_accepted_delta)}.`);
+  }
+  if (Math.abs(Number(change.decision_declined_delta ?? 0)) > 0.05) {
+    parts.push(`Cut / declined decision hours moved ${signedDeltaHours(change.decision_declined_delta)}.`);
+  }
+  if (Math.abs(Number(change.cut_hours_delta ?? 0)) > 0.05) {
+    parts.push(`Cut shift-row hours moved ${signedDeltaHours(change.cut_hours_delta)}.`);
+  }
+  return parts.join(' ') || 'State allocation changed while total hours stayed about the same.';
+};
+
+const compactHistoryReason = (reason: string | null | undefined) =>
+  compactReasonText(formatDecisionNoteForStaff(reason) || reason || '');
+
 const shortRunId = (runId: string | undefined) =>
   runId ? runId.slice(0, 8) : 'current';
 
@@ -3364,6 +3486,9 @@ function RecalculationChangeReport({
   cutRows: ShiftRow[];
   readinessDeclinedHours: number;
 }) {
+  const historyQ = useSchedulingRecalculationHistory(month);
+  const historyRuns = useMemo(() => historyQ.data ?? [], [historyQ.data]);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const coverageQ = useStateCoverage(month);
   const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
   const coverageTotals = useMemo(() => totalsForCoverageRows(coverageRows), [coverageRows]);
@@ -3376,18 +3501,25 @@ function RecalculationChangeReport({
     [current, lastRun],
   );
   const currentTotals = useMemo(() => totalsForRecalculationSnapshot(current), [current]);
-  const beforeTotals = useMemo(
-    () => lastRun ? totalsForRecalculationSnapshot(lastRun.before) : currentTotals,
-    [currentTotals, lastRun],
-  );
   const resultDecisions = lastRun?.result.decisions ?? [];
   const decisionByProvider = new Map(
     resultDecisions
       .filter(decision => decision.provider)
       .map(decision => [decision.provider!.toLowerCase(), decision]),
   );
-  const fallbackRows = current.slice(0, 8).map(row => ({ before: null, after: row }));
-  const displayRows = lastRun ? changedRows.slice(0, 10) : fallbackRows;
+  useEffect(() => {
+    if (historyRuns.length === 0) {
+      if (selectedRunId !== null) setSelectedRunId(null);
+      return;
+    }
+    if (!selectedRunId || !historyRuns.some(run => run.id === selectedRunId)) {
+      setSelectedRunId(historyRuns[0].id);
+    }
+  }, [historyRuns, selectedRunId]);
+  const selectedRun =
+    historyRuns.find(run => run.id === selectedRunId) ?? historyRuns[0] ?? null;
+  const showLocalFallback = !selectedRun && Boolean(lastRun);
+  const localRows = showLocalFallback ? changedRows.slice(0, 20) : [];
   const readinessAcceptedValue = coverageQ.isLoading
     ? 'Checking...'
     : coverageQ.isError
@@ -3398,11 +3530,21 @@ function RecalculationChangeReport({
     : coverageQ.isError
       ? 'Open Coverage Plan if this stays blank after refresh.'
       : `${formatHours(coverageTotals.demandHours)} hrs needed; ${formatHours(coverageTotals.stateGapHours)} hrs still short by state.`;
-  const runNarrative = lastRun
-    ? changedRows.length > 0
-      ? `${changedRows.length} provider${changedRows.length === 1 ? '' : 's'} changed. Recalculation rebuilt the publishable shift rows from the latest approved, corrected, and pending availability decisions.`
-      : 'The evaluator ran, but no provider-level hour changes are visible in the current rows.'
-    : 'This is the current allocation snapshot. Click Recalculate schedule here to capture a before and after report for the next run.';
+  const activeRunLabel = selectedRun
+    ? `Run ${shortRunId(selectedRun.decision_run_id)} · ${formatRelativeTime(selectedRun.created_at)}`
+    : showLocalFallback && lastRun
+      ? `Current session run ${shortRunId(lastRun.result.decision_run_id)} · ${formatRelativeTime(lastRun.ranAt)}`
+      : 'No recalculation history yet';
+  const activeChangeCount = selectedRun
+    ? selectedRun.changed_provider_count
+    : showLocalFallback
+      ? changedRows.length
+      : 0;
+  const activeDeltaSummary = selectedRun
+    ? runDeltaSummary(selectedRun)
+    : showLocalFallback
+      ? `${changedRows.length} provider${changedRows.length === 1 ? '' : 's'} changed in this browser session`
+      : 'Run Recalculate schedule to create the first history entry.';
 
   return (
     <Card>
@@ -3410,26 +3552,24 @@ function RecalculationChangeReport({
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
             <CardTitle className="text-base">
-              Recalculation report · {formatMonthLabel(month)}
+              Recalculation history · {formatMonthLabel(month)}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              {lastRun
-                ? `Run ${shortRunId(lastRun.result.decision_run_id)} · ${formatRelativeTime(lastRun.ranAt)}`
-                : 'Current allocation snapshot. Run Recalculate schedule to compare before and after.'}
+              Each run stores only provider rows whose decision, publishable hours, cut rows, or state allocation changed.
             </p>
           </div>
-          {lastRun && (
+          {(selectedRun || showLocalFallback) && (
             <Badge variant="outline" className="w-fit bg-blue-50 text-blue-800">
-              {changedRows.length} provider{changedRows.length === 1 ? '' : 's'} changed
+              {activeChangeCount} provider{activeChangeCount === 1 ? '' : 's'} changed
             </Badge>
           )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="rounded-md border border-blue-200 bg-blue-50/50 px-4 py-3">
-          <div className="text-sm font-medium text-blue-950">What happened</div>
+          <div className="text-sm font-medium text-blue-950">What this shows</div>
           <p className="mt-1 text-xs text-blue-950/80">
-            {runNarrative}
+            {activeRunLabel}. {activeDeltaSummary}
           </p>
           <p className="mt-2 text-xs text-blue-950/80">
             Why hours can move: approved/corrected time is accepted first, then the allocator assigns it to eligible states with demand,
@@ -3439,6 +3579,13 @@ function RecalculationChangeReport({
         </div>
 
         <div className="grid gap-3 lg:grid-cols-4">
+          <div className="rounded-md border px-3 py-2">
+            <div className="text-xs text-muted-foreground">Selected run</div>
+            <div className="text-lg font-semibold">{activeChangeCount}</div>
+            <div className="mt-1 text-[11px] text-muted-foreground">
+              Changed provider{activeChangeCount === 1 ? '' : 's'} only.
+            </div>
+          </div>
           <div className="rounded-md border px-3 py-2">
             <div className="text-xs text-muted-foreground">Readiness accepted usable</div>
             <div className="text-lg font-semibold">{readinessAcceptedValue}</div>
@@ -3450,25 +3597,15 @@ function RecalculationChangeReport({
             <div className="text-xs text-muted-foreground">Readiness cut / declined</div>
             <div className="text-lg font-semibold">{formatHours(readinessDeclinedHours)} hrs</div>
             <div className="mt-1 text-[11px] text-muted-foreground">
-              Same source as Readiness: provider decision declined_hours. Snapshot:{' '}
-              {formatHourChange(beforeTotals.decisionCutDeclinedHours, currentTotals.decisionCutDeclinedHours)} hrs.
+              Same source as Readiness: provider decision declined_hours.
             </div>
           </div>
           <div className="rounded-md border px-3 py-2">
-            <div className="text-xs text-muted-foreground">Decision accepted hours</div>
-            <div className="text-lg font-semibold">
-              {formatHourChange(beforeTotals.decisionAcceptedHours, currentTotals.decisionAcceptedHours)}
-            </div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
-              Approved provider hours before state allocation and trimming.
-            </div>
-          </div>
-          <div className="rounded-md border px-3 py-2">
-            <div className="text-xs text-muted-foreground">Publishable shift rows</div>
+            <div className="text-xs text-muted-foreground">Current publishable shift rows</div>
             <div className="text-lg font-semibold">
               {currentTotals.publishableShifts}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
-                ({formatHourChange(beforeTotals.publishableHours, currentTotals.publishableHours)} hrs)
+                ({formatHours(currentTotals.publishableHours)} hrs)
               </span>
             </div>
             <div className="mt-1 text-[11px] text-muted-foreground">
@@ -3477,7 +3614,59 @@ function RecalculationChangeReport({
           </div>
         </div>
 
-        {currentTotals.cutShifts > 0 && (
+        {historyQ.isLoading && (
+          <div className="rounded-md border px-3 py-3">
+            <LoadingRow label="Loading recalculation history" />
+          </div>
+        )}
+
+        {historyQ.isError && (
+          <Alert className="border-amber-200 bg-amber-50">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs">
+              Recalculation history could not load yet. The current-session comparison can still appear after a run.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {historyRuns.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-muted-foreground">Past runs</div>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {historyRuns.slice(0, 9).map(run => {
+                const selected = selectedRun?.id === run.id;
+                return (
+                  <button
+                    key={run.id}
+                    type="button"
+                    onClick={() => setSelectedRunId(run.id)}
+                    className={cn(
+                      'rounded-md border px-3 py-2 text-left text-xs transition-colors',
+                      selected
+                        ? 'border-blue-300 bg-blue-50 text-blue-950'
+                        : 'bg-white hover:bg-muted/40',
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{formatRelativeTime(run.created_at)}</span>
+                      <Badge variant="outline" className="bg-white text-[11px]">
+                        {run.changed_provider_count} changed
+                      </Badge>
+                    </div>
+                    <div className="mt-1 text-muted-foreground">
+                      {runDeltaSummary(run)}
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      Run {shortRunId(run.decision_run_id)} · {run.groups_count} evaluated
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {currentTotals.cutShifts > 0 && !selectedRun && (
           <div className="rounded-md border border-red-200 bg-red-50/50 px-3 py-2 text-xs text-red-900">
             Cut shift-row evidence: {currentTotals.cutShifts} row{currentTotals.cutShifts === 1 ? '' : 's'} totaling{' '}
             {formatHours(currentTotals.cutShiftHours)} hrs. These rows explain what was trimmed, but they are not added again to the
@@ -3494,12 +3683,11 @@ function RecalculationChangeReport({
           </div>
         )}
 
-        {displayRows.length === 0 ? (
+        {selectedRun && selectedRun.changes.length === 0 ? (
           <div className="rounded-md border px-4 py-6 text-center text-sm text-muted-foreground">
-            No provider-level allocation changes are visible yet. If the recalculation just finished,
-            give the shift rows a moment to refresh.
+            This run completed with no provider-level changes. Nothing stayed hidden except unchanged rows.
           </div>
-        ) : (
+        ) : selectedRun ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -3511,20 +3699,67 @@ function RecalculationChangeReport({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {displayRows.map(row => {
+              {selectedRun.changes.map(change => {
+                const allocationAfter = allocationText(change.after_allocations);
+                const allocationBefore = allocationText(change.before_allocations);
+                return (
+                  <TableRow key={change.id}>
+                    <TableCell>
+                      <div className="font-medium">{change.provider_name}</div>
+                      <Badge variant="outline" className="mt-1 text-[11px]">
+                        {change.before_status ?? 'none'} -&gt; {change.after_status ?? 'none'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums">
+                      {historyChangeSummary(change)}
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums">
+                      {historyChangedMetricLines(change).map(line => (
+                        <div key={line.label} className={line.muted ? 'text-muted-foreground' : undefined}>
+                          {line.label}: {line.value}
+                        </div>
+                      ))}
+                    </TableCell>
+                    <TableCell className="max-w-xs text-xs text-muted-foreground">
+                      {compactHistoryReason(change.reason) || 'No evaluator reason recorded for this change.'}
+                    </TableCell>
+                    <TableCell className="max-w-xs text-xs text-muted-foreground">
+                      <div>After: {allocationAfter}</div>
+                      {allocationBefore !== allocationAfter && (
+                        <div className="mt-1">Before: {allocationBefore}</div>
+                      )}
+                      <div className="mt-1 tabular-nums">
+                        {change.publishable_shifts_before} -&gt; {change.publishable_shifts_after} publish;{' '}
+                        {change.cut_shifts_before} -&gt; {change.cut_shifts_after} cut
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        ) : localRows.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead>What changed</TableHead>
+                <TableHead>Hours</TableHead>
+                <TableHead>Why this happened</TableHead>
+                <TableHead>Allocation evidence</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {localRows.map(row => {
                 const after = row.after;
                 const before = row.before;
                 const providerName = after?.providerName ?? before?.providerName ?? 'Provider';
                 const decision = decisionByProvider.get(providerName.toLowerCase());
-                const decisionText = lastRun
-                  ? `${before?.status ?? 'new'} -> ${after?.status ?? 'removed'}`
-                  : after?.status ?? before?.status ?? 'current';
+                const decisionText = `${before?.status ?? 'new'} -> ${after?.status ?? 'removed'}`;
                 const allocation = after?.allocations.length
                   ? after.allocations.join(', ')
                   : 'No state allocation';
-                const shiftText = lastRun
-                  ? `${before?.publishShifts ?? 0} -> ${after?.publishShifts ?? 0} publish; ${before?.cutShifts ?? 0} -> ${after?.cutShifts ?? 0} cut`
-                  : `${after?.publishShifts ?? 0} publish; ${after?.cutShifts ?? 0} cut`;
+                const shiftText = `${before?.publishShifts ?? 0} -> ${after?.publishShifts ?? 0} publish; ${before?.cutShifts ?? 0} -> ${after?.cutShifts ?? 0} cut`;
                 return (
                   <TableRow key={`${providerName}-${after?.key ?? before?.key}`}>
                     <TableCell>
@@ -3537,30 +3772,11 @@ function RecalculationChangeReport({
                       {describeRecalculationRowChange(before, after, Boolean(lastRun))}
                     </TableCell>
                     <TableCell className="text-xs tabular-nums">
-                      <div>
-                        Decision accepted:{' '}
-                        {lastRun
-                          ? formatHourChange(before?.acceptedHours, after?.acceptedHours)
-                          : formatHours(after?.acceptedHours)}
-                      </div>
-                      <div className="text-muted-foreground">
-                        Decision cut / declined:{' '}
-                        {lastRun
-                          ? formatHourChange(before?.declinedHours, after?.declinedHours)
-                          : formatHours(after?.declinedHours)}
-                      </div>
-                      <div className="text-muted-foreground">
-                        Publishable:{' '}
-                        {lastRun
-                          ? formatHourChange(before?.publishHours, after?.publishHours)
-                          : formatHours(after?.publishHours)}
-                      </div>
-                      <div className="text-muted-foreground">
-                        Cut rows only:{' '}
-                        {lastRun
-                          ? formatHourChange(before?.cutHours, after?.cutHours)
-                          : formatHours(after?.cutHours)}
-                      </div>
+                      {localChangedMetricLines(before, after).map(line => (
+                        <div key={line.label} className={line.muted ? 'text-muted-foreground' : undefined}>
+                          {line.label}: {line.value}
+                        </div>
+                      ))}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-xs">
                       {explainRecalculationRow(before, after, decision, Boolean(lastRun))}
@@ -3574,6 +3790,10 @@ function RecalculationChangeReport({
               })}
             </TableBody>
           </Table>
+        ) : (
+          <div className="rounded-md border px-4 py-6 text-center text-sm text-muted-foreground">
+            No recalculation history for {formatMonthLabel(month)} yet. Run Recalculate schedule to create a changes-only log.
+          </div>
         )}
       </CardContent>
     </Card>

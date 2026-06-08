@@ -240,6 +240,10 @@ type Submission = {
   target_month: string;
   parsed_shifts: ParsedShifts | null;
   decision_status: string;
+  accepted_hours: number | null;
+  declined_hours: number | null;
+  decision_notes: string | null;
+  decision_run_id: string | null;
   submitted_at: string;
   human_review_state: string | null;
 };
@@ -475,7 +479,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: subsRaw, error: sErr } = await supabase
       .from('schedule_submissions')
-      .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, submitted_at, human_review_state')
+      .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, submitted_at, human_review_state')
       .in('provider_id', providerIds)
       .in('target_month', months);
     if (sErr) throw new Error(`Submissions load failed: ${sErr.message}`);
@@ -739,6 +743,7 @@ Deno.serve(async (req: Request) => {
       const nameB = providerProfileByProvider.get(provB)?.name ?? provB;
       return monthA.localeCompare(monthB) || nameA.localeCompare(nameB);
     });
+    const beforeRecalculation = await loadRecalculationSnapshots(supabase, groupKeysSorted);
 
     // ── Evaluate each group ─────────────────────────────────────────────
     for (const key of groupKeysSorted) {
@@ -1395,11 +1400,305 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    try {
+      const afterRecalculation = await loadRecalculationSnapshots(supabase, groupKeysSorted);
+      await writeRecalculationHistory(supabase, {
+        decisionRunId,
+        groupKeys: groupKeysSorted,
+        before: beforeRecalculation,
+        after: afterRecalculation,
+        counters,
+        decisions,
+      });
+    } catch (historyErr) {
+      console.warn(
+        'scheduling_recalculation_history write failed:',
+        historyErr instanceof Error ? historyErr.message : String(historyErr),
+      );
+    }
+
     return json({ ok: true, decision_run_id: decisionRunId, ...counters, decisions });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err), decision_run_id: decisionRunId, ...counters }, 500);
   }
 });
+
+// ── Recalculation history ────────────────────────────────────────────────
+type RecalculationSnapshot = {
+  key: string;
+  providerId: string;
+  providerName: string;
+  targetMonth: string;
+  status: string | null;
+  decisionAcceptedHours: number;
+  decisionDeclinedHours: number;
+  decisionNotes: string | null;
+  publishableHours: number;
+  cutHours: number;
+  publishableShifts: number;
+  cutShifts: number;
+  allocations: Array<{ state: string; hours: number }>;
+};
+
+type RecalculationHistoryArgs = {
+  decisionRunId: string;
+  groupKeys: string[];
+  before: Map<string, RecalculationSnapshot>;
+  after: Map<string, RecalculationSnapshot>;
+  counters: Record<string, number>;
+  decisions: Array<Record<string, unknown>>;
+};
+
+type RecalculationShiftRow = {
+  provider_id: string | null;
+  provider_name: string | null;
+  target_month: string | null;
+  recommendation: string | null;
+  hours: number | string | null;
+  assigned_state: string | null;
+};
+
+const snapshotKeyFor = (providerId: string, targetMonth: string) =>
+  `${providerId}|${targetMonth}`;
+
+function emptySnapshot(providerId: string, targetMonth: string): RecalculationSnapshot {
+  return {
+    key: snapshotKeyFor(providerId, targetMonth),
+    providerId,
+    providerName: providerId,
+    targetMonth,
+    status: null,
+    decisionAcceptedHours: 0,
+    decisionDeclinedHours: 0,
+    decisionNotes: null,
+    publishableHours: 0,
+    cutHours: 0,
+    publishableShifts: 0,
+    cutShifts: 0,
+    allocations: [],
+  };
+}
+
+function chooseActiveSubmission(rows: Submission[]): Submission | null {
+  const sorted = [...rows].sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
+  return sorted.find(row => row.decision_status !== 'superseded') ?? sorted[0] ?? null;
+}
+
+async function loadRecalculationSnapshots(
+  supabase: SupabaseClientAny,
+  groupKeys: string[],
+): Promise<Map<string, RecalculationSnapshot>> {
+  const snapshots = new Map<string, RecalculationSnapshot>();
+  if (groupKeys.length === 0) return snapshots;
+
+  const providerIds = Array.from(new Set(groupKeys.map(k => k.split('|')[0])));
+  const months = Array.from(new Set(groupKeys.map(k => k.split('|')[1])));
+  for (const key of groupKeys) {
+    const [providerId, targetMonth] = key.split('|');
+    snapshots.set(key, emptySnapshot(providerId, targetMonth));
+  }
+
+  const { data: submissionRows, error: subErr } = await supabase
+    .from('schedule_submissions')
+    .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, submitted_at, human_review_state')
+    .in('provider_id', providerIds)
+    .in('target_month', months)
+    .range(0, 49999);
+  if (subErr) throw new Error(`history submissions snapshot failed: ${subErr.message}`);
+
+  const submissionsByKey = new Map<string, Submission[]>();
+  for (const row of (submissionRows ?? []) as Submission[]) {
+    if (!row.provider_id || !row.target_month) continue;
+    const key = snapshotKeyFor(row.provider_id, row.target_month);
+    if (!snapshots.has(key)) continue;
+    const list = submissionsByKey.get(key) ?? [];
+    list.push(row);
+    submissionsByKey.set(key, list);
+  }
+
+  for (const [key, rows] of submissionsByKey) {
+    const active = chooseActiveSubmission(rows);
+    if (!active || !active.provider_id) continue;
+    const snapshot = snapshots.get(key) ?? emptySnapshot(active.provider_id, active.target_month);
+    snapshot.providerName = active.provider_name || snapshot.providerName;
+    snapshot.status = active.decision_status ?? null;
+    snapshot.decisionAcceptedHours = round2(Number(active.accepted_hours ?? 0));
+    snapshot.decisionDeclinedHours = round2(Number(active.declined_hours ?? 0));
+    snapshot.decisionNotes = active.decision_notes ?? null;
+    snapshots.set(key, snapshot);
+  }
+
+  const { data: shiftRows, error: shiftErr } = await supabase
+    .from('shift_recommendations')
+    .select('provider_id, provider_name, target_month, recommendation, hours, assigned_state')
+    .in('provider_id', providerIds)
+    .in('target_month', months)
+    .range(0, 49999);
+  if (shiftErr) throw new Error(`history shift snapshot failed: ${shiftErr.message}`);
+
+  const allocationMaps = new Map<string, Map<string, number>>();
+  for (const row of (shiftRows ?? []) as RecalculationShiftRow[]) {
+    if (!row.provider_id || !row.target_month) continue;
+    const key = snapshotKeyFor(row.provider_id, String(row.target_month));
+    const snapshot = snapshots.get(key);
+    if (!snapshot) continue;
+    snapshot.providerName = row.provider_name || snapshot.providerName;
+    const hours = Number(row.hours ?? 0);
+    if (!Number.isFinite(hours) || hours <= 0) continue;
+    if (row.recommendation === 'publish') {
+      snapshot.publishableHours = round2(snapshot.publishableHours + hours);
+      snapshot.publishableShifts += 1;
+      const state = (row.assigned_state ?? '').trim().toUpperCase();
+      if (state) {
+        const stateMap = allocationMaps.get(key) ?? new Map<string, number>();
+        stateMap.set(state, round2((stateMap.get(state) ?? 0) + hours));
+        allocationMaps.set(key, stateMap);
+      }
+    } else if (row.recommendation === 'cut') {
+      snapshot.cutHours = round2(snapshot.cutHours + hours);
+      snapshot.cutShifts += 1;
+    }
+  }
+
+  for (const [key, stateMap] of allocationMaps) {
+    const snapshot = snapshots.get(key);
+    if (!snapshot) continue;
+    snapshot.allocations = Array.from(stateMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([state, hours]) => ({ state, hours: round2(hours) }));
+  }
+
+  return snapshots;
+}
+
+const allocationSignature = (allocations: Array<{ state: string; hours: number }>) =>
+  allocations.map(a => `${a.state}:${round2(a.hours)}`).join('|');
+
+function recalculationSnapshotChanged(
+  before: RecalculationSnapshot,
+  after: RecalculationSnapshot,
+): boolean {
+  return (
+    before.status !== after.status ||
+    Math.abs(before.decisionAcceptedHours - after.decisionAcceptedHours) > 0.05 ||
+    Math.abs(before.decisionDeclinedHours - after.decisionDeclinedHours) > 0.05 ||
+    Math.abs(before.publishableHours - after.publishableHours) > 0.05 ||
+    Math.abs(before.cutHours - after.cutHours) > 0.05 ||
+    before.publishableShifts !== after.publishableShifts ||
+    before.cutShifts !== after.cutShifts ||
+    allocationSignature(before.allocations) !== allocationSignature(after.allocations)
+  );
+}
+
+function summarizeDecisionForHistory(decision: Record<string, unknown>) {
+  return {
+    provider: decision.provider ?? null,
+    target_month: decision.target_month ?? null,
+    status: decision.status ?? null,
+    reason: decision.reason ?? null,
+    error: decision.error ?? null,
+    accepted_hours: decision.accepted_hours ?? null,
+    declined_hours: decision.declined_hours ?? null,
+    service_line: decision.service_line ?? null,
+  };
+}
+
+async function writeRecalculationHistory(
+  supabase: SupabaseClientAny,
+  args: RecalculationHistoryArgs,
+) {
+  const monthKeys = new Set(args.groupKeys.map(key => key.split('|')[1]));
+  const allChanges = args.groupKeys
+    .map(key => {
+      const before = args.before.get(key);
+      const after = args.after.get(key);
+      if (!before || !after || !recalculationSnapshotChanged(before, after)) return null;
+      return { before, after };
+    })
+    .filter((row): row is { before: RecalculationSnapshot; after: RecalculationSnapshot } => Boolean(row));
+
+  for (const targetMonth of monthKeys) {
+    const changes = allChanges.filter(change => change.after.targetMonth === targetMonth);
+    const groupCount = args.groupKeys.filter(key => key.endsWith(`|${targetMonth}`)).length;
+    const decisionAcceptedDelta = round2(
+      changes.reduce((sum, change) => sum + (change.after.decisionAcceptedHours - change.before.decisionAcceptedHours), 0),
+    );
+    const decisionDeclinedDelta = round2(
+      changes.reduce((sum, change) => sum + (change.after.decisionDeclinedHours - change.before.decisionDeclinedHours), 0),
+    );
+    const publishableDelta = round2(
+      changes.reduce((sum, change) => sum + (change.after.publishableHours - change.before.publishableHours), 0),
+    );
+    const cutDelta = round2(
+      changes.reduce((sum, change) => sum + (change.after.cutHours - change.before.cutHours), 0),
+    );
+
+    const { data: runRow, error: runErr } = await supabase
+      .from('scheduling_recalculation_runs')
+      .upsert(
+        {
+          decision_run_id: args.decisionRunId,
+          target_month: targetMonth,
+          groups_count: groupCount,
+          changed_provider_count: changes.length,
+          decision_accepted_delta_hours: decisionAcceptedDelta,
+          decision_declined_delta_hours: decisionDeclinedDelta,
+          publishable_delta_hours: publishableDelta,
+          cut_delta_hours: cutDelta,
+          result_summary: {
+            counters: args.counters,
+            decisions: args.decisions
+              .filter(decision => decision.target_month === targetMonth)
+              .map(summarizeDecisionForHistory),
+          },
+        },
+        { onConflict: 'decision_run_id,target_month' },
+      )
+      .select('id')
+      .single();
+    if (runErr) throw new Error(`recalculation run history insert failed: ${runErr.message}`);
+    const runId = (runRow as { id?: string } | null)?.id;
+    if (!runId || changes.length === 0) continue;
+
+    const rows = changes.map(({ before, after }) => ({
+      run_id: runId,
+      decision_run_id: args.decisionRunId,
+      target_month: targetMonth,
+      provider_id: after.providerId,
+      provider_name: after.providerName,
+      before_status: before.status,
+      after_status: after.status,
+      decision_accepted_before: before.decisionAcceptedHours,
+      decision_accepted_after: after.decisionAcceptedHours,
+      decision_accepted_delta: round2(after.decisionAcceptedHours - before.decisionAcceptedHours),
+      decision_declined_before: before.decisionDeclinedHours,
+      decision_declined_after: after.decisionDeclinedHours,
+      decision_declined_delta: round2(after.decisionDeclinedHours - before.decisionDeclinedHours),
+      publishable_hours_before: before.publishableHours,
+      publishable_hours_after: after.publishableHours,
+      publishable_hours_delta: round2(after.publishableHours - before.publishableHours),
+      cut_hours_before: before.cutHours,
+      cut_hours_after: after.cutHours,
+      cut_hours_delta: round2(after.cutHours - before.cutHours),
+      publishable_shifts_before: before.publishableShifts,
+      publishable_shifts_after: after.publishableShifts,
+      cut_shifts_before: before.cutShifts,
+      cut_shifts_after: after.cutShifts,
+      before_allocations: before.allocations,
+      after_allocations: after.allocations,
+      reason: after.decisionNotes ?? before.decisionNotes,
+    }));
+
+    const CHUNK = 500;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      const { error: changeErr } = await supabase
+        .from('scheduling_recalculation_changes')
+        .insert(chunk);
+      if (changeErr) throw new Error(`recalculation change history insert failed: ${changeErr.message}`);
+    }
+  }
+}
 
 // ── DB writes ─────────────────────────────────────────────────────────────
 async function writeDecision(
