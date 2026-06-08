@@ -27,6 +27,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -304,6 +312,7 @@ const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : [
 
 export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
 type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
+type PublishTabKey = 'provider' | 'queue' | 'day' | 'review' | 'history';
 const TOP_TAB_VALUES = [
   'readiness',
   'forecast',
@@ -345,6 +354,11 @@ export default function SchedulingWorkbenchPage({
   const jumpToAvailability = (tab: AvailabilityTabKey = 'submissions') => {
     setAvailabilityTab(tab);
     onTopTabChange('availability');
+  };
+  const [publishTab, setPublishTab] = useState<PublishTabKey>('provider');
+  const jumpToPublish = (tab: PublishTabKey = 'provider') => {
+    setPublishTab(tab);
+    onTopTabChange('publish');
   };
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -832,6 +846,38 @@ export default function SchedulingWorkbenchPage({
     for (const row of latest.values()) t += Number(expandedSubmittedHours(row) ?? 0);
     return t;
   }, [scopedAvailabilitySubs]);
+  const scopedPendingAvailability = useMemo(
+    () =>
+      scopedAvailabilitySubs.filter(
+        row => !row.decision_status || row.decision_status === 'pending',
+      ),
+    [scopedAvailabilitySubs],
+  );
+  const scopedPendingAvailabilityHours = useMemo(
+    () =>
+      scopedPendingAvailability.reduce(
+        (sum, row) => sum + Number(expandedSubmittedHours(row) ?? 0),
+        0,
+      ),
+    [scopedPendingAvailability],
+  );
+  const scopedNeedsReviewHours = useMemo(
+    () =>
+      scopedNeedsReview.reduce(
+        (sum, row) => sum + Number(expandedSubmittedHours(row.submission) ?? 0),
+        0,
+      ),
+    [scopedNeedsReview],
+  );
+  const readinessDeclinedRows = isMh ? scopedDeclined : allDeclinedRows;
+  const readinessDeclinedHours = useMemo(
+    () =>
+      readinessDeclinedRows.reduce(
+        (sum, row) => sum + Number(row.submission?.declined_hours ?? 0),
+        0,
+      ),
+    [readinessDeclinedRows],
+  );
   const scopedAuditEntries = useMemo(() => {
     if (!isMh) return auditEntries;
     const ids = new Set(mentalHealthRows.map(r => r.provider_id));
@@ -1006,14 +1052,19 @@ export default function SchedulingWorkbenchPage({
             summary={scopedSummary}
             missingCount={scopedSummary.missingCount}
             submittedHours={scopedSubmittedAvailabilityHours}
+            pendingSubmissionCount={scopedPendingAvailability.length}
+            pendingSubmissionHours={scopedPendingAvailabilityHours}
+            needsReviewHours={scopedNeedsReviewHours}
+            declinedCount={readinessDeclinedRows.length}
+            declinedHours={readinessDeclinedHours}
             inboxNeedsReviewCount={scopedInboxActionable}
             unmatchedCount={scopedUnmatched.length}
             onReevaluate={reevaluateNow}
             isReevaluating={reevaluate.isPending}
             onJumpToCoverage={() => onTopTabChange('coverage')}
             onJumpToAvailability={jumpToAvailability}
-            onJumpToMatching={() => onTopTabChange('matching')}
-            onJumpToPublish={() => onTopTabChange('publish')}
+            onJumpToPublish={jumpToPublish}
+            onJumpToDeclined={() => onTopTabChange('declined')}
             onJumpToExceptions={() => onTopTabChange('exceptions')}
           />
           <SopCard />
@@ -1223,7 +1274,7 @@ export default function SchedulingWorkbenchPage({
             missingCount={scopedSummary.missingCount}
             onJumpToAvailability={jumpToAvailability}
             onJumpToCoverage={() => onTopTabChange('coverage')}
-            onJumpToMatching={() => onTopTabChange('matching')}
+            onJumpToPublish={jumpToPublish}
           />
           <PublishInstructionsCard />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1252,7 +1303,7 @@ export default function SchedulingWorkbenchPage({
             </AlertDescription>
           </Alert>
 
-          <Tabs defaultValue="provider">
+          <Tabs value={publishTab} onValueChange={(v) => setPublishTab(v as PublishTabKey)}>
             <TabsList className="flex-wrap h-auto">
               <TabsTrigger value="provider">By Provider</TabsTrigger>
               <TabsTrigger value="queue">
@@ -2408,6 +2459,8 @@ function NeedsReviewPanel({
   month,
   rows,
   isLoading,
+  onResolve,
+  isPending,
 }: {
   month: string;
   rows: ProviderPublishView[];
@@ -2415,6 +2468,45 @@ function NeedsReviewPanel({
   onResolve: (args: ResolveArgs) => void;
   isPending: boolean;
 }) {
+  const [resolutionTarget, setResolutionTarget] = useState<{
+    row: ProviderPublishView;
+    decision: 'accepted' | 'declined';
+  } | null>(null);
+  const [resolutionReason, setResolutionReason] = useState('');
+
+  const openResolutionDialog = (
+    row: ProviderPublishView,
+    decision: 'accepted' | 'declined',
+    reasonLabel: string,
+  ) => {
+    setResolutionTarget({ row, decision });
+    setResolutionReason(
+      decision === 'accepted'
+        ? `ClinOps reviewed ${reasonLabel} and approved the submitted hours.`
+        : `ClinOps reviewed ${reasonLabel} and declined the submitted hours.`,
+    );
+  };
+
+  const submitResolution = () => {
+    if (!resolutionTarget?.row.submission) return;
+    const reason = resolutionReason.trim();
+    if (!reason) {
+      toast.error('Add a reason before saving the review decision.');
+      return;
+    }
+    const sub = resolutionTarget.row.submission;
+    onResolve({
+      submission_id: sub.id,
+      prior_status: sub.decision_status,
+      decision: resolutionTarget.decision,
+      hours_basis: expandedSubmittedHours(sub),
+      reason,
+      existing_notes: sub.decision_notes,
+      provider_name: resolutionTarget.row.provider_name,
+    });
+    setResolutionTarget(null);
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -2437,14 +2529,14 @@ function NeedsReviewPanel({
   }
 
   return (
+    <>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
             Needs review · {formatMonthLabel(month)}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Escalate to ClinOps lead. Scheduling team members should not accept or decline these submissions.
-            The system could not safely decide because the submitted time or scheduling detail needs judgment.
+            Resolve these after a ClinOps lead decision. The system could not safely decide because the submitted time or scheduling detail needs judgment.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -2503,6 +2595,23 @@ function NeedsReviewPanel({
                       <div className="flex justify-end gap-1">
                         <Button
                           size="sm"
+                          className="h-7"
+                          disabled={isPending}
+                          onClick={() => openResolutionDialog(r, 'accepted', reasonLabel)}
+                        >
+                          Accept
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                          disabled={isPending}
+                          onClick={() => openResolutionDialog(r, 'declined', reasonLabel)}
+                        >
+                          Decline
+                        </Button>
+                        <Button
+                          size="sm"
                           variant="outline"
                           className="h-7"
                           onClick={async () => {
@@ -2526,6 +2635,56 @@ function NeedsReviewPanel({
           </Table>
         </CardContent>
       </Card>
+      <Dialog
+        open={Boolean(resolutionTarget)}
+        onOpenChange={open => {
+          if (!open) setResolutionTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {resolutionTarget?.decision === 'accepted' ? 'Accept hours' : 'Decline hours'}
+            </DialogTitle>
+            <DialogDescription>
+              {resolutionTarget?.row.provider_name ?? 'Provider'} · {formatMonthLabel(month)}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-md border px-3 py-2">
+                <div className="text-xs text-muted-foreground">Hours basis</div>
+                <div className="font-medium">
+                  {formatHours(expandedSubmittedHours(resolutionTarget?.row.submission))}
+                </div>
+              </div>
+              <div className="rounded-md border px-3 py-2">
+                <div className="text-xs text-muted-foreground">Decision</div>
+                <div className="font-medium capitalize">{resolutionTarget?.decision ?? '—'}</div>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="needs-review-reason">Review note</Label>
+              <Textarea
+                id="needs-review-reason"
+                value={resolutionReason}
+                onChange={event => setResolutionReason(event.target.value)}
+                className="mt-1 min-h-24"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setResolutionTarget(null)} disabled={isPending}>
+              Cancel
+            </Button>
+            <Button onClick={submitResolution} disabled={isPending || !resolutionTarget}>
+              {isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              Save decision
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -4471,14 +4630,19 @@ function ReadinessPanel({
   summary,
   missingCount,
   submittedHours,
+  pendingSubmissionCount,
+  pendingSubmissionHours,
+  needsReviewHours,
+  declinedCount,
+  declinedHours,
   inboxNeedsReviewCount,
   unmatchedCount,
   onReevaluate,
   isReevaluating,
   onJumpToCoverage,
   onJumpToAvailability,
-  onJumpToMatching,
   onJumpToPublish,
+  onJumpToDeclined,
   onJumpToExceptions,
 }: {
   month: string;
@@ -4494,14 +4658,19 @@ function ReadinessPanel({
   };
   missingCount: number;
   submittedHours: number;
+  pendingSubmissionCount: number;
+  pendingSubmissionHours: number;
+  needsReviewHours: number;
+  declinedCount: number;
+  declinedHours: number;
   inboxNeedsReviewCount: number;
   unmatchedCount: number;
   onReevaluate: () => void;
   isReevaluating: boolean;
   onJumpToCoverage: () => void;
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
-  onJumpToMatching: () => void;
-  onJumpToPublish: () => void;
+  onJumpToPublish: (tab?: PublishTabKey) => void;
+  onJumpToDeclined: () => void;
   onJumpToExceptions: () => void;
 }) {
   const coverageQ = useStateCoverage(month);
@@ -4623,8 +4792,8 @@ function ReadinessPanel({
         label: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need manual review`,
         detail: `${summary.needsReviewCount} unusual-hours flag${summary.needsReviewCount === 1 ? '' : 's'} and ${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} need a ClinOps lead decision.`,
         category: 'Escalate to ClinOps lead',
-        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Resubmits',
-        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
+        action: summary.needsReviewCount > 0 ? 'Open Needs Review' : 'Open Resubmits',
+        onClick: summary.needsReviewCount > 0 ? () => onJumpToPublish('review') : () => onJumpToAvailability('inbox'),
       });
     }
     if (criticalGapStates.length > 0) {
@@ -4663,7 +4832,7 @@ function ReadinessPanel({
     onReevaluate,
     onJumpToAvailability,
     onJumpToCoverage,
-    onJumpToMatching,
+    onJumpToPublish,
   ]);
 
   const workbenchReady = !checksLoading && hardBlockers.length === 0 && hasPublishRows;
@@ -4709,8 +4878,10 @@ function ReadinessPanel({
     if (reviewCount > 0) {
       return {
         blocker: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need ClinOps lead review`,
-        nextAction: 'Escalate needs-review submissions to ClinOps lead',
-        nextActionJump: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
+        nextAction: summary.needsReviewCount > 0
+          ? 'Approve or decline needs-review hours'
+          : 'Approve or park resubmitted hours',
+        nextActionJump: summary.needsReviewCount > 0 ? () => onJumpToPublish('review') : () => onJumpToAvailability('inbox'),
         nextCategory: 'Escalate to ClinOps lead',
       };
     }
@@ -4734,7 +4905,7 @@ function ReadinessPanel({
       return {
         blocker: 'None blocking the build',
         nextAction: 'Post accepted shifts to Homebase',
-        nextActionJump: onJumpToPublish,
+        nextActionJump: () => onJumpToPublish(),
         nextCategory: 'Scheduler can do this',
       };
     }
@@ -4742,14 +4913,14 @@ function ReadinessPanel({
       return {
         blocker: 'Homebase is done',
         nextAction: 'Post accepted shifts to EHR',
-        nextActionJump: onJumpToPublish,
+        nextActionJump: () => onJumpToPublish(),
         nextCategory: 'Scheduler can do this',
       };
     }
     return {
       blocker: `None - ${formatMonthLabel(month)} is fully published`,
       nextAction: `No action needed - ${formatMonthLabel(month)} schedule is publish-complete`,
-      nextActionJump: onJumpToPublish,
+      nextActionJump: () => onJumpToPublish(),
       nextCategory: 'Scheduler can do this',
     };
   }, [
@@ -4766,7 +4937,6 @@ function ReadinessPanel({
     onReevaluate,
     onJumpToAvailability,
     onJumpToCoverage,
-    onJumpToMatching,
     onJumpToPublish,
   ]);
 
@@ -4807,8 +4977,8 @@ function ReadinessPanel({
         ? 'No ambiguous submissions or resubmissions need action.'
         : `${reviewCount} item${reviewCount === 1 ? '' : 's'} need a ClinOps lead decision before publishing.`,
       status: reviewCount === 0 ? 'done' : 'blocked',
-      action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Resubmits',
-      onClick: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
+      action: summary.needsReviewCount > 0 ? 'Open Needs Review' : 'Open Resubmits',
+      onClick: summary.needsReviewCount > 0 ? () => onJumpToPublish('review') : () => onJumpToAvailability('inbox'),
     },
     {
       label: '4. Check state coverage',
@@ -4828,7 +4998,7 @@ function ReadinessPanel({
         : 'Homebase posting starts after the shift list is built.',
       status: !workbenchReady ? 'waiting' : homebasePct === 100 ? 'done' : 'current',
       action: 'Open Publish',
-      onClick: onJumpToPublish,
+      onClick: () => onJumpToPublish(),
     },
     {
       label: '6. Transfer posted shifts to EHR',
@@ -4837,7 +5007,7 @@ function ReadinessPanel({
         : 'EHR transfer starts after Homebase posting.',
       status: !workbenchReady || homebasePct < 100 ? 'waiting' : ehrPct === 100 ? 'done' : 'current',
       action: 'Open Publish',
-      onClick: onJumpToPublish,
+      onClick: () => onJumpToPublish(),
     },
   ];
 
@@ -4857,6 +5027,114 @@ function ReadinessPanel({
     criticalGapStates.length,
     watchGapStates.length,
     onJumpToCoverage,
+  ]);
+
+  type ActionCenterItem = {
+    key: string;
+    label: string;
+    value: string;
+    detail: string;
+    badge: string;
+    action: string;
+    onClick: () => void;
+    tone: string;
+    disabled?: boolean;
+    loading?: boolean;
+  };
+
+  const actionItems = useMemo<ActionCenterItem[]>(() => {
+    const out: ActionCenterItem[] = [];
+    if (pendingSubmissionCount > 0) {
+      out.push({
+        key: 'pending',
+        label: 'Pending evaluation',
+        value: pendingSubmissionCount.toString(),
+        detail: `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} need a schedule decision. Recalculate to move them into accepted, declined, or needs review.`,
+        badge: 'Scheduler can do this',
+        action: 'Recalculate',
+        onClick: onReevaluate,
+        tone: 'border-blue-200 bg-blue-50/60',
+        disabled: isReevaluating,
+        loading: isReevaluating,
+      });
+    }
+    if (summary.needsReviewCount > 0) {
+      out.push({
+        key: 'needs-review',
+        label: 'Needs review',
+        value: summary.needsReviewCount.toString(),
+        detail: `${needsReviewHours.toFixed(1)} submitted hour${needsReviewHours.toFixed(1) === '1.0' ? '' : 's'} need an in-platform accept or decline decision.`,
+        badge: 'Approve / decline',
+        action: 'Open Needs Review',
+        onClick: () => onJumpToPublish('review'),
+        tone: 'border-orange-200 bg-orange-50/70',
+      });
+    }
+    if (inboxNeedsReviewCount > 0) {
+      out.push({
+        key: 'resubmits',
+        label: 'Resubmits',
+        value: inboxNeedsReviewCount.toString(),
+        detail: 'Changed availability is waiting to be approved or parked before the schedule is final.',
+        badge: 'Approve / park',
+        action: 'Open Resubmits',
+        onClick: () => onJumpToAvailability('inbox'),
+        tone: 'border-sky-200 bg-sky-50/70',
+      });
+    }
+    if (unmatchedCount > 0) {
+      out.push({
+        key: 'unmatched',
+        label: 'Unmatched',
+        value: unmatchedCount.toString(),
+        detail: 'Submissions cannot be evaluated until the provider is linked to the directory.',
+        badge: 'Fix match',
+        action: 'Open Unmatched',
+        onClick: () => onJumpToAvailability('unmatched'),
+        tone: 'border-amber-200 bg-amber-50/70',
+      });
+    }
+    if (declinedCount > 0) {
+      out.push({
+        key: 'declined',
+        label: 'Declined hours',
+        value: `${declinedHours.toFixed(1)} hrs`,
+        detail: `${declinedCount} provider${declinedCount === 1 ? '' : 's'} have declined or trimmed hours. Review why before answering coverage questions.`,
+        badge: 'Explain cuts',
+        action: 'Review Declined',
+        onClick: onJumpToDeclined,
+        tone: 'border-red-200 bg-red-50/60',
+      });
+    }
+    if (missingCount > 0) {
+      out.push({
+        key: 'missing',
+        label: 'Missing submissions',
+        value: missingCount.toString(),
+        detail: `${missingCount} provider${missingCount === 1 ? '' : 's'} still need outreach for ${formatMonthLabel(month)} availability.`,
+        badge: 'Chase',
+        action: 'Open Missing',
+        onClick: () => onJumpToAvailability('missing'),
+        tone: 'border-slate-200 bg-slate-50',
+      });
+    }
+    return out;
+  }, [
+    declinedCount,
+    declinedHours,
+    inboxNeedsReviewCount,
+    isReevaluating,
+    missingCount,
+    month,
+    needsReviewHours,
+    onJumpToAvailability,
+    onJumpToDeclined,
+    onJumpToPublish,
+    onReevaluate,
+    pendingSubmissionCount,
+    pendingSubmissionHours,
+    summary.needsReviewCount,
+    unmatchedCount,
   ]);
 
   const lastUpdated = useMemo(() => {
@@ -4892,6 +5170,54 @@ function ReadinessPanel({
               <ArrowRight className="h-3.5 w-3.5 ml-1" />
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <PlayCircle className="h-4 w-4 text-blue-600" />
+            Action required
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Accepted hours need no action here. These are the places to clear pending, review, declined, missing, or mismatched hours.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {actionItems.length === 0 ? (
+            <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              No pending review actions for {formatMonthLabel(month)}. Use Publish when the gate is ready.
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {actionItems.map(item => (
+                <div key={item.key} className={`rounded-md border px-3 py-3 ${item.tone}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-medium text-muted-foreground">{item.label}</div>
+                      <div className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</div>
+                    </div>
+                    <Badge variant="outline" className="bg-white text-[11px]">
+                      {item.badge}
+                    </Badge>
+                  </div>
+                  <div className="mt-2 min-h-[36px] text-xs text-muted-foreground">{item.detail}</div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3 h-8 bg-white/80"
+                    onClick={item.onClick}
+                    disabled={item.disabled}
+                  >
+                    {item.loading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                    {item.action}
+                    <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -5262,7 +5588,7 @@ function PublishGateBanner({
   missingCount,
   onJumpToAvailability,
   onJumpToCoverage,
-  onJumpToMatching,
+  onJumpToPublish,
 }: {
   month: string;
   summary: {
@@ -5277,7 +5603,7 @@ function PublishGateBanner({
   missingCount: number;
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToCoverage: () => void;
-  onJumpToMatching: () => void;
+  onJumpToPublish: (tab?: PublishTabKey) => void;
 }) {
   const coverageQ = useStateCoverage(month);
   const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
@@ -5325,8 +5651,8 @@ function PublishGateBanner({
     if (reviewCount > 0) {
       out.push({
         label: `${reviewCount} review item${reviewCount === 1 ? '' : 's'} must be escalated to a ClinOps lead first.`,
-        action: summary.needsReviewCount > 0 ? 'Open Matching' : 'Open Resubmits',
-        onClick: summary.needsReviewCount > 0 ? onJumpToMatching : () => onJumpToAvailability('inbox'),
+        action: summary.needsReviewCount > 0 ? 'Open Needs Review' : 'Open Resubmits',
+        onClick: summary.needsReviewCount > 0 ? () => onJumpToPublish('review') : () => onJumpToAvailability('inbox'),
       });
     }
     if (criticalGapStates.length > 0) {
@@ -5358,7 +5684,7 @@ function PublishGateBanner({
     month,
     onJumpToAvailability,
     onJumpToCoverage,
-    onJumpToMatching,
+    onJumpToPublish,
   ]);
 
   if (coverageQ.isLoading) {
