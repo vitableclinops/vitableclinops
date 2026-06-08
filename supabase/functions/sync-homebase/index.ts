@@ -10,9 +10,9 @@
  *   5. Unmatched (recorded for review)
  *
  * Sync window: explicit start_date/end_date or month when provided;
- * otherwise trailing 14 days + next 14 days. Homebase is the near-term
- * calendar source for same-day / next-day operations, not the source of
- * truth for month-ahead scheduling recommendations.
+ * otherwise a rolling 30-day window. Longer explicit windows are pulled in
+ * 30-day chunks so dashboard/manual workflows can inspect arbitrary spans
+ * without depending on one oversized Homebase API request.
  *
  * Scheduled hourly via Supabase cron.
  * Can also be triggered manually via POST /functions/v1/sync-homebase.
@@ -28,6 +28,8 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const HOMEBASE_SHIFT_CHUNK_DAYS = 30;
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -220,25 +222,27 @@ Deno.serve(async (req: Request) => {
       const empIdMap = new Map<number, string>(); // homebase_id → uuid
       for (const e of (empRows ?? [])) empIdMap.set(e.homebase_id, e.id);
 
-      for await (const shift of hb.iterateShifts(loc.uuid, syncWindow.startDate, syncWindow.endDate)) {
-        const { error: shiftErr } = await supabase.from('homebase_shifts').upsert({
-          homebase_id: shift.id,
-          homebase_user_id: shift.user_id,
-          homebase_employee_id: empIdMap.get(shift.user_id) ?? null,
-          location_homebase_uuid: loc.uuid,
-          role: shift.role || null,
-          department: shift.department || null,
-          start_at: shift.start_at,
-          end_at: shift.end_at,
-          scheduled_hours: shift.labor?.scheduled_hours ?? null,
-          published: shift.published ?? false,
-          scheduled: shift.scheduled ?? true,
-          synced_at: new Date().toISOString(),
-        }, { onConflict: 'homebase_id' });
-        if (shiftErr) {
-          console.error('Shift upsert error:', shift.id, shiftErr.message);
+      for (const chunk of syncWindow.chunks) {
+        for await (const shift of hb.iterateShifts(loc.uuid, chunk.startDate, chunk.endDate)) {
+          const { error: shiftErr } = await supabase.from('homebase_shifts').upsert({
+            homebase_id: shift.id,
+            homebase_user_id: shift.user_id,
+            homebase_employee_id: empIdMap.get(shift.user_id) ?? null,
+            location_homebase_uuid: loc.uuid,
+            role: shift.role || null,
+            department: shift.department || null,
+            start_at: shift.start_at,
+            end_at: shift.end_at,
+            scheduled_hours: shift.labor?.scheduled_hours ?? null,
+            published: shift.published ?? false,
+            scheduled: shift.scheduled ?? true,
+            synced_at: new Date().toISOString(),
+          }, { onConflict: 'homebase_id' });
+          if (shiftErr) {
+            console.error('Shift upsert error:', shift.id, shiftErr.message);
+          }
+          counters.shifts_synced++;
         }
-        counters.shifts_synced++;
       }
     }
 
@@ -295,7 +299,12 @@ function resolveSyncWindow(url: URL, body: Record<string, unknown>) {
   const explicitStart = fromParam('start_date') ?? fromParam('startDate');
   const explicitEnd = fromParam('end_date') ?? fromParam('endDate');
   if (isIsoDate(explicitStart) && isIsoDate(explicitEnd) && explicitStart <= explicitEnd) {
-    return { startDate: explicitStart, endDate: explicitEnd, mode: 'explicit' };
+    return {
+      startDate: explicitStart,
+      endDate: explicitEnd,
+      mode: 'explicit',
+      chunks: buildDateChunks(explicitStart, explicitEnd),
+    };
   }
 
   const month = fromParam('month') ?? fromParam('target_month') ?? fromParam('targetMonth');
@@ -306,6 +315,10 @@ function resolveSyncWindow(url: URL, body: Record<string, unknown>) {
       startDate: `${year}-${String(monthNumber).padStart(2, '0')}-01`,
       endDate: `${year}-${String(monthNumber).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`,
       mode: 'month',
+      chunks: buildDateChunks(
+        `${year}-${String(monthNumber).padStart(2, '0')}-01`,
+        `${year}-${String(monthNumber).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`,
+      ),
     };
   }
 
@@ -313,12 +326,47 @@ function resolveSyncWindow(url: URL, body: Record<string, unknown>) {
   const past = new Date(now);
   past.setUTCDate(past.getUTCDate() - 14);
   const future = new Date(now);
-  future.setUTCDate(future.getUTCDate() + 14);
+  future.setUTCDate(future.getUTCDate() + 15);
+  const startDate = past.toISOString().slice(0, 10);
+  const endDate = future.toISOString().slice(0, 10);
   return {
-    startDate: past.toISOString().slice(0, 10),
-    endDate: future.toISOString().slice(0, 10),
-    mode: 'default_14_back_14_forward',
+    startDate,
+    endDate,
+    mode: 'default_rolling_30_days',
+    chunks: buildDateChunks(startDate, endDate),
   };
+}
+
+function buildDateChunks(startDate: string, endDate: string) {
+  const chunks: Array<{ startDate: string; endDate: string }> = [];
+  let cursor = parseUtcDate(startDate);
+  const end = parseUtcDate(endDate);
+
+  while (cursor <= end) {
+    const chunkStart = cursor;
+    const chunkEnd = new Date(chunkStart);
+    chunkEnd.setUTCDate(chunkEnd.getUTCDate() + HOMEBASE_SHIFT_CHUNK_DAYS - 1);
+    if (chunkEnd > end) chunkEnd.setTime(end.getTime());
+
+    chunks.push({
+      startDate: formatUtcDate(chunkStart),
+      endDate: formatUtcDate(chunkEnd),
+    });
+
+    cursor = new Date(chunkEnd);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return chunks;
+}
+
+function parseUtcDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatUtcDate(value: Date) {
+  return value.toISOString().slice(0, 10);
 }
 
 function isIsoDate(value: string | null): value is string {

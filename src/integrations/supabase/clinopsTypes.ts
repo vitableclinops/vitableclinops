@@ -125,6 +125,107 @@ export type ClinOpsDatabase = {
         }
         Relationships: []
       }
+      homebase_employees: {
+        Row: {
+          created_at: string
+          email: string | null
+          first_name: string | null
+          homebase_id: number
+          id: string
+          last_name: string | null
+          location_homebase_uuid: string | null
+          match_confidence: string | null
+          normalized_name: string | null
+          profile_id: string | null
+          synced_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          homebase_id: number
+          id?: string
+          last_name?: string | null
+          location_homebase_uuid?: string | null
+          match_confidence?: string | null
+          normalized_name?: string | null
+          profile_id?: string | null
+          synced_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          homebase_id?: number
+          id?: string
+          last_name?: string | null
+          location_homebase_uuid?: string | null
+          match_confidence?: string | null
+          normalized_name?: string | null
+          profile_id?: string | null
+          synced_at?: string | null
+        }
+        Relationships: []
+      }
+      homebase_shifts: {
+        Row: {
+          created_at: string
+          department: string | null
+          end_at: string | null
+          homebase_employee_id: string | null
+          homebase_id: number
+          homebase_user_id: number | null
+          id: string
+          location_homebase_uuid: string | null
+          published: boolean | null
+          role: string | null
+          scheduled: boolean | null
+          scheduled_hours: number | null
+          start_at: string | null
+          synced_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          department?: string | null
+          end_at?: string | null
+          homebase_employee_id?: string | null
+          homebase_id: number
+          homebase_user_id?: number | null
+          id?: string
+          location_homebase_uuid?: string | null
+          published?: boolean | null
+          role?: string | null
+          scheduled?: boolean | null
+          scheduled_hours?: number | null
+          start_at?: string | null
+          synced_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          department?: string | null
+          end_at?: string | null
+          homebase_employee_id?: string | null
+          homebase_id?: number
+          homebase_user_id?: number | null
+          id?: string
+          location_homebase_uuid?: string | null
+          published?: boolean | null
+          role?: string | null
+          scheduled?: boolean | null
+          scheduled_hours?: number | null
+          start_at?: string | null
+          synced_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "homebase_shifts_homebase_employee_id_fkey"
+            columns: ["homebase_employee_id"]
+            isOneToOne: false
+            referencedRelation: "homebase_employees"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       medallion_provider_licenses: {
         Row: {
           created_at: string

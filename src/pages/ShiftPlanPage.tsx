@@ -1,14 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, Info, Loader2, ArrowLeft, Check, Clock } from 'lucide-react';
+import { Download, Info, Loader2, ArrowLeft, Check, Clock, RefreshCw, CheckCircle2, AlertTriangle, CircleDashed } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 import {
   useProviderShiftSummary,
+  useRefreshHomebaseMonth,
   useShiftRecommendations,
   useUpdateShiftStatus,
   formatTime,
@@ -39,8 +42,16 @@ const formatDate = (iso: string) => {
   });
 };
 
+const getMonthEndIso = (iso: string) => {
+  const [year, month] = iso.split('-').map(Number);
+  const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+};
+const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
 const ShiftPlanPage = () => {
   const { profile, roles } = useAuth();
+  const { toast } = useToast();
   const userRole = roles.includes('admin')
     ? 'admin'
     : roles.includes('pod_lead')
@@ -49,13 +60,29 @@ const ShiftPlanPage = () => {
 
   const [month, setMonth] = useState('2026-06-01');
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [homebaseStartDate, setHomebaseStartDate] = useState(month);
+  const [homebaseEndDate, setHomebaseEndDate] = useState(getMonthEndIso(month));
+  const homebaseWindow = useMemo(
+    () => ({ startDate: homebaseStartDate, endDate: homebaseEndDate }),
+    [homebaseStartDate, homebaseEndDate],
+  );
+  const invalidHomebaseWindow =
+    !isIsoDate(homebaseStartDate) ||
+    !isIsoDate(homebaseEndDate) ||
+    homebaseStartDate > homebaseEndDate;
 
-  const summaryQ = useProviderShiftSummary(month);
-  const detailQ = useShiftRecommendations(month, selectedProvider);
+  useEffect(() => {
+    setHomebaseStartDate(month);
+    setHomebaseEndDate(getMonthEndIso(month));
+  }, [month]);
+
+  const summaryQ = useProviderShiftSummary(month, homebaseWindow);
+  const detailQ = useShiftRecommendations(month, selectedProvider, homebaseWindow);
   const updateMutation = useUpdateShiftStatus();
+  const refreshHomebaseMutation = useRefreshHomebaseMonth();
 
-  const summaries = summaryQ.data ?? [];
-  const details = detailQ.data ?? [];
+  const summaries = useMemo(() => summaryQ.data ?? [], [summaryQ.data]);
+  const details = useMemo(() => detailQ.data ?? [], [detailQ.data]);
   const selectedSummary = useMemo(
     () => summaries.find(s => s.provider_id === selectedProvider) ?? null,
     [summaries, selectedProvider],
@@ -71,7 +98,19 @@ const ShiftPlanPage = () => {
   );
 
   const networkTotals = useMemo(() => {
-    const acc = { publishCount: 0, cutCount: 0, publishHours: 0, cutHours: 0, pendingPublish: 0, published: 0, confirmed: 0 };
+    const acc = {
+      publishCount: 0,
+      cutCount: 0,
+      publishHours: 0,
+      cutHours: 0,
+      pendingPublish: 0,
+      published: 0,
+      confirmed: 0,
+      homebasePublished: 0,
+      homebaseUnpublished: 0,
+      homebaseUnscheduled: 0,
+      homebaseMissing: 0,
+    };
     for (const r of summaries) {
       acc.publishCount += r.publish_count ?? 0;
       acc.cutCount += r.cut_count ?? 0;
@@ -80,6 +119,10 @@ const ShiftPlanPage = () => {
       acc.pendingPublish += r.pending_publish ?? 0;
       acc.published += r.published_count ?? 0;
       acc.confirmed += r.confirmed_count ?? 0;
+      acc.homebasePublished += r.homebase_published_count ?? 0;
+      acc.homebaseUnpublished += r.homebase_unpublished_count ?? 0;
+      acc.homebaseUnscheduled += r.homebase_unscheduled_count ?? 0;
+      acc.homebaseMissing += r.homebase_missing_count ?? 0;
     }
     return acc;
   }, [summaries]);
@@ -97,6 +140,9 @@ const ShiftPlanPage = () => {
         shift_type: SHIFT_TYPE_LABEL[r.shift_type] ?? r.shift_type,
         publish_status: r.publish_status,
         homebase_shift_id: r.homebase_shift_id ?? '',
+        homebase_sync_status: r.homebase_confirmation.status,
+        homebase_confirmed_shift_id: r.homebase_confirmation.homebase_shift_id ?? '',
+        homebase_last_synced_at: r.homebase_confirmation.synced_at ?? '',
       })),
       `${providerName.replace(/\s+/g, '_')}_${month}_publish.csv`,
     );
@@ -115,12 +161,11 @@ const ShiftPlanPage = () => {
       .order('start_min')
       .range(0, 9999);
     if (error) {
-      // eslint-disable-next-line no-alert
-      alert(`Failed to download: ${error.message}`);
+      toast({ title: 'Download failed', description: error.message, variant: 'destructive' });
       return;
     }
     downloadCSV(
-      (data ?? []).map((r: any) => ({
+      (data ?? []).map(r => ({
         provider: r.provider_name,
         date: r.shift_date,
         start_time_et: formatTime(r.start_min),
@@ -137,13 +182,42 @@ const ShiftPlanPage = () => {
 
   const togglePublished = (row: ShiftRecommendation) => {
     if (row.recommendation !== 'publish') return;
-    const next =
-      row.publish_status === 'pending'
-        ? 'published_to_homebase'
-        : row.publish_status === 'published_to_homebase'
-        ? 'pending'
-        : row.publish_status;
-    updateMutation.mutate({ id: row.id, publish_status: next as any });
+    let next: 'pending' | 'published_to_homebase' | 'confirmed' | 'cancelled' = 'pending';
+    if (row.publish_status === 'pending') {
+      next = 'published_to_homebase';
+    } else if (row.publish_status === 'published_to_homebase') {
+      next = 'pending';
+    } else if (row.publish_status === 'confirmed' || row.publish_status === 'cancelled') {
+      next = row.publish_status;
+    }
+    updateMutation.mutate({ id: row.id, publish_status: next });
+  };
+
+  const refreshHomebase = () => {
+    if (invalidHomebaseWindow) {
+      toast({
+        title: 'Check Homebase dates',
+        description: 'The Homebase end date must be on or after the start date.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    refreshHomebaseMutation.mutate(homebaseWindow, {
+      onSuccess: (result) => {
+        toast({
+          title: 'Homebase refreshed',
+          description: `${result?.shifts_synced ?? 0} shifts synced for ${homebaseStartDate} through ${homebaseEndDate}.`,
+        });
+      },
+      onError: (error) => {
+        toast({
+          title: 'Homebase refresh failed',
+          description: error instanceof Error ? error.message : 'Unable to sync Homebase for this date range.',
+          variant: 'destructive',
+        });
+      },
+    });
   };
 
   return (
@@ -168,13 +242,36 @@ const ShiftPlanPage = () => {
                 Per-shift publish/cut recommendations. The team executes by entering "publish" rows into Homebase, then ticks each off as they go.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {selectedProvider && (
                 <Button variant="outline" size="sm" onClick={() => setSelectedProvider(null)}>
                   <ArrowLeft className="h-4 w-4 mr-1" />
                   All providers
                 </Button>
               )}
+              <Input
+                type="date"
+                value={homebaseStartDate}
+                onChange={(event) => setHomebaseStartDate(event.target.value)}
+                aria-label="Homebase start date"
+                className="h-9 w-[150px]"
+              />
+              <Input
+                type="date"
+                value={homebaseEndDate}
+                onChange={(event) => setHomebaseEndDate(event.target.value)}
+                aria-label="Homebase end date"
+                className="h-9 w-[150px]"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={refreshHomebase}
+                disabled={refreshHomebaseMutation.isPending || invalidHomebaseWindow}
+              >
+                <RefreshCw className={`h-4 w-4 mr-1 ${refreshHomebaseMutation.isPending ? 'animate-spin' : ''}`} />
+                Sync Homebase
+              </Button>
               <Select value={month} onValueChange={(v) => { setMonth(v); setSelectedProvider(null); }}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue />
@@ -191,17 +288,23 @@ const ShiftPlanPage = () => {
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              Each row is one concrete shift. <code>publish</code> rows go into Homebase; <code>cut</code> rows are documented for the provider record but not scheduled.
+              Each row is one concrete shift. Homebase status is automatic from the selected Homebase date window; Ops status is the team's manual review marker.
               MD-only states (AL, IN, GA, MS, MO, SC, TN, LA) only allow MD/DO providers — NPs are filtered out at allocation time.
             </AlertDescription>
           </Alert>
 
           {!selectedProvider && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <KpiCard label="Publish shifts" value={`${networkTotals.publishCount}`} sub={`${networkTotals.publishHours.toFixed(0)} hrs`} />
               <KpiCard label="Cut shifts" value={`${networkTotals.cutCount}`} sub={`${networkTotals.cutHours.toFixed(0)} hrs trimmed`} />
               <KpiCard label="Pending publish" value={`${networkTotals.pendingPublish}`} sub="awaiting Homebase entry" accent={networkTotals.pendingPublish > 0 ? 'warn' : 'good'} />
               <KpiCard label="Published" value={`${networkTotals.published}`} sub={`${networkTotals.confirmed} confirmed`} accent={networkTotals.published > 0 ? 'good' : 'neutral'} />
+              <KpiCard
+                label="Homebase confirmed"
+                value={`${networkTotals.homebasePublished}`}
+                sub={`${networkTotals.homebaseMissing} missing · ${networkTotals.homebaseUnpublished + networkTotals.homebaseUnscheduled} needs publish`}
+                accent={networkTotals.homebaseMissing > 0 || networkTotals.homebaseUnpublished > 0 ? 'warn' : 'good'}
+              />
             </div>
           )}
 
@@ -229,6 +332,7 @@ const ShiftPlanPage = () => {
                           <th className="text-right py-2 px-2 font-medium">Cut</th>
                           <th className="text-right py-2 px-2 font-medium">Hrs publish</th>
                           <th className="text-right py-2 px-2 font-medium">Hrs cut</th>
+                          <th className="text-right py-2 px-2 font-medium">Homebase</th>
                           <th className="text-right py-2 px-2 font-medium">Status</th>
                           <th className="py-2 px-2"></th>
                         </tr>
@@ -241,6 +345,9 @@ const ShiftPlanPage = () => {
                             <td className="py-2 px-2 text-right tabular-nums text-muted-foreground">{row.cut_count ?? 0}</td>
                             <td className="py-2 px-2 text-right tabular-nums">{Number(row.publish_hours ?? 0).toFixed(1)}</td>
                             <td className="py-2 px-2 text-right tabular-nums text-muted-foreground">{Number(row.cut_hours ?? 0).toFixed(1)}</td>
+                            <td className="py-2 px-2 text-right">
+                              <ProviderHomebaseBadge row={row} />
+                            </td>
                             <td className="py-2 px-2 text-right">
                               <ProviderStatusBadge row={row} />
                             </td>
@@ -289,7 +396,8 @@ const ShiftPlanPage = () => {
                           <th className="text-left py-2 px-2 font-medium">Type</th>
                           <th className="text-left py-2 px-2 font-medium">State</th>
                           <th className="text-left py-2 px-2 font-medium">Decision</th>
-                          <th className="text-left py-2 px-2 font-medium">Status</th>
+                          <th className="text-left py-2 px-2 font-medium">Homebase</th>
+                          <th className="text-left py-2 px-2 font-medium">Ops Status</th>
                           <th className="py-2 px-2"></th>
                         </tr>
                       </thead>
@@ -297,7 +405,7 @@ const ShiftPlanPage = () => {
                         {details.map(row => (
                           <tr
                             key={row.id}
-                            className={`hover:bg-muted/30 ${row.recommendation === 'cut' ? 'opacity-60' : ''}`}
+                            className={`hover:bg-muted/30 ${homebaseRowClass(row)} ${row.recommendation === 'cut' ? 'opacity-60' : ''}`}
                           >
                             <td className="py-2 px-2 whitespace-nowrap">{formatDate(row.shift_date)}</td>
                             <td className="py-2 px-2 whitespace-nowrap font-mono text-xs">
@@ -312,6 +420,9 @@ const ShiftPlanPage = () => {
                               </Badge>
                             </td>
                             <td className="py-2 px-2">
+                              <HomebaseStatusBadge confirmation={row.homebase_confirmation} />
+                            </td>
+                            <td className="py-2 px-2">
                               <PublishStatusBadge status={row.publish_status} />
                             </td>
                             <td className="py-2 px-2 text-right">
@@ -321,6 +432,7 @@ const ShiftPlanPage = () => {
                                   size="sm"
                                   onClick={() => togglePublished(row)}
                                   disabled={updateMutation.isPending}
+                                  title="Toggle Ops review status"
                                 >
                                   <Check className={`h-4 w-4 ${row.publish_status === 'published_to_homebase' ? '' : 'opacity-50'}`} />
                                 </Button>
@@ -367,6 +479,55 @@ const ProviderStatusBadge = ({ row }: { row: ProviderShiftSummary }) => {
   if (published + confirmed === total) return <Badge variant="default">published</Badge>;
   if (published + confirmed > 0) return <Badge variant="secondary">{published + confirmed}/{total} done</Badge>;
   return <Badge variant="outline">{pending} pending</Badge>;
+};
+
+const ProviderHomebaseBadge = ({ row }: { row: ProviderShiftSummary }) => {
+  const total = row.publish_count ?? 0;
+  const published = row.homebase_published_count ?? 0;
+  const unpublished = row.homebase_unpublished_count ?? 0;
+  const unscheduled = row.homebase_unscheduled_count ?? 0;
+  const missing = row.homebase_missing_count ?? 0;
+
+  if (total === 0) return <Badge variant="secondary">no publish</Badge>;
+  if (published === total) {
+    return <Badge className="bg-emerald-600"><CheckCircle2 className="h-3 w-3 mr-1" />all synced</Badge>;
+  }
+  if (published > 0) {
+    return (
+      <Badge variant="secondary">
+        {published}/{total} synced
+      </Badge>
+    );
+  }
+  if (unpublished + unscheduled > 0) {
+    return <Badge className="bg-amber-600"><AlertTriangle className="h-3 w-3 mr-1" />needs publish</Badge>;
+  }
+  return <Badge variant="outline">{missing}/{total} missing</Badge>;
+};
+
+const HomebaseStatusBadge = ({ confirmation }: { confirmation: ShiftRecommendation['homebase_confirmation'] }) => {
+  if (confirmation.status === 'published') {
+    return <Badge className="bg-emerald-600"><CheckCircle2 className="h-3 w-3 mr-1" />Homebase</Badge>;
+  }
+  if (confirmation.status === 'unpublished') {
+    return <Badge className="bg-amber-600"><AlertTriangle className="h-3 w-3 mr-1" />Unpublished</Badge>;
+  }
+  if (confirmation.status === 'unscheduled') {
+    return <Badge className="bg-amber-600"><AlertTriangle className="h-3 w-3 mr-1" />Unscheduled</Badge>;
+  }
+  if (confirmation.status === 'not_applicable') {
+    return <Badge variant="secondary">N/A</Badge>;
+  }
+  return <Badge variant="outline"><CircleDashed className="h-3 w-3 mr-1" />Not found</Badge>;
+};
+
+const homebaseRowClass = (row: ShiftRecommendation) => {
+  if (row.recommendation !== 'publish') return '';
+  if (row.homebase_confirmation.status === 'published') return 'bg-emerald-50/50 dark:bg-emerald-950/10';
+  if (row.homebase_confirmation.status === 'unpublished' || row.homebase_confirmation.status === 'unscheduled') {
+    return 'bg-amber-50/50 dark:bg-amber-950/10';
+  }
+  return '';
 };
 
 const PublishStatusBadge = ({ status }: { status: string }) => {
