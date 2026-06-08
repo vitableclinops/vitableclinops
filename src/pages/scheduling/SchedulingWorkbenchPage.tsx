@@ -125,6 +125,7 @@ import { ResubmissionInboxPanel } from '@/components/scheduling/ResubmissionInbo
 import { OnboardingReadinessPanel } from '@/components/scheduling/OnboardingReadinessPanel';
 import { UnmatchedSubmissionsPanel } from '@/components/scheduling/UnmatchedSubmissionsPanel';
 import { ProviderNoteIndicator, ProviderNotesCard } from '@/components/scheduling/ProviderNotesCard';
+import { cn } from '@/lib/utils';
 import { diffParsedShifts } from '@/lib/scheduling/submissionDiff';
 import {
   useOnboardingReadiness,
@@ -216,6 +217,7 @@ type ManualAvailabilityDraft = {
   date: string;
   startTime: string;
   endTime: string;
+  sourceIssues?: string[];
 };
 
 const WEEKDAY_OPTIONS = [
@@ -235,6 +237,8 @@ const MANUAL_AVAILABILITY_KIND_LABEL: Record<ManualAvailabilityKind, string> = {
   one_off_virtual: 'One-off virtual',
   in_home_clinic: 'In-home / clinic',
 };
+
+const MAX_SINGLE_SHIFT_HOURS = 12;
 
 const parseWidgetArray = (raw: unknown): Record<string, unknown>[] => {
   if (raw == null) return [];
@@ -274,6 +278,9 @@ const formatTimeInput = (minutes: number | null): string => {
   if (minutes == null) return '';
   return `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
 };
+
+const timeInputFromRaw = (raw: unknown): string =>
+  formatTimeInput(parseTimeToMinutes(raw));
 
 const parseDateInput = (raw: unknown): string => {
   if (typeof raw !== 'string') return '';
@@ -326,6 +333,62 @@ const draftShiftHours = (draft: ManualAvailabilityDraft, month: string): number 
 const totalManualAvailabilityHours = (drafts: ManualAvailabilityDraft[], month: string) =>
   Math.round(drafts.reduce((sum, draft) => sum + draftShiftHours(draft, month), 0) * 100) / 100;
 
+const manualDraftSingleShiftHours = (draft: ManualAvailabilityDraft): number | null => {
+  const start = parseTimeToMinutes(draft.startTime);
+  const end = parseTimeToMinutes(draft.endTime);
+  if (start == null || end == null || end <= start) return null;
+  return Math.round(((end - start) / 60) * 100) / 100;
+};
+
+const warningStringsFromUnknown = (warnings: unknown): string[] => {
+  if (Array.isArray(warnings)) {
+    return warnings
+      .map(warning => String(warning ?? '').trim())
+      .filter(Boolean);
+  }
+  if (typeof warnings === 'string') {
+    try {
+      const parsed = JSON.parse(warnings);
+      if (Array.isArray(parsed)) return warningStringsFromUnknown(parsed);
+    } catch {
+      // Plain text warning.
+    }
+    return warnings.trim() ? [warnings.trim()] : [];
+  }
+  if (isRecord(warnings)) {
+    return Object.values(warnings)
+      .flatMap(value => warningStringsFromUnknown(value))
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const manualDraftIssues = (draft: ManualAvailabilityDraft, month: string): string[] => {
+  const issues: string[] = [...(draft.sourceIssues ?? [])];
+  const start = parseTimeToMinutes(draft.startTime);
+  const end = parseTimeToMinutes(draft.endTime);
+  const singleShiftHours = manualDraftSingleShiftHours(draft);
+
+  if (draft.kind === 'recurring_virtual' && !WEEKDAY_INDEX.has(draft.dayOfWeek.toLowerCase())) {
+    issues.push('Weekday is missing');
+  }
+  if (draft.kind !== 'recurring_virtual') {
+    if (!draft.date) issues.push('Date is missing');
+    else if (!draft.date.startsWith(month.slice(0, 7))) {
+      issues.push('Date is outside this month');
+    }
+  }
+  if (start == null) issues.push('Start time is missing or invalid');
+  if (end == null) issues.push('End time is missing or invalid');
+  if (start != null && end != null && end <= start) {
+    issues.push('End time is not after start time');
+  }
+  if (singleShiftHours != null && singleShiftHours > MAX_SINGLE_SHIFT_HOURS) {
+    issues.push(`Single shift is ${formatHours(singleShiftHours)}h, over ${MAX_SINGLE_SHIFT_HOURS}h`);
+  }
+  return issues;
+};
+
 const validateManualAvailabilityDrafts = (
   drafts: ManualAvailabilityDraft[],
   month: string,
@@ -334,21 +397,8 @@ const validateManualAvailabilityDrafts = (
   if (drafts.length === 0) errors.push('Add at least one corrected availability row.');
   drafts.forEach((draft, index) => {
     const label = `Row ${index + 1}`;
-    const start = parseTimeToMinutes(draft.startTime);
-    const end = parseTimeToMinutes(draft.endTime);
-    if (draft.kind === 'recurring_virtual' && !WEEKDAY_INDEX.has(draft.dayOfWeek.toLowerCase())) {
-      errors.push(`${label}: choose a weekday.`);
-    }
-    if (draft.kind !== 'recurring_virtual') {
-      if (!draft.date) errors.push(`${label}: choose a date.`);
-      else if (!draft.date.startsWith(month.slice(0, 7))) {
-        errors.push(`${label}: date must be in ${formatMonthLabel(month)}.`);
-      }
-    }
-    if (start == null) errors.push(`${label}: choose a valid start time.`);
-    if (end == null) errors.push(`${label}: choose a valid end time.`);
-    if (start != null && end != null && end <= start) {
-      errors.push(`${label}: end time must be after start time.`);
+    for (const issue of manualDraftIssues(draft, month)) {
+      errors.push(`${label}: ${issue}.`);
     }
   });
   return errors;
@@ -364,8 +414,18 @@ const kindFromLegacyShiftType = (raw: unknown): ManualAvailabilityKind => {
 const manualDraftsFromParsedShifts = (
   parsedShifts: unknown,
   month: string,
+  sourceWarnings: string[] = [],
+  decisionNotes: string | null | undefined = null,
 ): ManualAvailabilityDraft[] => {
   const drafts: ManualAvailabilityDraft[] = [];
+  const reviewSourceIssues = [
+    ...sourceWarnings.filter(warning =>
+      /invalid|malformed|unparseable|end time|start time|exceeds|max_single_shift|overnight/i.test(warning),
+    ),
+    ...(decisionNotes && /invalid|malformed|unparseable|end time|start time|exceeds|max_single_shift|overnight/i.test(decisionNotes)
+      ? ['System flagged this submission for time review']
+      : []),
+  ].slice(0, 2);
   if (Array.isArray(parsedShifts)) {
     parsedShifts.forEach(item => {
       if (!isRecord(item)) return;
@@ -374,9 +434,9 @@ const manualDraftsFromParsedShifts = (
         id: manualDraftId(),
         kind,
         dayOfWeek: String(item.day_of_week ?? item.dayOfWeek ?? 'Monday'),
-        date: parseDateInput(item.date) || firstDateOfMonth(month),
-        startTime: formatTimeInput(parseTimeToMinutes(item.start_time)) || '09:00',
-        endTime: formatTimeInput(parseTimeToMinutes(item.end_time)) || '17:00',
+        date: parseDateInput(item.date),
+        startTime: timeInputFromRaw(item.start_time),
+        endTime: timeInputFromRaw(item.end_time),
       });
     });
   } else if (isRecord(parsedShifts)) {
@@ -386,8 +446,8 @@ const manualDraftsFromParsedShifts = (
         kind: 'recurring_virtual',
         dayOfWeek: String(row['Day of Week'] ?? 'Monday'),
         date: firstDateOfMonth(month),
-        startTime: formatTimeInput(parseTimeToMinutes(row['Start Time (ET)'])) || '09:00',
-        endTime: formatTimeInput(parseTimeToMinutes(row['End Time (ET)'])) || '17:00',
+        startTime: timeInputFromRaw(row['Start Time (ET)']),
+        endTime: timeInputFromRaw(row['End Time (ET)']),
       });
     }
     for (const row of parseWidgetArray(parsedShifts.one_off_virtual)) {
@@ -395,9 +455,9 @@ const manualDraftsFromParsedShifts = (
         id: manualDraftId(),
         kind: 'one_off_virtual',
         dayOfWeek: 'Monday',
-        date: parseDateInput(row.Date) || firstDateOfMonth(month),
-        startTime: formatTimeInput(parseTimeToMinutes(row['Start Time (ET)'])) || '09:00',
-        endTime: formatTimeInput(parseTimeToMinutes(row['End Time (ET)'])) || '17:00',
+        date: parseDateInput(row.Date),
+        startTime: timeInputFromRaw(row['Start Time (ET)']),
+        endTime: timeInputFromRaw(row['End Time (ET)']),
       });
     }
     for (const row of parseWidgetArray(parsedShifts.in_home_clinic)) {
@@ -405,13 +465,26 @@ const manualDraftsFromParsedShifts = (
         id: manualDraftId(),
         kind: 'in_home_clinic',
         dayOfWeek: 'Monday',
-        date: parseDateInput(row.Date) || firstDateOfMonth(month),
-        startTime: formatTimeInput(parseTimeToMinutes(row['Start Time (ET)'])) || '09:00',
-        endTime: formatTimeInput(parseTimeToMinutes(row['End Time (ET)'])) || '17:00',
+        date: parseDateInput(row.Date),
+        startTime: timeInputFromRaw(row['Start Time (ET)']),
+        endTime: timeInputFromRaw(row['End Time (ET)']),
       });
     }
   }
-  return drafts.length > 0 ? drafts : [defaultManualAvailabilityDraft(month)];
+  if (drafts.length > 0) {
+    return reviewSourceIssues.length > 0
+      ? drafts.map(draft => ({ ...draft, sourceIssues: reviewSourceIssues }))
+      : drafts;
+  }
+  if (reviewSourceIssues.length > 0) {
+    return [{
+      ...defaultManualAvailabilityDraft(month),
+      startTime: '',
+      endTime: '',
+      sourceIssues: reviewSourceIssues,
+    }];
+  }
+  return [defaultManualAvailabilityDraft(month)];
 };
 
 const formatManualDraftLabel = (draft: ManualAvailabilityDraft): string => {
@@ -3756,9 +3829,17 @@ function NeedsReviewPanel({
     reasonLabel: string,
     startWithCorrection = false,
   ) => {
+    const warnings = warningStringsFromUnknown(row.submission?.validation_warnings);
     setResolutionTarget({ row, decision });
     setUseCorrectedTimes(startWithCorrection);
-    setManualDrafts(manualDraftsFromParsedShifts(row.submission?.parsed_shifts, month));
+    setManualDrafts(
+      manualDraftsFromParsedShifts(
+        row.submission?.parsed_shifts,
+        month,
+        warnings,
+        row.submission?.decision_notes,
+      ),
+    );
     setResolutionReason(
       startWithCorrection && decision === 'accepted'
         ? `ClinOps corrected the submitted availability to the exact reviewed times and approved those hours for use.`
@@ -3819,7 +3900,11 @@ function NeedsReviewPanel({
     patch: Partial<ManualAvailabilityDraft>,
   ) => {
     setManualDrafts(current =>
-      current.map(draft => (draft.id === id ? { ...draft, ...patch } : draft)),
+      current.map(draft => (
+        draft.id === id
+          ? { ...draft, ...patch, sourceIssues: undefined }
+          : draft
+      )),
     );
   };
 
@@ -4050,117 +4135,157 @@ function NeedsReviewPanel({
               </div>
 
               <div className="space-y-2">
-                {manualDrafts.map((draft, index) => (
-                  <div
-                    key={draft.id}
-                    className="grid gap-2 rounded-md border bg-background p-2 md:grid-cols-[minmax(150px,0.9fr)_minmax(140px,0.9fr)_minmax(140px,0.9fr)_minmax(110px,0.6fr)_minmax(110px,0.6fr)_auto]"
-                  >
-                    <div className="space-y-1">
-                      {index === 0 && <Label className="text-xs">Type</Label>}
-                      <Select
-                        value={draft.kind}
-                        onValueChange={value => {
-                          setUseCorrectedTimes(true);
-                          updateManualDraft(draft.id, { kind: value as ManualAvailabilityKind });
-                        }}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(MANUAL_AVAILABILITY_KIND_LABEL).map(([value, label]) => (
-                            <SelectItem key={value} value={value}>
-                              {label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      {index === 0 && (
-                        <Label className="text-xs">
-                          {draft.kind === 'recurring_virtual' ? 'Weekday' : 'Date'}
-                        </Label>
+                {manualDrafts.map((draft, index) => {
+                  const issues = manualDraftIssues(draft, month);
+                  const hasIssue = issues.length > 0;
+                  const startInvalid = parseTimeToMinutes(draft.startTime) == null;
+                  const endInvalid = parseTimeToMinutes(draft.endTime) == null;
+                  const dateInvalid =
+                    draft.kind !== 'recurring_virtual' &&
+                    (!draft.date || !draft.date.startsWith(month.slice(0, 7)));
+                  const endBeforeStart =
+                    parseTimeToMinutes(draft.startTime) != null &&
+                    parseTimeToMinutes(draft.endTime) != null &&
+                    parseTimeToMinutes(draft.endTime)! <= parseTimeToMinutes(draft.startTime)!;
+                  return (
+                    <div
+                      key={draft.id}
+                      className={cn(
+                        'grid gap-2 rounded-md border bg-background p-2 md:grid-cols-[minmax(150px,0.9fr)_minmax(140px,0.9fr)_minmax(140px,0.9fr)_minmax(110px,0.6fr)_minmax(110px,0.6fr)_auto]',
+                        hasIssue && 'border-red-300 bg-red-50/70',
                       )}
-                      {draft.kind === 'recurring_virtual' ? (
+                    >
+                      <div className="space-y-1">
+                        {index === 0 && <Label className="text-xs">Type</Label>}
                         <Select
-                          value={draft.dayOfWeek}
+                          value={draft.kind}
                           onValueChange={value => {
                             setUseCorrectedTimes(true);
-                            updateManualDraft(draft.id, { dayOfWeek: value });
+                            updateManualDraft(draft.id, { kind: value as ManualAvailabilityKind });
                           }}
                         >
-                          <SelectTrigger className="h-9">
+                          <SelectTrigger className="h-9 bg-background">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {WEEKDAY_OPTIONS.map(day => (
-                              <SelectItem key={day} value={day}>
-                                {day}
+                            {Object.entries(MANUAL_AVAILABILITY_KIND_LABEL).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                      ) : (
+                      </div>
+                      <div className="space-y-1">
+                        {index === 0 && (
+                          <Label className="text-xs">
+                            {draft.kind === 'recurring_virtual' ? 'Weekday' : 'Date'}
+                          </Label>
+                        )}
+                        {draft.kind === 'recurring_virtual' ? (
+                          <Select
+                            value={draft.dayOfWeek}
+                            onValueChange={value => {
+                              setUseCorrectedTimes(true);
+                              updateManualDraft(draft.id, { dayOfWeek: value });
+                            }}
+                          >
+                            <SelectTrigger
+                              className={cn(
+                                'h-9 bg-background',
+                                hasIssue &&
+                                  !WEEKDAY_INDEX.has(draft.dayOfWeek.toLowerCase()) &&
+                                  'border-red-300 text-red-800',
+                              )}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {WEEKDAY_OPTIONS.map(day => (
+                                <SelectItem key={day} value={day}>
+                                  {day}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            type="date"
+                            className={cn('h-9 bg-background', dateInvalid && 'border-red-300 text-red-800')}
+                            value={draft.date}
+                            onChange={event => {
+                              setUseCorrectedTimes(true);
+                              updateManualDraft(draft.id, { date: event.target.value });
+                            }}
+                          />
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        {index === 0 && <Label className="text-xs">Start</Label>}
                         <Input
-                          type="date"
-                          className="h-9"
-                          value={draft.date}
+                          type="time"
+                          className={cn('h-9 bg-background', (startInvalid || endBeforeStart) && 'border-red-300 text-red-800')}
+                          value={draft.startTime}
                           onChange={event => {
                             setUseCorrectedTimes(true);
-                            updateManualDraft(draft.id, { date: event.target.value });
+                            updateManualDraft(draft.id, { startTime: event.target.value });
                           }}
                         />
+                      </div>
+                      <div className="space-y-1">
+                        {index === 0 && <Label className="text-xs">End</Label>}
+                        <Input
+                          type="time"
+                          className={cn('h-9 bg-background', (endInvalid || endBeforeStart) && 'border-red-300 text-red-800')}
+                          value={draft.endTime}
+                          onChange={event => {
+                            setUseCorrectedTimes(true);
+                            updateManualDraft(draft.id, { endTime: event.target.value });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        {index === 0 && <Label className="text-xs">Hrs</Label>}
+                        <div
+                          className={cn(
+                            'flex h-9 items-center justify-end rounded-md border bg-background px-2 text-sm tabular-nums',
+                            hasIssue && 'border-red-300 bg-red-100 text-red-800',
+                          )}
+                        >
+                          {formatHours(draftShiftHours(draft, month))}
+                        </div>
+                      </div>
+                      <div className="flex items-end justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9"
+                          title="Remove corrected row"
+                          aria-label="Remove corrected row"
+                          onClick={() => {
+                            setUseCorrectedTimes(true);
+                            removeManualDraft(draft.id);
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {hasIssue && (
+                        <div className="space-y-1 md:col-span-6">
+                          <div>
+                            <Badge variant="outline" className="border-red-200 bg-red-100 text-red-800">
+                              Needs adjustment
+                            </Badge>
+                          </div>
+                          <div className="text-xs leading-snug text-red-800">
+                            {issues.join(' · ')}
+                          </div>
+                        </div>
                       )}
                     </div>
-                    <div className="space-y-1">
-                      {index === 0 && <Label className="text-xs">Start</Label>}
-                      <Input
-                        type="time"
-                        className="h-9"
-                        value={draft.startTime}
-                        onChange={event => {
-                          setUseCorrectedTimes(true);
-                          updateManualDraft(draft.id, { startTime: event.target.value });
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      {index === 0 && <Label className="text-xs">End</Label>}
-                      <Input
-                        type="time"
-                        className="h-9"
-                        value={draft.endTime}
-                        onChange={event => {
-                          setUseCorrectedTimes(true);
-                          updateManualDraft(draft.id, { endTime: event.target.value });
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      {index === 0 && <Label className="text-xs">Hrs</Label>}
-                      <div className="flex h-9 items-center justify-end rounded-md border px-2 text-sm tabular-nums">
-                        {formatHours(draftShiftHours(draft, month))}
-                      </div>
-                    </div>
-                    <div className="flex items-end justify-end">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9"
-                        title="Remove corrected row"
-                        aria-label="Remove corrected row"
-                        onClick={() => {
-                          setUseCorrectedTimes(true);
-                          removeManualDraft(draft.id);
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
