@@ -1105,6 +1105,8 @@ export function useResolveNeedsReview() {
   return useMutation({
     mutationFn: async (args: {
       submission_id: string;
+      provider_id: string | null;
+      target_month: string;
       prior_status: string | null;
       decision: 'accepted' | 'declined';
       hours_basis: number | null;
@@ -1113,7 +1115,9 @@ export function useResolveNeedsReview() {
     }) => {
       const nowIso = new Date().toISOString();
       const actor = profile?.full_name || profile?.email || user?.email || 'ClinOps';
-      const auditLine = `Resolved needs_review → ${args.decision} by ${actor} at ${nowIso}: ${args.reason}`;
+      const auditDecision =
+        args.decision === 'accepted' ? 'accepted_for_use' : 'declined_greyed_out';
+      const auditLine = `Resolved needs_review → ${auditDecision} by ${actor} at ${nowIso}: ${args.reason}`;
       const newNotes = args.existing_notes
         ? `${args.existing_notes}\n${auditLine}`
         : auditLine;
@@ -1143,9 +1147,26 @@ export function useResolveNeedsReview() {
           actor_label: actor,
         });
       if (logErr) throw logErr;
+
+      if (args.provider_id && args.target_month) {
+        const monthStart = monthIso(args.target_month);
+        const providerParam = encodeURIComponent(args.provider_id);
+        const monthParam = encodeURIComponent(monthStart);
+        const { error: emitErr } = await clinopsSupabase.functions.invoke(
+          `emit-shift-recommendations?provider_id=${providerParam}&target_month=${monthParam}`,
+          { body: {} },
+        );
+        if (emitErr) {
+          throw new Error(
+            `Decision saved, but publish-row rebuild failed: ${emitErr.message}`,
+          );
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'state-coverage'] });
     },
   });
 }

@@ -1541,11 +1541,19 @@ export default function SchedulingWorkbenchPage({
             onResolve={(args) =>
               resolveReview.mutate(args, {
                 onSuccess: () => {
-                  toast.success(`Marked ${args.decision} for ${args.provider_name}`);
+                  toast.success(
+                    args.decision === 'accepted'
+                      ? `Accepted and rebuilt usable hours for ${args.provider_name}`
+                      : `Declined and greyed out hours for ${args.provider_name}`,
+                  );
                   refetch();
                   refetchShifts();
                 },
-                onError: e => toast.error(`Could not resolve: ${(e as Error).message}`),
+                onError: e => {
+                  toast.error(`Could not resolve: ${(e as Error).message}`);
+                  refetch();
+                  refetchShifts();
+                },
               })
             }
             isPending={resolveReview.isPending}
@@ -2447,6 +2455,8 @@ function ByDayPanel({
 
 type ResolveArgs = {
   submission_id: string;
+  provider_id: string | null;
+  target_month: string;
   prior_status: string | null;
   decision: 'accepted' | 'declined';
   hours_basis: number | null;
@@ -2482,8 +2492,8 @@ function NeedsReviewPanel({
     setResolutionTarget({ row, decision });
     setResolutionReason(
       decision === 'accepted'
-        ? `ClinOps reviewed ${reasonLabel} and approved the submitted hours.`
-        : `ClinOps reviewed ${reasonLabel} and declined the submitted hours.`,
+        ? `ClinOps reviewed ${reasonLabel} and approved the submitted hours for use.`
+        : `ClinOps reviewed ${reasonLabel} and declined the submitted hours so they are greyed out.`,
     );
   };
 
@@ -2497,6 +2507,8 @@ function NeedsReviewPanel({
     const sub = resolutionTarget.row.submission;
     onResolve({
       submission_id: sub.id,
+      provider_id: sub.provider_id,
+      target_month: sub.target_month,
       prior_status: sub.decision_status,
       decision: resolutionTarget.decision,
       hours_basis: expandedSubmittedHours(sub),
@@ -2506,6 +2518,13 @@ function NeedsReviewPanel({
     });
     setResolutionTarget(null);
   };
+
+  const decisionLabel =
+    resolutionTarget?.decision === 'accepted'
+      ? 'Accept and use'
+      : resolutionTarget?.decision === 'declined'
+        ? 'Decline and grey out'
+        : '—';
 
   if (isLoading) {
     return (
@@ -2536,7 +2555,7 @@ function NeedsReviewPanel({
             Needs review · {formatMonthLabel(month)}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Resolve these after a ClinOps lead decision. The system could not safely decide because the submitted time or scheduling detail needs judgment.
+            Resolve these after a ClinOps lead decision. Accept & use rebuilds publishable shift rows; decline & grey out moves the hours to declined/cut coverage.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -2599,7 +2618,7 @@ function NeedsReviewPanel({
                           disabled={isPending}
                           onClick={() => openResolutionDialog(r, 'accepted', reasonLabel)}
                         >
-                          Accept
+                          Accept & use
                         </Button>
                         <Button
                           size="sm"
@@ -2608,7 +2627,7 @@ function NeedsReviewPanel({
                           disabled={isPending}
                           onClick={() => openResolutionDialog(r, 'declined', reasonLabel)}
                         >
-                          Decline
+                          Decline & grey
                         </Button>
                         <Button
                           size="sm"
@@ -2644,7 +2663,9 @@ function NeedsReviewPanel({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {resolutionTarget?.decision === 'accepted' ? 'Accept hours' : 'Decline hours'}
+              {resolutionTarget?.decision === 'accepted'
+                ? 'Accept and use hours'
+                : 'Decline and grey out hours'}
             </DialogTitle>
             <DialogDescription>
               {resolutionTarget?.row.provider_name ?? 'Provider'} · {formatMonthLabel(month)}
@@ -2660,7 +2681,7 @@ function NeedsReviewPanel({
               </div>
               <div className="rounded-md border px-3 py-2">
                 <div className="text-xs text-muted-foreground">Decision</div>
-                <div className="font-medium capitalize">{resolutionTarget?.decision ?? '—'}</div>
+                <div className="font-medium">{decisionLabel}</div>
               </div>
             </div>
             <div>
@@ -2679,7 +2700,9 @@ function NeedsReviewPanel({
             </Button>
             <Button onClick={submitResolution} disabled={isPending || !resolutionTarget}>
               {isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              Save decision
+              {resolutionTarget?.decision === 'accepted'
+                ? 'Accept & use hours'
+                : 'Decline & grey out'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4154,8 +4177,12 @@ function DeclinedPanel({
           <TableBody>
             {declinedRows.map(r => {
               const sub = r.submission!;
+              const isFullyDeclined = sub.decision_status === 'declined';
               return (
-                <TableRow key={r.provider_id}>
+                <TableRow
+                  key={r.provider_id}
+                  className={isFullyDeclined ? 'bg-slate-50/80 text-muted-foreground' : undefined}
+                >
                   <TableCell>
                     <div className="font-medium">{r.provider_name}</div>
                     <div className="text-xs text-muted-foreground">{r.profession ?? '—'}</div>
@@ -4166,8 +4193,10 @@ function DeclinedPanel({
                   <TableCell className="text-right tabular-nums">
                     {formatHours(sub.accepted_hours)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatHours(sub.declined_hours)}
+                  <TableCell className="text-right tabular-nums text-slate-500">
+                    <span className="line-through decoration-slate-400">
+                      {formatHours(sub.declined_hours)}
+                    </span>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(sub.submitted_at).toLocaleDateString('en-US', {
@@ -4290,8 +4319,12 @@ function DeclinedHoursPanel({
                 const uniqueCutReasons = Array.from(new Set(
                   cuts.map(c => c.recommendation_reason).filter(Boolean) as string[],
                 ));
+                const isFullyDeclined = sub.decision_status === 'declined';
                 return (
-                  <TableRow key={row.provider_id}>
+                  <TableRow
+                    key={row.provider_id}
+                    className={isFullyDeclined ? 'bg-slate-50/80 text-muted-foreground' : undefined}
+                  >
                     <TableCell className="align-top">
                       <div className="font-medium">{row.provider_name}</div>
                       <div className="text-xs text-muted-foreground">
@@ -4310,8 +4343,10 @@ function DeclinedHoursPanel({
                     <TableCell className="align-top text-right tabular-nums">
                       {formatHours(sub.accepted_hours)}
                     </TableCell>
-                    <TableCell className="align-top text-right tabular-nums text-red-700">
-                      {formatHours(sub.declined_hours)}
+                    <TableCell className="align-top text-right tabular-nums text-slate-500">
+                      <span className="line-through decoration-slate-400">
+                        {formatHours(sub.declined_hours)}
+                      </span>
                     </TableCell>
                     <TableCell className="align-top text-xs max-w-[220px]">
                       {eligibleStates.length > 0 ? (
@@ -4339,8 +4374,11 @@ function DeclinedHoursPanel({
                       ) : (
                         <div className="space-y-1">
                           {cuts.slice(0, 4).map(cut => (
-                            <div key={cut.id} className="rounded border px-2 py-1">
-                              <div className="font-medium">
+                            <div
+                              key={cut.id}
+                              className="rounded border bg-slate-50 px-2 py-1 text-muted-foreground"
+                            >
+                              <div className="font-medium line-through decoration-slate-400">
                                 {formatProviderShiftDate(cut)} · {formatProviderShiftTime(cut)}
                               </div>
                               <div className="text-muted-foreground">
