@@ -115,6 +115,7 @@ import {
   type ProviderSearchHit,
   type ProviderSchedulingExceptionRow,
   type SchedulingExceptionRow,
+  type ScheduleRecalculationResult,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -205,6 +206,284 @@ const expandedSubmittedHours = (
   row?.normalized_requested_hours ??
   row?.raw_requested_hours ??
   null;
+
+type ManualAvailabilityKind = 'recurring_virtual' | 'one_off_virtual' | 'in_home_clinic';
+
+type ManualAvailabilityDraft = {
+  id: string;
+  kind: ManualAvailabilityKind;
+  dayOfWeek: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+};
+
+const WEEKDAY_OPTIONS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+
+const WEEKDAY_INDEX = new Map(WEEKDAY_OPTIONS.map((day, index) => [day.toLowerCase(), index]));
+
+const MANUAL_AVAILABILITY_KIND_LABEL: Record<ManualAvailabilityKind, string> = {
+  recurring_virtual: 'Recurring virtual',
+  one_off_virtual: 'One-off virtual',
+  in_home_clinic: 'In-home / clinic',
+};
+
+const parseWidgetArray = (raw: unknown): Record<string, unknown>[] => {
+  if (raw == null) return [];
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is Record<string, unknown> => item != null && typeof item === 'object')
+    : [];
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value != null && typeof value === 'object' && !Array.isArray(value);
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+const parseTimeToMinutes = (raw: unknown): number | null => {
+  if (typeof raw !== 'string') return null;
+  const match = raw.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const ampm = match[3]?.toUpperCase();
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (ampm === 'AM' && hour === 12) hour = 0;
+  if (ampm === 'PM' && hour !== 12) hour += 12;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+};
+
+const formatTimeInput = (minutes: number | null): string => {
+  if (minutes == null) return '';
+  return `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
+};
+
+const parseDateInput = (raw: unknown): string => {
+  if (typeof raw !== 'string') return '';
+  const s = raw.trim();
+  let match = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  match = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (match) return `${match[3]}-${pad2(Number(match[1]))}-${pad2(Number(match[2]))}`;
+  return '';
+};
+
+const firstDateOfMonth = (month: string) => `${month.slice(0, 7)}-01`;
+
+const manualDraftId = () =>
+  `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const defaultManualAvailabilityDraft = (month: string): ManualAvailabilityDraft => ({
+  id: manualDraftId(),
+  kind: 'one_off_virtual',
+  dayOfWeek: 'Monday',
+  date: firstDateOfMonth(month),
+  startTime: '09:00',
+  endTime: '17:00',
+});
+
+const weekdayCountInMonth = (weekday: string, month: string): number => {
+  const target = WEEKDAY_INDEX.get(weekday.toLowerCase());
+  if (target == null) return 0;
+  const [year, monthNumber] = month.split('-').map(Number);
+  const days = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  let count = 0;
+  for (let day = 1; day <= days; day += 1) {
+    const date = new Date(Date.UTC(year, monthNumber - 1, day));
+    if (date.getUTCDay() === target) count += 1;
+  }
+  return count;
+};
+
+const draftShiftHours = (draft: ManualAvailabilityDraft, month: string): number => {
+  const start = parseTimeToMinutes(draft.startTime);
+  const end = parseTimeToMinutes(draft.endTime);
+  if (start == null || end == null || end <= start) return 0;
+  const single = (end - start) / 60;
+  if (draft.kind === 'recurring_virtual') {
+    return single * weekdayCountInMonth(draft.dayOfWeek, month);
+  }
+  return draft.date.startsWith(month.slice(0, 7)) ? single : 0;
+};
+
+const totalManualAvailabilityHours = (drafts: ManualAvailabilityDraft[], month: string) =>
+  Math.round(drafts.reduce((sum, draft) => sum + draftShiftHours(draft, month), 0) * 100) / 100;
+
+const validateManualAvailabilityDrafts = (
+  drafts: ManualAvailabilityDraft[],
+  month: string,
+): string[] => {
+  const errors: string[] = [];
+  if (drafts.length === 0) errors.push('Add at least one corrected availability row.');
+  drafts.forEach((draft, index) => {
+    const label = `Row ${index + 1}`;
+    const start = parseTimeToMinutes(draft.startTime);
+    const end = parseTimeToMinutes(draft.endTime);
+    if (draft.kind === 'recurring_virtual' && !WEEKDAY_INDEX.has(draft.dayOfWeek.toLowerCase())) {
+      errors.push(`${label}: choose a weekday.`);
+    }
+    if (draft.kind !== 'recurring_virtual') {
+      if (!draft.date) errors.push(`${label}: choose a date.`);
+      else if (!draft.date.startsWith(month.slice(0, 7))) {
+        errors.push(`${label}: date must be in ${formatMonthLabel(month)}.`);
+      }
+    }
+    if (start == null) errors.push(`${label}: choose a valid start time.`);
+    if (end == null) errors.push(`${label}: choose a valid end time.`);
+    if (start != null && end != null && end <= start) {
+      errors.push(`${label}: end time must be after start time.`);
+    }
+  });
+  return errors;
+};
+
+const kindFromLegacyShiftType = (raw: unknown): ManualAvailabilityKind => {
+  const value = String(raw ?? '').toLowerCase();
+  if (value.includes('home') || value.includes('clinic')) return 'in_home_clinic';
+  if (value.includes('one')) return 'one_off_virtual';
+  return 'recurring_virtual';
+};
+
+const manualDraftsFromParsedShifts = (
+  parsedShifts: unknown,
+  month: string,
+): ManualAvailabilityDraft[] => {
+  const drafts: ManualAvailabilityDraft[] = [];
+  if (Array.isArray(parsedShifts)) {
+    parsedShifts.forEach(item => {
+      if (!isRecord(item)) return;
+      const kind = kindFromLegacyShiftType(item.shift_type);
+      drafts.push({
+        id: manualDraftId(),
+        kind,
+        dayOfWeek: String(item.day_of_week ?? item.dayOfWeek ?? 'Monday'),
+        date: parseDateInput(item.date) || firstDateOfMonth(month),
+        startTime: formatTimeInput(parseTimeToMinutes(item.start_time)) || '09:00',
+        endTime: formatTimeInput(parseTimeToMinutes(item.end_time)) || '17:00',
+      });
+    });
+  } else if (isRecord(parsedShifts)) {
+    for (const row of parseWidgetArray(parsedShifts.recurring_virtual)) {
+      drafts.push({
+        id: manualDraftId(),
+        kind: 'recurring_virtual',
+        dayOfWeek: String(row['Day of Week'] ?? 'Monday'),
+        date: firstDateOfMonth(month),
+        startTime: formatTimeInput(parseTimeToMinutes(row['Start Time (ET)'])) || '09:00',
+        endTime: formatTimeInput(parseTimeToMinutes(row['End Time (ET)'])) || '17:00',
+      });
+    }
+    for (const row of parseWidgetArray(parsedShifts.one_off_virtual)) {
+      drafts.push({
+        id: manualDraftId(),
+        kind: 'one_off_virtual',
+        dayOfWeek: 'Monday',
+        date: parseDateInput(row.Date) || firstDateOfMonth(month),
+        startTime: formatTimeInput(parseTimeToMinutes(row['Start Time (ET)'])) || '09:00',
+        endTime: formatTimeInput(parseTimeToMinutes(row['End Time (ET)'])) || '17:00',
+      });
+    }
+    for (const row of parseWidgetArray(parsedShifts.in_home_clinic)) {
+      drafts.push({
+        id: manualDraftId(),
+        kind: 'in_home_clinic',
+        dayOfWeek: 'Monday',
+        date: parseDateInput(row.Date) || firstDateOfMonth(month),
+        startTime: formatTimeInput(parseTimeToMinutes(row['Start Time (ET)'])) || '09:00',
+        endTime: formatTimeInput(parseTimeToMinutes(row['End Time (ET)'])) || '17:00',
+      });
+    }
+  }
+  return drafts.length > 0 ? drafts : [defaultManualAvailabilityDraft(month)];
+};
+
+const formatManualDraftLabel = (draft: ManualAvailabilityDraft): string => {
+  const time = `${draft.startTime}-${draft.endTime}`;
+  if (draft.kind === 'recurring_virtual') return `${draft.dayOfWeek} ${time}`;
+  return `${draft.date} ${time}`;
+};
+
+const summarizeManualAvailability = (
+  drafts: ManualAvailabilityDraft[],
+  month: string,
+): string => {
+  const labels = drafts.slice(0, 3).map(formatManualDraftLabel);
+  const more = drafts.length > labels.length ? `; +${drafts.length - labels.length} more` : '';
+  return `${labels.join('; ')}${more}; total=${formatHours(totalManualAvailabilityHours(drafts, month))}h`;
+};
+
+const buildCorrectedParsedShifts = (
+  original: unknown,
+  drafts: ManualAvailabilityDraft[],
+  month: string,
+) => {
+  const base = isRecord(original) ? { ...original } : {};
+  const originalSnapshot =
+    base.clinops_original_widgets ??
+    (isRecord(original)
+      ? {
+          recurring_virtual: original.recurring_virtual ?? null,
+          one_off_virtual: original.one_off_virtual ?? null,
+          in_home_clinic: original.in_home_clinic ?? null,
+          requested_hours_total: original.requested_hours_total ?? null,
+        }
+      : { parsed_shifts: original ?? null });
+  const recurring = drafts
+    .filter(draft => draft.kind === 'recurring_virtual')
+    .map(draft => ({
+      'Day of Week': draft.dayOfWeek,
+      'Start Time (ET)': draft.startTime,
+      'End Time (ET)': draft.endTime,
+      'ClinOps Correction': 'manual_needs_decision_review',
+    }));
+  const oneOff = drafts
+    .filter(draft => draft.kind === 'one_off_virtual')
+    .map(draft => ({
+      Date: draft.date,
+      'Start Time (ET)': draft.startTime,
+      'End Time (ET)': draft.endTime,
+      'ClinOps Correction': 'manual_needs_decision_review',
+    }));
+  const inHome = drafts
+    .filter(draft => draft.kind === 'in_home_clinic')
+    .map(draft => ({
+      Date: draft.date,
+      'Start Time (ET)': draft.startTime,
+      'End Time (ET)': draft.endTime,
+      'ClinOps Correction': 'manual_needs_decision_review',
+    }));
+  return {
+    ...base,
+    recurring_virtual: recurring,
+    one_off_virtual: oneOff,
+    in_home_clinic: inHome,
+    requested_hours_total: totalManualAvailabilityHours(drafts, month),
+    clinops_original_widgets: originalSnapshot,
+    clinops_manual_correction: {
+      source: 'needs_decision_review',
+      corrected_at: new Date().toISOString(),
+      corrected_hours: totalManualAvailabilityHours(drafts, month),
+      summary: summarizeManualAvailability(drafts, month),
+    },
+  };
+};
 
 const formatRelativeTime = (iso: string): string => {
   const ms = Date.now() - new Date(iso).getTime();
@@ -551,7 +830,7 @@ export default function SchedulingWorkbenchPage({
   const { data: dbRowsData = [], isLoading, refetch } = useMonthlyPublishView(month);
   const { data: shiftRowsData = [], isLoading: shiftsLoading, refetch: refetchShifts } =
     useShiftRecommendationsForMonth(month);
-  const { data: cutRowsData = [], isLoading: cutsLoading } =
+  const { data: cutRowsData = [], isLoading: cutsLoading, refetch: refetchCuts } =
     useShiftRecommendationsForMonth(month, 'cut');
   const { data: auditEntriesData = [] } = usePublishAuditLog(month);
   const { data: inboxSubmissionsData = [], isLoading: inboxLoading } =
@@ -596,6 +875,11 @@ export default function SchedulingWorkbenchPage({
   const resolveReview = useResolveNeedsReview();
   const markOutreachSent = useMarkProviderOutreachSent();
   const reevaluate = useReevaluateMonth();
+  const [lastRecalculation, setLastRecalculation] = useState<{
+    result: ScheduleRecalculationResult;
+    before: RecalculationSnapshotRow[];
+    ranAt: string;
+  } | null>(null);
 
   // Optional: override parsed_shifts from an uploaded Jotform availability file.
   const [override, setOverride] = useState<{
@@ -671,6 +955,7 @@ export default function SchedulingWorkbenchPage({
               accepted_hours,
               declined_hours: 0,
               decision_notes: `From uploaded file: ${override.fileName}`,
+              decision_run_id: null,
               parsed_shifts: shifts,
               submitted_at: new Date().toISOString(),
               decided_at: null,
@@ -945,6 +1230,10 @@ export default function SchedulingWorkbenchPage({
     const ids = new Set(scopedAccepted.map(r => r.provider_id));
     return shiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
   }, [scopedAccepted, shiftRows]);
+  const scopedCutRows = useMemo(() => {
+    const ids = new Set(scopedRows.map(r => r.provider_id));
+    return cutRows.filter(s => s.provider_id && ids.has(s.provider_id));
+  }, [cutRows, scopedRows]);
   const scopedSummary = useMemo(() => {
     const totalShifts = scopedFlatAccepted.length;
     return {
@@ -1123,11 +1412,27 @@ export default function SchedulingWorkbenchPage({
   };
 
   const reevaluateNow = () => {
+    const before = buildRecalculationSnapshot(scopedRows, scopedFlatAccepted, scopedCutRows);
     reevaluate.mutate(month, {
-      onSuccess: () => {
-        toast.success(`Recalculated ${formatMonthLabel(month)} schedule`);
+      onSuccess: result => {
+        setLastRecalculation({
+          result,
+          before,
+          ranAt: new Date().toISOString(),
+        });
+        const changed =
+          Number(result.accepted ?? 0) +
+          Number(result.partial ?? 0) +
+          Number(result.declined ?? 0) +
+          Number(result.needs_review ?? 0);
+        toast.success(
+          `Recalculated ${formatMonthLabel(month)} schedule${
+            changed > 0 ? ` · ${changed} provider decision${changed === 1 ? '' : 's'}` : ''
+          }`,
+        );
         refetch();
         refetchShifts();
+        refetchCuts();
       },
       onError: e => toast.error(`Schedule recalculation failed: ${(e as Error).message}`),
     });
@@ -1518,17 +1823,21 @@ export default function SchedulingWorkbenchPage({
                   resolveReview.mutate(args, {
                     onSuccess: () => {
                       toast.success(
-                        args.decision === 'accepted'
+                        args.correction_summary && args.decision === 'accepted'
+                          ? `Approved corrected hours for ${args.provider_name}`
+                          : args.decision === 'accepted'
                           ? `Approved hours for ${args.provider_name}`
                           : `Declined hours for ${args.provider_name}`,
                       );
                       refetch();
                       refetchShifts();
+                      refetchCuts();
                     },
                     onError: e => {
                       toast.error(`Could not resolve: ${(e as Error).message}`);
                       refetch();
                       refetchShifts();
+                      refetchCuts();
                     },
                   })
                 }
@@ -1548,6 +1857,10 @@ export default function SchedulingWorkbenchPage({
               <PendingRecalculationPanel
                 month={month}
                 rows={scopedPendingAvailability}
+                decisionRows={scopedRows}
+                publishRows={scopedFlatAccepted}
+                cutRows={scopedCutRows}
+                lastRun={lastRecalculation}
                 isLoading={availabilityLoading}
                 isReevaluating={reevaluate.isPending}
                 onReevaluate={reevaluateNow}
@@ -2633,15 +2946,348 @@ function AvailabilitySubmissionsPanel({
   );
 }
 
+type RecalculationSnapshotRow = {
+  key: string;
+  providerName: string;
+  status: string;
+  acceptedHours: number;
+  declinedHours: number;
+  publishHours: number;
+  cutHours: number;
+  publishShifts: number;
+  cutShifts: number;
+  allocations: string[];
+  reason: string;
+};
+
+type RecalculationSnapshotMutable = RecalculationSnapshotRow & {
+  stateHours: Map<string, number>;
+};
+
+type RecalculationComparisonRow = {
+  before: RecalculationSnapshotRow | null;
+  after: RecalculationSnapshotRow | null;
+};
+
+const parseAllocationsFromDecisionNotes = (notes: string | null | undefined): Array<{ state: string; hours: number }> => {
+  const alloc = notes?.match(/alloc=([^;\n]+)/);
+  if (!alloc) return [];
+  const out: Array<{ state: string; hours: number }> = [];
+  const matcher = /([A-Z]{2}):([0-9.]+)h/g;
+  let match: RegExpExecArray | null;
+  while ((match = matcher.exec(alloc[1])) !== null) {
+    const hours = Number(match[2]);
+    if (Number.isFinite(hours) && hours > 0) {
+      out.push({ state: match[1], hours });
+    }
+  }
+  return out;
+};
+
+const snapshotKey = (providerId: string | null | undefined, providerName: string) =>
+  providerId || providerName.toLowerCase();
+
+const ensureSnapshotRow = (
+  map: Map<string, RecalculationSnapshotMutable>,
+  key: string,
+  providerName: string,
+): RecalculationSnapshotMutable => {
+  const existing = map.get(key);
+  if (existing) return existing;
+  const row: RecalculationSnapshotMutable = {
+    key,
+    providerName,
+    status: 'no decision',
+    acceptedHours: 0,
+    declinedHours: 0,
+    publishHours: 0,
+    cutHours: 0,
+    publishShifts: 0,
+    cutShifts: 0,
+    allocations: [],
+    reason: '',
+    stateHours: new Map(),
+  };
+  map.set(key, row);
+  return row;
+};
+
+const buildRecalculationSnapshot = (
+  decisionRows: ProviderPublishView[],
+  publishRows: ShiftRow[],
+  cutRows: ShiftRow[],
+): RecalculationSnapshotRow[] => {
+  const map = new Map<string, RecalculationSnapshotMutable>();
+  for (const row of decisionRows) {
+    const key = snapshotKey(row.provider_id, row.provider_name);
+    const item = ensureSnapshotRow(map, key, row.provider_name);
+    const sub = row.submission;
+    item.status = sub?.decision_status ?? (sub ? 'pending' : 'missing');
+    item.acceptedHours = Number(sub?.accepted_hours ?? 0);
+    item.declinedHours = Number(sub?.declined_hours ?? 0);
+    item.reason = formatDecisionNoteForStaff(sub?.decision_notes) || '';
+    for (const allocation of parseAllocationsFromDecisionNotes(sub?.decision_notes)) {
+      item.stateHours.set(
+        allocation.state,
+        (item.stateHours.get(allocation.state) ?? 0) + allocation.hours,
+      );
+    }
+  }
+  for (const shift of publishRows) {
+    const key = snapshotKey(shift.provider_id, shift.provider_name);
+    const item = ensureSnapshotRow(map, key, shift.provider_name);
+    item.publishHours += Number(shift.hours ?? 0);
+    item.publishShifts += 1;
+    if (shift.assigned_state) {
+      item.stateHours.set(
+        shift.assigned_state,
+        (item.stateHours.get(shift.assigned_state) ?? 0) + Number(shift.hours ?? 0),
+      );
+    }
+  }
+  for (const shift of cutRows) {
+    const key = snapshotKey(shift.provider_id, shift.provider_name);
+    const item = ensureSnapshotRow(map, key, shift.provider_name);
+    item.cutHours += Number(shift.hours ?? 0);
+    item.cutShifts += 1;
+  }
+  return Array.from(map.values())
+    .map(({ stateHours, ...row }) => ({
+      ...row,
+      acceptedHours: Math.round(row.acceptedHours * 100) / 100,
+      declinedHours: Math.round(row.declinedHours * 100) / 100,
+      publishHours: Math.round(row.publishHours * 100) / 100,
+      cutHours: Math.round(row.cutHours * 100) / 100,
+      allocations: Array.from(stateHours.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([state, hours]) => `${state} ${formatHours(hours)}h`),
+    }))
+    .sort((a, b) => {
+      const deltaA = a.publishHours + a.cutHours + a.acceptedHours + a.declinedHours;
+      const deltaB = b.publishHours + b.cutHours + b.acceptedHours + b.declinedHours;
+      return deltaB - deltaA || a.providerName.localeCompare(b.providerName);
+    });
+};
+
+const recalculationRowsChanged = (
+  before: RecalculationSnapshotRow | null,
+  after: RecalculationSnapshotRow | null,
+) => {
+  if (!before || !after) return true;
+  const allocationBefore = before.allocations.join('|');
+  const allocationAfter = after.allocations.join('|');
+  return (
+    before.status !== after.status ||
+    Math.abs(before.acceptedHours - after.acceptedHours) > 0.05 ||
+    Math.abs(before.declinedHours - after.declinedHours) > 0.05 ||
+    Math.abs(before.publishHours - after.publishHours) > 0.05 ||
+    Math.abs(before.cutHours - after.cutHours) > 0.05 ||
+    before.publishShifts !== after.publishShifts ||
+    before.cutShifts !== after.cutShifts ||
+    allocationBefore !== allocationAfter
+  );
+};
+
+const compareRecalculationSnapshots = (
+  beforeRows: RecalculationSnapshotRow[],
+  afterRows: RecalculationSnapshotRow[],
+): RecalculationComparisonRow[] => {
+  const before = new Map(beforeRows.map(row => [row.key, row]));
+  const after = new Map(afterRows.map(row => [row.key, row]));
+  const keys = new Set([...before.keys(), ...after.keys()]);
+  return Array.from(keys)
+    .map(key => ({
+      before: before.get(key) ?? null,
+      after: after.get(key) ?? null,
+    }))
+    .filter(row => recalculationRowsChanged(row.before, row.after))
+    .sort((a, b) => {
+      const afterA = a.after ?? a.before;
+      const afterB = b.after ?? b.before;
+      const hoursA = Number(afterA?.publishHours ?? 0) + Number(afterA?.cutHours ?? 0);
+      const hoursB = Number(afterB?.publishHours ?? 0) + Number(afterB?.cutHours ?? 0);
+      return hoursB - hoursA || (afterA?.providerName ?? '').localeCompare(afterB?.providerName ?? '');
+    });
+};
+
+const formatHourChange = (before: number | undefined, after: number | undefined) => {
+  const b = Number(before ?? 0);
+  const a = Number(after ?? 0);
+  const delta = Math.round((a - b) * 100) / 100;
+  const sign = delta > 0 ? '+' : '';
+  return `${formatHours(b)} -> ${formatHours(a)} (${sign}${formatHours(delta)})`;
+};
+
+const shortRunId = (runId: string | undefined) =>
+  runId ? runId.slice(0, 8) : 'current';
+
+function RecalculationChangeReport({
+  month,
+  lastRun,
+  decisionRows,
+  publishRows,
+  cutRows,
+}: {
+  month: string;
+  lastRun: {
+    result: ScheduleRecalculationResult;
+    before: RecalculationSnapshotRow[];
+    ranAt: string;
+  } | null;
+  decisionRows: ProviderPublishView[];
+  publishRows: ShiftRow[];
+  cutRows: ShiftRow[];
+}) {
+  const current = useMemo(
+    () => buildRecalculationSnapshot(decisionRows, publishRows, cutRows),
+    [decisionRows, publishRows, cutRows],
+  );
+  const changedRows = useMemo(
+    () => lastRun ? compareRecalculationSnapshots(lastRun.before, current) : [],
+    [current, lastRun],
+  );
+  const totalAccepted = current.reduce((sum, row) => sum + row.acceptedHours, 0);
+  const totalCut = current.reduce((sum, row) => sum + row.cutHours + row.declinedHours, 0);
+  const totalPublishShifts = current.reduce((sum, row) => sum + row.publishShifts, 0);
+  const beforeAccepted = lastRun?.before.reduce((sum, row) => sum + row.acceptedHours, 0) ?? totalAccepted;
+  const beforeCut = lastRun?.before.reduce((sum, row) => sum + row.cutHours + row.declinedHours, 0) ?? totalCut;
+  const resultDecisions = lastRun?.result.decisions ?? [];
+  const decisionByProvider = new Map(
+    resultDecisions
+      .filter(decision => decision.provider)
+      .map(decision => [decision.provider!.toLowerCase(), decision]),
+  );
+  const fallbackRows = current.slice(0, 8).map(row => ({ before: null, after: row }));
+  const displayRows = lastRun ? changedRows.slice(0, 10) : fallbackRows;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="text-base">
+              Recalculation report · {formatMonthLabel(month)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              {lastRun
+                ? `Run ${shortRunId(lastRun.result.decision_run_id)} · ${formatRelativeTime(lastRun.ranAt)}`
+                : 'Current allocation snapshot. Run Recalculate schedule to compare before and after.'}
+            </p>
+          </div>
+          {lastRun && (
+            <Badge variant="outline" className="w-fit bg-blue-50 text-blue-800">
+              {changedRows.length} provider{changedRows.length === 1 ? '' : 's'} changed
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-md border px-3 py-2">
+            <div className="text-xs text-muted-foreground">Accepted hours</div>
+            <div className="text-lg font-semibold">{formatHourChange(beforeAccepted, totalAccepted)}</div>
+          </div>
+          <div className="rounded-md border px-3 py-2">
+            <div className="text-xs text-muted-foreground">Cut / declined hours</div>
+            <div className="text-lg font-semibold">{formatHourChange(beforeCut, totalCut)}</div>
+          </div>
+          <div className="rounded-md border px-3 py-2">
+            <div className="text-xs text-muted-foreground">Publishable shifts</div>
+            <div className="text-lg font-semibold">{totalPublishShifts}</div>
+          </div>
+        </div>
+
+        {lastRun && resultDecisions.length > 0 && (
+          <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+            Evaluator decisions: {Number(lastRun.result.accepted ?? 0)} accepted,{' '}
+            {Number(lastRun.result.partial ?? 0)} partial, {Number(lastRun.result.declined ?? 0)} declined,{' '}
+            {Number(lastRun.result.needs_review ?? 0)} needs decision,{' '}
+            {Number(lastRun.result.errors ?? 0)} errors.
+          </div>
+        )}
+
+        {displayRows.length === 0 ? (
+          <div className="rounded-md border px-4 py-6 text-center text-sm text-muted-foreground">
+            No provider-level allocation changes are visible yet. If the recalculation just finished,
+            give the shift rows a moment to refresh.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead>Decision</TableHead>
+                <TableHead>Hours changed</TableHead>
+                <TableHead>Reallocated to</TableHead>
+                <TableHead>Shift rows</TableHead>
+                <TableHead>Run note</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {displayRows.map(row => {
+                const after = row.after;
+                const before = row.before;
+                const providerName = after?.providerName ?? before?.providerName ?? 'Provider';
+                const decision = decisionByProvider.get(providerName.toLowerCase());
+                const decisionText = `${before?.status ?? 'new'} -> ${after?.status ?? 'removed'}`;
+                const allocation = after?.allocations.length
+                  ? after.allocations.join(', ')
+                  : 'No state allocation';
+                const shiftText = `${before?.publishShifts ?? 0} -> ${after?.publishShifts ?? 0} publish · ${before?.cutShifts ?? 0} -> ${after?.cutShifts ?? 0} cut`;
+                return (
+                  <TableRow key={`${providerName}-${after?.key ?? before?.key}`}>
+                    <TableCell className="font-medium">{providerName}</TableCell>
+                    <TableCell className="text-xs">
+                      <Badge variant="outline">{decisionText}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums">
+                      <div>Accepted: {formatHourChange(before?.acceptedHours, after?.acceptedHours)}</div>
+                      <div className="text-muted-foreground">
+                        Cut: {formatHourChange(
+                          (before?.cutHours ?? 0) + (before?.declinedHours ?? 0),
+                          (after?.cutHours ?? 0) + (after?.declinedHours ?? 0),
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-xs">
+                      {allocation}
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums">{shiftText}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-xs">
+                      {decision?.reason || after?.reason || before?.reason || '—'}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function PendingRecalculationPanel({
   month,
   rows,
+  decisionRows,
+  publishRows,
+  cutRows,
+  lastRun,
   isLoading,
   isReevaluating,
   onReevaluate,
 }: {
   month: string;
   rows: AvailabilitySubmissionRow[];
+  decisionRows: ProviderPublishView[];
+  publishRows: ShiftRow[];
+  cutRows: ShiftRow[];
+  lastRun: {
+    result: ScheduleRecalculationResult;
+    before: RecalculationSnapshotRow[];
+    ranAt: string;
+  } | null;
   isLoading: boolean;
   isReevaluating: boolean;
   onReevaluate: () => void;
@@ -2657,69 +3303,78 @@ function PendingRecalculationPanel({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <CardTitle className="text-base">
-              Pending recalculation · {formatMonthLabel(month)}
-            </CardTitle>
-            <p className="text-xs text-muted-foreground mt-1">
-              These submissions are still pending a schedule evaluation. Recalculate to move them into accepted, cut / declined, or needs decision.
-            </p>
+    <div className="space-y-4">
+      <RecalculationChangeReport
+        month={month}
+        lastRun={lastRun}
+        decisionRows={decisionRows}
+        publishRows={publishRows}
+        cutRows={cutRows}
+      />
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="text-base">
+                Pending recalculation · {formatMonthLabel(month)}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                These submissions are still pending a schedule evaluation. Recalculate to move them into accepted, cut / declined, or needs decision.
+              </p>
+            </div>
+            <Button onClick={onReevaluate} disabled={isReevaluating}>
+              {isReevaluating ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1 h-4 w-4" />
+              )}
+              Recalculate schedule
+            </Button>
           </div>
-          <Button onClick={onReevaluate} disabled={isReevaluating}>
-            {isReevaluating ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-1 h-4 w-4" />
-            )}
-            Recalculate schedule
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        {rows.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No pending submissions need recalculation for {formatMonthLabel(month)}.
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Provider</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead className="text-right">Expanded hrs</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map(row => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <div className="font-medium">{row.provider_name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.provider_email ?? 'No email'} · {row.provider_profession ?? '—'}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {formatRelativeTime(row.submitted_at)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatHours(expandedSubmittedHours(row))}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="bg-blue-50 text-blue-800">
-                      Needs recalculation
-                    </Badge>
-                  </TableCell>
+        </CardHeader>
+        <CardContent className="p-0">
+          {rows.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              No pending submissions need recalculation for {formatMonthLabel(month)}.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Submitted</TableHead>
+                  <TableHead className="text-right">Expanded hrs</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {rows.map(row => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      <div className="font-medium">{row.provider_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.provider_email ?? 'No email'} · {row.provider_profession ?? '—'}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatRelativeTime(row.submitted_at)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatHours(expandedSubmittedHours(row))}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="bg-blue-50 text-blue-800">
+                        Needs recalculation
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -3066,8 +3721,11 @@ type ResolveArgs = {
   prior_status: string | null;
   decision: 'accepted' | 'declined';
   hours_basis: number | null;
+  original_hours_basis?: number | null;
   reason: string;
   existing_notes: string | null;
+  corrected_parsed_shifts?: unknown;
+  correction_summary?: string | null;
   provider_name: string;
 };
 
@@ -3089,15 +3747,22 @@ function NeedsReviewPanel({
     decision: 'accepted' | 'declined';
   } | null>(null);
   const [resolutionReason, setResolutionReason] = useState('');
+  const [useCorrectedTimes, setUseCorrectedTimes] = useState(false);
+  const [manualDrafts, setManualDrafts] = useState<ManualAvailabilityDraft[]>([]);
 
   const openResolutionDialog = (
     row: ProviderPublishView,
     decision: 'accepted' | 'declined',
     reasonLabel: string,
+    startWithCorrection = false,
   ) => {
     setResolutionTarget({ row, decision });
+    setUseCorrectedTimes(startWithCorrection);
+    setManualDrafts(manualDraftsFromParsedShifts(row.submission?.parsed_shifts, month));
     setResolutionReason(
-      decision === 'accepted'
+      startWithCorrection && decision === 'accepted'
+        ? `ClinOps corrected the submitted availability to the exact reviewed times and approved those hours for use.`
+        : decision === 'accepted'
         ? `ClinOps reviewed ${reasonLabel} and approved the submitted hours for use.`
         : `ClinOps reviewed ${reasonLabel} and declined the submitted hours so they are greyed out.`,
     );
@@ -3111,18 +3776,58 @@ function NeedsReviewPanel({
       return;
     }
     const sub = resolutionTarget.row.submission;
+    const originalHours = expandedSubmittedHours(sub);
+    const correctedHours = totalManualAvailabilityHours(manualDrafts, month);
+    let correctedParsedShifts: unknown;
+    let correctionSummary: string | null = null;
+    let hoursBasis = originalHours;
+    if (useCorrectedTimes) {
+      const errors = validateManualAvailabilityDrafts(manualDrafts, month);
+      if (errors.length > 0) {
+        toast.error(errors[0]);
+        return;
+      }
+      hoursBasis = correctedHours;
+      correctedParsedShifts = buildCorrectedParsedShifts(sub.parsed_shifts, manualDrafts, month);
+      correctionSummary = summarizeManualAvailability(manualDrafts, month);
+      if (resolutionTarget.decision === 'accepted' && correctedHours <= 0) {
+        toast.error('Corrected availability must include more than 0 hours before approval.');
+        return;
+      }
+    }
     onResolve({
       submission_id: sub.id,
       provider_id: sub.provider_id,
       target_month: sub.target_month,
       prior_status: sub.decision_status,
       decision: resolutionTarget.decision,
-      hours_basis: expandedSubmittedHours(sub),
+      hours_basis: hoursBasis,
+      original_hours_basis: originalHours,
       reason,
       existing_notes: sub.decision_notes,
+      corrected_parsed_shifts: correctedParsedShifts,
+      correction_summary: correctionSummary,
       provider_name: resolutionTarget.row.provider_name,
     });
     setResolutionTarget(null);
+    setUseCorrectedTimes(false);
+    setManualDrafts([]);
+  };
+
+  const updateManualDraft = (
+    id: string,
+    patch: Partial<ManualAvailabilityDraft>,
+  ) => {
+    setManualDrafts(current =>
+      current.map(draft => (draft.id === id ? { ...draft, ...patch } : draft)),
+    );
+  };
+
+  const removeManualDraft = (id: string) => {
+    setManualDrafts(current => {
+      const next = current.filter(draft => draft.id !== id);
+      return next.length > 0 ? next : [defaultManualAvailabilityDraft(month)];
+    });
   };
 
   const decisionLabel =
@@ -3131,6 +3836,8 @@ function NeedsReviewPanel({
       : resolutionTarget?.decision === 'declined'
         ? 'Decline hours'
         : '—';
+  const submittedHours = expandedSubmittedHours(resolutionTarget?.row.submission);
+  const correctedHours = totalManualAvailabilityHours(manualDrafts, month);
 
   if (isLoading) {
     return (
@@ -3217,7 +3924,17 @@ function NeedsReviewPanel({
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
+                      <div className="flex flex-wrap justify-end gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7"
+                          disabled={isPending}
+                          onClick={() => openResolutionDialog(r, 'accepted', reasonLabel, true)}
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Set times
+                        </Button>
                         <Button
                           size="sm"
                           className="h-7"
@@ -3263,10 +3980,14 @@ function NeedsReviewPanel({
       <Dialog
         open={Boolean(resolutionTarget)}
         onOpenChange={open => {
-          if (!open) setResolutionTarget(null);
+          if (!open) {
+            setResolutionTarget(null);
+            setUseCorrectedTimes(false);
+            setManualDrafts([]);
+          }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>
               {resolutionTarget?.decision === 'accepted'
@@ -3277,12 +3998,18 @@ function NeedsReviewPanel({
               {resolutionTarget?.row.provider_name ?? 'Provider'} · {formatMonthLabel(month)}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="space-y-4">
+            <div className="grid gap-3 text-sm md:grid-cols-3">
               <div className="rounded-md border px-3 py-2">
-                <div className="text-xs text-muted-foreground">Hours basis</div>
+                <div className="text-xs text-muted-foreground">Submitted hours</div>
                 <div className="font-medium">
-                  {formatHours(expandedSubmittedHours(resolutionTarget?.row.submission))}
+                  {formatHours(submittedHours)}
+                </div>
+              </div>
+              <div className="rounded-md border px-3 py-2">
+                <div className="text-xs text-muted-foreground">Corrected hours</div>
+                <div className="font-medium">
+                  {formatHours(correctedHours)}
                 </div>
               </div>
               <div className="rounded-md border px-3 py-2">
@@ -3290,6 +4017,153 @@ function NeedsReviewPanel({
                 <div className="font-medium">{decisionLabel}</div>
               </div>
             </div>
+
+            <div className="rounded-md border p-3 space-y-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="use-corrected-times"
+                      checked={useCorrectedTimes}
+                      onCheckedChange={checked => setUseCorrectedTimes(Boolean(checked))}
+                    />
+                    <Label htmlFor="use-corrected-times" className="text-sm font-medium">
+                      Use corrected times for this decision
+                    </Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Corrected rows replace the submitted availability for this provider-month before publish rows are rebuilt.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setUseCorrectedTimes(true);
+                    setManualDrafts(current => [...current, defaultManualAvailabilityDraft(month)]);
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Add row
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {manualDrafts.map((draft, index) => (
+                  <div
+                    key={draft.id}
+                    className="grid gap-2 rounded-md border bg-background p-2 md:grid-cols-[minmax(150px,0.9fr)_minmax(140px,0.9fr)_minmax(140px,0.9fr)_minmax(110px,0.6fr)_minmax(110px,0.6fr)_auto]"
+                  >
+                    <div className="space-y-1">
+                      {index === 0 && <Label className="text-xs">Type</Label>}
+                      <Select
+                        value={draft.kind}
+                        onValueChange={value => {
+                          setUseCorrectedTimes(true);
+                          updateManualDraft(draft.id, { kind: value as ManualAvailabilityKind });
+                        }}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(MANUAL_AVAILABILITY_KIND_LABEL).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      {index === 0 && (
+                        <Label className="text-xs">
+                          {draft.kind === 'recurring_virtual' ? 'Weekday' : 'Date'}
+                        </Label>
+                      )}
+                      {draft.kind === 'recurring_virtual' ? (
+                        <Select
+                          value={draft.dayOfWeek}
+                          onValueChange={value => {
+                            setUseCorrectedTimes(true);
+                            updateManualDraft(draft.id, { dayOfWeek: value });
+                          }}
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {WEEKDAY_OPTIONS.map(day => (
+                              <SelectItem key={day} value={day}>
+                                {day}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          type="date"
+                          className="h-9"
+                          value={draft.date}
+                          onChange={event => {
+                            setUseCorrectedTimes(true);
+                            updateManualDraft(draft.id, { date: event.target.value });
+                          }}
+                        />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      {index === 0 && <Label className="text-xs">Start</Label>}
+                      <Input
+                        type="time"
+                        className="h-9"
+                        value={draft.startTime}
+                        onChange={event => {
+                          setUseCorrectedTimes(true);
+                          updateManualDraft(draft.id, { startTime: event.target.value });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      {index === 0 && <Label className="text-xs">End</Label>}
+                      <Input
+                        type="time"
+                        className="h-9"
+                        value={draft.endTime}
+                        onChange={event => {
+                          setUseCorrectedTimes(true);
+                          updateManualDraft(draft.id, { endTime: event.target.value });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      {index === 0 && <Label className="text-xs">Hrs</Label>}
+                      <div className="flex h-9 items-center justify-end rounded-md border px-2 text-sm tabular-nums">
+                        {formatHours(draftShiftHours(draft, month))}
+                      </div>
+                    </div>
+                    <div className="flex items-end justify-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        title="Remove corrected row"
+                        aria-label="Remove corrected row"
+                        onClick={() => {
+                          setUseCorrectedTimes(true);
+                          removeManualDraft(draft.id);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div>
               <Label htmlFor="needs-review-reason">Review note</Label>
               <Textarea
@@ -3306,9 +4180,11 @@ function NeedsReviewPanel({
             </Button>
             <Button onClick={submitResolution} disabled={isPending || !resolutionTarget}>
               {isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              {resolutionTarget?.decision === 'accepted'
-                ? 'Approve hours'
-                : 'Decline hours'}
+              {useCorrectedTimes && resolutionTarget?.decision === 'accepted'
+                ? 'Approve corrected hours'
+                : resolutionTarget?.decision === 'accepted'
+                  ? 'Approve hours'
+                  : 'Decline hours'}
             </Button>
           </DialogFooter>
         </DialogContent>

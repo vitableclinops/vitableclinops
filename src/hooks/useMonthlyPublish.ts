@@ -8,6 +8,39 @@ import {
   type LatestSchedulingSubmission,
 } from '@/lib/scheduling/latestSubmissions';
 
+type UntypedSupabaseError = { message?: string };
+type UntypedSupabaseResult = {
+  data: unknown;
+  error: UntypedSupabaseError | null;
+  count?: number | null;
+};
+type UntypedSupabaseQuery = PromiseLike<UntypedSupabaseResult> & {
+  select(columns?: string, options?: Record<string, unknown>): UntypedSupabaseQuery;
+  insert(payload: unknown, options?: Record<string, unknown>): UntypedSupabaseQuery;
+  update(payload: unknown, options?: Record<string, unknown>): UntypedSupabaseQuery;
+  upsert(payload: unknown, options?: Record<string, unknown>): UntypedSupabaseQuery;
+  delete(options?: Record<string, unknown>): UntypedSupabaseQuery;
+  eq(column: string, value: unknown): UntypedSupabaseQuery;
+  neq(column: string, value: unknown): UntypedSupabaseQuery;
+  is(column: string, value: unknown): UntypedSupabaseQuery;
+  in(column: string, values: readonly unknown[]): UntypedSupabaseQuery;
+  gte(column: string, value: unknown): UntypedSupabaseQuery;
+  lte(column: string, value: unknown): UntypedSupabaseQuery;
+  or(filters: string): UntypedSupabaseQuery;
+  order(column: string, options?: Record<string, unknown>): UntypedSupabaseQuery;
+  range(from: number, to: number): UntypedSupabaseQuery;
+  limit(count: number): UntypedSupabaseQuery;
+};
+type UntypedClinopsClient = {
+  from(table: string): UntypedSupabaseQuery;
+  rpc(
+    fn: string,
+    args: Record<string, unknown>,
+  ): Promise<{ error: UntypedSupabaseError | null }>;
+};
+
+const clinopsDb = clinopsSupabase as unknown as UntypedClinopsClient;
+
 export type DecisionStatus =
   | 'pending'
   | 'accepted'
@@ -36,6 +69,7 @@ export type SubmissionRow = {
   accepted_hours: number | null;
   declined_hours: number | null;
   decision_notes: string | null;
+  decision_run_id: string | null;
   parsed_shifts: ParsedShift[] | null;
   raw_answers?: unknown;
   submitted_at: string;
@@ -152,6 +186,7 @@ export type AvailabilitySubmissionRow = {
   accepted_hours: number | null;
   declined_hours: number | null;
   decision_notes: string | null;
+  decision_run_id: string | null;
   parsed_shifts: unknown;
   raw_answers: unknown;
   submitted_at: string;
@@ -254,10 +289,10 @@ export function useMonthlyPublishView(month: string) {
     queryFn: async (): Promise<ProviderPublishView[]> => {
       const [submissionsRes, providersRes, publishRes] = await Promise.all([
         clinopsSupabase
-          .from('schedule_submissions')
-          .select(
-            'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast',
-          )
+        .from('schedule_submissions')
+        .select(
+            'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, parsed_shifts, submitted_at, decided_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast',
+        )
           .eq('target_month', monthStart)
           .order('submitted_at', { ascending: false }),
         clinopsSupabase
@@ -265,7 +300,7 @@ export function useMonthlyPublishView(month: string) {
           .select(
             'id, name, email, profession, employment_type, employment_status, readiness_status, shift_types, source, scheduling_outreach_exempt, scheduling_outreach_exemption_reason, active',
           ),
-        (clinopsSupabase as unknown as { from: (t: string) => any })
+        clinopsDb
           .from('publish_status')
           .select('*')
           .eq('target_month', monthStart),
@@ -334,7 +369,7 @@ export function useProviderOutreachLog(month: string | null) {
     queryKey: ['workbench', 'provider-outreach-log', monthStart],
     queryFn: async (): Promise<ProviderOutreachLog[]> => {
       if (!monthStart) return [];
-      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { data, error } = await clinopsDb
         .from('provider_outreach_log')
         .select(
           'id, provider_id, provider_name, provider_email, target_month, outreach_type, status, channel, subject, body, batch_id, sent_at, sent_by, sent_by_label, notes, created_at',
@@ -391,7 +426,7 @@ export function useMarkProviderOutreachSent() {
         notes: args.notes ?? null,
       }));
 
-      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { error } = await clinopsDb
         .from('provider_outreach_log')
         .insert(rows);
       if (error) throw error;
@@ -406,7 +441,7 @@ export function useProviderSchedulingExceptions() {
   return useQuery({
     queryKey: ['workbench', 'provider-scheduling-exceptions'],
     queryFn: async (): Promise<ProviderSchedulingExceptionRow[]> => {
-      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { data, error } = await clinopsDb
         .from('providers')
         .select(
           'id, name, email, profession, employment_type, employment_status, scheduling_outreach_exempt, scheduling_outreach_exemption_reason, active',
@@ -454,7 +489,7 @@ export function useSchedulingExceptions() {
   return useQuery({
     queryKey: ['workbench', 'scheduling-exceptions'],
     queryFn: async (): Promise<SchedulingExceptionRow[]> => {
-      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { data, error } = await clinopsDb
         .from('scheduling_exceptions')
         .select('id, slug, name, exception_type, rule, scheduling_action, active, created_at, updated_at')
         .eq('active', true)
@@ -494,7 +529,7 @@ export function useUpsertSchedulingException() {
       };
 
       if (args.id) {
-        const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+        const { error } = await clinopsDb
           .from('scheduling_exceptions')
           .update(payload)
           .eq('id', args.id);
@@ -502,7 +537,7 @@ export function useUpsertSchedulingException() {
         return;
       }
 
-      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { error } = await clinopsDb
         .from('scheduling_exceptions')
         .insert({
           ...payload,
@@ -520,7 +555,7 @@ export function useDeleteSchedulingException() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { error } = await clinopsDb
         .from('scheduling_exceptions')
         .update({ active: false, updated_at: new Date().toISOString() })
         .eq('id', id);
@@ -555,10 +590,10 @@ export function useMonthlyAvailabilitySubmissions(month: string) {
     queryFn: async (): Promise<AvailabilitySubmissionRow[]> => {
       const [submissionsRes, providersRes] = await Promise.all([
         clinopsSupabase
-          .from('schedule_submissions')
-          .select(
-            'id, jotform_submission_id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, raw_answers, submitted_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast',
-          )
+        .from('schedule_submissions')
+        .select(
+            'id, jotform_submission_id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, parsed_shifts, raw_answers, submitted_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast',
+        )
           .eq('target_month', monthStart)
           .order('submitted_at', { ascending: false })
           .range(0, 49999),
@@ -620,7 +655,7 @@ export function useTogglePublishStep() {
         patch.ehr_posted_at = args.done ? nowIso : null;
         patch.ehr_posted_by = args.done ? actorId : null;
       }
-      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { error } = await clinopsDb
         .from('publish_status')
         .upsert(patch, { onConflict: 'provider_id,target_month' });
       if (error) throw error;
@@ -659,7 +694,7 @@ export function useBulkMarkPublishStep() {
         return base;
       });
       if (rows.length === 0) return;
-      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { error } = await clinopsDb
         .from('publish_status')
         .upsert(rows, { onConflict: 'provider_id,target_month' });
       if (error) throw error;
@@ -679,7 +714,7 @@ export function useUpdatePublishNotes() {
       notes: string | null;
     }) => {
       const monthStart = monthIso(args.target_month);
-      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { error } = await clinopsDb
         .from('publish_status')
         .upsert(
           {
@@ -763,6 +798,7 @@ export type ShiftRow = {
   assigned_state: string | null;
   recommendation: string;
   recommendation_reason: string | null;
+  decision_run_id: string | null;
   publish_status: string;
   published_at: string | null;
   published_by: string | null;
@@ -782,7 +818,7 @@ const attachProviderSchedulingPreferences = async (shifts: ShiftRow[]): Promise<
     shifts.map(s => s.provider_id).filter((id): id is string => Boolean(id)),
   ));
   if (providerIds.length === 0) return shifts;
-  const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+  const { data, error } = await clinopsDb
     .from('provider_scheduling_preferences')
     .select('provider_id, time_zone')
     .in('provider_id', providerIds)
@@ -827,17 +863,17 @@ export function useShiftRecommendationsInboxWindow(anchorMonth: string) {
     queryKey: ['workbench', 'shift-recommendations-inbox', fromMonth, toMonth],
     queryFn: async (): Promise<ShiftRow[]> => {
       const [shiftsRes, submissionsRes] = await Promise.all([
-        (clinopsSupabase as unknown as { from: (t: string) => any })
+        clinopsDb
           .from('shift_recommendations')
           .select(
-            'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
+            'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
           )
           .gte('target_month', fromMonth)
           .lte('target_month', toMonth)
           .eq('recommendation', 'publish')
           .order('shift_date', { ascending: true })
           .range(0, 19999),
-        (clinopsSupabase as unknown as { from: (t: string) => any })
+        clinopsDb
           .from('schedule_submissions')
           .select('id, provider_id, target_month, decision_status, submitted_at')
           .gte('target_month', fromMonth)
@@ -865,10 +901,10 @@ export function useShiftRecommendationsForMonth(
   return useQuery({
     queryKey: ['workbench', 'shift-recommendations', monthStart, recommendation],
     queryFn: async (): Promise<ShiftRow[]> => {
-      let query = (clinopsSupabase as unknown as { from: (t: string) => any })
+      let query = clinopsDb
         .from('shift_recommendations')
         .select(
-          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
+          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
         )
         .eq('target_month', monthStart);
       if (recommendation !== 'all') query = query.eq('recommendation', recommendation);
@@ -877,7 +913,7 @@ export function useShiftRecommendationsForMonth(
           .order('shift_date', { ascending: true })
           .order('start_min', { ascending: true })
           .range(0, 9999),
-        (clinopsSupabase as unknown as { from: (t: string) => any })
+        clinopsDb
           .from('schedule_submissions')
           .select('id, provider_id, target_month, decision_status, submitted_at')
           .eq('target_month', monthStart)
@@ -965,7 +1001,7 @@ const buildAuditEntries = (
 
 const writeAuditLog = async (entries: Record<string, unknown>[]) => {
   if (entries.length === 0) return;
-  const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+  const { error } = await clinopsDb
     .from('publish_audit_log')
     .insert(entries);
   if (error) {
@@ -998,7 +1034,7 @@ export function useTogglePublishShift() {
         args.step === 'homebase'
           ? homebasePatch(args.done, actorId, nowIso)
           : ehrPatch(args.done, actorId, nowIso);
-      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { error } = await clinopsDb
         .from('shift_recommendations')
         .update(patch)
         .eq('id', args.shift.id);
@@ -1031,7 +1067,7 @@ export function useBulkMarkPublishShifts() {
         args.step === 'homebase'
           ? homebasePatch(args.done, actorId, nowIso)
           : ehrPatch(args.done, actorId, nowIso);
-      const { error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { error } = await clinopsDb
         .from('shift_recommendations')
         .update(patch)
         .in('id', args.shifts.map(s => s.id));
@@ -1078,7 +1114,7 @@ export function usePublishAuditLog(month: string | null) {
   return useQuery({
     queryKey: ['workbench', 'publish-audit-log', monthStart ?? 'all'],
     queryFn: async (): Promise<PublishAuditEntry[]> => {
-      let q = (clinopsSupabase as unknown as { from: (t: string) => any })
+      let q = clinopsDb
         .from('publish_audit_log')
         .select(
           'id, shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, shift_type, step, action, actor_id, actor_label, notes, created_at',
@@ -1110,14 +1146,25 @@ export function useResolveNeedsReview() {
       prior_status: string | null;
       decision: 'accepted' | 'declined';
       hours_basis: number | null;
+      original_hours_basis?: number | null;
       reason: string;
       existing_notes: string | null;
+      corrected_parsed_shifts?: unknown;
+      correction_summary?: string | null;
     }) => {
       const nowIso = new Date().toISOString();
       const actor = profile?.full_name || profile?.email || user?.email || 'ClinOps';
       const auditDecision =
         args.decision === 'accepted' ? 'accepted_for_use' : 'declined_greyed_out';
-      const auditLine = `Resolved needs_review → ${auditDecision} by ${actor} at ${nowIso}: ${args.reason}`;
+      const correctionPart = args.correction_summary
+        ? `; correction=${args.correction_summary}`
+        : '';
+      const originalPart =
+        typeof args.original_hours_basis === 'number' &&
+        args.original_hours_basis !== args.hours_basis
+          ? `; original_hours=${args.original_hours_basis}h`
+          : '';
+      const auditLine = `Resolved needs_review → ${auditDecision} by ${actor} at ${nowIso}: ${args.reason}${originalPart}${correctionPart}`;
       const newNotes = args.existing_notes
         ? `${args.existing_notes}\n${auditLine}`
         : auditLine;
@@ -1129,20 +1176,29 @@ export function useResolveNeedsReview() {
         decided_at: nowIso,
         decision_notes: newNotes,
       };
+      if (args.corrected_parsed_shifts !== undefined) {
+        patch.parsed_shifts = args.corrected_parsed_shifts;
+        patch.normalized_requested_hours = hours;
+        patch.effective_hours_used_for_forecast = hours;
+        patch.validation_status = 'clinops_corrected';
+        patch.validation_warnings = [];
+      }
       const { error: subErr } = await clinopsSupabase
         .from('schedule_submissions')
         .update(patch)
         .eq('id', args.submission_id);
       if (subErr) throw subErr;
 
-      const { error: logErr } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { error: logErr } = await clinopsDb
         .from('submission_override_log')
         .insert({
           submission_id: args.submission_id,
           prior_status: args.prior_status,
           new_status: args.decision,
           hours_basis: hours,
-          reason: args.reason,
+          reason: args.correction_summary
+            ? `${args.reason} Correction: ${args.correction_summary}`
+            : args.reason,
           actor_id: user?.id ?? null,
           actor_label: actor,
         });
@@ -1167,9 +1223,33 @@ export function useResolveNeedsReview() {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'state-coverage'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-search'] });
     },
   });
 }
+
+export type ScheduleRecalculationResult = {
+  ok?: boolean;
+  decision_run_id?: string;
+  pending?: number;
+  accepted?: number;
+  partial?: number;
+  declined?: number;
+  needs_review?: number;
+  superseded?: number;
+  errors?: number;
+  decisions?: Array<{
+    group?: string;
+    provider?: string;
+    target_month?: string;
+    status?: string;
+    reason?: string;
+    accepted_hours?: number;
+    declined_hours?: number;
+    superseded?: number;
+    error?: string;
+  }>;
+};
 
 export function useReevaluateMonth() {
   const queryClient = useQueryClient();
@@ -1181,7 +1261,7 @@ export function useReevaluateMonth() {
         { body: {} },
       );
       if (error) throw error;
-      return data as { ok?: boolean; decision_run_id?: string };
+      return data as ScheduleRecalculationResult;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
@@ -1257,7 +1337,7 @@ export function useResubmissionInbox(anchorMonth: string) {
   return useQuery({
     queryKey: ['workbench', 'resubmission-inbox', fromMonth, toMonth],
     queryFn: async (): Promise<SubmissionForInbox[]> => {
-      const { data, error } = await (clinopsSupabase as unknown as { from: (t: string) => any })
+      const { data, error } = await clinopsDb
         .from('schedule_submissions')
         .select(
           'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, parsed_shifts, submitted_at, decided_at, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast, human_review_state, human_review_resolved_at, human_review_resolved_label, human_review_notes',
@@ -1564,9 +1644,7 @@ export function useUpdateProviderSchedulingException() {
       reason?: string | null;
     }) => {
       const reason = args.reason?.trim() || null;
-      const { error } = await (clinopsSupabase as unknown as {
-        rpc: (fn: string, args: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
-      }).rpc('set_provider_scheduling_exception', {
+      const { error } = await clinopsDb.rpc('set_provider_scheduling_exception', {
         p_provider_id: args.providerId,
         p_scheduling_outreach_exempt: args.exempt,
         p_scheduling_outreach_exemption_reason: args.exempt ? reason : null,
