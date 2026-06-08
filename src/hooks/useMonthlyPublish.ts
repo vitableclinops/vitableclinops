@@ -1269,6 +1269,10 @@ export function useReevaluateMonth() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'availability-submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'state-coverage'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-search'] });
     },
   });
 }
