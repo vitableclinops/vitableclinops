@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, Info, Loader2, ArrowLeft, Check, Clock, RefreshCw, CheckCircle2, AlertTriangle, CircleDashed } from 'lucide-react';
+import { Download, Info, Loader2, ArrowLeft, Check, Clock, RefreshCw, CheckCircle2, AlertTriangle, CircleDashed, CalendarRange } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -62,10 +62,13 @@ const ShiftPlanPage = () => {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [homebaseStartDate, setHomebaseStartDate] = useState(month);
   const [homebaseEndDate, setHomebaseEndDate] = useState(getMonthEndIso(month));
+  const [showHomebaseRange, setShowHomebaseRange] = useState(false);
+  const monthEndDate = useMemo(() => getMonthEndIso(month), [month]);
   const homebaseWindow = useMemo(
     () => ({ startDate: homebaseStartDate, endDate: homebaseEndDate }),
     [homebaseStartDate, homebaseEndDate],
   );
+  const customHomebaseWindow = homebaseStartDate !== month || homebaseEndDate !== monthEndDate;
   const invalidHomebaseWindow =
     !isIsoDate(homebaseStartDate) ||
     !isIsoDate(homebaseEndDate) ||
@@ -73,8 +76,8 @@ const ShiftPlanPage = () => {
 
   useEffect(() => {
     setHomebaseStartDate(month);
-    setHomebaseEndDate(getMonthEndIso(month));
-  }, [month]);
+    setHomebaseEndDate(monthEndDate);
+  }, [month, monthEndDate]);
 
   const summaryQ = useProviderShiftSummary(month, homebaseWindow);
   const detailQ = useShiftRecommendations(month, selectedProvider, homebaseWindow);
@@ -249,20 +252,6 @@ const ShiftPlanPage = () => {
                   All providers
                 </Button>
               )}
-              <Input
-                type="date"
-                value={homebaseStartDate}
-                onChange={(event) => setHomebaseStartDate(event.target.value)}
-                aria-label="Homebase start date"
-                className="h-9 w-[150px]"
-              />
-              <Input
-                type="date"
-                value={homebaseEndDate}
-                onChange={(event) => setHomebaseEndDate(event.target.value)}
-                aria-label="Homebase end date"
-                className="h-9 w-[150px]"
-              />
               <Button
                 variant="outline"
                 size="sm"
@@ -271,6 +260,14 @@ const ShiftPlanPage = () => {
               >
                 <RefreshCw className={`h-4 w-4 mr-1 ${refreshHomebaseMutation.isPending ? 'animate-spin' : ''}`} />
                 Sync Homebase
+              </Button>
+              <Button
+                variant={showHomebaseRange || customHomebaseWindow ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setShowHomebaseRange(open => !open)}
+              >
+                <CalendarRange className="h-4 w-4 mr-1" />
+                Change Homebase range
               </Button>
               <Select value={month} onValueChange={(v) => { setMonth(v); setSelectedProvider(null); }}>
                 <SelectTrigger className="w-[180px]">
@@ -285,10 +282,45 @@ const ShiftPlanPage = () => {
             </div>
           </div>
 
+          {showHomebaseRange && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 p-3">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Homebase range</span>
+              <Input
+                type="date"
+                value={homebaseStartDate}
+                onChange={(event) => setHomebaseStartDate(event.target.value)}
+                aria-label="Homebase start date"
+                className="h-9 w-[150px]"
+              />
+              <Input
+                type="date"
+                value={homebaseEndDate}
+                onChange={(event) => setHomebaseEndDate(event.target.value)}
+                aria-label="Homebase end date"
+                className="h-9 w-[150px]"
+              />
+              {customHomebaseWindow && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setHomebaseStartDate(month);
+                    setHomebaseEndDate(monthEndDate);
+                  }}
+                >
+                  Reset to selected month
+                </Button>
+              )}
+              {invalidHomebaseWindow && (
+                <span className="text-xs font-medium text-destructive">End date must be on or after start date.</span>
+              )}
+            </div>
+          )}
+
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              Each row is one concrete shift. Homebase status is automatic from the selected Homebase date window; Ops status is the team's manual review marker.
+              Each row is one concrete shift. Homebase status is automatic from {customHomebaseWindow ? 'the custom Homebase date range' : 'the selected month'}; Ops status is the team's manual review marker.
               MD-only states (AL, IN, GA, MS, MO, SC, TN, LA) only allow MD/DO providers — NPs are filtered out at allocation time.
             </AlertDescription>
           </Alert>
