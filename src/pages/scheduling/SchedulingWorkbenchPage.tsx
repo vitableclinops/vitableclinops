@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, Fragment } from 'react';
+import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import SchedulingShell from './SchedulingShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -155,6 +155,13 @@ import {
 } from '@/lib/scheduling/timeZone';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
+const monthParamToIso = (value: string | null): string | null => {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}$/.test(value)) return `${value}-01`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return null;
+};
+const monthIsoToParam = (value: string): string => value.slice(0, 7);
 
 const requestedHoursFromUnmatchedSubmission = (submission: UnmatchedSubmission) => {
   const parsed = submission.parsed_shifts;
@@ -312,53 +319,229 @@ const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : [
 
 export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
 type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
-type PublishTabKey = 'provider' | 'queue' | 'day' | 'review' | 'history';
+type PublishTabKey = 'provider' | 'queue' | 'day' | 'history';
+type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate';
+type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'forecast';
+type ProviderTimeOffEntry = {
+  row: ProviderPublishView;
+  ranges: ReturnType<typeof extractUnavailableRanges>;
+  totalDays: number;
+};
 const TOP_TAB_VALUES = [
   'readiness',
-  'forecast',
-  'availability',
-  'matching',
-  'coverage',
+  'intake',
+  'review',
+  'coverage-plan',
   'publish',
-  'declined',
   'exceptions',
-  'audit',
+  'data-sources',
 ] as const;
 type TopTabKey = (typeof TOP_TAB_VALUES)[number];
 
-const topTabFromParam = (tab: string | null): TopTabKey =>
-  TOP_TAB_VALUES.includes(tab as TopTabKey) ? (tab as TopTabKey) : 'readiness';
+const topTabFromParam = (tab: string | null, section?: string | null): TopTabKey => {
+  if (TOP_TAB_VALUES.includes(section as TopTabKey)) return section as TopTabKey;
+  if (TOP_TAB_VALUES.includes(tab as TopTabKey)) return tab as TopTabKey;
+  if (tab === 'availability') return 'intake';
+  if (tab === 'forecast' || tab === 'matching' || tab === 'coverage' || tab === 'declined') {
+    return 'coverage-plan';
+  }
+  if (tab === 'audit') return 'data-sources';
+  return 'readiness';
+};
+
+const availabilityTabFromView = (view: string | null): AvailabilityTabKey => {
+  if (view === 'resubmits') return 'inbox';
+  if (view === 'pending-recalculation') return 'submissions';
+  return ['submissions', 'inbox', 'unmatched', 'setup', 'missing', 'timeoff'].includes(view ?? '')
+    ? (view as AvailabilityTabKey)
+    : 'submissions';
+};
+
+const publishTabFromView = (view: string | null): PublishTabKey =>
+  ['provider', 'queue', 'day', 'history'].includes(view ?? '')
+    ? (view as PublishTabKey)
+    : 'provider';
+
+const reviewTabFromView = (view: string | null): ReviewTabKey => {
+  if (view === 'needs-review' || view === 'needs-decision' || view === 'decisions') return 'decisions';
+  if (view === 'resubmits' || view === 'inbox') return 'resubmits';
+  if (view === 'pending-recalculation' || view === 'recalculate') return 'recalculate';
+  return 'decisions';
+};
+
+const coveragePlanTabFromView = (view: string | null, tab: string | null): CoveragePlanTabKey => {
+  const candidate = view ?? tab;
+  if (candidate === 'coverage-plan') return 'coverage';
+  if (candidate === 'declined') return 'declined';
+  if (candidate === 'forecast' || candidate === 'matching' || candidate === 'coverage') {
+    return candidate;
+  }
+  return 'coverage';
+};
+
+const scopeFromParam = (scope: string | null): SchedulingWorkbenchScope =>
+  scope === 'mental_health' || scope === 'mental-health' || scope === 'mh' ? 'mental_health' : 'medical';
+
+const scopeToParam = (scope: SchedulingWorkbenchScope) =>
+  scope === 'mental_health' ? 'mental_health' : 'all';
 
 export default function SchedulingWorkbenchPage({
   scope = 'medical',
 }: { scope?: SchedulingWorkbenchScope } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const [month, setMonth] = useState('2026-07-01');
-  const isMh = scope === 'mental_health';
+  const sectionParam = searchParams.get('section');
+  const viewParam = searchParams.get('view');
+  const scopeParam = searchParams.get('scope');
+  const monthParam = searchParams.get('month');
+  const [month, setMonth] = useState(() => monthParamToIso(monthParam) ?? '2026-07-01');
+  const [activeScope, setActiveScope] = useState<SchedulingWorkbenchScope>(() =>
+    scopeParam ? scopeFromParam(scopeParam) : scope,
+  );
+  const isMh = activeScope === 'mental_health';
   const [mhServiceLine, setMhServiceLine] = useState<'all' | MentalHealthServiceLine>('all');
-  const [topTab, setTopTab] = useState<TopTabKey>(() => topTabFromParam(tabParam));
-  useEffect(() => {
-    const nextTab = topTabFromParam(tabParam);
-    setTopTab(current => (current === nextTab ? current : nextTab));
-  }, [tabParam]);
-  const onTopTabChange = (v: string) => {
-    const nextTab = topTabFromParam(v);
-    setTopTab(nextTab);
+  const [topTab, setTopTab] = useState<TopTabKey>(() => topTabFromParam(tabParam, sectionParam));
+  const [availabilityTab, setAvailabilityTab] = useState<AvailabilityTabKey>(() =>
+    availabilityTabFromView(viewParam),
+  );
+  const [publishTab, setPublishTab] = useState<PublishTabKey>(() => publishTabFromView(viewParam));
+  const [reviewTab, setReviewTab] = useState<ReviewTabKey>(() => reviewTabFromView(viewParam));
+  const [coveragePlanTab, setCoveragePlanTab] = useState<CoveragePlanTabKey>(() =>
+    coveragePlanTabFromView(viewParam, tabParam),
+  );
+
+  const updateWorkbenchParams = ({
+    nextMonth = month,
+    nextScope = activeScope,
+    section = topTab,
+    view,
+    providerId,
+    replace = false,
+  }: {
+    nextMonth?: string;
+    nextScope?: SchedulingWorkbenchScope;
+    section?: TopTabKey;
+    view?: string | null;
+    providerId?: string | null;
+    replace?: boolean;
+  }) => {
     const next = new URLSearchParams(searchParams);
-    if (nextTab === 'readiness') next.delete('tab');
-    else next.set('tab', nextTab);
-    setSearchParams(next, { replace: true });
+    next.delete('tab');
+    next.set('month', monthIsoToParam(nextMonth));
+    next.set('scope', scopeToParam(nextScope));
+    next.set('section', section);
+    if (view) next.set('view', view);
+    else next.delete('view');
+    if (providerId) next.set('providerId', providerId);
+    else if (providerId === null) next.delete('providerId');
+    setSearchParams(next, { replace });
   };
-  const [availabilityTab, setAvailabilityTab] = useState<AvailabilityTabKey>('submissions');
+
+  useEffect(() => {
+    const canonicalMonth = monthParamToIso(monthParam);
+    if (canonicalMonth && canonicalMonth !== month) setMonth(canonicalMonth);
+  }, [month, monthParam]);
+
+  useEffect(() => {
+    const nextScope = scopeParam ? scopeFromParam(scopeParam) : scope;
+    setActiveScope(current => (current === nextScope ? current : nextScope));
+  }, [scope, scopeParam]);
+
+  useEffect(() => {
+    const nextTab = topTabFromParam(tabParam, sectionParam);
+    setTopTab(current => (current === nextTab ? current : nextTab));
+  }, [sectionParam, tabParam]);
+
+  useEffect(() => {
+    setAvailabilityTab(current => {
+      const next = availabilityTabFromView(viewParam);
+      return current === next ? current : next;
+    });
+    setPublishTab(current => {
+      const next = publishTabFromView(viewParam);
+      return current === next ? current : next;
+    });
+    setReviewTab(current => {
+      const next = reviewTabFromView(viewParam);
+      return current === next ? current : next;
+    });
+    setCoveragePlanTab(current => {
+      const next = coveragePlanTabFromView(viewParam, tabParam);
+      return current === next ? current : next;
+    });
+  }, [tabParam, viewParam]);
+
+  useEffect(() => {
+    if (!tabParam) return;
+    const nextSection =
+      tabParam === 'publish' && (viewParam === 'review' || viewParam === 'needs-review')
+        ? 'review'
+        : topTabFromParam(tabParam, sectionParam);
+    const legacyView =
+      tabParam === 'availability'
+        ? viewParam || 'submissions'
+        : tabParam === 'forecast' || tabParam === 'matching' || tabParam === 'coverage' || tabParam === 'declined'
+          ? tabParam
+        : tabParam === 'publish'
+            ? viewParam === 'review' || viewParam === 'needs-review'
+              ? 'decisions'
+              : viewParam || 'provider'
+            : tabParam === 'audit'
+              ? null
+              : viewParam;
+    updateWorkbenchParams({
+      section: nextSection,
+      view: legacyView,
+      nextMonth: monthParamToIso(monthParam) ?? month,
+      nextScope: scopeParam ? scopeFromParam(scopeParam) : scope,
+      replace: true,
+    });
+  // Run only when legacy tab URLs are present; updateWorkbenchParams closes over current searchParams.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabParam]);
+
+  const onTopTabChange = (v: string) => {
+    const nextTab = topTabFromParam(v, v);
+    setTopTab(nextTab);
+    const defaultView =
+      nextTab === 'intake'
+        ? availabilityTab
+        : nextTab === 'review'
+          ? reviewTab
+          : nextTab === 'coverage-plan'
+            ? coveragePlanTab
+            : nextTab === 'publish'
+              ? publishTab
+              : null;
+    updateWorkbenchParams({ section: nextTab, view: defaultView, replace: true });
+  };
+  const onMonthChange = (nextMonth: string) => {
+    setMonth(nextMonth);
+    updateWorkbenchParams({ nextMonth, replace: true });
+  };
+  const onScopeChange = (nextScope: SchedulingWorkbenchScope) => {
+    setActiveScope(nextScope);
+    updateWorkbenchParams({ nextScope, replace: true });
+  };
   const jumpToAvailability = (tab: AvailabilityTabKey = 'submissions') => {
     setAvailabilityTab(tab);
-    onTopTabChange('availability');
+    setTopTab('intake');
+    updateWorkbenchParams({ section: 'intake', view: tab, replace: true });
   };
-  const [publishTab, setPublishTab] = useState<PublishTabKey>('provider');
+  const jumpToReview = (tab: ReviewTabKey = 'decisions') => {
+    setReviewTab(tab);
+    setTopTab('review');
+    updateWorkbenchParams({ section: 'review', view: tab, replace: true });
+  };
+  const jumpToCoveragePlan = (tab: CoveragePlanTabKey = 'coverage') => {
+    setCoveragePlanTab(tab);
+    setTopTab('coverage-plan');
+    updateWorkbenchParams({ section: 'coverage-plan', view: tab, replace: true });
+  };
   const jumpToPublish = (tab: PublishTabKey = 'provider') => {
     setPublishTab(tab);
-    onTopTabChange('publish');
+    setTopTab('publish');
+    updateWorkbenchParams({ section: 'publish', view: tab, replace: true });
   };
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -657,13 +840,8 @@ export default function SchedulingWorkbenchPage({
 
   // Providers who listed off-days for this month — Lindsay's request so MSS can
   // see at-a-glance who's unavailable when sourcing a licensed provider.
-  type TimeOffEntry = {
-    row: ProviderPublishView;
-    ranges: ReturnType<typeof extractUnavailableRanges>;
-    totalDays: number;
-  };
-  const timeOffRows: TimeOffEntry[] = useMemo(() => {
-    const out: TimeOffEntry[] = [];
+  const timeOffRows: ProviderTimeOffEntry[] = useMemo(() => {
+    const out: ProviderTimeOffEntry[] = [];
     for (const r of rows) {
       const sub = r.submission;
       if (!sub) continue;
@@ -677,20 +855,6 @@ export default function SchedulingWorkbenchPage({
       a.row.provider_name.localeCompare(b.row.provider_name, undefined, { sensitivity: 'base' }),
     );
   }, [rows, month]);
-
-  const filteredAccepted = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    const base = q
-      ? acceptedRows.filter(
-          r =>
-            r.provider_name.toLowerCase().includes(q) ||
-            (r.profession ?? '').toLowerCase().includes(q),
-        )
-      : acceptedRows;
-    return [...base].sort((a, b) =>
-      a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
-    );
-  }, [acceptedRows, filter]);
 
   // Aggregate progress: count individual shifts so the headline reflects
   // Sarabjeet's actual workload, not just per-provider check-marks.
@@ -746,20 +910,20 @@ export default function SchedulingWorkbenchPage({
   const mhProviderName = (name?: string | null) =>
     isMentalHealthProvider(null, name ?? null);
 
-  const mhSlMatches = (profession?: string | null, name?: string | null) => {
+  const mhSlMatches = useCallback((profession?: string | null, name?: string | null) => {
     if (!isMh || mhServiceLine === 'all') return true;
     return (
       mentalHealthServiceLineForProvider(profession ?? null, name ?? null) ===
       mhServiceLine
     );
-  };
+  }, [isMh, mhServiceLine]);
 
   const scopedRows = useMemo(
     () =>
-      (isMh ? mentalHealthRows : telehealthRows).filter(r =>
+      (isMh ? mentalHealthRows : rows).filter(r =>
         mhSlMatches(r.profession, r.provider_name),
       ),
-    [isMh, mhServiceLine, mentalHealthRows, telehealthRows],
+    [isMh, mhSlMatches, mentalHealthRows, rows],
   );
   const scopedAccepted = useMemo(
     () => scopedRows.filter(isAcceptedSubmission),
@@ -800,7 +964,7 @@ export default function SchedulingWorkbenchPage({
         (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
         mhSlMatches(null, s.provider_name),
       ),
-    [availabilitySubmissions, isMh, mhServiceLine],
+    [availabilitySubmissions, isMh, mhSlMatches],
   );
   const scopedInboxSubs = useMemo(
     () =>
@@ -808,7 +972,7 @@ export default function SchedulingWorkbenchPage({
         (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
         mhSlMatches(null, s.provider_name),
       ),
-    [inboxSubmissions, isMh, mhServiceLine],
+    [inboxSubmissions, isMh, mhSlMatches],
   );
   const scopedUnmatched = useMemo(
     () =>
@@ -816,7 +980,7 @@ export default function SchedulingWorkbenchPage({
         (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
         mhSlMatches(null, s.provider_name),
       ),
-    [unmatchedSubs, isMh, mhServiceLine],
+    [unmatchedSubs, isMh, mhSlMatches],
   );
   const scopedTimeOff = useMemo(
     () =>
@@ -824,7 +988,7 @@ export default function SchedulingWorkbenchPage({
         const mh = isMentalHealthProvider(t.row.profession, t.row.provider_name);
         return (isMh ? mh : !mh) && mhSlMatches(t.row.profession, t.row.provider_name);
       }),
-    [timeOffRows, isMh, mhServiceLine],
+    [timeOffRows, isMh, mhSlMatches],
   );
   const scopedInboxActionable = useMemo(() => {
     const groups = groupSubmissionsForInbox(scopedInboxSubs);
@@ -883,6 +1047,20 @@ export default function SchedulingWorkbenchPage({
     const ids = new Set(mentalHealthRows.map(r => r.provider_id));
     return auditEntries.filter(e => e.provider_id && ids.has(e.provider_id));
   }, [auditEntries, isMh, mentalHealthRows]);
+
+  const filteredScopedAccepted = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    const base = q
+      ? scopedAccepted.filter(
+          r =>
+            r.provider_name.toLowerCase().includes(q) ||
+            (r.profession ?? '').toLowerCase().includes(q),
+        )
+      : scopedAccepted;
+    return [...base].sort((a, b) =>
+      a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
+    );
+  }, [scopedAccepted, filter]);
 
   const handleToggleProvider = (
     row: ProviderPublishView,
@@ -966,15 +1144,24 @@ export default function SchedulingWorkbenchPage({
             ) : (
               <Calendar className="h-6 w-6 text-emerald-600" />
             )}
-            {formatMonthLabel(month)} {isMh ? 'Mental Health Scheduling Workbench' : 'Scheduling Workbench'}
+            {formatMonthLabel(month)} Scheduling Workbench
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {isMh
-              ? `Mental health only — coaches and therapists. Same forecast → availability → coverage → publish flow, scoped to MH providers.`
-              : `One place to move ${formatMonthLabel(month)} from forecast → availability → coverage → publish. Pick a tab below. Every Homebase/EHR click is recorded with who and when.`}
+              ? `Mental health scope — coaches and therapists. Same intake → review → coverage plan → publish flow, filtered to MH providers.`
+              : `One place to move ${formatMonthLabel(month)} from intake → review → coverage plan → publish. Every Homebase/EHR click is recorded with who and when.`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Select value={activeScope} onValueChange={(v) => onScopeChange(v as SchedulingWorkbenchScope)}>
+            <SelectTrigger className="w-[168px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="medical">All scheduling</SelectItem>
+              <SelectItem value="mental_health">Mental health</SelectItem>
+            </SelectContent>
+          </Select>
           {isMh && (
             <Select value={mhServiceLine} onValueChange={(v) => setMhServiceLine(v as 'all' | MentalHealthServiceLine)}>
               <SelectTrigger className="w-[180px]">
@@ -987,7 +1174,7 @@ export default function SchedulingWorkbenchPage({
               </SelectContent>
             </Select>
           )}
-          <Select value={month} onValueChange={setMonth}>
+          <Select value={month} onValueChange={onMonthChange}>
             <SelectTrigger className="w-[180px]">
               <SelectValue />
             </SelectTrigger>
@@ -1021,27 +1208,66 @@ export default function SchedulingWorkbenchPage({
               shifts that change or disappear lose their progress.
             </TooltipContent>
           </Tooltip>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setTopTab('exceptions');
+              updateWorkbenchParams({ section: 'exceptions', replace: true });
+            }}
+          >
+            <ClipboardList className="h-4 w-4 mr-1" />
+            Exceptions
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setTopTab('data-sources');
+              updateWorkbenchParams({ section: 'data-sources', replace: true });
+            }}
+          >
+            <HelpCircle className="h-4 w-4 mr-1" />
+            Data Sources
+          </Button>
         </div>
       </div>
+
+      <ProviderStatusSearchPanel
+        month={month}
+        rows={scopedRows}
+        availabilityRows={scopedAvailabilitySubs}
+        inboxSubmissions={scopedInboxSubs}
+        timeOffRows={scopedTimeOff}
+        shiftsByProvider={shiftsByProvider}
+        cutRowsByProvider={cutRowsByProvider}
+        initialProviderId={searchParams.get('providerId')}
+        onProviderSelected={providerId =>
+          updateWorkbenchParams({ providerId, replace: true })
+        }
+      />
 
       <Tabs value={topTab} onValueChange={onTopTabChange}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="readiness"><ShieldCheck className="h-3.5 w-3.5 mr-1" />Readiness</TabsTrigger>
-          <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
-          <TabsTrigger value="availability"><Inbox className="h-3.5 w-3.5 mr-1" />Availability</TabsTrigger>
-          <TabsTrigger value="matching"><Users className="h-3.5 w-3.5 mr-1" />Matching</TabsTrigger>
-          <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Gaps</TabsTrigger>
-          <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
-          <TabsTrigger value="declined">
-            <CalendarX className="h-3.5 w-3.5 mr-1" />Declined Hours
+          <TabsTrigger value="intake"><Inbox className="h-3.5 w-3.5 mr-1" />Intake</TabsTrigger>
+          <TabsTrigger value="review">
+            <AlertCircle className="h-3.5 w-3.5 mr-1" />Review
+            {(scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length) > 0 && (
+              <Badge className="ml-1 bg-orange-100 text-orange-800">
+                {scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="coverage-plan">
+            <MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Plan
             {(isMh ? scopedDeclined.length : allDeclinedRows.length) > 0 && (
               <Badge className="ml-1 bg-red-100 text-red-700">
                 {isMh ? scopedDeclined.length : allDeclinedRows.length}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="exceptions"><ClipboardList className="h-3.5 w-3.5 mr-1" />Known Exceptions</TabsTrigger>
-          <TabsTrigger value="audit"><HelpCircle className="h-3.5 w-3.5 mr-1" />Audit</TabsTrigger>
+          <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
         </TabsList>
 
         {/* ============ READINESS ============ */}
@@ -1061,11 +1287,15 @@ export default function SchedulingWorkbenchPage({
             unmatchedCount={scopedUnmatched.length}
             onReevaluate={reevaluateNow}
             isReevaluating={reevaluate.isPending}
-            onJumpToCoverage={() => onTopTabChange('coverage')}
+            onJumpToCoverage={() => jumpToCoveragePlan('coverage')}
             onJumpToAvailability={jumpToAvailability}
+            onJumpToReview={jumpToReview}
             onJumpToPublish={jumpToPublish}
-            onJumpToDeclined={() => onTopTabChange('declined')}
-            onJumpToExceptions={() => onTopTabChange('exceptions')}
+            onJumpToDeclined={() => jumpToCoveragePlan('declined')}
+            onJumpToExceptions={() => {
+              setTopTab('exceptions');
+              updateWorkbenchParams({ section: 'exceptions', replace: true });
+            }}
           />
           <SopCard />
           {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
@@ -1080,35 +1310,13 @@ export default function SchedulingWorkbenchPage({
           )}
         </TabsContent>
 
-        {/* ============ FORECAST ============ */}
-        <TabsContent value="forecast" className="mt-4 space-y-4">
-          <ForecastPanel month={month} />
-        </TabsContent>
-
-        {/* ============ MATCHING ============ */}
-        <TabsContent value="matching" className="mt-4 space-y-4">
-          <MatchingPanel
-            month={month}
-            acceptedRows={scopedAccepted}
-            declinedRows={scopedDeclined}
-            needsReviewRows={scopedNeedsReview}
-            shiftsByProvider={shiftsByProvider}
-            eligibilityByProvider={eligibilityByProvider}
-          />
-        </TabsContent>
-
-        {/* ============ COVERAGE ============ */}
-        <TabsContent value="coverage" className="mt-4 space-y-4">
-          <CoverageGapsPanel month={month} acceptedRows={scopedAccepted} missingRows={scopedMissing} />
-        </TabsContent>
-
-        {/* ============ AVAILABILITY ============ */}
-        <TabsContent value="availability" className="mt-4 space-y-4">
+        {/* ============ INTAKE ============ */}
+        <TabsContent value="intake" className="mt-4 space-y-4">
           <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <CardTitle className="text-sm">Shifts source</CardTitle>
+              <CardTitle className="text-sm">Intake source</CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
                 {override
                   ? `Using uploaded file: ${override.fileName} · ${override.totalShifts} shift${override.totalShifts === 1 ? '' : 's'} matched to ${override.matchedProviders} provider${override.matchedProviders === 1 ? '' : 's'}`
@@ -1156,7 +1364,11 @@ export default function SchedulingWorkbenchPage({
         </Alert>
       )}
 
-      <Tabs value={availabilityTab} onValueChange={(v) => setAvailabilityTab(v as AvailabilityTabKey)}>
+      <Tabs value={availabilityTab} onValueChange={(v) => {
+        const next = v as AvailabilityTabKey;
+        setAvailabilityTab(next);
+        updateWorkbenchParams({ section: 'intake', view: next, replace: true });
+      }}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="submissions">
             <Inbox className="h-3.5 w-3.5 mr-1" /> Submissions
@@ -1263,6 +1475,139 @@ export default function SchedulingWorkbenchPage({
       </Tabs>
         </TabsContent>
 
+        {/* ============ REVIEW ============ */}
+        <TabsContent value="review" className="mt-4 space-y-4">
+          <Tabs value={reviewTab} onValueChange={(v) => {
+            const next = v as ReviewTabKey;
+            setReviewTab(next);
+            updateWorkbenchParams({ section: 'review', view: next, replace: true });
+          }}>
+            <TabsList className="flex-wrap h-auto">
+              <TabsTrigger value="decisions">
+                Needs decision
+                {scopedSummary.needsReviewCount > 0 && (
+                  <Badge className="ml-1 bg-orange-100 text-orange-800">
+                    {scopedSummary.needsReviewCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="resubmits">
+                Resubmits
+                {scopedInboxActionable > 0 && (
+                  <Badge className="ml-1 bg-blue-100 text-blue-800">
+                    {scopedInboxActionable}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="recalculate">
+                Pending recalculation
+                {scopedPendingAvailability.length > 0 && (
+                  <Badge className="ml-1 bg-slate-200 text-slate-700">
+                    {scopedPendingAvailability.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="decisions" className="mt-4 space-y-4">
+              <NeedsReviewPanel
+                month={month}
+                rows={scopedNeedsReview}
+                isLoading={isLoading}
+                onResolve={(args) =>
+                  resolveReview.mutate(args, {
+                    onSuccess: () => {
+                      toast.success(
+                        args.decision === 'accepted'
+                          ? `Approved hours for ${args.provider_name}`
+                          : `Declined hours for ${args.provider_name}`,
+                      );
+                      refetch();
+                      refetchShifts();
+                    },
+                    onError: e => {
+                      toast.error(`Could not resolve: ${(e as Error).message}`);
+                      refetch();
+                      refetchShifts();
+                    },
+                  })
+                }
+                isPending={resolveReview.isPending}
+              />
+            </TabsContent>
+
+            <TabsContent value="resubmits" className="mt-4 space-y-4">
+              <ResubmissionInboxPanel
+                anchorMonth={month}
+                submissions={scopedInboxSubs}
+                isLoading={inboxLoading}
+              />
+            </TabsContent>
+
+            <TabsContent value="recalculate" className="mt-4 space-y-4">
+              <PendingRecalculationPanel
+                month={month}
+                rows={scopedPendingAvailability}
+                isLoading={availabilityLoading}
+                isReevaluating={reevaluate.isPending}
+                onReevaluate={reevaluateNow}
+              />
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
+
+        {/* ============ COVERAGE PLAN ============ */}
+        <TabsContent value="coverage-plan" className="mt-4 space-y-4">
+          <Tabs value={coveragePlanTab} onValueChange={(v) => {
+            const next = v as CoveragePlanTabKey;
+            setCoveragePlanTab(next);
+            updateWorkbenchParams({ section: 'coverage-plan', view: next, replace: true });
+          }}>
+            <TabsList className="flex-wrap h-auto">
+              <TabsTrigger value="coverage"><MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Gaps</TabsTrigger>
+              <TabsTrigger value="matching"><Users className="h-3.5 w-3.5 mr-1" />Matching</TabsTrigger>
+              <TabsTrigger value="declined">
+                <CalendarX className="h-3.5 w-3.5 mr-1" />Cut / declined hours
+                {(isMh ? scopedDeclined.length : allDeclinedRows.length) > 0 && (
+                  <Badge className="ml-1 bg-red-100 text-red-700">
+                    {isMh ? scopedDeclined.length : allDeclinedRows.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="coverage" className="mt-4 space-y-4">
+              <CoverageGapsPanel month={month} acceptedRows={scopedAccepted} missingRows={scopedMissing} />
+            </TabsContent>
+
+            <TabsContent value="matching" className="mt-4 space-y-4">
+              <MatchingPanel
+                month={month}
+                acceptedRows={scopedAccepted}
+                declinedRows={scopedDeclined}
+                needsReviewRows={scopedNeedsReview}
+                shiftsByProvider={shiftsByProvider}
+                eligibilityByProvider={eligibilityByProvider}
+              />
+            </TabsContent>
+
+            <TabsContent value="declined" className="mt-4 space-y-4">
+              <DeclinedHoursPanel
+                month={month}
+                declinedRows={isMh ? scopedDeclined : allDeclinedRows}
+                cutRowsByProvider={cutRowsByProvider}
+                eligibilityByProvider={eligibilityByProvider}
+                isLoading={isLoading || cutsLoading}
+              />
+            </TabsContent>
+
+            <TabsContent value="forecast" className="mt-4 space-y-4">
+              <ForecastPanel month={month} />
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
+
         {/* ============ PUBLISH ============ */}
         <TabsContent value="publish" className="mt-4 space-y-4">
           <PublishGateBanner
@@ -1273,8 +1618,8 @@ export default function SchedulingWorkbenchPage({
             unmatchedCount={scopedUnmatched.length}
             missingCount={scopedSummary.missingCount}
             onJumpToAvailability={jumpToAvailability}
-            onJumpToCoverage={() => onTopTabChange('coverage')}
-            onJumpToPublish={jumpToPublish}
+            onJumpToReview={jumpToReview}
+            onJumpToCoverage={() => jumpToCoveragePlan('coverage')}
           />
           <PublishInstructionsCard />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1315,14 +1660,6 @@ export default function SchedulingWorkbenchPage({
                 )}
               </TabsTrigger>
               <TabsTrigger value="day">By Day</TabsTrigger>
-              <TabsTrigger value="review">
-                Needs Review
-                {scopedSummary.needsReviewCount > 0 && (
-                  <Badge className="ml-1 bg-orange-100 text-orange-800">
-                    {scopedSummary.needsReviewCount}
-                  </Badge>
-                )}
-              </TabsTrigger>
               <TabsTrigger value="history">
                 <History className="h-3.5 w-3.5 mr-1" /> History
                 {scopedAuditEntries.length > 0 && (
@@ -1371,7 +1708,7 @@ export default function SchedulingWorkbenchPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredAccepted.map(row => {
+                    {filteredScopedAccepted.map(row => {
                       const sub = row.submission!;
                       const flats = shiftsByProvider.get(row.provider_id) ?? [];
                       const hbDone = flats.filter(isHomebaseDone).length;
@@ -1485,7 +1822,7 @@ export default function SchedulingWorkbenchPage({
                         </Fragment>
                       );
                     })}
-                    {filteredAccepted.length === 0 && (
+                    {filteredScopedAccepted.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                           No approved providers match.
@@ -1533,48 +1870,10 @@ export default function SchedulingWorkbenchPage({
           />
         </TabsContent>
 
-        <TabsContent value="review" className="mt-4 space-y-4">
-          <NeedsReviewPanel
-            month={month}
-            rows={scopedNeedsReview}
-            isLoading={isLoading}
-            onResolve={(args) =>
-              resolveReview.mutate(args, {
-                onSuccess: () => {
-                  toast.success(
-                    args.decision === 'accepted'
-                      ? `Accepted and rebuilt usable hours for ${args.provider_name}`
-                      : `Declined and greyed out hours for ${args.provider_name}`,
-                  );
-                  refetch();
-                  refetchShifts();
-                },
-                onError: e => {
-                  toast.error(`Could not resolve: ${(e as Error).message}`);
-                  refetch();
-                  refetchShifts();
-                },
-              })
-            }
-            isPending={resolveReview.isPending}
-          />
-        </TabsContent>
-
         <TabsContent value="history" className="mt-4 space-y-4">
           <PublishHistoryPanel month={month} entries={scopedAuditEntries} />
         </TabsContent>
           </Tabs>
-        </TabsContent>
-
-        {/* ============ DECLINED HOURS ============ */}
-        <TabsContent value="declined" className="mt-4 space-y-4">
-          <DeclinedHoursPanel
-            month={month}
-            declinedRows={isMh ? scopedDeclined : allDeclinedRows}
-            cutRowsByProvider={cutRowsByProvider}
-            eligibilityByProvider={eligibilityByProvider}
-            isLoading={isLoading || cutsLoading}
-          />
         </TabsContent>
 
         {/* ============ EXCEPTIONS ============ */}
@@ -1583,7 +1882,7 @@ export default function SchedulingWorkbenchPage({
         </TabsContent>
 
         {/* ============ AUDIT / WHY ============ */}
-        <TabsContent value="audit" className="mt-4 space-y-4">
+        <TabsContent value="data-sources" className="mt-4 space-y-4">
           <AuditPanel
             month={month}
             acceptedRows={scopedAccepted}
@@ -1611,7 +1910,7 @@ function SopCard() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
           <SopStep day="Mon" label="Initial availability message" />
           <SopStep day="Fri" label="Reminder message" />
-          <SopStep day="Tue" label="Chase missing + clear Needs Review" />
+          <SopStep day="Tue" label="Chase missing + clear Needs Decision" />
           <SopStep day="Wed" label="Publish to Homebase" />
           <SopStep day="Fri" label="Transfer to EHR" />
         </div>
@@ -1784,6 +2083,223 @@ function LoadingRow({ label }: { label: string }) {
     <div className="flex items-center justify-center py-12 text-muted-foreground">
       <Loader2 className="h-5 w-5 animate-spin mr-2" />
       {label}
+    </div>
+  );
+}
+
+function ProviderStatusSearchPanel({
+  month,
+  rows,
+  availabilityRows,
+  inboxSubmissions,
+  timeOffRows,
+  shiftsByProvider,
+  cutRowsByProvider,
+  initialProviderId,
+  onProviderSelected,
+}: {
+  month: string;
+  rows: ProviderPublishView[];
+  availabilityRows: AvailabilitySubmissionRow[];
+  inboxSubmissions: SubmissionForInbox[];
+  timeOffRows: ProviderTimeOffEntry[];
+  shiftsByProvider: Map<string, ShiftRow[]>;
+  cutRowsByProvider: Map<string, ShiftRow[]>;
+  initialProviderId: string | null;
+  onProviderSelected: (providerId: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(initialProviderId);
+
+  useEffect(() => {
+    setSelectedProviderId(initialProviderId);
+  }, [initialProviderId]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const sortedRows = useMemo(
+    () =>
+      [...rows].sort((a, b) =>
+        a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
+      ),
+    [rows],
+  );
+  const matches = useMemo(() => {
+    if (normalizedQuery.length < 2) return [];
+    return sortedRows
+      .filter(row => {
+        const haystack = [
+          row.provider_name,
+          row.provider_email,
+          row.profession,
+          row.employment_type,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(normalizedQuery);
+      })
+      .slice(0, 6);
+  }, [normalizedQuery, sortedRows]);
+
+  const selectedRow =
+    (selectedProviderId
+      ? sortedRows.find(row => row.provider_id === selectedProviderId)
+      : null) ??
+    (matches.length === 1 ? matches[0] : null);
+
+  const latestAvailability = useMemo(() => {
+    if (!selectedRow) return null;
+    return availabilityRows
+      .filter(row =>
+        (row.provider_id && row.provider_id === selectedRow.provider_id) ||
+        row.provider_name.toLowerCase() === selectedRow.provider_name.toLowerCase(),
+      )
+      .sort((a, b) => b.submitted_at.localeCompare(a.submitted_at))[0] ?? null;
+  }, [availabilityRows, selectedRow]);
+
+  const resubmitStatus = useMemo(() => {
+    if (!selectedRow) return 'No resubmit pending';
+    const groups = groupSubmissionsForInbox(inboxSubmissions);
+    const group = groups.find(g =>
+      (g.provider_id && g.provider_id === selectedRow.provider_id) ||
+      g.provider_name.toLowerCase() === selectedRow.provider_name.toLowerCase(),
+    );
+    if (!group) return 'No resubmit pending';
+    const diff = diffParsedShifts(group.prior.parsed_shifts, group.latest.parsed_shifts);
+    if (group.latest.human_review_state === 'approved') return 'Approved resubmit';
+    if (group.latest.human_review_state === 'parked') return 'Parked resubmit';
+    return diff.hasChanges ? 'Needs resubmit review' : 'Resubmit has no schedule change';
+  }, [inboxSubmissions, selectedRow]);
+
+  const timeOff = selectedRow
+    ? timeOffRows.find(entry => entry.row.provider_id === selectedRow.provider_id)
+    : null;
+  const shifts = selectedRow ? shiftsByProvider.get(selectedRow.provider_id) ?? [] : [];
+  const cutShifts = selectedRow ? cutRowsByProvider.get(selectedRow.provider_id) ?? [] : [];
+  const submittedHours =
+    expandedSubmittedHours(latestAvailability) ??
+    expandedSubmittedHours(selectedRow?.submission) ??
+    null;
+  const acceptedHours = selectedRow?.submission?.accepted_hours ?? null;
+  const declinedHours = Number(selectedRow?.submission?.declined_hours ?? 0);
+  const cutShiftHours = cutShifts.reduce((sum, shift) => sum + Number(shift.hours ?? 0), 0);
+  const homebaseDone = shifts.length
+    ? shifts.filter(isHomebaseDone).length
+    : selectedRow?.publish?.homebase_posted_at
+      ? 1
+      : 0;
+  const ehrDone = shifts.length
+    ? shifts.filter(isEhrDone).length
+    : selectedRow?.publish?.ehr_posted_at
+      ? 1
+      : 0;
+  const homebaseTotal = shifts.length || (selectedRow?.publish ? 1 : 0);
+  const ehrTotal = shifts.length || (selectedRow?.publish ? 1 : 0);
+  const reviewLabel =
+    selectedRow?.submission?.decision_status === 'needs_review'
+      ? 'Needs decision'
+      : selectedRow?.submission?.decision_status
+        ? STATUS_STYLE[selectedRow.submission.decision_status as DecisionStatus]?.label ?? selectedRow.submission.decision_status
+        : 'No submission';
+
+  const handleSelect = (providerId: string) => {
+    setSelectedProviderId(providerId);
+    onProviderSelected(providerId);
+  };
+
+  return (
+    <Card>
+      <CardContent className="py-3">
+        <div className="grid gap-3 lg:grid-cols-[minmax(220px,0.45fr)_minmax(0,1fr)]">
+          <div className="space-y-2">
+            <Label htmlFor="scheduling-provider-search">Check a provider</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="scheduling-provider-search"
+                placeholder="Search provider"
+                value={query}
+                onChange={event => {
+                  setQuery(event.target.value);
+                  setSelectedProviderId(null);
+                }}
+                className="pl-9"
+              />
+            </div>
+            {normalizedQuery.length >= 2 && matches.length > 1 && (
+              <div className="max-h-40 overflow-y-auto rounded-md border bg-background">
+                {matches.map(row => (
+                  <button
+                    key={row.provider_id}
+                    type="button"
+                    className="flex w-full items-start justify-between gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
+                    onClick={() => handleSelect(row.provider_id)}
+                  >
+                    <span>
+                      <span className="block font-medium">{row.provider_name}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {row.provider_email ?? 'No email'} · {row.profession ?? '—'}
+                      </span>
+                    </span>
+                    <StatusBadge status={row.submission?.decision_status as DecisionStatus | null | undefined} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {selectedRow ? (
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="text-sm font-semibold">{selectedRow.provider_name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {selectedRow.provider_email ?? 'No email'} · {selectedRow.profession ?? '—'} · {formatMonthLabel(month)}
+                  </div>
+                </div>
+                <Badge variant="outline" className="bg-white">
+                  {reviewLabel}
+                </Badge>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+                <ProviderStatusMetric label="Submitted" value={formatHours(submittedHours)} />
+                <ProviderStatusMetric label="Accepted" value={formatHours(acceptedHours)} />
+                <ProviderStatusMetric label="Review" value={reviewLabel} />
+                <ProviderStatusMetric label="Resubmit" value={resubmitStatus} />
+                <ProviderStatusMetric
+                  label="Time off"
+                  value={timeOff ? `${timeOff.totalDays} day${timeOff.totalDays === 1 ? '' : 's'}` : 'None listed'}
+                />
+                <ProviderStatusMetric
+                  label="Cut hours"
+                  value={`${Math.max(declinedHours, cutShiftHours).toFixed(1)}`}
+                />
+                <ProviderStatusMetric
+                  label="Homebase"
+                  value={homebaseTotal ? `${homebaseDone}/${homebaseTotal}` : 'No shifts'}
+                />
+                <ProviderStatusMetric
+                  label="EHR"
+                  value={ehrTotal ? `${ehrDone}/${ehrTotal}` : 'No shifts'}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex min-h-24 items-center rounded-md border border-dashed px-4 text-sm text-muted-foreground">
+              Search by provider name, email, or profession to see scheduling status.
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProviderStatusMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-white px-2 py-2">
+      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+      <div className="mt-1 min-h-8 text-sm font-semibold leading-tight">{value}</div>
     </div>
   );
 }
@@ -2008,7 +2524,7 @@ function AvailabilitySubmissionsPanel({
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
           No Jotform/drop-form availability submissions are stored for {formatMonthLabel(month)}.
-          If submissions were expected, check Audit → Data quality and confirm the direct Jotform sync.
+          If submissions were expected, check Data Sources, then Data quality, and confirm the direct Jotform sync.
         </AlertDescription>
       </Alert>
     );
@@ -2112,6 +2628,96 @@ function AvailabilitySubmissionsPanel({
             })}
           </TableBody>
         </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PendingRecalculationPanel({
+  month,
+  rows,
+  isLoading,
+  isReevaluating,
+  onReevaluate,
+}: {
+  month: string;
+  rows: AvailabilitySubmissionRow[];
+  isLoading: boolean;
+  isReevaluating: boolean;
+  onReevaluate: () => void;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent>
+          <LoadingRow label="Loading pending submissions" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle className="text-base">
+              Pending recalculation · {formatMonthLabel(month)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              These submissions are still pending a schedule evaluation. Recalculate to move them into accepted, cut / declined, or needs decision.
+            </p>
+          </div>
+          <Button onClick={onReevaluate} disabled={isReevaluating}>
+            {isReevaluating ? (
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-1 h-4 w-4" />
+            )}
+            Recalculate schedule
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {rows.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            No pending submissions need recalculation for {formatMonthLabel(month)}.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead>Submitted</TableHead>
+                <TableHead className="text-right">Expanded hrs</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(row => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <div className="font-medium">{row.provider_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.provider_email ?? 'No email'} · {row.provider_profession ?? '—'}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {formatRelativeTime(row.submitted_at)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatHours(expandedSubmittedHours(row))}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="bg-blue-50 text-blue-800">
+                      Needs recalculation
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );
@@ -2521,9 +3127,9 @@ function NeedsReviewPanel({
 
   const decisionLabel =
     resolutionTarget?.decision === 'accepted'
-      ? 'Accept and use'
+      ? 'Approve hours'
       : resolutionTarget?.decision === 'declined'
-        ? 'Decline and grey out'
+        ? 'Decline hours'
         : '—';
 
   if (isLoading) {
@@ -2552,10 +3158,10 @@ function NeedsReviewPanel({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Needs review · {formatMonthLabel(month)}
+            Needs decision · {formatMonthLabel(month)}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Resolve these after a ClinOps lead decision. Accept & use rebuilds publishable shift rows; decline & grey out moves the hours to declined/cut coverage.
+            Resolve these after a ClinOps lead decision. Approve hours rebuilds publishable shift rows; decline hours moves them to cut / declined coverage.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -2618,7 +3224,7 @@ function NeedsReviewPanel({
                           disabled={isPending}
                           onClick={() => openResolutionDialog(r, 'accepted', reasonLabel)}
                         >
-                          Accept & use
+                          Approve hours
                         </Button>
                         <Button
                           size="sm"
@@ -2627,7 +3233,7 @@ function NeedsReviewPanel({
                           disabled={isPending}
                           onClick={() => openResolutionDialog(r, 'declined', reasonLabel)}
                         >
-                          Decline & grey
+                          Decline hours
                         </Button>
                         <Button
                           size="sm"
@@ -2664,8 +3270,8 @@ function NeedsReviewPanel({
           <DialogHeader>
             <DialogTitle>
               {resolutionTarget?.decision === 'accepted'
-                ? 'Accept and use hours'
-                : 'Decline and grey out hours'}
+                ? 'Approve hours'
+                : 'Decline hours'}
             </DialogTitle>
             <DialogDescription>
               {resolutionTarget?.row.provider_name ?? 'Provider'} · {formatMonthLabel(month)}
@@ -2701,8 +3307,8 @@ function NeedsReviewPanel({
             <Button onClick={submitResolution} disabled={isPending || !resolutionTarget}>
               {isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {resolutionTarget?.decision === 'accepted'
-                ? 'Accept & use hours'
-                : 'Decline & grey out'}
+                ? 'Approve hours'
+                : 'Decline hours'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3011,7 +3617,7 @@ function MentalHealthDashboard({
           </TabsTrigger>
           <TabsTrigger value="day">By Day</TabsTrigger>
           <TabsTrigger value="review">
-            Needs Review
+            Needs Decision
             {summary.needsReviewCount > 0 && (
               <Badge className="ml-1 bg-orange-100 text-orange-800">
                 {summary.needsReviewCount}
@@ -4679,6 +5285,7 @@ function ReadinessPanel({
   isReevaluating,
   onJumpToCoverage,
   onJumpToAvailability,
+  onJumpToReview,
   onJumpToPublish,
   onJumpToDeclined,
   onJumpToExceptions,
@@ -4707,6 +5314,7 @@ function ReadinessPanel({
   isReevaluating: boolean;
   onJumpToCoverage: () => void;
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
+  onJumpToReview: (tab?: ReviewTabKey) => void;
   onJumpToPublish: (tab?: PublishTabKey) => void;
   onJumpToDeclined: () => void;
   onJumpToExceptions: () => void;
@@ -4830,8 +5438,8 @@ function ReadinessPanel({
         label: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need manual review`,
         detail: `${summary.needsReviewCount} unusual-hours flag${summary.needsReviewCount === 1 ? '' : 's'} and ${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} need a ClinOps lead decision.`,
         category: 'Escalate to ClinOps lead',
-        action: summary.needsReviewCount > 0 ? 'Open Needs Review' : 'Open Resubmits',
-        onClick: summary.needsReviewCount > 0 ? () => onJumpToPublish('review') : () => onJumpToAvailability('inbox'),
+        action: summary.needsReviewCount > 0 ? 'Open Needs Decision' : 'Open Resubmits',
+        onClick: summary.needsReviewCount > 0 ? () => onJumpToReview('decisions') : () => onJumpToReview('resubmits'),
       });
     }
     if (criticalGapStates.length > 0) {
@@ -4870,7 +5478,7 @@ function ReadinessPanel({
     onReevaluate,
     onJumpToAvailability,
     onJumpToCoverage,
-    onJumpToPublish,
+    onJumpToReview,
   ]);
 
   const workbenchReady = !checksLoading && hardBlockers.length === 0 && hasPublishRows;
@@ -4917,9 +5525,9 @@ function ReadinessPanel({
       return {
         blocker: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need ClinOps lead review`,
         nextAction: summary.needsReviewCount > 0
-          ? 'Approve or decline needs-review hours'
+          ? 'Approve or decline flagged hours'
           : 'Approve or park resubmitted hours',
-        nextActionJump: summary.needsReviewCount > 0 ? () => onJumpToPublish('review') : () => onJumpToAvailability('inbox'),
+        nextActionJump: summary.needsReviewCount > 0 ? () => onJumpToReview('decisions') : () => onJumpToReview('resubmits'),
         nextCategory: 'Escalate to ClinOps lead',
       };
     }
@@ -4975,6 +5583,7 @@ function ReadinessPanel({
     onReevaluate,
     onJumpToAvailability,
     onJumpToCoverage,
+    onJumpToReview,
     onJumpToPublish,
   ]);
 
@@ -5015,8 +5624,8 @@ function ReadinessPanel({
         ? 'No ambiguous submissions or resubmissions need action.'
         : `${reviewCount} item${reviewCount === 1 ? '' : 's'} need a ClinOps lead decision before publishing.`,
       status: reviewCount === 0 ? 'done' : 'blocked',
-      action: summary.needsReviewCount > 0 ? 'Open Needs Review' : 'Open Resubmits',
-      onClick: summary.needsReviewCount > 0 ? () => onJumpToPublish('review') : () => onJumpToAvailability('inbox'),
+      action: summary.needsReviewCount > 0 ? 'Open Needs Decision' : 'Open Resubmits',
+      onClick: summary.needsReviewCount > 0 ? () => onJumpToReview('decisions') : () => onJumpToReview('resubmits'),
     },
     {
       label: '4. Check state coverage',
@@ -5085,12 +5694,12 @@ function ReadinessPanel({
     if (pendingSubmissionCount > 0) {
       out.push({
         key: 'pending',
-        label: 'Pending evaluation',
+        label: 'Needs recalculation',
         value: pendingSubmissionCount.toString(),
         detail: `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} need a schedule decision. Recalculate to move them into accepted, declined, or needs review.`,
-        badge: 'Scheduler can do this',
-        action: 'Recalculate',
-        onClick: onReevaluate,
+        badge: 'Rebuild schedule',
+        action: 'Open Pending Recalculation',
+        onClick: () => onJumpToReview('recalculate'),
         tone: 'border-blue-200 bg-blue-50/60',
         disabled: isReevaluating,
         loading: isReevaluating,
@@ -5099,12 +5708,12 @@ function ReadinessPanel({
     if (summary.needsReviewCount > 0) {
       out.push({
         key: 'needs-review',
-        label: 'Needs review',
+        label: 'Needs decision',
         value: summary.needsReviewCount.toString(),
         detail: `${needsReviewHours.toFixed(1)} submitted hour${needsReviewHours.toFixed(1) === '1.0' ? '' : 's'} need an in-platform accept or decline decision.`,
         badge: 'Approve / decline',
-        action: 'Open Needs Review',
-        onClick: () => onJumpToPublish('review'),
+        action: 'Open Needs Decision',
+        onClick: () => onJumpToReview('decisions'),
         tone: 'border-orange-200 bg-orange-50/70',
       });
     }
@@ -5116,7 +5725,7 @@ function ReadinessPanel({
         detail: 'Changed availability is waiting to be approved or parked before the schedule is final.',
         badge: 'Approve / park',
         action: 'Open Resubmits',
-        onClick: () => onJumpToAvailability('inbox'),
+        onClick: () => onJumpToReview('resubmits'),
         tone: 'border-sky-200 bg-sky-50/70',
       });
     }
@@ -5139,7 +5748,7 @@ function ReadinessPanel({
         value: `${declinedHours.toFixed(1)} hrs`,
         detail: `${declinedCount} provider${declinedCount === 1 ? '' : 's'} have declined or trimmed hours. Review why before answering coverage questions.`,
         badge: 'Explain cuts',
-        action: 'Review Declined',
+        action: 'Review Cut / Declined',
         onClick: onJumpToDeclined,
         tone: 'border-red-200 bg-red-50/60',
       });
@@ -5167,8 +5776,7 @@ function ReadinessPanel({
     needsReviewHours,
     onJumpToAvailability,
     onJumpToDeclined,
-    onJumpToPublish,
-    onReevaluate,
+    onJumpToReview,
     pendingSubmissionCount,
     pendingSubmissionHours,
     summary.needsReviewCount,
@@ -5210,6 +5818,46 @@ function ReadinessPanel({
           </div>
         </CardContent>
       </Card>
+
+      <ReadinessTaskLauncher
+        tasks={[
+          {
+            label: 'Check publish readiness',
+            detail: 'Show the current gate, blocker, and next action.',
+            onClick: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+          },
+          {
+            label: 'Review changed hours',
+            detail: 'Compare prior vs new provider submissions.',
+            onClick: () => onJumpToReview('resubmits'),
+          },
+          {
+            label: 'Approve flagged hours',
+            detail: 'Resolve invalid times or unusual-hour flags.',
+            onClick: () => onJumpToReview('decisions'),
+          },
+          {
+            label: 'Chase missing submissions',
+            detail: 'Copy reminders or mark outreach sent.',
+            onClick: () => onJumpToAvailability('missing'),
+          },
+          {
+            label: 'Explain cut hours',
+            detail: 'See why submitted hours were trimmed.',
+            onClick: onJumpToDeclined,
+          },
+          {
+            label: 'Check a provider',
+            detail: 'Search submitted, accepted, review, and publish status.',
+            onClick: () => document.getElementById('scheduling-provider-search')?.focus(),
+          },
+          {
+            label: 'Publish to Homebase / EHR',
+            detail: 'Work the publish queue and history.',
+            onClick: () => onJumpToPublish(),
+          },
+        ]}
+      />
 
       <Card>
         <CardHeader className="pb-2">
@@ -5259,6 +5907,8 @@ function ReadinessPanel({
         </CardContent>
       </Card>
 
+      <SourceOfTruthPanel />
+
       <Card className="border-sky-200 bg-sky-50/40">
         <CardContent className="py-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
@@ -5267,11 +5917,11 @@ function ReadinessPanel({
               Known scheduling exceptions
             </div>
             <div className="text-xs text-muted-foreground">
-              Richard Rash, Margo / Margaret Mulgrew, Shashai, and admin-only provider exemptions are tracked in the Known Exceptions tab.
+              Richard Rash, Margo / Margaret Mulgrew, Shashai, and admin-only provider exemptions are tracked in Exceptions.
             </div>
           </div>
           <Button size="sm" variant="outline" onClick={onJumpToExceptions}>
-            Open Known Exceptions
+            Open Exceptions
             <ArrowRight className="h-3.5 w-3.5 ml-1" />
           </Button>
         </CardContent>
@@ -5367,7 +6017,7 @@ function ReadinessPanel({
           sub={`Providers without ${formatMonthLabel(month)} hours`}
         />
         <SummaryCard
-          label="Needs review"
+          label="Needs decision"
           value={String(summary.needsReviewCount + inboxNeedsReviewCount)}
           sub={`${summary.needsReviewCount} flagged · ${inboxNeedsReviewCount} resubmissions`}
         />
@@ -5428,6 +6078,84 @@ function ReadinessPanel({
         Last updated {lastUpdated}.
       </div>
     </div>
+  );
+}
+
+function ReadinessTaskLauncher({
+  tasks,
+}: {
+  tasks: { label: string; detail: string; onClick: () => void }[];
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <PlayCircle className="h-4 w-4 text-emerald-700" />
+          I need to...
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {tasks.map(task => (
+            <button
+              key={task.label}
+              type="button"
+              className="rounded-md border bg-background px-3 py-2 text-left transition-colors hover:bg-muted"
+              onClick={task.onClick}
+            >
+              <div className="text-sm font-medium">{task.label}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{task.detail}</div>
+            </button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SourceOfTruthPanel() {
+  const sources = [
+    {
+      label: 'Jotform',
+      owns: 'Submitted availability',
+      detail: 'Provider-requested hours, days off, notes, and resubmissions.',
+    },
+    {
+      label: 'Lovable',
+      owns: 'Schedule decisions',
+      detail: 'Accepted hours, needs decision, cut / declined hours, and recommendations.',
+    },
+    {
+      label: 'Homebase / EHR',
+      owns: 'Posted schedule tracking',
+      detail: 'Manual publish progress for accepted shifts after the schedule is ready.',
+    },
+    {
+      label: 'Metabase',
+      owns: 'Forecast inputs',
+      detail: 'State demand, service-line targets, utilization, and access-risk inputs.',
+    },
+  ];
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <HelpCircle className="h-4 w-4 text-sky-700" />
+          Source of truth
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-2 md:grid-cols-4">
+          {sources.map(source => (
+            <div key={source.label} className="rounded-md border bg-muted/20 px-3 py-2">
+              <div className="text-sm font-semibold">{source.label}</div>
+              <div className="mt-1 text-xs font-medium">{source.owns}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{source.detail}</div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -5625,8 +6353,8 @@ function PublishGateBanner({
   unmatchedCount,
   missingCount,
   onJumpToAvailability,
+  onJumpToReview,
   onJumpToCoverage,
-  onJumpToPublish,
 }: {
   month: string;
   summary: {
@@ -5640,8 +6368,8 @@ function PublishGateBanner({
   unmatchedCount: number;
   missingCount: number;
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
+  onJumpToReview: (tab?: ReviewTabKey) => void;
   onJumpToCoverage: () => void;
-  onJumpToPublish: (tab?: PublishTabKey) => void;
 }) {
   const coverageQ = useStateCoverage(month);
   const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
@@ -5689,8 +6417,8 @@ function PublishGateBanner({
     if (reviewCount > 0) {
       out.push({
         label: `${reviewCount} review item${reviewCount === 1 ? '' : 's'} must be escalated to a ClinOps lead first.`,
-        action: summary.needsReviewCount > 0 ? 'Open Needs Review' : 'Open Resubmits',
-        onClick: summary.needsReviewCount > 0 ? () => onJumpToPublish('review') : () => onJumpToAvailability('inbox'),
+        action: summary.needsReviewCount > 0 ? 'Open Needs Decision' : 'Open Resubmits',
+        onClick: summary.needsReviewCount > 0 ? () => onJumpToReview('decisions') : () => onJumpToReview('resubmits'),
       });
     }
     if (criticalGapStates.length > 0) {
@@ -5722,7 +6450,7 @@ function PublishGateBanner({
     month,
     onJumpToAvailability,
     onJumpToCoverage,
-    onJumpToPublish,
+    onJumpToReview,
   ]);
 
   if (coverageQ.isLoading) {
@@ -6276,7 +7004,7 @@ function inferDeclineReason(row: ProviderPublishView): string {
   const notes = (row.submission?.decision_notes ?? '').trim();
   if (notes) return formatDecisionNoteForStaff(notes);
   const status = row.submission?.decision_status;
-  if (status === 'declined') return 'Declined (no reason recorded — see Audit tab)';
+  if (status === 'declined') return 'Declined (no reason recorded - see Data Sources)';
   const declined = Number(row.submission?.declined_hours ?? 0);
   if (declined > 0) return `${declined.toFixed(1)} hrs cut`;
   return '';

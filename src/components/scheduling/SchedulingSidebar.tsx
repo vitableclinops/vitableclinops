@@ -12,14 +12,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  AlertCircle,
   CalendarCheck,
-  CalendarX,
   Brain,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  HelpCircle,
   LogOut,
   LayoutDashboard,
+  Map as MapIcon,
+  Send,
   User,
   ChevronDown,
 } from 'lucide-react';
@@ -33,10 +36,13 @@ interface SchedulingSidebarProps {
 }
 
 const items = [
-  { label: 'Scheduling Workbench', icon: CalendarCheck, href: '/scheduling/workbench' },
-  { label: 'Mental Health', icon: Brain, href: '/scheduling/mental-health' },
-  { label: 'Declined Hours', icon: CalendarX, href: '/scheduling/workbench?tab=declined' },
-  { label: 'Known Exceptions', icon: ClipboardList, href: '/scheduling/workbench?tab=exceptions' },
+  { label: 'Readiness', icon: CalendarCheck, href: '/scheduling/workbench?section=readiness&scope=all' },
+  { label: 'Review', icon: AlertCircle, href: '/scheduling/workbench?section=review&view=decisions&scope=all' },
+  { label: 'Coverage Plan', icon: MapIcon, href: '/scheduling/workbench?section=coverage-plan&view=coverage&scope=all' },
+  { label: 'Publish', icon: Send, href: '/scheduling/workbench?section=publish&view=provider&scope=all' },
+  { label: 'Mental Health', icon: Brain, href: '/scheduling/workbench?section=readiness&scope=mental_health' },
+  { label: 'Exceptions', icon: ClipboardList, href: '/scheduling/workbench?section=exceptions&scope=all' },
+  { label: 'Data Sources', icon: HelpCircle, href: '/scheduling/workbench?section=data-sources&scope=all' },
 ];
 
 export function SchedulingSidebar({
@@ -92,9 +98,15 @@ export function SchedulingSidebar({
         <nav className="flex-1 px-2 py-4 space-y-1">
           {visibleItems.map(item => {
             const [path, query = ''] = item.href.split('?');
+            const itemParams = new URLSearchParams(query);
+            const currentParams = new URLSearchParams(location.search);
             const active =
               location.pathname === path &&
-              (query ? location.search === `?${query}` : location.search === '');
+              (query
+                ? Array.from(itemParams.entries()).every(
+                    ([key, value]) => currentParams.get(key) === value,
+                  )
+                : location.search === '');
             return (
               <NavLink
                 key={item.href}

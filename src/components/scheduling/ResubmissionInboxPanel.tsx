@@ -327,7 +327,7 @@ export function ResubmissionInboxPanel({
                 {monthsInScope.length} month{monthsInScope.length === 1 ? '' : 's'}. Providers can
                 resubmit any month at any time — each (provider, month) is reviewed independently.
                 Open a card to see prior vs new, the diff, and whether the change is worth taking
-                on (Approve) or pushing back on (Park).
+                on (Approve) or pushing back on (Park for follow-up).
               </p>
             </div>
             {monthsInScope.length > 1 && (
@@ -578,14 +578,14 @@ function ResubmissionDialog({
               />
               {group.latest.human_review_state === 'parked' && (
                 <p className="text-xs text-amber-700 mt-2">
-                  This submission is currently parked. Approve to use it as authoritative, or
+                  This submission is currently parked for follow-up. Approve to use it as authoritative, or
                   un-park to return it to the inbox.
                 </p>
               )}
               {group.latest.human_review_state === 'pending' && (
                 <p className="text-xs text-blue-700 mt-2">
                   Pending review. The evaluator is gated on this group until you Approve or
-                  Park.
+                  Park for follow-up.
                 </p>
               )}
             </CardContent>
@@ -612,7 +612,7 @@ function ResubmissionDialog({
             disabled={resolve.isPending}
           >
             <PauseCircle className="h-4 w-4 mr-1" />
-            Park
+            Park for follow-up
           </Button>
           <Button onClick={() => handle('approved')} disabled={resolve.isPending}>
             {resolve.isPending ? (

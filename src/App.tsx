@@ -404,11 +404,9 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/scheduling/mental-health" element={
-              <ProtectedRoute requiredRoles={['admin', 'scheduling']}>
-                <SchedulingWorkbenchPage scope="mental_health" />
-              </ProtectedRoute>
+              <Navigate to="/scheduling/workbench?section=readiness&scope=mental_health" replace />
             } />
-            <Route path="/scheduling/forecast" element={<Navigate to="/scheduling/workbench?tab=forecast" replace />} />
+            <Route path="/scheduling/forecast" element={<Navigate to="/scheduling/workbench?section=coverage-plan&view=forecast&scope=all" replace />} />
             <Route path="/scheduling/june-mvp" element={<Navigate to="/scheduling/workbench" replace />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
