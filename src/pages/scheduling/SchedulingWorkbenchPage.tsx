@@ -1484,8 +1484,10 @@ export default function SchedulingWorkbenchPage({
     );
   };
 
-  const reevaluateNow = () => {
-    const before = buildRecalculationSnapshot(scopedRows, scopedFlatAccepted, scopedCutRows);
+  const runScheduleRecalculation = (
+    before = buildRecalculationSnapshot(scopedRows, scopedFlatAccepted, scopedCutRows),
+    toastPrefix = `Recalculated ${formatMonthLabel(month)} schedule`,
+  ) => {
     reevaluate.mutate(month, {
       onSuccess: result => {
         setLastRecalculation({
@@ -1496,10 +1498,10 @@ export default function SchedulingWorkbenchPage({
         const changed =
           Number(result.accepted ?? 0) +
           Number(result.partial ?? 0) +
-          Number(result.declined ?? 0) +
+            Number(result.declined ?? 0) +
           Number(result.needs_review ?? 0);
         toast.success(
-          `Recalculated ${formatMonthLabel(month)} schedule${
+          `${toastPrefix}${
             changed > 0 ? ` · ${changed} provider decision${changed === 1 ? '' : 's'}` : ''
           }`,
         );
@@ -1509,6 +1511,10 @@ export default function SchedulingWorkbenchPage({
       },
       onError: e => toast.error(`Schedule recalculation failed: ${(e as Error).message}`),
     });
+  };
+
+  const reevaluateNow = () => {
+    runScheduleRecalculation();
   };
 
   return (
@@ -1892,16 +1898,33 @@ export default function SchedulingWorkbenchPage({
                 month={month}
                 rows={scopedNeedsReview}
                 isLoading={isLoading}
-                onResolve={(args) =>
+                onResolve={(args) => {
+                  const shouldRecalculateAfterApproval =
+                    Boolean(args.correction_summary) && args.decision === 'accepted';
+                  const beforeRecalculation = buildRecalculationSnapshot(
+                    scopedRows,
+                    scopedFlatAccepted,
+                    scopedCutRows,
+                  );
                   resolveReview.mutate(args, {
                     onSuccess: () => {
-                      toast.success(
-                        args.correction_summary && args.decision === 'accepted'
-                          ? `Approved corrected hours for ${args.provider_name}`
-                          : args.decision === 'accepted'
+                      if (shouldRecalculateAfterApproval) {
+                        toast.success(
+                          `Approved corrected hours for ${args.provider_name}. Recalculating ${formatMonthLabel(month)} now.`,
+                        );
+                        setReviewTab('recalculate');
+                        updateWorkbenchParams({ section: 'review', view: 'recalculate', replace: true });
+                        runScheduleRecalculation(
+                          beforeRecalculation,
+                          `Approved corrected hours and recalculated ${formatMonthLabel(month)}`,
+                        );
+                      } else {
+                        toast.success(
+                          args.decision === 'accepted'
                           ? `Approved hours for ${args.provider_name}`
                           : `Declined hours for ${args.provider_name}`,
-                      );
+                        );
+                      }
                       refetch();
                       refetchShifts();
                       refetchCuts();
@@ -1912,8 +1935,8 @@ export default function SchedulingWorkbenchPage({
                       refetchShifts();
                       refetchCuts();
                     },
-                  })
-                }
+                  });
+                }}
                 isPending={resolveReview.isPending}
               />
             </TabsContent>
@@ -4306,7 +4329,7 @@ function NeedsReviewPanel({
             <Button onClick={submitResolution} disabled={isPending || !resolutionTarget}>
               {isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {useCorrectedTimes && resolutionTarget?.decision === 'accepted'
-                ? 'Approve corrected hours'
+                ? 'Approve corrected hours & recalculate'
                 : resolutionTarget?.decision === 'accepted'
                   ? 'Approve hours'
                   : 'Decline hours'}
