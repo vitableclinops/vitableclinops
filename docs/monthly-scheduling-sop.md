@@ -28,7 +28,7 @@ This SOP covers the monthly scheduling hub workflow for medical and mental healt
 - Jotform: provider availability submissions and unavailable dates.
 - Provider directory: provider email, profession, employment type, source, active status, scheduling outreach exemption.
 - Provider pay rates: current hourly rates used for scheduling priority.
-- Provider utilization: recent utilization percentage used as the secondary fairness tie-break after rate.
+- Provider utilization: recent utilization percentage measured for visibility and outreach only, unless an explicit recalculation override enables it.
 - State eligibility view: allocation-eligible states and license-source evidence.
 - Demand forecast: monthly state/service-line demand targets.
 - Homebase and EHR: final posting destinations.
@@ -65,9 +65,12 @@ This SOP covers the monthly scheduling hub workflow for medical and mental healt
 5. Review priority and matching.
 
    - Clinical leads are prioritized first.
-   - After clinical leads, lower hourly rate wins across internal and DirectShifts/access providers.
-   - If rate is tied or missing in the same tier, lower recent utilization is the secondary fairness tie-break.
-   - Brittney Afram keeps the DirectShifts compatibility key only as a final tie-break after rate and utilization.
+   - After clinical leads, lower hourly rate remains the main cost signal across internal and DirectShifts/access providers.
+   - DirectShifts/access providers target roughly 25% of accepted telehealth appointment volume when eligible supply exists.
+   - DirectShifts/access providers with the same rate should receive a similar accepted percentage of submitted forecastable hours.
+   - A 75% submitted-hours soft cap redistributes additional hours to eligible peers before allowing over-cap allocation.
+   - Utilization is measured for visibility and outreach only unless explicitly enabled for recalculation.
+   - Brittney Afram keeps the DirectShifts compatibility key only as a final tie-break after rate and equity rules.
    - Priority never overrides licensure, MD-only state policy, unavailable dates, mental health service-line routing, or clinical lead priority.
 
 6. Review coverage and declined hours.

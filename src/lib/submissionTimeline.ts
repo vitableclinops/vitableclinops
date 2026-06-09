@@ -171,8 +171,8 @@ export function buildSubmissionTimeline(
   const adjusted = applySchedulingRules(result.timeline);
   const summary = {
     ...result.summary,
-    total_normalized_timeline_hours: round2(sumHours(adjusted.timeline)),
-    final_approvable_hours: round2(adjusted.timeline.reduce(
+    total_normalized_timeline_hours: roundSubmission2(sumHours(adjusted.timeline)),
+    final_approvable_hours: roundSubmission2(adjusted.timeline.reduce(
       (sum, s) => forecastSet.has(s.source.kind)
         ? sum + (s.endMin - s.startMin) / 60
         : sum,
@@ -394,7 +394,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     shift_date: slot.date,
     start_min: startMin,
     end_min: endMin,
-    hours: round2((endMin - startMin) / 60),
+    hours: roundSubmission2((endMin - startMin) / 60),
     shift_type: kindToShiftType(slot.source.kind),
     assigned_state: assignedState,
     recommendation,
@@ -460,7 +460,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
         ? `Publish to ${state} (scarce coverage window protected before monthly demand trim${splitSuffix})`
         : `Publish to ${state} (largest remaining state gap at time of allocation${splitSuffix})`;
       rows.push(makeRow(slot, cursor, next, 'publish', state, reason));
-      buckets.set(state, round2(remaining - publishMinutes / 60));
+      buckets.set(state, roundSubmission2(remaining - publishMinutes / 60));
       cursor = next;
     }
     return rows;
@@ -507,7 +507,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     shift_date: slot.date,
     start_min: slot.startMin,
     end_min: slot.endMin,
-    hours: round2((slot.endMin - slot.startMin) / 60),
+    hours: roundSubmission2((slot.endMin - slot.startMin) / 60),
     shift_type: kindToShiftType(slot.source.kind),
     assigned_state: null,
     recommendation: 'cut',
@@ -524,7 +524,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     shift_date: slot.date,
     start_min: slot.startMin,
     end_min: slot.endMin,
-    hours: round2((slot.endMin - slot.startMin) / 60),
+    hours: roundSubmission2((slot.endMin - slot.startMin) / 60),
     shift_type: kindToShiftType(slot.source.kind),
     assigned_state: null,
     recommendation: 'cut',
@@ -584,8 +584,8 @@ function applySchedulingRules(slots: ExpandedSlot[]): {
       all,
       longShiftBreaks,
       providerMeetingBlackouts,
-      hours_removed_for_long_shift_breaks: round2(sumAdjustmentHours(longShiftBreaks)),
-      hours_removed_for_provider_meeting_blackouts: round2(sumAdjustmentHours(providerMeetingBlackouts)),
+      hours_removed_for_long_shift_breaks: roundSubmission2(sumAdjustmentHours(longShiftBreaks)),
+      hours_removed_for_provider_meeting_blackouts: roundSubmission2(sumAdjustmentHours(providerMeetingBlackouts)),
     },
   };
 }
@@ -610,7 +610,7 @@ function applyProviderMeetingBlackout(slot: ExpandedSlot): {
     originalEndMin: slot.endMin,
     startMin: overlapStart,
     endMin: overlapEnd,
-    hoursRemoved: round2((overlapEnd - overlapStart) / 60),
+    hoursRemoved: roundSubmission2((overlapEnd - overlapStart) / 60),
     reason: PROVIDER_MEETING_BLACKOUT_REASON,
     blackoutWindow: PROVIDER_MEETING_BLACKOUT_WINDOW,
   };
@@ -648,8 +648,8 @@ function applyLongShiftBreak(slot: ExpandedSlot): {
     hoursRemoved: 1,
     reason: LONG_SHIFT_BREAK_REASON,
     policy: LONG_SHIFT_BREAK_POLICY,
-    originalShiftHours: round2(durationMin / 60),
-    scheduledHoursAfterBreak: round2((durationMin - LONG_SHIFT_BREAK_MINUTES) / 60),
+    originalShiftHours: roundSubmission2(durationMin / 60),
+    scheduledHoursAfterBreak: roundSubmission2((durationMin - LONG_SHIFT_BREAK_MINUTES) / 60),
   };
 
   const slots: AdjustedSlot[] = [];
@@ -680,12 +680,12 @@ function schedulingAdjustmentReasonLines(slot: ExpandedSlot): string[] {
   for (const adjustment of adjustments) {
     if (adjustment.type === 'long_shift_break') {
       lines.push(
-        `Mandatory 1-hour break applied (${formatClock24(adjustment.startMin)}-${formatClock24(adjustment.endMin)} ET); ` +
+        `Mandatory 1-hour break applied (${formatSubmissionClock24(adjustment.startMin)}-${formatSubmissionClock24(adjustment.endMin)} ET); ` +
         `${adjustment.scheduledHoursAfterBreak ?? 11} schedulable hours from the original ${adjustment.originalShiftHours ?? 12}-hour block`,
       );
     } else if (adjustment.type === 'provider_meeting_blackout') {
       lines.push(
-        `Provider meeting blackout removed ${formatClock24(adjustment.startMin)}-${formatClock24(adjustment.endMin)} ET`,
+        `Provider meeting blackout removed ${formatSubmissionClock24(adjustment.startMin)}-${formatSubmissionClock24(adjustment.endMin)} ET`,
       );
     }
   }
@@ -742,12 +742,12 @@ function sumAdjustmentHours(adjustments: SchedulingAdjustment[]): number {
   return adjustments.reduce((sum, adjustment) => sum + adjustment.hoursRemoved, 0);
 }
 
-function formatClock24(totalMinutes: number): string {
+function formatSubmissionClock24(totalMinutes: number): string {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function round2(n: number): number {
+function roundSubmission2(n: number): number {
   return Math.round(n * 100) / 100;
 }

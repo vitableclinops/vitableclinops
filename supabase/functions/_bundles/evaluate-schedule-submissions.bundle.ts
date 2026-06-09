@@ -699,9 +699,9 @@ function buildNormalized(raw: RawInterval, args: BuildArgs): NormalizedInterval 
     normalized_end_time:
       args.normalizedEndMin == null ? raw.rawEnd : formatTime(args.normalizedEndMin),
     original_duration_hours:
-      args.originalDuration == null ? null : round2(args.originalDuration),
+      args.originalDuration == null ? null : roundAvailability2(args.originalDuration),
     normalized_duration_hours:
-      args.normalizedDuration == null ? null : round2(args.normalizedDuration),
+      args.normalizedDuration == null ? null : roundAvailability2(args.normalizedDuration),
     validation_status: args.status,
     validation_warnings: args.warnings,
     correction_reason: args.reason,
@@ -838,7 +838,7 @@ export function applyOperatingHoursWindow(
       }
     }
   }
-  return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
+  return { slots: out, droppedSlots: dropped, hoursRemoved: roundAvailability2(removed) };
 }
 
 export function applyMinimumShiftLength(
@@ -862,7 +862,7 @@ export function applyMinimumShiftLength(
       out.push(s);
     }
   }
-  return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
+  return { slots: out, droppedSlots: dropped, hoursRemoved: roundAvailability2(removed) };
 }
 
 function isInMonth(dateISO: string, monthISO: string): boolean {
@@ -939,8 +939,8 @@ export function reconcileTimeline(
 
   return {
     slots: filtered,
-    hours_removed_for_duplicates: round2(dupHours),
-    hours_removed_for_unavailability: round2(unavailHours),
+    hours_removed_for_duplicates: roundAvailability2(dupHours),
+    hours_removed_for_unavailability: roundAvailability2(unavailHours),
     intervals_overlapping_unavailable: overlappingUnavailable,
   };
 }
@@ -1073,10 +1073,10 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
   }, 0);
 
   const forecastKinds = new Set<IntervalKind>(input.forecastKinds ?? ['recurring', 'one_off']);
-  const totalTimelineHours = round2(reconciled.slots.reduce(
+  const totalTimelineHours = roundAvailability2(reconciled.slots.reduce(
     (sum, s) => sum + (s.endMin - s.startMin) / 60, 0,
   ));
-  const finalApprovable = round2(reconciled.slots.reduce(
+  const finalApprovable = roundAvailability2(reconciled.slots.reduce(
     (sum, s) => forecastKinds.has(s.source.kind)
       ? sum + (s.endMin - s.startMin) / 60
       : sum,
@@ -1084,13 +1084,13 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
   ));
 
   const summary: NormalizationSummary = {
-    raw_total_hours: round2(rawTotal),
-    normalized_total_hours: round2(normalizedTotal),
+    raw_total_hours: roundAvailability2(rawTotal),
+    normalized_total_hours: roundAvailability2(normalizedTotal),
     hours_removed_for_unavailability: reconciled.hours_removed_for_unavailability,
     hours_removed_for_duplicates: reconciled.hours_removed_for_duplicates,
     hours_removed_for_operating_hours: windowed.hoursRemoved,
     hours_removed_for_minimum_shift: minimumLength.hoursRemoved,
-    hours_changed_by_validation: round2(hoursChanged),
+    hours_changed_by_validation: roundAvailability2(hoursChanged),
     intervals_auto_corrected: normalized.filter(n => n.validation_status === 'auto_corrected').length,
     intervals_needing_review: normalized.filter(n => n.validation_status === 'needs_review').length,
     intervals_rejected: normalized.filter(n => n.validation_status === 'rejected_or_unusable').length,
@@ -1181,7 +1181,7 @@ function syntheticReport(identity: ProviderIdentity, message: string): Validatio
   };
 }
 
-function round2(n: number): number {
+function roundAvailability2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 // === supabase/functions/_shared/submissionTimeline.ts ===
@@ -1347,8 +1347,8 @@ export function buildSubmissionTimeline(
   const adjusted = applySchedulingRules(result.timeline);
   const summary = {
     ...result.summary,
-    total_normalized_timeline_hours: round2(sumHours(adjusted.timeline)),
-    final_approvable_hours: round2(adjusted.timeline.reduce(
+    total_normalized_timeline_hours: roundSubmission2(sumHours(adjusted.timeline)),
+    final_approvable_hours: roundSubmission2(adjusted.timeline.reduce(
       (sum, s) => forecastSet.has(s.source.kind)
         ? sum + (s.endMin - s.startMin) / 60
         : sum,
@@ -1570,7 +1570,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     shift_date: slot.date,
     start_min: startMin,
     end_min: endMin,
-    hours: round2((endMin - startMin) / 60),
+    hours: roundSubmission2((endMin - startMin) / 60),
     shift_type: kindToShiftType(slot.source.kind),
     assigned_state: assignedState,
     recommendation,
@@ -1636,7 +1636,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
         ? `Publish to ${state} (scarce coverage window protected before monthly demand trim${splitSuffix})`
         : `Publish to ${state} (largest remaining state gap at time of allocation${splitSuffix})`;
       rows.push(makeRow(slot, cursor, next, 'publish', state, reason));
-      buckets.set(state, round2(remaining - publishMinutes / 60));
+      buckets.set(state, roundSubmission2(remaining - publishMinutes / 60));
       cursor = next;
     }
     return rows;
@@ -1683,7 +1683,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     shift_date: slot.date,
     start_min: slot.startMin,
     end_min: slot.endMin,
-    hours: round2((slot.endMin - slot.startMin) / 60),
+    hours: roundSubmission2((slot.endMin - slot.startMin) / 60),
     shift_type: kindToShiftType(slot.source.kind),
     assigned_state: null,
     recommendation: 'cut',
@@ -1700,7 +1700,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     shift_date: slot.date,
     start_min: slot.startMin,
     end_min: slot.endMin,
-    hours: round2((slot.endMin - slot.startMin) / 60),
+    hours: roundSubmission2((slot.endMin - slot.startMin) / 60),
     shift_type: kindToShiftType(slot.source.kind),
     assigned_state: null,
     recommendation: 'cut',
@@ -1760,8 +1760,8 @@ function applySchedulingRules(slots: ExpandedSlot[]): {
       all,
       longShiftBreaks,
       providerMeetingBlackouts,
-      hours_removed_for_long_shift_breaks: round2(sumAdjustmentHours(longShiftBreaks)),
-      hours_removed_for_provider_meeting_blackouts: round2(sumAdjustmentHours(providerMeetingBlackouts)),
+      hours_removed_for_long_shift_breaks: roundSubmission2(sumAdjustmentHours(longShiftBreaks)),
+      hours_removed_for_provider_meeting_blackouts: roundSubmission2(sumAdjustmentHours(providerMeetingBlackouts)),
     },
   };
 }
@@ -1786,7 +1786,7 @@ function applyProviderMeetingBlackout(slot: ExpandedSlot): {
     originalEndMin: slot.endMin,
     startMin: overlapStart,
     endMin: overlapEnd,
-    hoursRemoved: round2((overlapEnd - overlapStart) / 60),
+    hoursRemoved: roundSubmission2((overlapEnd - overlapStart) / 60),
     reason: PROVIDER_MEETING_BLACKOUT_REASON,
     blackoutWindow: PROVIDER_MEETING_BLACKOUT_WINDOW,
   };
@@ -1824,8 +1824,8 @@ function applyLongShiftBreak(slot: ExpandedSlot): {
     hoursRemoved: 1,
     reason: LONG_SHIFT_BREAK_REASON,
     policy: LONG_SHIFT_BREAK_POLICY,
-    originalShiftHours: round2(durationMin / 60),
-    scheduledHoursAfterBreak: round2((durationMin - LONG_SHIFT_BREAK_MINUTES) / 60),
+    originalShiftHours: roundSubmission2(durationMin / 60),
+    scheduledHoursAfterBreak: roundSubmission2((durationMin - LONG_SHIFT_BREAK_MINUTES) / 60),
   };
 
   const slots: AdjustedSlot[] = [];
@@ -1856,12 +1856,12 @@ function schedulingAdjustmentReasonLines(slot: ExpandedSlot): string[] {
   for (const adjustment of adjustments) {
     if (adjustment.type === 'long_shift_break') {
       lines.push(
-        `Mandatory 1-hour break applied (${formatClock24(adjustment.startMin)}-${formatClock24(adjustment.endMin)} ET); ` +
+        `Mandatory 1-hour break applied (${formatSubmissionClock24(adjustment.startMin)}-${formatSubmissionClock24(adjustment.endMin)} ET); ` +
         `${adjustment.scheduledHoursAfterBreak ?? 11} schedulable hours from the original ${adjustment.originalShiftHours ?? 12}-hour block`,
       );
     } else if (adjustment.type === 'provider_meeting_blackout') {
       lines.push(
-        `Provider meeting blackout removed ${formatClock24(adjustment.startMin)}-${formatClock24(adjustment.endMin)} ET`,
+        `Provider meeting blackout removed ${formatSubmissionClock24(adjustment.startMin)}-${formatSubmissionClock24(adjustment.endMin)} ET`,
       );
     }
   }
@@ -1918,13 +1918,13 @@ function sumAdjustmentHours(adjustments: SchedulingAdjustment[]): number {
   return adjustments.reduce((sum, adjustment) => sum + adjustment.hoursRemoved, 0);
 }
 
-function formatClock24(totalMinutes: number): string {
+function formatSubmissionClock24(totalMinutes: number): string {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function round2(n: number): number {
+function roundSubmission2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 // === supabase/functions/_shared/providerPriority.ts ===
@@ -2095,6 +2095,390 @@ export function compareProviderAllocationPriority(
 
   return 0;
 }
+// === supabase/functions/_shared/equityAllocation.ts ===
+export const FAIRNESS_POLICY_VERSION = '2026-06-09';
+export const DIRECTSHIFTS_ACCESS_TARGET_SHARE = 0.25;
+export const PROVIDER_SOFT_CAP_SHARE = 0.75;
+export const SAME_RATE_DIRECTSHIFTS_TOLERANCE_PCT = 10;
+
+const BULK_ALLOCATION_QUANTUM_HOURS = 0.5;
+
+export type SchedulingEquityCohort =
+  | 'clinical_lead'
+  | 'directshifts_access'
+  | 'standard'
+  | 'mental_health';
+
+export type SchedulingEquityState = {
+  state: string;
+  gapHours: number;
+  demandHours: number;
+};
+
+export type SchedulingEquityCandidate = {
+  id: string;
+  providerName: string;
+  cohort: SchedulingEquityCohort;
+  priorityRank: number;
+  hourlyRate: number | null;
+  effectiveHours: number;
+  scarceHours: number;
+  floorHours: number;
+  eligibleStates: SchedulingEquityState[];
+};
+
+export type SchedulingEquityStateGap = {
+  state: string;
+  gapHours: number;
+  demandHours: number;
+};
+
+export type SchedulingEquityAllocation = {
+  id: string;
+  acceptedHours: number;
+  allocations: Array<{ state: string; hours: number }>;
+  providerAcceptancePct: number;
+  equityFloor: 'met' | 'unmet_no_gap' | 'unmet_no_valid_shift';
+  softCapHours: number;
+  softCapExceeded: boolean;
+  directshiftsTargetShare: number;
+  directshiftsShareAfter: number;
+  scarceOverflowHours: number;
+  fairnessPolicyVersion: string;
+};
+
+type MutableAllocation = SchedulingEquityAllocation & {
+  acceptedHours: number;
+  allocations: Array<{ state: string; hours: number }>;
+};
+
+export function allocateSchedulingEquity({
+  candidates,
+  stateGaps,
+  directshiftsTargetShare = DIRECTSHIFTS_ACCESS_TARGET_SHARE,
+  softCapShare = PROVIDER_SOFT_CAP_SHARE,
+}: {
+  candidates: SchedulingEquityCandidate[];
+  stateGaps: SchedulingEquityStateGap[];
+  directshiftsTargetShare?: number;
+  softCapShare?: number;
+}): SchedulingEquityAllocation[] {
+  const normalizedCandidates = candidates
+    .map(candidate => ({
+      ...candidate,
+      effectiveHours: equityRound2(Math.max(0, candidate.effectiveHours)),
+      scarceHours: equityRound2(Math.max(0, candidate.scarceHours)),
+      floorHours: equityRound2(Math.max(0, candidate.floorHours)),
+      eligibleStates: candidate.eligibleStates
+        .map(state => ({
+          state: normalizeState(state.state),
+          gapHours: equityRound2(Math.max(0, state.gapHours)),
+          demandHours: equityRound2(Math.max(0, state.demandHours)),
+        }))
+        .filter(state => /^[A-Z]{2}$/.test(state.state)),
+    }))
+    .filter(candidate => candidate.effectiveHours > 0);
+
+  const stateRemaining = new Map<string, number>();
+  const stateDemand = new Map<string, number>();
+  for (const gap of stateGaps) {
+    const state = normalizeState(gap.state);
+    if (!/^[A-Z]{2}$/.test(state)) continue;
+    stateRemaining.set(state, equityRound2(Math.max(stateRemaining.get(state) ?? 0, Number(gap.gapHours ?? 0))));
+    stateDemand.set(state, equityRound2(Math.max(stateDemand.get(state) ?? 0, Number(gap.demandHours ?? 0))));
+  }
+
+  const allocations = new Map<string, MutableAllocation>();
+  for (const candidate of normalizedCandidates) {
+    allocations.set(candidate.id, {
+      id: candidate.id,
+      acceptedHours: 0,
+      allocations: [],
+      providerAcceptancePct: 0,
+      equityFloor: candidate.floorHours > 0 ? 'unmet_no_gap' : 'unmet_no_valid_shift',
+      softCapHours: equityRound2(candidate.effectiveHours * softCapShare),
+      softCapExceeded: false,
+      directshiftsTargetShare: equityRound2(directshiftsTargetShare * 100),
+      directshiftsShareAfter: 0,
+      scarceOverflowHours: 0,
+      fairnessPolicyVersion: FAIRNESS_POLICY_VERSION,
+    });
+  }
+
+  const allocateToCandidate = (
+    candidate: SchedulingEquityCandidate,
+    requestedHours: number,
+    allowOverflow: boolean,
+  ) => {
+    const allocation = allocations.get(candidate.id);
+    if (!allocation) return { accepted: 0, overflow: 0 };
+    let remaining = equityRound2(Math.min(
+      requestedHours,
+      Math.max(0, candidate.effectiveHours - allocation.acceptedHours),
+    ));
+    if (remaining <= 0) return { accepted: 0, overflow: 0 };
+
+    let accepted = 0;
+    let overflow = 0;
+    const sortedStates = statesByNeed(candidate, stateRemaining, stateDemand);
+    for (const state of sortedStates) {
+      if (remaining <= 0) break;
+      const available = Math.max(0, stateRemaining.get(state) ?? 0);
+      if (available <= 0) continue;
+      const take = equityRound2(Math.min(available, remaining));
+      addAllocation(allocation, state, take);
+      stateRemaining.set(state, equityRound2(available - take));
+      remaining = equityRound2(remaining - take);
+      accepted = equityRound2(accepted + take);
+    }
+
+    if (allowOverflow && remaining > 0) {
+      const fallbackState = fallbackStateFor(candidate, stateDemand);
+      if (fallbackState) {
+        addAllocation(allocation, fallbackState, remaining);
+        accepted = equityRound2(accepted + remaining);
+        overflow = remaining;
+        remaining = 0;
+      }
+    }
+
+    allocation.acceptedHours = equityRound2(allocation.acceptedHours + accepted);
+    allocation.scarceOverflowHours = equityRound2(allocation.scarceOverflowHours + overflow);
+    if (allocation.acceptedHours > 0) allocation.equityFloor = 'met';
+    return { accepted, overflow };
+  };
+
+  const candidatesByPriority = [...normalizedCandidates].sort(compareBaseCandidatePriority);
+
+  // Protected Friday/weekend access survives before monthly surplus trims.
+  for (const candidate of candidatesByPriority) {
+    if (candidate.scarceHours <= 0) continue;
+    allocateToCandidate(candidate, candidate.scarceHours, true);
+  }
+
+  // No-zero pass: each eligible submitter gets at least one publishable block
+  // when compatible demand remains.
+  for (const candidate of candidatesByPriority.sort((a, b) =>
+    compareEquityFloorPriority(a, b, allocations, directshiftsTargetShare),
+  )) {
+    const allocation = allocations.get(candidate.id);
+    if (!allocation || allocation.acceptedHours > 0) continue;
+    if (candidate.floorHours <= 0) {
+      allocation.equityFloor = 'unmet_no_valid_shift';
+      continue;
+    }
+    const possible = eligibleGapHours(candidate, stateRemaining);
+    if (possible <= 0) {
+      allocation.equityFloor = 'unmet_no_gap';
+      continue;
+    }
+    allocateToCandidate(candidate, Math.min(candidate.floorHours, possible), false);
+  }
+
+  let guard = 0;
+  while (totalRemainingGap(stateRemaining) > 0.001 && guard < 100_000) {
+    guard += 1;
+    const eligible = normalizedCandidates.filter(candidate =>
+      candidateRemaining(candidate, allocations) > 0.001 &&
+      eligibleGapHours(candidate, stateRemaining) > 0.001,
+    );
+    if (eligible.length === 0) break;
+
+    const accessEligible = eligible.filter(candidate => candidate.cohort === 'directshifts_access');
+    const shouldCatchUpAccess =
+      currentDirectshiftsShare(allocations, normalizedCandidates) < directshiftsTargetShare &&
+      accessEligible.length > 0;
+    const pool = shouldCatchUpAccess ? accessEligible : eligible;
+    const underCap = pool.filter(candidate => {
+      const allocation = allocations.get(candidate.id);
+      return allocation ? allocation.acceptedHours < allocation.softCapHours - 0.001 : false;
+    });
+    const activePool = underCap.length > 0 ? underCap : pool;
+    const candidate = [...activePool].sort((a, b) =>
+      compareBulkPriority(a, b, allocations, shouldCatchUpAccess),
+    )[0];
+    if (!candidate) break;
+
+    const allocation = allocations.get(candidate.id)!;
+    const capRemaining = Math.max(0, allocation.softCapHours - allocation.acceptedHours);
+    const capLimited = underCap.length > 0 ? capRemaining : Number.POSITIVE_INFINITY;
+    const take = Math.min(
+      BULK_ALLOCATION_QUANTUM_HOURS,
+      candidateRemaining(candidate, allocations),
+      eligibleGapHours(candidate, stateRemaining),
+      capLimited,
+    );
+    if (take <= 0) break;
+    allocateToCandidate(candidate, take, false);
+  }
+
+  const directshiftsShareAfter = equityRound2(currentDirectshiftsShare(allocations, normalizedCandidates) * 100);
+  for (const candidate of normalizedCandidates) {
+    const allocation = allocations.get(candidate.id);
+    if (!allocation) continue;
+    if (allocation.acceptedHours <= 0 && candidate.floorHours <= 0) {
+      allocation.equityFloor = 'unmet_no_valid_shift';
+    } else if (allocation.acceptedHours <= 0 && eligibleGapHours(candidate, stateRemaining) <= 0) {
+      allocation.equityFloor = 'unmet_no_gap';
+    }
+    allocation.providerAcceptancePct = candidate.effectiveHours > 0
+      ? equityRound2((allocation.acceptedHours / candidate.effectiveHours) * 100)
+      : 0;
+    allocation.softCapExceeded = allocation.acceptedHours > allocation.softCapHours + 0.001;
+    allocation.directshiftsShareAfter = directshiftsShareAfter;
+    allocation.acceptedHours = equityRound2(allocation.acceptedHours);
+    allocation.allocations = allocation.allocations
+      .filter(item => item.hours > 0)
+      .sort((a, b) => a.state.localeCompare(b.state));
+  }
+
+  return normalizedCandidates
+    .map(candidate => allocations.get(candidate.id)!)
+    .filter(Boolean);
+}
+
+function compareBaseCandidatePriority(
+  a: SchedulingEquityCandidate,
+  b: SchedulingEquityCandidate,
+) {
+  if (a.priorityRank !== b.priorityRank) return a.priorityRank - b.priorityRank;
+  const rateA = a.hourlyRate ?? Number.POSITIVE_INFINITY;
+  const rateB = b.hourlyRate ?? Number.POSITIVE_INFINITY;
+  if (rateA !== rateB) return rateA - rateB;
+  const countA = a.eligibleStates.length;
+  const countB = b.eligibleStates.length;
+  if (countA !== countB) return countA - countB;
+  return a.providerName.localeCompare(b.providerName, undefined, { sensitivity: 'base' });
+}
+
+function compareEquityFloorPriority(
+  a: SchedulingEquityCandidate,
+  b: SchedulingEquityCandidate,
+  allocations: Map<string, MutableAllocation>,
+  targetShare: number,
+) {
+  const accessDeficit = currentDirectshiftsShare(allocations, [a, b]) < targetShare;
+  if (accessDeficit && a.cohort !== b.cohort) {
+    if (a.cohort === 'directshifts_access') return -1;
+    if (b.cohort === 'directshifts_access') return 1;
+  }
+  return compareBaseCandidatePriority(a, b);
+}
+
+function compareBulkPriority(
+  a: SchedulingEquityCandidate,
+  b: SchedulingEquityCandidate,
+  allocations: Map<string, MutableAllocation>,
+  accessCatchUp: boolean,
+) {
+  if (a.cohort === 'directshifts_access' && b.cohort === 'directshifts_access') {
+    const rateA = a.hourlyRate ?? Number.POSITIVE_INFINITY;
+    const rateB = b.hourlyRate ?? Number.POSITIVE_INFINITY;
+    if (rateA === rateB) {
+      const pctDiff = acceptedPct(a, allocations) - acceptedPct(b, allocations);
+      if (Math.abs(pctDiff) > 0.001) return pctDiff;
+    }
+  }
+  if (accessCatchUp) {
+    const pctDiff = acceptedPct(a, allocations) - acceptedPct(b, allocations);
+    if (Math.abs(pctDiff) > 0.001) return pctDiff;
+  }
+  return compareBaseCandidatePriority(a, b);
+}
+
+function acceptedPct(
+  candidate: SchedulingEquityCandidate,
+  allocations: Map<string, MutableAllocation>,
+) {
+  const accepted = allocations.get(candidate.id)?.acceptedHours ?? 0;
+  return candidate.effectiveHours > 0 ? accepted / candidate.effectiveHours : 1;
+}
+
+function candidateRemaining(
+  candidate: SchedulingEquityCandidate,
+  allocations: Map<string, MutableAllocation>,
+) {
+  return equityRound2(Math.max(0, candidate.effectiveHours - (allocations.get(candidate.id)?.acceptedHours ?? 0)));
+}
+
+function eligibleGapHours(
+  candidate: SchedulingEquityCandidate,
+  stateRemaining: Map<string, number>,
+) {
+  return equityRound2(candidate.eligibleStates.reduce(
+    (sum, state) => sum + Math.max(0, stateRemaining.get(state.state) ?? 0),
+    0,
+  ));
+}
+
+function totalRemainingGap(stateRemaining: Map<string, number>) {
+  let total = 0;
+  for (const value of stateRemaining.values()) total += Math.max(0, value);
+  return equityRound2(total);
+}
+
+function currentDirectshiftsShare(
+  allocations: Map<string, MutableAllocation>,
+  candidates: SchedulingEquityCandidate[],
+) {
+  let total = 0;
+  let access = 0;
+  for (const candidate of candidates) {
+    const accepted = allocations.get(candidate.id)?.acceptedHours ?? 0;
+    total += accepted;
+    if (candidate.cohort === 'directshifts_access') access += accepted;
+  }
+  return total > 0 ? access / total : 0;
+}
+
+function statesByNeed(
+  candidate: SchedulingEquityCandidate,
+  stateRemaining: Map<string, number>,
+  stateDemand: Map<string, number>,
+) {
+  return candidate.eligibleStates
+    .map(state => state.state)
+    .sort((a, b) =>
+      (stateRemaining.get(b) ?? 0) - (stateRemaining.get(a) ?? 0) ||
+      (stateDemand.get(b) ?? 0) - (stateDemand.get(a) ?? 0) ||
+      a.localeCompare(b),
+    );
+}
+
+function fallbackStateFor(
+  candidate: SchedulingEquityCandidate,
+  stateDemand: Map<string, number>,
+) {
+  return candidate.eligibleStates
+    .map(state => state.state)
+    .sort((a, b) =>
+      (stateDemand.get(b) ?? 0) - (stateDemand.get(a) ?? 0) ||
+      a.localeCompare(b),
+    )[0] ?? null;
+}
+
+function addAllocation(
+  allocation: MutableAllocation,
+  state: string,
+  hours: number,
+) {
+  const rounded = equityRound2(hours);
+  if (rounded <= 0) return;
+  const existing = allocation.allocations.find(item => item.state === state);
+  if (existing) {
+    existing.hours = equityRound2(existing.hours + rounded);
+  } else {
+    allocation.allocations.push({ state, hours: rounded });
+  }
+}
+
+function normalizeState(state: string) {
+  return (state ?? '').trim().toUpperCase();
+}
+
+function equityRound2(value: number) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
 // === supabase/functions/evaluate-schedule-submissions/index.ts ===
 /**
  * evaluate-schedule-submissions edge function
@@ -2150,12 +2534,19 @@ export function compareProviderAllocationPriority(
  *      before monthly oversupply trimming. This keeps same-day / next-day
  *      access coverage from being rejected just because total monthly hours
  *      look full.
- *   7. Decision:
- *        accepted_hours = scarce_window_hours + remaining non-scarce hours
- *                         that fit inside the monthly state gap
- *        accepted_hours = effective_hours     → accepted
- *        accepted_hours > 0                   → partial
- *        accepted_hours <= 0                  → declined
+ *   7. Telehealth decisions are collected as monthly candidates, then a
+ *      fairness-aware allocation pass assigns accepted hours:
+ *        - Protect scarce Friday/weekend access windows first.
+ *        - Give each eligible submitter a no-zero floor when compatible
+ *          demand remains.
+ *        - Target DirectShifts/access at ~25% of accepted telehealth hours.
+ *        - Keep same-rate DirectShifts/access providers close by accepted
+ *          percentage of submitted forecastable hours.
+ *        - Apply a 75% submitted-hours soft cap before relaxing the cap to
+ *          cover otherwise-unfilled demand.
+ *      accepted_hours = effective_hours     → accepted
+ *      accepted_hours > 0                   → partial
+ *      accepted_hours <= 0                  → declined
  *
  * Modes:
  *   POST /functions/v1/evaluate-schedule-submissions
@@ -2168,6 +2559,9 @@ export function compareProviderAllocationPriority(
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// Supabase's generated client generics collapse table writes to `never`
+// without an explicit broad schema here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClientAny = ReturnType<typeof createClient<any, 'public', any>>;
 
 // States that can only be served by physicians per Vitable scope-of-practice
@@ -2298,6 +2692,49 @@ const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
 const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1;
 const ACCESS_GROWTH_BUFFER_POLICY = 'midpoint_targets_no_extra_buffer';
+
+type TelehealthAllocationCandidate = {
+  key: string;
+  groupSubs: Submission[];
+  latest: Submission;
+  olderIds: string[];
+  providerId: string;
+  targetMonth: string;
+  providerProfile: ProviderProfile | undefined;
+  providerPriority: ProviderPriority;
+  isPhysician: boolean;
+  validation: BuildTimelineResult;
+  fullTimeline: BuildTimelineResult['timeline'];
+  forecastTimeline: BuildTimelineResult['forecastTimeline'];
+  forecastOutOfHoursTimeline: BuildTimelineResult['forecastOutOfHoursTimeline'];
+  forecastPolicyCutTimeline: BuildTimelineResult['forecastPolicyCutTimeline'];
+  effectiveHours: number;
+  oohDeclined: number;
+  policyDeclined: number;
+  eligibleSourceSummary: string[];
+  gapByState: Array<{
+    state: string;
+    gapHours: number;
+    baseDemandHours: number;
+    bufferedDemandHours: number;
+    accessBufferHours: number;
+    committedHours: number;
+    baseGapHours: number;
+    demandHours: number;
+    missingDemand: boolean;
+  }>;
+  totalGap: number;
+  baseTotalGap: number;
+  baseTotalDemand: number;
+  bufferedTotalDemand: number;
+  accessBufferHours: number;
+  missingDemandStates: string[];
+  scarceCoverageTimeline: BuildTimelineResult['forecastTimeline'];
+  scarceCoverageHours: number;
+  scarceCoverageWindows: string[];
+  equityCohort: SchedulingEquityCohort;
+  equityFloorHours: number;
+};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -2448,7 +2885,7 @@ function slotHours(slot: ForecastSlot): number {
 }
 
 function sumSlotHours(slots: ForecastSlot[]): number {
-  return round2(slots.reduce((sum, slot) => sum + slotHours(slot), 0));
+  return roundEval2(slots.reduce((sum, slot) => sum + slotHours(slot), 0));
 }
 
 function pushProviderPriorityNotes(
@@ -2502,6 +2939,43 @@ function pushProviderPriorityNotes(
   }
 }
 
+function equityCohortForProvider(
+  priority: ProviderPriority,
+  providerProfile?: ProviderProfile | null,
+): SchedulingEquityCohort {
+  if (priority.key === 'clinical_supervisor') return 'clinical_lead';
+  return isDirectShiftsProvider(providerProfile) ? 'directshifts_access' : 'standard';
+}
+
+function firstForecastBlockHours(slots: BuildTimelineResult['forecastTimeline']): number {
+  const first = [...slots].sort((a, b) =>
+    a.date.localeCompare(b.date) ||
+    a.startMin - b.startMin ||
+    a.endMin - b.endMin,
+  )[0];
+  if (!first) return 0;
+  return roundEval2((first.endMin - first.startMin) / 60);
+}
+
+function pushEquityAllocationNotes(
+  noteParts: string[],
+  allocation: SchedulingEquityAllocation,
+  cohort: SchedulingEquityCohort,
+) {
+  noteParts.push(`cohort=${cohort}`);
+  noteParts.push(`fairness_policy_version=${FAIRNESS_POLICY_VERSION}`);
+  noteParts.push(`directshifts_target_share=${Math.round(DIRECTSHIFTS_ACCESS_TARGET_SHARE * 100)}`);
+  noteParts.push(`directshifts_actual_share=${allocation.directshiftsShareAfter}`);
+  noteParts.push(`provider_acceptance_pct=${allocation.providerAcceptancePct}`);
+  noteParts.push(`soft_cap_policy=${Math.round(PROVIDER_SOFT_CAP_SHARE * 100)}pct_submitted`);
+  noteParts.push(`soft_cap_hours=${allocation.softCapHours}h`);
+  noteParts.push(`soft_cap_exceeded=${allocation.softCapExceeded ? 1 : 0}`);
+  noteParts.push(`equity_floor=${allocation.equityFloor}`);
+  if (cohort === 'directshifts_access') {
+    noteParts.push(`directshifts_same_rate_tolerance_pct=10`);
+  }
+}
+
 function schedulingAdjustmentNoteParts(validation: BuildTimelineResult): string[] {
   const noteParts: string[] = [];
   const longBreaks = validation.schedulingAdjustments.longShiftBreaks;
@@ -2510,11 +2984,11 @@ function schedulingAdjustmentNoteParts(validation: BuildTimelineResult): string[
     noteParts.push(
       'long_shift_break_policy=mandatory_1_hour_break_for_12h_shift',
       `long_shift_break_count=${longBreaks.length}`,
-      `long_shift_break_hours=${round2(validation.schedulingAdjustments.hours_removed_for_long_shift_breaks)}h`,
-      `original_shift_hours=${first.originalShiftHours ?? round2((first.originalEndMin - first.originalStartMin) / 60)}`,
-      `scheduled_hours_after_break=${first.scheduledHoursAfterBreak ?? round2(((first.originalEndMin - first.originalStartMin) / 60) - 1)}`,
-      `break_start=${formatClock24(first.startMin)}`,
-      `break_end=${formatClock24(first.endMin)}`,
+      `long_shift_break_hours=${roundEval2(validation.schedulingAdjustments.hours_removed_for_long_shift_breaks)}h`,
+      `original_shift_hours=${first.originalShiftHours ?? roundEval2((first.originalEndMin - first.originalStartMin) / 60)}`,
+      `scheduled_hours_after_break=${first.scheduledHoursAfterBreak ?? roundEval2(((first.originalEndMin - first.originalStartMin) / 60) - 1)}`,
+      `break_start=${formatEvalClock24(first.startMin)}`,
+      `break_end=${formatEvalClock24(first.endMin)}`,
       `break_reason=${first.reason}`,
     );
   }
@@ -2524,7 +2998,7 @@ function schedulingAdjustmentNoteParts(validation: BuildTimelineResult): string[
     const first = meetingBlackouts[0];
     noteParts.push(
       `provider_meeting_blackout=${first.blackoutWindow ?? '2026-06-24T12:00:00-05:00/2026-06-24T13:00:00-05:00'}`,
-      `provider_meeting_blackout_hours=${round2(validation.schedulingAdjustments.hours_removed_for_provider_meeting_blackouts)}`,
+      `provider_meeting_blackout_hours=${roundEval2(validation.schedulingAdjustments.hours_removed_for_provider_meeting_blackouts)}`,
       `provider_meeting_blackout_reason=${first.reason}`,
     );
   }
@@ -2532,7 +3006,7 @@ function schedulingAdjustmentNoteParts(validation: BuildTimelineResult): string[
   return noteParts;
 }
 
-function formatClock24(totalMinutes: number): string {
+function formatEvalClock24(totalMinutes: number): string {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
@@ -2973,7 +3447,7 @@ Deno.serve(async (req: Request) => {
 
       if (totalWeight <= 0) return null;
       return {
-        pct: round2(weightedPctSum / totalWeight),
+        pct: roundEval2(weightedPctSum / totalWeight),
         source: 'provider_state_utilization',
         basis: 'state_gap_weighted',
         month: latestMonth,
@@ -3038,6 +3512,7 @@ Deno.serve(async (req: Request) => {
       return monthA.localeCompare(monthB) || nameA.localeCompare(nameB);
     });
     const beforeRecalculation = await loadRecalculationSnapshots(supabase, groupKeysSorted);
+    const telehealthCandidates: TelehealthAllocationCandidate[] = [];
 
     // ── Evaluate each group ─────────────────────────────────────────────
     for (const key of groupKeysSorted) {
@@ -3158,8 +3633,8 @@ Deno.serve(async (req: Request) => {
         // window (9a-9p ET weekdays, 9a-12p ET weekends). They count toward
         // declined_hours so the provider sees the full reason their submitted
         // time was not approved.
-        const oohDeclined = round2(validation.summary.hours_removed_for_operating_hours ?? 0);
-        const policyDeclined = round2(validation.summary.hours_removed_for_minimum_shift ?? 0);
+        const oohDeclined = roundEval2(validation.summary.hours_removed_for_operating_hours ?? 0);
+        const policyDeclined = roundEval2(validation.summary.hours_removed_for_minimum_shift ?? 0);
 
         if (validation.report.length > 0) {
           console.log(`[validation] ${latest.provider_name} ${targetMonth}`,
@@ -3240,7 +3715,7 @@ Deno.serve(async (req: Request) => {
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
-            declined_hours: round2(oohDeclined + policyDeclined),
+            declined_hours: roundEval2(oohDeclined + policyDeclined),
             notes: noHoursNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
@@ -3292,15 +3767,15 @@ Deno.serve(async (req: Request) => {
           }
           const serviceLineKey = `${serviceLine}_${targetMonth}`;
           const targetHours = serviceLineDemandByKey.get(serviceLineKey);
-          const committedHours = round2(serviceLineCommittedByKey.get(serviceLineKey) ?? 0);
+          const committedHours = roundEval2(serviceLineCommittedByKey.get(serviceLineKey) ?? 0);
           const remainingGap = targetHours == null
             ? effectiveHours
-            : round2(Math.max(0, targetHours - committedHours));
+            : roundEval2(Math.max(0, targetHours - committedHours));
           const accepted = targetHours == null
             ? effectiveHours
-            : round2(Math.min(effectiveHours, remainingGap));
-          const forecastDeclined = round2(Math.max(0, effectiveHours - accepted));
-          const mhDeclined = round2(forecastDeclined + oohDeclined + policyDeclined);
+            : roundEval2(Math.min(effectiveHours, remainingGap));
+          const forecastDeclined = roundEval2(Math.max(0, effectiveHours - accepted));
+          const mhDeclined = roundEval2(forecastDeclined + oohDeclined + policyDeclined);
           let mhStatus: 'accepted' | 'partial' | 'declined';
           if (accepted <= 0) {
             mhStatus = 'declined';
@@ -3329,7 +3804,7 @@ Deno.serve(async (req: Request) => {
           if (targetHours == null) {
             mhNoteParts.push('service_line_forecast=missing');
           } else {
-            mhNoteParts.push(`service_line_target=${round2(targetHours)}h`);
+            mhNoteParts.push(`service_line_target=${roundEval2(targetHours)}h`);
             mhNoteParts.push(`service_line_committed=${committedHours}h`);
             mhNoteParts.push(`service_line_gap=${remainingGap}h`);
             mhNoteParts.push(`forecast_declined_hours=${forecastDeclined}h`);
@@ -3409,7 +3884,7 @@ Deno.serve(async (req: Request) => {
           await writeDecision(supabase, latest.id, {
             status: 'declined',
             accepted_hours: 0,
-            declined_hours: round2(effectiveHours + oohDeclined + policyDeclined),
+            declined_hours: roundEval2(effectiveHours + oohDeclined + policyDeclined),
             notes: noLicNoteParts.join('; '),
             decision_run_id: decisionRunId,
             validation,
@@ -3460,7 +3935,7 @@ Deno.serve(async (req: Request) => {
           // availability (column name is legacy/misleading), so the value
           // already IS the base demand hour figure — no conversion.
           const baseDemandHours = visits;
-          const bufferedDemandHours = round2(baseDemandHours * ACCESS_GROWTH_BUFFER_MULTIPLIER);
+          const bufferedDemandHours = roundEval2(baseDemandHours * ACCESS_GROWTH_BUFFER_MULTIPLIER);
           const committed = committedByKey.get(dKey) ?? 0;
           const baseGapHours = Math.max(0, baseDemandHours - committed);
           gapByState.push({
@@ -3476,11 +3951,11 @@ Deno.serve(async (req: Request) => {
           });
         }
         gapByState.sort((a, b) => b.gapHours - a.gapHours);
-        const totalGap = round2(gapByState.reduce((s, g) => s + g.gapHours, 0));
-        const baseTotalGap = round2(gapByState.reduce((s, g) => s + g.baseGapHours, 0));
-        const baseTotalDemand = round2(gapByState.reduce((s, g) => s + g.baseDemandHours, 0));
-        const bufferedTotalDemand = round2(gapByState.reduce((s, g) => s + g.bufferedDemandHours, 0));
-        const accessBufferHours = round2(Math.max(0, totalGap - baseTotalGap));
+        const totalGap = roundEval2(gapByState.reduce((s, g) => s + g.gapHours, 0));
+        const baseTotalGap = roundEval2(gapByState.reduce((s, g) => s + g.baseGapHours, 0));
+        const baseTotalDemand = roundEval2(gapByState.reduce((s, g) => s + g.baseDemandHours, 0));
+        const bufferedTotalDemand = roundEval2(gapByState.reduce((s, g) => s + g.bufferedDemandHours, 0));
+        const accessBufferHours = roundEval2(Math.max(0, totalGap - baseTotalGap));
         const missingDemandStates = gapByState.filter(g => g.missingDemand).map(g => g.state);
         const scarceCoverageTimeline = forecastTimeline.filter(isScarceCoverageSlot);
         const scarceCoverageHours = sumSlotHours(scarceCoverageTimeline);
@@ -3490,209 +3965,267 @@ Deno.serve(async (req: Request) => {
             .filter((window): window is string => Boolean(window)),
         )).sort();
 
-        // Decide. `declined` rolls up forecast cuts AND hours dropped for
-        // being outside the operating-hours window so the provider sees
-        // every hour we couldn't approve, not just the demand-driven cuts.
-        let status: 'accepted' | 'partial' | 'declined';
-        let accepted: number;
-        let forecastDeclined: number;
-        const nonScarceHours = round2(Math.max(0, effectiveHours - scarceCoverageHours));
-        const monthlyGapAfterScarce = round2(Math.max(0, totalGap - scarceCoverageHours));
-        const demandAcceptedHours = round2(Math.min(nonScarceHours, monthlyGapAfterScarce));
-        accepted = round2(Math.min(effectiveHours, scarceCoverageHours + demandAcceptedHours));
-        forecastDeclined = round2(Math.max(0, effectiveHours - accepted));
-        const scarceOverflowHours = round2(Math.max(0, accepted - totalGap));
-        const accessBufferUsedHours = round2(Math.max(0, accepted - baseTotalGap));
-        if (accepted <= 0) {
-          status = 'declined';
-        } else if (forecastDeclined <= 0) {
-          status = 'accepted';
-        } else {
-          status = 'partial';
-        }
-        const declined = round2(forecastDeclined + oohDeclined + policyDeclined);
-
-        // Allocate accepted hours greedily across states
-        const allocations: Array<{ state: string; hours: number }> = [];
-        const addAllocation = (state: string, hours: number) => {
-          const rounded = round2(hours);
-          if (rounded <= 0) return;
-          const existing = allocations.find(a => a.state === state);
-          if (existing) {
-            existing.hours = round2(existing.hours + rounded);
-          } else {
-            allocations.push({ state, hours: rounded });
-          }
-        };
-        let remaining = accepted;
-        for (const g of gapByState) {
-          if (remaining <= 0 || g.gapHours <= 0) break;
-          const take = Math.min(g.gapHours, remaining);
-          if (take > 0) {
-            addAllocation(g.state, take);
-            remaining = round2(remaining - take);
-          }
-        }
-        if (remaining > 0) {
-          const fallbackStates = [...gapByState].sort((a, b) =>
-            b.demandHours - a.demandHours ||
-            b.gapHours - a.gapHours ||
-            a.state.localeCompare(b.state),
-          );
-          for (const g of fallbackStates) {
-            if (remaining <= 0) break;
-            addAllocation(g.state, remaining);
-            remaining = 0;
-          }
-        }
-
-        const noteParts: string[] = [];
-        noteParts.push(`group_size=${groupSubs.length}`);
-        pushProviderPriorityNotes(noteParts, providerPriority, providerProfile, useUtilizationTieBreak);
-        if (isPhysician) {
-          noteParts.push('state_policy=physician_reserved_for_md_only');
-        }
-        noteParts.push(`effective_hours=${effectiveHours}h`);
-        noteParts.push(`raw_hours=${validation.summary.raw_total_hours}h`);
-        if (validation.summary.intervals_auto_corrected > 0) {
-          noteParts.push(`auto_corrected=${validation.summary.intervals_auto_corrected}`);
-        }
-        if (validation.summary.intervals_needing_review > 0) {
-          noteParts.push(`needs_review=${validation.summary.intervals_needing_review}`);
-        }
-        if (validation.summary.intervals_rejected > 0) {
-          noteParts.push(`rejected=${validation.summary.intervals_rejected}`);
-        }
-        if (validation.summary.hours_removed_for_unavailability > 0) {
-          noteParts.push(`hours_removed_unavailable=${validation.summary.hours_removed_for_unavailability}h`);
-        }
-        if (validation.summary.hours_removed_for_duplicates > 0) {
-          noteParts.push(`hours_removed_dup=${validation.summary.hours_removed_for_duplicates}h`);
-        }
-        if (oohDeclined > 0) {
-          noteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
-        }
-        if (policyDeclined > 0) {
-          noteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);
-        }
-        noteParts.push(...schedulingAdjustmentNoteParts(validation));
-        if (scarceCoverageHours > 0) {
-          noteParts.push('scarce_window_policy=protected_before_monthly_trim');
-          noteParts.push(`scarce_window_hours=${scarceCoverageHours}h`);
-          noteParts.push(`scarce_windows=${scarceCoverageWindows.join(',')}`);
-          if (scarceOverflowHours > 0) {
-            noteParts.push(`scarce_window_over_monthly_gap=${scarceOverflowHours}h`);
-          }
-        }
-        if (eligibleSourceSummary.length) {
-          noteParts.push(`eligible_sources=${eligibleSourceSummary.join(',')}`);
-        }
-        if (ACCESS_GROWTH_BUFFER_MULTIPLIER !== 1 || accessBufferHours > 0) {
-          noteParts.push(`access_growth_buffer_policy=${ACCESS_GROWTH_BUFFER_POLICY}`);
-          noteParts.push(`access_growth_buffer_multiplier=${ACCESS_GROWTH_BUFFER_MULTIPLIER}`);
-        }
-        noteParts.push(`base_total_demand=${baseTotalDemand}h`);
-        noteParts.push(`buffered_total_demand=${bufferedTotalDemand}h`);
-        noteParts.push(`base_total_gap=${baseTotalGap}h`);
-        noteParts.push(`access_buffer_hours=${accessBufferHours}h`);
-        if (accessBufferUsedHours > 0) {
-          noteParts.push(`access_buffer_used_hours=${accessBufferUsedHours}h`);
-        }
-        noteParts.push(`total_gap=${totalGap}h`);
-        noteParts.push(`demand_accepted_hours=${demandAcceptedHours}h`);
-        noteParts.push(
-          'state_gaps=' + gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : round2(g.gapHours) + 'h'}`).join(','),
-        );
-        noteParts.push(
-          'base_state_demand=' + gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : round2(g.baseDemandHours) + 'h'}`).join(','),
-        );
-        if (allocations.length) {
-          noteParts.push('alloc=' + allocations.map(a => `${a.state}:${a.hours}h`).join(','));
-        }
-        if (missingDemandStates.length) {
-          noteParts.push(`missing_demand=${missingDemandStates.join(',')}`);
-        }
-        if (olderIds.length) noteParts.push(`supersedes=${olderIds.length}`);
-
-        // Mark older as superseded
-        if (olderIds.length) {
-          await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by latest submission ${latest.id}`);
-          counters.superseded += olderIds.length;
-        }
-
-        await writeDecision(supabase, latest.id, {
-          status,
-          accepted_hours: accepted,
-          declined_hours: declined,
-          notes: noteParts.join('; '),
-          decision_run_id: decisionRunId,
-          validation,
-        });
-
-        // Emit per-shift recommendations using the SAME shared row builder
-        // that emit-shift-recommendations uses. This guarantees the rows
-        // produced here match what a subsequent emit run would produce for
-        // the same (provider, target_month).
-        const recRows = buildShiftRecommendationRows({
+        telehealthCandidates.push({
+          key,
+          groupSubs,
+          latest,
+          olderIds,
           providerId,
-          providerName: latest.provider_name,
           targetMonth,
-          timeline: fullTimeline,
+          providerProfile,
+          providerPriority,
+          isPhysician,
+          validation,
+          fullTimeline,
           forecastTimeline,
-          outOfHoursTimeline: forecastOutOfHoursTimeline,
-          policyCutTimeline: validation.forecastPolicyCutTimeline,
-          // Forecast cut budget is the demand-driven decline only — out-of-
-          // hours fragments are handled separately inside the row builder.
-          protectedForecastTimeline: scarceCoverageTimeline,
-          declinedHours: forecastDeclined,
-          declineAll: status === 'declined',
-          allocations,
-          decisionRunId,
+          forecastOutOfHoursTimeline,
+          forecastPolicyCutTimeline: validation.forecastPolicyCutTimeline,
+          effectiveHours,
+          oohDeclined,
+          policyDeclined,
+          eligibleSourceSummary,
+          gapByState,
+          totalGap,
+          baseTotalGap,
+          baseTotalDemand,
+          bufferedTotalDemand,
+          accessBufferHours,
+          missingDemandStates,
+          scarceCoverageTimeline,
+          scarceCoverageHours,
+          scarceCoverageWindows,
+          equityCohort: equityCohortForProvider(providerPriority, providerProfile),
+          equityFloorHours: firstForecastBlockHours(forecastTimeline),
         });
-        await writeShiftRecommendations(supabase, groupSubs.map(s => s.id), recRows);
-
-        if (status === 'accepted') counters.accepted++;
-        else if (status === 'partial') counters.partial++;
-        else counters.declined++;
-
-        decisions.push({
-          group: key,
-          provider: latest.provider_name,
-          target_month: targetMonth,
-          group_size: groupSubs.length,
-          superseded: olderIds.length,
-          effective_hours: effectiveHours,
-          total_gap_hours: totalGap,
-          base_total_demand_hours: baseTotalDemand,
-          buffered_total_demand_hours: bufferedTotalDemand,
-          base_total_gap_hours: baseTotalGap,
-          access_buffer_used_hours: accessBufferUsedHours,
-          access_growth_buffer_multiplier: ACCESS_GROWTH_BUFFER_MULTIPLIER,
-          status,
-          accepted_hours: accepted,
-          declined_hours: declined,
-          allocations,
-          provider_priority: providerPriority.key,
-          state_policy: isPhysician ? 'physician_reserved_for_md_only' : 'standard',
-          scarce_window_hours: scarceCoverageHours,
-          scarce_windows: scarceCoverageWindows,
-          scarce_window_over_monthly_gap: scarceOverflowHours,
-          validation_summary: validation.summary,
-          validation_report: validation.report,
-        });
-
-        // Update committed map so subsequent groups in this run see this allocation
-        if (accepted > 0 && allocations.length) {
-          for (const a of allocations) {
-            const dKey = `${a.state}_${targetMonth}`;
-            committedByKey.set(dKey, (committedByKey.get(dKey) ?? 0) + a.hours);
-          }
-        }
       } catch (e) {
         counters.errors++;
         const message = e instanceof Error ? e.message : String(e);
         decisions.push({ group: key, status: 'error', error: message });
         console.error('Evaluate error', key, message);
+      }
+    }
+
+    const telehealthByMonth = new Map<string, TelehealthAllocationCandidate[]>();
+    for (const candidate of telehealthCandidates) {
+      const list = telehealthByMonth.get(candidate.targetMonth) ?? [];
+      list.push(candidate);
+      telehealthByMonth.set(candidate.targetMonth, list);
+    }
+
+    for (const [targetMonth, monthCandidates] of telehealthByMonth) {
+      const stateGapMap = new Map<string, SchedulingEquityStateGap>();
+      for (const candidate of monthCandidates) {
+        for (const gap of candidate.gapByState) {
+          if (gap.missingDemand) continue;
+          const current = stateGapMap.get(gap.state);
+          stateGapMap.set(gap.state, {
+            state: gap.state,
+            gapHours: roundEval2(Math.max(current?.gapHours ?? 0, gap.gapHours)),
+            demandHours: roundEval2(Math.max(current?.demandHours ?? 0, gap.demandHours)),
+          });
+        }
+      }
+
+      const equityInput: SchedulingEquityCandidate[] = monthCandidates.map(candidate => ({
+        id: candidate.key,
+        providerName: candidate.latest.provider_name,
+        cohort: candidate.equityCohort,
+        priorityRank: candidate.providerPriority.rank,
+        hourlyRate: providerHourlyRate(candidate.providerProfile),
+        effectiveHours: candidate.effectiveHours,
+        scarceHours: candidate.scarceCoverageHours,
+        floorHours: candidate.equityFloorHours,
+        eligibleStates: candidate.gapByState
+          .filter(gap => !gap.missingDemand)
+          .map(gap => ({
+            state: gap.state,
+            gapHours: gap.gapHours,
+            demandHours: gap.demandHours,
+          })),
+      }));
+      const equityAllocationsByKey = new Map(
+        allocateSchedulingEquity({
+          candidates: equityInput,
+          stateGaps: Array.from(stateGapMap.values()),
+        }).map(allocation => [allocation.id, allocation]),
+      );
+
+      for (const candidate of monthCandidates) {
+        try {
+          const allocation = equityAllocationsByKey.get(candidate.key);
+          if (!allocation) {
+            throw new Error(`equity allocation missing for ${candidate.key}`);
+          }
+          const accepted = roundEval2(allocation.acceptedHours);
+          const forecastDeclined = roundEval2(Math.max(0, candidate.effectiveHours - accepted));
+          const declined = roundEval2(forecastDeclined + candidate.oohDeclined + candidate.policyDeclined);
+          const status: 'accepted' | 'partial' | 'declined' =
+            accepted <= 0 ? 'declined' : forecastDeclined <= 0 ? 'accepted' : 'partial';
+          const accessBufferUsedHours = roundEval2(Math.max(0, accepted - candidate.baseTotalGap));
+          const demandAcceptedHours = roundEval2(Math.max(
+            0,
+            accepted - Math.min(accepted, candidate.scarceCoverageHours),
+          ));
+
+          const noteParts: string[] = [];
+          noteParts.push(`decision=${status} (equity_allocation)`);
+          noteParts.push(`group_size=${candidate.groupSubs.length}`);
+          pushProviderPriorityNotes(
+            noteParts,
+            candidate.providerPriority,
+            candidate.providerProfile,
+            useUtilizationTieBreak,
+          );
+          pushEquityAllocationNotes(noteParts, allocation, candidate.equityCohort);
+          if (candidate.isPhysician) {
+            noteParts.push('state_policy=physician_reserved_for_md_only');
+          }
+          noteParts.push(`effective_hours=${candidate.effectiveHours}h`);
+          noteParts.push(`raw_hours=${candidate.validation.summary.raw_total_hours}h`);
+          if (candidate.validation.summary.intervals_auto_corrected > 0) {
+            noteParts.push(`auto_corrected=${candidate.validation.summary.intervals_auto_corrected}`);
+          }
+          if (candidate.validation.summary.intervals_needing_review > 0) {
+            noteParts.push(`needs_review=${candidate.validation.summary.intervals_needing_review}`);
+          }
+          if (candidate.validation.summary.intervals_rejected > 0) {
+            noteParts.push(`rejected=${candidate.validation.summary.intervals_rejected}`);
+          }
+          if (candidate.validation.summary.hours_removed_for_unavailability > 0) {
+            noteParts.push(`hours_removed_unavailable=${candidate.validation.summary.hours_removed_for_unavailability}h`);
+          }
+          if (candidate.validation.summary.hours_removed_for_duplicates > 0) {
+            noteParts.push(`hours_removed_dup=${candidate.validation.summary.hours_removed_for_duplicates}h`);
+          }
+          if (candidate.oohDeclined > 0) {
+            noteParts.push(`hours_removed_outside_business_hours=${candidate.oohDeclined}h`);
+          }
+          if (candidate.policyDeclined > 0) {
+            noteParts.push(`hours_removed_below_minimum_shift=${candidate.policyDeclined}h`);
+          }
+          noteParts.push(...schedulingAdjustmentNoteParts(candidate.validation));
+          if (candidate.scarceCoverageHours > 0) {
+            noteParts.push('scarce_window_policy=protected_before_monthly_trim');
+            noteParts.push(`scarce_window_hours=${candidate.scarceCoverageHours}h`);
+            noteParts.push(`scarce_windows=${candidate.scarceCoverageWindows.join(',')}`);
+            if (allocation.scarceOverflowHours > 0) {
+              noteParts.push(`scarce_window_over_monthly_gap=${allocation.scarceOverflowHours}h`);
+            }
+          }
+          if (candidate.eligibleSourceSummary.length) {
+            noteParts.push(`eligible_sources=${candidate.eligibleSourceSummary.join(',')}`);
+          }
+          if (ACCESS_GROWTH_BUFFER_MULTIPLIER !== 1 || candidate.accessBufferHours > 0) {
+            noteParts.push(`access_growth_buffer_policy=${ACCESS_GROWTH_BUFFER_POLICY}`);
+            noteParts.push(`access_growth_buffer_multiplier=${ACCESS_GROWTH_BUFFER_MULTIPLIER}`);
+          }
+          noteParts.push(`base_total_demand=${candidate.baseTotalDemand}h`);
+          noteParts.push(`buffered_total_demand=${candidate.bufferedTotalDemand}h`);
+          noteParts.push(`base_total_gap=${candidate.baseTotalGap}h`);
+          noteParts.push(`access_buffer_hours=${candidate.accessBufferHours}h`);
+          if (accessBufferUsedHours > 0) {
+            noteParts.push(`access_buffer_used_hours=${accessBufferUsedHours}h`);
+          }
+          noteParts.push(`total_gap=${candidate.totalGap}h`);
+          noteParts.push(`demand_accepted_hours=${demandAcceptedHours}h`);
+          noteParts.push(
+            'state_gaps=' + candidate.gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : roundEval2(g.gapHours) + 'h'}`).join(','),
+          );
+          noteParts.push(
+            'base_state_demand=' + candidate.gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : roundEval2(g.baseDemandHours) + 'h'}`).join(','),
+          );
+          if (allocation.allocations.length) {
+            noteParts.push('alloc=' + allocation.allocations.map(a => `${a.state}:${a.hours}h`).join(','));
+          }
+          if (candidate.missingDemandStates.length) {
+            noteParts.push(`missing_demand=${candidate.missingDemandStates.join(',')}`);
+          }
+          if (candidate.olderIds.length) noteParts.push(`supersedes=${candidate.olderIds.length}`);
+
+          if (candidate.olderIds.length) {
+            await markSuperseded(
+              supabase,
+              candidate.olderIds,
+              decisionRunId,
+              `Superseded by latest submission ${candidate.latest.id}`,
+            );
+            counters.superseded += candidate.olderIds.length;
+          }
+
+          await writeDecision(supabase, candidate.latest.id, {
+            status,
+            accepted_hours: accepted,
+            declined_hours: declined,
+            notes: noteParts.join('; '),
+            decision_run_id: decisionRunId,
+            validation: candidate.validation,
+          });
+
+          const recRows = buildShiftRecommendationRows({
+            providerId: candidate.providerId,
+            providerName: candidate.latest.provider_name,
+            targetMonth,
+            timeline: candidate.fullTimeline,
+            forecastTimeline: candidate.forecastTimeline,
+            outOfHoursTimeline: candidate.forecastOutOfHoursTimeline,
+            policyCutTimeline: candidate.forecastPolicyCutTimeline,
+            protectedForecastTimeline: candidate.scarceCoverageTimeline,
+            declinedHours: forecastDeclined,
+            declineAll: status === 'declined',
+            allocations: allocation.allocations,
+            decisionRunId,
+          });
+          await writeShiftRecommendations(supabase, candidate.groupSubs.map(s => s.id), recRows);
+
+          if (status === 'accepted') counters.accepted++;
+          else if (status === 'partial') counters.partial++;
+          else counters.declined++;
+
+          decisions.push({
+            group: candidate.key,
+            provider: candidate.latest.provider_name,
+            target_month: targetMonth,
+            group_size: candidate.groupSubs.length,
+            superseded: candidate.olderIds.length,
+            effective_hours: candidate.effectiveHours,
+            total_gap_hours: candidate.totalGap,
+            base_total_demand_hours: candidate.baseTotalDemand,
+            buffered_total_demand_hours: candidate.bufferedTotalDemand,
+            base_total_gap_hours: candidate.baseTotalGap,
+            access_buffer_used_hours: accessBufferUsedHours,
+            access_growth_buffer_multiplier: ACCESS_GROWTH_BUFFER_MULTIPLIER,
+            status,
+            accepted_hours: accepted,
+            declined_hours: declined,
+            allocations: allocation.allocations,
+            provider_priority: candidate.providerPriority.key,
+            cohort: candidate.equityCohort,
+            directshifts_target_share: allocation.directshiftsTargetShare,
+            directshifts_actual_share: allocation.directshiftsShareAfter,
+            provider_acceptance_pct: allocation.providerAcceptancePct,
+            equity_floor: allocation.equityFloor,
+            soft_cap_exceeded: allocation.softCapExceeded,
+            fairness_policy_version: FAIRNESS_POLICY_VERSION,
+            state_policy: candidate.isPhysician ? 'physician_reserved_for_md_only' : 'standard',
+            scarce_window_hours: candidate.scarceCoverageHours,
+            scarce_windows: candidate.scarceCoverageWindows,
+            scarce_window_over_monthly_gap: allocation.scarceOverflowHours,
+            validation_summary: candidate.validation.summary,
+            validation_report: candidate.validation.report,
+          });
+
+          if (accepted > 0 && allocation.allocations.length) {
+            for (const a of allocation.allocations) {
+              const dKey = `${a.state}_${targetMonth}`;
+              committedByKey.set(dKey, (committedByKey.get(dKey) ?? 0) + a.hours);
+            }
+          }
+        } catch (e) {
+          counters.errors++;
+          const message = e instanceof Error ? e.message : String(e);
+          decisions.push({ group: candidate.key, status: 'error', error: message });
+          console.error('Evaluate equity allocation error', candidate.key, message);
+        }
       }
     }
 
@@ -3818,8 +4351,8 @@ async function loadRecalculationSnapshots(
     const snapshot = snapshots.get(key) ?? emptySnapshot(active.provider_id, active.target_month);
     snapshot.providerName = active.provider_name || snapshot.providerName;
     snapshot.status = active.decision_status ?? null;
-    snapshot.decisionAcceptedHours = round2(Number(active.accepted_hours ?? 0));
-    snapshot.decisionDeclinedHours = round2(Number(active.declined_hours ?? 0));
+    snapshot.decisionAcceptedHours = roundEval2(Number(active.accepted_hours ?? 0));
+    snapshot.decisionDeclinedHours = roundEval2(Number(active.declined_hours ?? 0));
     snapshot.decisionNotes = active.decision_notes ?? null;
     snapshots.set(key, snapshot);
   }
@@ -3842,16 +4375,16 @@ async function loadRecalculationSnapshots(
     const hours = Number(row.hours ?? 0);
     if (!Number.isFinite(hours) || hours <= 0) continue;
     if (row.recommendation === 'publish') {
-      snapshot.publishableHours = round2(snapshot.publishableHours + hours);
+      snapshot.publishableHours = roundEval2(snapshot.publishableHours + hours);
       snapshot.publishableShifts += 1;
       const state = (row.assigned_state ?? '').trim().toUpperCase();
       if (state) {
         const stateMap = allocationMaps.get(key) ?? new Map<string, number>();
-        stateMap.set(state, round2((stateMap.get(state) ?? 0) + hours));
+        stateMap.set(state, roundEval2((stateMap.get(state) ?? 0) + hours));
         allocationMaps.set(key, stateMap);
       }
     } else if (row.recommendation === 'cut') {
-      snapshot.cutHours = round2(snapshot.cutHours + hours);
+      snapshot.cutHours = roundEval2(snapshot.cutHours + hours);
       snapshot.cutShifts += 1;
     }
   }
@@ -3861,14 +4394,14 @@ async function loadRecalculationSnapshots(
     if (!snapshot) continue;
     snapshot.allocations = Array.from(stateMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([state, hours]) => ({ state, hours: round2(hours) }));
+      .map(([state, hours]) => ({ state, hours: roundEval2(hours) }));
   }
 
   return snapshots;
 }
 
 const allocationSignature = (allocations: Array<{ state: string; hours: number }>) =>
-  allocations.map(a => `${a.state}:${round2(a.hours)}`).join('|');
+  allocations.map(a => `${a.state}:${roundEval2(a.hours)}`).join('|');
 
 function recalculationSnapshotChanged(
   before: RecalculationSnapshot,
@@ -3916,16 +4449,16 @@ async function writeRecalculationHistory(
   for (const targetMonth of monthKeys) {
     const changes = allChanges.filter(change => change.after.targetMonth === targetMonth);
     const groupCount = args.groupKeys.filter(key => key.endsWith(`|${targetMonth}`)).length;
-    const decisionAcceptedDelta = round2(
+    const decisionAcceptedDelta = roundEval2(
       changes.reduce((sum, change) => sum + (change.after.decisionAcceptedHours - change.before.decisionAcceptedHours), 0),
     );
-    const decisionDeclinedDelta = round2(
+    const decisionDeclinedDelta = roundEval2(
       changes.reduce((sum, change) => sum + (change.after.decisionDeclinedHours - change.before.decisionDeclinedHours), 0),
     );
-    const publishableDelta = round2(
+    const publishableDelta = roundEval2(
       changes.reduce((sum, change) => sum + (change.after.publishableHours - change.before.publishableHours), 0),
     );
-    const cutDelta = round2(
+    const cutDelta = roundEval2(
       changes.reduce((sum, change) => sum + (change.after.cutHours - change.before.cutHours), 0),
     );
 
@@ -3966,16 +4499,16 @@ async function writeRecalculationHistory(
       after_status: after.status,
       decision_accepted_before: before.decisionAcceptedHours,
       decision_accepted_after: after.decisionAcceptedHours,
-      decision_accepted_delta: round2(after.decisionAcceptedHours - before.decisionAcceptedHours),
+      decision_accepted_delta: roundEval2(after.decisionAcceptedHours - before.decisionAcceptedHours),
       decision_declined_before: before.decisionDeclinedHours,
       decision_declined_after: after.decisionDeclinedHours,
-      decision_declined_delta: round2(after.decisionDeclinedHours - before.decisionDeclinedHours),
+      decision_declined_delta: roundEval2(after.decisionDeclinedHours - before.decisionDeclinedHours),
       publishable_hours_before: before.publishableHours,
       publishable_hours_after: after.publishableHours,
-      publishable_hours_delta: round2(after.publishableHours - before.publishableHours),
+      publishable_hours_delta: roundEval2(after.publishableHours - before.publishableHours),
       cut_hours_before: before.cutHours,
       cut_hours_after: after.cutHours,
-      cut_hours_delta: round2(after.cutHours - before.cutHours),
+      cut_hours_delta: roundEval2(after.cutHours - before.cutHours),
       publishable_shifts_before: before.publishableShifts,
       publishable_shifts_after: after.publishableShifts,
       cut_shifts_before: before.cutShifts,
@@ -4014,7 +4547,7 @@ async function writeDecision(
     date: s.date,
     start_min: s.startMin,
     end_min: s.endMin,
-    hours: round2((s.endMin - s.startMin) / 60),
+    hours: roundEval2((s.endMin - s.startMin) / 60),
     kind: s.source.kind,
     source_submission_id: s.source.submissionId ?? null,
     correction_reason: s.source.correction_reason,
@@ -4224,7 +4757,7 @@ async function markSuperseded(
   }
 }
 
-function round2(n: number): number {
+function roundEval2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 

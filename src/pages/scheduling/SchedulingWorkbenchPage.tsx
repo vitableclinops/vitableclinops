@@ -2878,6 +2878,13 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   const providerHourlyRate = valueFromDecisionNote(raw, 'provider_hourly_rate');
   const providerUtilizationPolicy = valueFromDecisionNote(raw, 'provider_utilization_policy');
   const providerUtilizationPct = valueFromDecisionNote(raw, 'provider_utilization_pct');
+  const cohort = valueFromDecisionNote(raw, 'cohort');
+  const directshiftsTargetShare = valueFromDecisionNote(raw, 'directshifts_target_share');
+  const directshiftsActualShare = valueFromDecisionNote(raw, 'directshifts_actual_share');
+  const providerAcceptancePct = valueFromDecisionNote(raw, 'provider_acceptance_pct');
+  const equityFloor = valueFromDecisionNote(raw, 'equity_floor');
+  const softCapPolicy = valueFromDecisionNote(raw, 'soft_cap_policy');
+  const softCapExceeded = valueFromDecisionNote(raw, 'soft_cap_exceeded');
   if (priority === 'clinical_supervisor' || priority === 'clinical_lead') {
     add('Accepted first because this provider is a clinical lead.');
   } else if (priority === 'vitable_internal') {
@@ -2906,6 +2913,32 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
     if (Number.isFinite(utilization)) add(`Recent utilization measured: ${utilization.toFixed(1)}%.`);
   } else if (providerUtilizationPct === 'missing') {
     add('No recent utilization was found.');
+  }
+  if (cohort === 'directshifts_access') {
+    add('This provider counts toward the DirectShifts/access scheduling share.');
+  }
+  if (directshiftsTargetShare) {
+    add(`DirectShifts/access target: ${directshiftsTargetShare}% of accepted telehealth hours.`);
+  }
+  if (directshiftsActualShare) {
+    add(`DirectShifts/access result after allocation: ${directshiftsActualShare}%.`);
+  }
+  if (providerAcceptancePct) {
+    add(`This provider received ${providerAcceptancePct}% of forecastable submitted hours.`);
+  }
+  if (equityFloor === 'met') {
+    add('Equity floor met: this eligible submitter received publishable time before additional low-rate optimization.');
+  } else if (equityFloor === 'unmet_no_gap') {
+    add('Equity floor unmet because no compatible state demand remained.');
+  } else if (equityFloor === 'unmet_no_valid_shift') {
+    add('Equity floor unmet because no valid publishable shift block remained after policy checks.');
+  }
+  if (softCapPolicy) {
+    const readableSoftCap = softCapPolicy.replace('pct', '%').replace(/_/g, ' ');
+    add(`Soft cap policy applied: ${readableSoftCap} before additional hours.`);
+  }
+  if (softCapExceeded === '1') {
+    add('Soft cap was relaxed because demand would otherwise remain uncovered.');
   }
 
   if (valueFromDecisionNote(raw, 'state_policy') === 'physician_reserved_for_md_only') {
@@ -3042,6 +3075,9 @@ const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
   }
   if (/rate-ranked|lowest current hourly rate|provider_rate_policy|current scheduling rate|same rate tier|rate tier|directshifts/.test(text)) {
     add('Rate ranking', 'blue');
+  }
+  if (/cohort=directshifts_access|directshifts_target_share|provider_acceptance_pct|equity_floor|soft_cap_policy/.test(text)) {
+    add('Equity policy', 'blue');
   }
   if (/lower_utilization_secondary_after_rate|fairness tie-break/.test(text)) {
     add('Utilization tiebreak', 'blue');
@@ -8598,6 +8634,30 @@ function CostPerVisitPanel({
           tone={h.clinicalLeadProviders > 0 ? 'blue' : 'neutral'}
         />
         <RoutingDecisionCard
+          label="DirectShifts/access share"
+          value={`${h.directshiftsAccessSharePct.toFixed(1)}%`}
+          detail={`${formatHours(h.directshiftsAccessHours)} hrs accepted for ${h.directshiftsAccessProviders} provider${h.directshiftsAccessProviders === 1 ? '' : 's'}; target ${h.directshiftsTargetSharePct.toFixed(0)}%.`}
+          tone={h.directshiftsAccessSharePct + 0.5 >= h.directshiftsTargetSharePct ? 'good' : 'warn'}
+        />
+        <RoutingDecisionCard
+          label="Same-rate DS spread"
+          value={`${h.sameRateDirectshiftsMaxSpreadPct.toFixed(1)}%`}
+          detail={`${h.sameRateDirectshiftsGroups} same-rate DirectShifts/access group${h.sameRateDirectshiftsGroups === 1 ? '' : 's'} checked by accepted share of submitted hours.`}
+          tone={h.sameRateDirectshiftsMaxSpreadPct <= 10 ? 'good' : 'warn'}
+        />
+        <RoutingDecisionCard
+          label="Equity floors"
+          value={`${h.equityFloorMetProviders}`}
+          detail={`${h.equityFloorUnmetProviders} eligible submitter${h.equityFloorUnmetProviders === 1 ? '' : 's'} could not receive a floor because no valid compatible demand remained.`}
+          tone={h.equityFloorUnmetProviders > 0 ? 'warn' : 'good'}
+        />
+        <RoutingDecisionCard
+          label="Soft cap relaxed"
+          value={`${h.softCapExceededProviders}`}
+          detail="Providers allowed beyond 75% of submitted forecastable hours only after under-cap peers could not cover demand."
+          tone={h.softCapExceededProviders > 0 ? 'warn' : 'neutral'}
+        />
+        <RoutingDecisionCard
           label="Utilization tie-breaks"
           value={`${h.utilizationTieBreakProviders}`}
           detail="Providers whose decisions explicitly used utilization as a tie-break."
@@ -9241,6 +9301,14 @@ function inferPriorityReason(row: ProviderPublishView): string {
   else if (valueFromDecisionNote(row.submission?.decision_notes, 'provider_utilization_pct') === 'missing') {
     reasons.push('util missing');
   }
+  const cohort = valueFromDecisionNote(row.submission?.decision_notes, 'cohort');
+  if (cohort === 'directshifts_access') reasons.push('DS/access share');
+  const acceptancePct = valueFromDecisionNote(row.submission?.decision_notes, 'provider_acceptance_pct');
+  const acceptancePctNumber = Number(acceptancePct);
+  if (Number.isFinite(acceptancePctNumber)) reasons.push(`${acceptancePctNumber.toFixed(1)}% of submitted`);
+  const equityFloor = valueFromDecisionNote(row.submission?.decision_notes, 'equity_floor');
+  if (equityFloor === 'met') reasons.push('floor met');
+  else if (equityFloor?.startsWith('unmet')) reasons.push('floor unmet');
   const emp = (row.employment_type ?? '').trim();
   if (emp) reasons.push(emp.toUpperCase());
   const accepted = Number(row.submission?.accepted_hours ?? 0);
@@ -9268,10 +9336,6 @@ function providerUtilizationFromNotes(notes: string | null | undefined): number 
   return Number.isFinite(utilization) ? utilization : null;
 }
 
-function providerUtilizationSortValue(row: ProviderPublishView): number {
-  return providerUtilizationFromNotes(row.submission?.decision_notes) ?? Number.POSITIVE_INFINITY;
-}
-
 function inferDeclineReason(row: ProviderPublishView): string {
   const notes = (row.submission?.decision_notes ?? '').trim();
   if (notes) return formatDecisionNoteForStaff(notes);
@@ -9291,7 +9355,7 @@ function ProviderPriorityPolicyCard() {
           Priority policy
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Provider source does not decide priority by itself. After clinical leads, scheduling ranks all eligible providers by current hourly rate, lowest first, whether they are internal, DirectShifts, or another access source.
+          Provider source does not decide priority by itself. After clinical leads, scheduling uses hourly rate as the cost signal while reserving roughly 25% of telehealth hours for DirectShifts/access and keeping same-rate DirectShifts providers proportional.
         </p>
       </CardHeader>
       <CardContent className="pt-0">
@@ -9302,15 +9366,15 @@ function ProviderPriorityPolicyCard() {
           </div>
           <div>
             <div className="font-medium">2. Lowest rate</div>
-            <div className="text-muted-foreground">Known current hourly rate is the main ranking rule across provider sources.</div>
+            <div className="text-muted-foreground">Known current hourly rate is the main cost rule across provider sources.</div>
           </div>
           <div>
-            <div className="font-medium">3. Utilization</div>
-            <div className="text-muted-foreground">Measured for visibility only unless explicitly enabled for recalculation.</div>
+            <div className="font-medium">3. Equity share</div>
+            <div className="text-muted-foreground">DirectShifts/access targets 25%; same-rate DirectShifts providers stay close by accepted share.</div>
           </div>
           <div>
-            <div className="font-medium">4. Final tie-breaks</div>
-            <div className="text-muted-foreground">DirectShifts labels and Brittney Afram's compatibility key only matter after rate does not decide.</div>
+            <div className="font-medium">4. Caps and visibility</div>
+            <div className="text-muted-foreground">A 75% soft cap redistributes first. Utilization is visible only unless explicitly enabled.</div>
           </div>
         </div>
       </CardContent>
@@ -9348,9 +9412,6 @@ function MatchingPanel({
       const ra = providerRateSortValue(a);
       const rb = providerRateSortValue(b);
       if (ra !== rb) return ra - rb;
-      const ua = providerUtilizationSortValue(a);
-      const ub = providerUtilizationSortValue(b);
-      if (ua !== ub) return ua - ub;
       const sa = statusSort(a);
       const sb = statusSort(b);
       if (sa !== sb) return sa - sb;
@@ -9478,6 +9539,10 @@ function MatchingPanel({
 function classifyReason(text: string): string {
   const t = text.toLowerCase();
   if (!t) return 'No reason recorded';
+  if (t.includes('equity_floor') || t.includes('soft_cap') || t.includes('provider_acceptance_pct'))
+    return 'Equity redistribution';
+  if (t.includes('directshifts_target_share') || t.includes('cohort=directshifts_access'))
+    return 'DirectShifts/access share';
   if (t.includes('provider_meeting_blackout') || t.includes('provider meeting blackout'))
     return 'Provider meeting blocked';
   if (t.includes('long_shift_break') || t.includes('mandatory 1-hour break'))

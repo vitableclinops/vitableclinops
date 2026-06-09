@@ -51,6 +51,7 @@ mkdir -p "$OUT_DIR"
 #   availabilityValidation (depends on the two above)
 #   submissionTimeline    (depends on availabilityValidation)
 #   providerPriority      (no deps; evaluator provider ordering)
+#   equityAllocation      (no deps; monthly scheduling fairness pass)
 #   <entrypoint>
 SHARED_FILES=(
   "$SHARED_DIR/nameNormalization.ts"
@@ -58,6 +59,7 @@ SHARED_FILES=(
   "$SHARED_DIR/availabilityValidation.ts"
   "$SHARED_DIR/submissionTimeline.ts"
   "$SHARED_DIR/providerPriority.ts"
+  "$SHARED_DIR/equityAllocation.ts"
 )
 
 strip_local_imports() {

@@ -187,4 +187,59 @@ describe('scheduling cost per visit', () => {
     expect(model.highlights.protectedAccessProviders).toBe(1);
     expect(model.highlights.protectedAccessHours).toBe(6);
   });
+
+  it('summarizes scheduling equity notes for DirectShifts/access and soft caps', () => {
+    const model = buildSchedulingCostModel({
+      monthStart: '2026-07-01',
+      rows: [
+        {
+          provider_id: 'ds-1',
+          provider_name: 'DirectShifts One',
+          decision_status: 'partial',
+          accepted_hours: 20,
+          declined_hours: 20,
+          decision_notes: [
+            'provider_hourly_rate=80',
+            'cohort=directshifts_access',
+            'directshifts_target_share=25',
+            'provider_acceptance_pct=50',
+            'equity_floor=met',
+            'soft_cap_exceeded=0',
+          ].join('; '),
+        },
+        {
+          provider_id: 'ds-2',
+          provider_name: 'DirectShifts Two',
+          decision_status: 'partial',
+          accepted_hours: 18,
+          declined_hours: 22,
+          decision_notes: [
+            'provider_hourly_rate=80',
+            'cohort=directshifts_access',
+            'provider_acceptance_pct=45',
+            'equity_floor=met',
+          ].join('; '),
+        },
+        {
+          provider_id: 'standard',
+          provider_name: 'Standard Provider',
+          decision_status: 'accepted',
+          accepted_hours: 62,
+          declined_hours: 0,
+          decision_notes: 'provider_hourly_rate=70; cohort=standard; equity_floor=met; soft_cap_exceeded=1',
+        },
+      ],
+      payRates: [],
+    });
+
+    expect(model.highlights.directshiftsAccessProviders).toBe(2);
+    expect(model.highlights.directshiftsAccessHours).toBe(38);
+    expect(model.highlights.directshiftsAccessSharePct).toBe(38);
+    expect(model.highlights.directshiftsTargetSharePct).toBe(25);
+    expect(model.highlights.equityFloorMetProviders).toBe(3);
+    expect(model.highlights.softCapExceededProviders).toBe(1);
+    expect(model.highlights.sameRateDirectshiftsGroups).toBe(1);
+    expect(model.highlights.sameRateDirectshiftsMaxSpreadPct).toBe(5);
+    expect(model.providerRows[0].routingTags).toContain('Soft cap relaxed');
+  });
 });

@@ -506,9 +506,9 @@ function buildNormalized(raw: RawInterval, args: BuildArgs): NormalizedInterval 
     normalized_end_time:
       args.normalizedEndMin == null ? raw.rawEnd : formatTime(args.normalizedEndMin),
     original_duration_hours:
-      args.originalDuration == null ? null : round2(args.originalDuration),
+      args.originalDuration == null ? null : roundAvailability2(args.originalDuration),
     normalized_duration_hours:
-      args.normalizedDuration == null ? null : round2(args.normalizedDuration),
+      args.normalizedDuration == null ? null : roundAvailability2(args.normalizedDuration),
     validation_status: args.status,
     validation_warnings: args.warnings,
     correction_reason: args.reason,
@@ -645,7 +645,7 @@ export function applyOperatingHoursWindow(
       }
     }
   }
-  return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
+  return { slots: out, droppedSlots: dropped, hoursRemoved: roundAvailability2(removed) };
 }
 
 export function applyMinimumShiftLength(
@@ -669,7 +669,7 @@ export function applyMinimumShiftLength(
       out.push(s);
     }
   }
-  return { slots: out, droppedSlots: dropped, hoursRemoved: round2(removed) };
+  return { slots: out, droppedSlots: dropped, hoursRemoved: roundAvailability2(removed) };
 }
 
 function isInMonth(dateISO: string, monthISO: string): boolean {
@@ -746,8 +746,8 @@ export function reconcileTimeline(
 
   return {
     slots: filtered,
-    hours_removed_for_duplicates: round2(dupHours),
-    hours_removed_for_unavailability: round2(unavailHours),
+    hours_removed_for_duplicates: roundAvailability2(dupHours),
+    hours_removed_for_unavailability: roundAvailability2(unavailHours),
     intervals_overlapping_unavailable: overlappingUnavailable,
   };
 }
@@ -880,10 +880,10 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
   }, 0);
 
   const forecastKinds = new Set<IntervalKind>(input.forecastKinds ?? ['recurring', 'one_off']);
-  const totalTimelineHours = round2(reconciled.slots.reduce(
+  const totalTimelineHours = roundAvailability2(reconciled.slots.reduce(
     (sum, s) => sum + (s.endMin - s.startMin) / 60, 0,
   ));
-  const finalApprovable = round2(reconciled.slots.reduce(
+  const finalApprovable = roundAvailability2(reconciled.slots.reduce(
     (sum, s) => forecastKinds.has(s.source.kind)
       ? sum + (s.endMin - s.startMin) / 60
       : sum,
@@ -891,13 +891,13 @@ export function normalizeProviderAvailability(input: NormalizationInput): Normal
   ));
 
   const summary: NormalizationSummary = {
-    raw_total_hours: round2(rawTotal),
-    normalized_total_hours: round2(normalizedTotal),
+    raw_total_hours: roundAvailability2(rawTotal),
+    normalized_total_hours: roundAvailability2(normalizedTotal),
     hours_removed_for_unavailability: reconciled.hours_removed_for_unavailability,
     hours_removed_for_duplicates: reconciled.hours_removed_for_duplicates,
     hours_removed_for_operating_hours: windowed.hoursRemoved,
     hours_removed_for_minimum_shift: minimumLength.hoursRemoved,
-    hours_changed_by_validation: round2(hoursChanged),
+    hours_changed_by_validation: roundAvailability2(hoursChanged),
     intervals_auto_corrected: normalized.filter(n => n.validation_status === 'auto_corrected').length,
     intervals_needing_review: normalized.filter(n => n.validation_status === 'needs_review').length,
     intervals_rejected: normalized.filter(n => n.validation_status === 'rejected_or_unusable').length,
@@ -988,6 +988,6 @@ function syntheticReport(identity: ProviderIdentity, message: string): Validatio
   };
 }
 
-function round2(n: number): number {
+function roundAvailability2(n: number): number {
   return Math.round(n * 100) / 100;
 }

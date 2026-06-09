@@ -85,11 +85,13 @@ Three sub-questions, written to `recommendations_daily`:
 - Provider licensure (Q2)
 - Where each provider is currently active (Q3)
 - Provider pay rates (`provider_pay_rates`)
+- Provider utilization is measured for visibility/outreach only; it is not part of default monthly ranking unless explicitly enabled.
 
 **Two-sided objective:**
 - **Lower bound:** cover projected demand with wiggle room (target = `monthly_visits/20 × 1.5`, floor 5 slots/day per state).
 - **Upper bound:** stay under cost-per-visit ceiling. **Target: <$60/visit. Current state: well above target.**
 - Overshooting inflates cost-per-visit by paying for unused capacity; undershooting hurts member experience and SLA. Optimize for the smallest provider footprint that still keeps every state at `ratio ≥ 1.5` on the daily SLA bucket.
+- **Equity guardrails:** DirectShifts/access should land near 25% of accepted telehealth appointment volume when eligible supply exists; same-rate DirectShifts/access providers should receive similar accepted percentages of submitted forecastable hours; non-clinical providers hit a 75% submitted-hours soft cap before additional hours are routed to them.
 
 **Outputs (per provider):**
 - `accepted_hours` — subset of their Jotform submission we approve
@@ -101,6 +103,7 @@ Three sub-questions, written to `recommendations_daily`:
 - `cuts_required` — states/dates where we have to decline otherwise-willing hours
 - `state_deactivations` — providers currently active in states where demand can be covered without them, freeing them to focus on licensure-constrained states
 - `projected_cost_per_visit` — per state and network-level, given the proposed schedule
+- `equity_audit` — DirectShifts/access share, same-rate spread, provider acceptance percentage, soft-cap state, and no-zero floor outcome.
 
 ### M2. Licensure investment plan (quarterly)
 

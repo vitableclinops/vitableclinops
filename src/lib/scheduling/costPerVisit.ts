@@ -51,6 +51,15 @@ export type SchedulingCostDecisionHighlights = {
   protectedAccessHours: number;
   missingRateProviders: number;
   missingRateHours: number;
+  directshiftsAccessProviders: number;
+  directshiftsAccessHours: number;
+  directshiftsAccessSharePct: number;
+  directshiftsTargetSharePct: number;
+  equityFloorMetProviders: number;
+  equityFloorUnmetProviders: number;
+  softCapExceededProviders: number;
+  sameRateDirectshiftsGroups: number;
+  sameRateDirectshiftsMaxSpreadPct: number;
 };
 
 export type SchedulingCostModel = {
@@ -161,6 +170,9 @@ export function routingSynopsisTags(
     add('Protected access');
   }
   if (lower.includes('access_growth_buffer') || lower.includes('access buffer')) add('Access buffer');
+  if (decisionNoteValue(raw, 'cohort') === 'directshifts_access') add('DirectShifts/access target');
+  if (decisionNoteValue(raw, 'equity_floor') === 'met') add('Equity floor');
+  if (decisionNoteValue(raw, 'soft_cap_exceeded') === '1') add('Soft cap relaxed');
   if (lower.includes('license') || lower.includes('licensure') || lower.includes('state-coverage')) {
     add('License/state issue');
   }
@@ -279,6 +291,20 @@ export function buildSchedulingCostModel({
         acc.missingRateProviders += 1;
         acc.missingRateHours += row.acceptedHours;
       }
+      if (decisionNoteValue(row.decision_notes, 'cohort') === 'directshifts_access' && row.acceptedHours > 0) {
+        acc.directshiftsAccessProviders += 1;
+        acc.directshiftsAccessHours += row.acceptedHours;
+      }
+      if (decisionNoteValue(row.decision_notes, 'equity_floor') === 'met') {
+        acc.equityFloorMetProviders += 1;
+      } else if (decisionNoteValue(row.decision_notes, 'equity_floor')?.startsWith('unmet')) {
+        acc.equityFloorUnmetProviders += 1;
+      }
+      if (decisionNoteValue(row.decision_notes, 'soft_cap_exceeded') === '1') {
+        acc.softCapExceededProviders += 1;
+      }
+      const targetShare = numericValue(decisionNoteValue(row.decision_notes, 'directshifts_target_share'));
+      if (targetShare > 0) acc.directshiftsTargetSharePct = targetShare;
       return acc;
     },
     {
@@ -294,8 +320,38 @@ export function buildSchedulingCostModel({
       protectedAccessHours: 0,
       missingRateProviders: 0,
       missingRateHours: 0,
+      directshiftsAccessProviders: 0,
+      directshiftsAccessHours: 0,
+      directshiftsAccessSharePct: 0,
+      directshiftsTargetSharePct: 25,
+      equityFloorMetProviders: 0,
+      equityFloorUnmetProviders: 0,
+      softCapExceededProviders: 0,
+      sameRateDirectshiftsGroups: 0,
+      sameRateDirectshiftsMaxSpreadPct: 0,
     },
   );
+  highlights.directshiftsAccessSharePct = totalApprovedHours > 0
+    ? round2((highlights.directshiftsAccessHours / totalApprovedHours) * 100)
+    : 0;
+  const directshiftsByRate = new Map<string, number[]>();
+  for (const row of providerRows) {
+    if (decisionNoteValue(row.decision_notes, 'cohort') !== 'directshifts_access') continue;
+    if (row.acceptedHours <= 0 && row.declinedHours <= 0) continue;
+    const rate = row.hourlyRate == null ? 'missing' : String(row.hourlyRate);
+    const pct = numericValue(decisionNoteValue(row.decision_notes, 'provider_acceptance_pct'));
+    const values = directshiftsByRate.get(rate) ?? [];
+    values.push(pct);
+    directshiftsByRate.set(rate, values);
+  }
+  for (const values of directshiftsByRate.values()) {
+    if (values.length < 2) continue;
+    highlights.sameRateDirectshiftsGroups += 1;
+    highlights.sameRateDirectshiftsMaxSpreadPct = Math.max(
+      highlights.sameRateDirectshiftsMaxSpreadPct,
+      round2(Math.max(...values) - Math.min(...values)),
+    );
+  }
 
   return {
     providerRows,
@@ -314,4 +370,8 @@ export function buildSchedulingCostModel({
     slotsPerHour,
     highlights,
   };
+}
+
+function round2(value: number) {
+  return Math.round((Number(value) || 0) * 100) / 100;
 }
