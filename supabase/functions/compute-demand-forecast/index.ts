@@ -18,9 +18,10 @@
  *     adjusted_monthly = adjusted_weekly * (days_in_month / 7)
  *     daily_target     = adjusted_weekly / 6
  *
- *   Do not group states into planning buckets, apply group-level buffers, or
- *   use a generic 4.33 month factor. In-home scheduling is intentionally
- *   excluded from this simplified forecast and handled separately.
+ *   July 2026 telehealth uses leadership's midpoint target between the
+ *   adjusted and enhanced scenarios as the final demand target. Do not apply
+ *   a second access buffer on top of that midpoint. In-home scheduling is
+ *   intentionally excluded from this simplified forecast and handled separately.
  *
  * Pipeline:
  *   1. Auth to Metabase.
@@ -61,6 +62,61 @@ const PCP_STATE_COVERAGE_CARD = Number(
 );
 const SEASONAL_MULTIPLIER = 0.95;
 const METHODOLOGY_VERSION = 'july_2026_summer_trough_v1';
+const JULY_2026_MIDPOINT_METHODOLOGY_VERSION = 'july_2026_midpoint_targets_v1';
+
+const JULY_2026_MIDPOINT_TARGETS: Array<{
+  state: string;
+  cohort: string;
+  adjustedMonthlyHours: number;
+  enhancedMonthlyHours: number;
+}> = [
+  { state: 'AK', cohort: '021', adjustedMonthlyHours: 14.6, enhancedMonthlyHours: 18.5 },
+  { state: 'AL', cohort: 'MD-Only', adjustedMonthlyHours: 12.2, enhancedMonthlyHours: 15.4 },
+  { state: 'AR', cohort: '021', adjustedMonthlyHours: 9.8, enhancedMonthlyHours: 12.3 },
+  { state: 'AZ', cohort: '021', adjustedMonthlyHours: 19.5, enhancedMonthlyHours: 24.6 },
+  { state: 'CA', cohort: '021', adjustedMonthlyHours: 34.2, enhancedMonthlyHours: 43.1 },
+  { state: 'CO', cohort: '021', adjustedMonthlyHours: 36.6, enhancedMonthlyHours: 46.2 },
+  { state: 'CT', cohort: '021', adjustedMonthlyHours: 19.5, enhancedMonthlyHours: 24.6 },
+  { state: 'DC', cohort: 'DMV', adjustedMonthlyHours: 2.4, enhancedMonthlyHours: 3.1 },
+  { state: 'DE', cohort: 'DE', adjustedMonthlyHours: 146.4, enhancedMonthlyHours: 184.6 },
+  { state: 'FL', cohort: 'Growth', adjustedMonthlyHours: 129.3, enhancedMonthlyHours: 163.1 },
+  { state: 'GA', cohort: 'MD-Only', adjustedMonthlyHours: 48.8, enhancedMonthlyHours: 61.5 },
+  { state: 'IA', cohort: '021', adjustedMonthlyHours: 0, enhancedMonthlyHours: 0 },
+  { state: 'IL', cohort: '021', adjustedMonthlyHours: 46.4, enhancedMonthlyHours: 58.5 },
+  { state: 'IN', cohort: 'MD-Only', adjustedMonthlyHours: 65.9, enhancedMonthlyHours: 83.1 },
+  { state: 'KS', cohort: '021', adjustedMonthlyHours: 7.3, enhancedMonthlyHours: 9.2 },
+  { state: 'KY', cohort: '021', adjustedMonthlyHours: 17.1, enhancedMonthlyHours: 21.5 },
+  { state: 'LA', cohort: '021', adjustedMonthlyHours: 7.3, enhancedMonthlyHours: 9.2 },
+  { state: 'MA', cohort: '021', adjustedMonthlyHours: 12.2, enhancedMonthlyHours: 15.4 },
+  { state: 'MD', cohort: 'DMV', adjustedMonthlyHours: 56.1, enhancedMonthlyHours: 70.8 },
+  { state: 'ME', cohort: '021', adjustedMonthlyHours: 7.3, enhancedMonthlyHours: 9.2 },
+  { state: 'MI', cohort: '021', adjustedMonthlyHours: 36.6, enhancedMonthlyHours: 46.2 },
+  { state: 'MN', cohort: '021', adjustedMonthlyHours: 17.1, enhancedMonthlyHours: 21.5 },
+  { state: 'MO', cohort: 'MD-Only', adjustedMonthlyHours: 14.6, enhancedMonthlyHours: 18.5 },
+  { state: 'MS', cohort: 'MD-Only', adjustedMonthlyHours: 7.3, enhancedMonthlyHours: 9.2 },
+  { state: 'NC', cohort: '021', adjustedMonthlyHours: 41.5, enhancedMonthlyHours: 52.3 },
+  { state: 'NE', cohort: '021', adjustedMonthlyHours: 0, enhancedMonthlyHours: 0 },
+  { state: 'NH', cohort: '021', adjustedMonthlyHours: 19.5, enhancedMonthlyHours: 24.6 },
+  { state: 'NJ', cohort: 'Core', adjustedMonthlyHours: 175.7, enhancedMonthlyHours: 221.6 },
+  { state: 'NM', cohort: '021', adjustedMonthlyHours: 14.6, enhancedMonthlyHours: 18.5 },
+  { state: 'NV', cohort: '021', adjustedMonthlyHours: 2.4, enhancedMonthlyHours: 3.1 },
+  { state: 'NY', cohort: '021', adjustedMonthlyHours: 7.3, enhancedMonthlyHours: 9.2 },
+  { state: 'OH', cohort: 'Growth', adjustedMonthlyHours: 107.4, enhancedMonthlyHours: 135.4 },
+  { state: 'OK', cohort: '021', adjustedMonthlyHours: 4.9, enhancedMonthlyHours: 6.2 },
+  { state: 'OR', cohort: '021', adjustedMonthlyHours: 12.2, enhancedMonthlyHours: 15.4 },
+  { state: 'PA', cohort: 'Core', adjustedMonthlyHours: 751.6, enhancedMonthlyHours: 947.8 },
+  { state: 'RI', cohort: '021', adjustedMonthlyHours: 12.2, enhancedMonthlyHours: 15.4 },
+  { state: 'SC', cohort: 'MD-Only', adjustedMonthlyHours: 7.3, enhancedMonthlyHours: 9.2 },
+  { state: 'TN', cohort: 'MD-Only', adjustedMonthlyHours: 14.6, enhancedMonthlyHours: 18.5 },
+  { state: 'TX', cohort: 'Growth', adjustedMonthlyHours: 185.5, enhancedMonthlyHours: 233.9 },
+  { state: 'UT', cohort: '021', adjustedMonthlyHours: 9.8, enhancedMonthlyHours: 12.3 },
+  { state: 'VA', cohort: 'DMV', adjustedMonthlyHours: 87.8, enhancedMonthlyHours: 110.8 },
+  { state: 'VT', cohort: '021', adjustedMonthlyHours: 0, enhancedMonthlyHours: 0 },
+  { state: 'WA', cohort: '021', adjustedMonthlyHours: 83.0, enhancedMonthlyHours: 104.6 },
+  { state: 'WI', cohort: '021', adjustedMonthlyHours: 4.9, enhancedMonthlyHours: 6.2 },
+  { state: 'WV', cohort: '021', adjustedMonthlyHours: 2.4, enhancedMonthlyHours: 3.1 },
+  { state: 'WY', cohort: '021', adjustedMonthlyHours: 2.4, enhancedMonthlyHours: 3.1 },
+];
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,6 +133,17 @@ type ProviderLookupRow = {
   name: string | null;
   email: string | null;
   npi: string | null;
+};
+type SupabaseSelectQuery = PromiseLike<{
+  data: unknown;
+  error: { message?: string } | null;
+}> & {
+  range(from: number, to: number): SupabaseSelectQuery;
+};
+type SupabaseSelectClient = {
+  from(table: string): {
+    select(columns: string): SupabaseSelectQuery;
+  };
 };
 type ProviderStateActiveRow = {
   provider_id: string;
@@ -168,6 +235,10 @@ Deno.serve(async (req: Request) => {
 
     const monthWeeks = weeksInMonth(targetMonth);
     const monthDays = listMonthDays(targetMonth);
+    const julyMidpointTargets =
+      targetMonth === '2026-07-01' ? JULY_2026_MIDPOINT_TARGETS : null;
+    const methodologyVersion =
+      julyMidpointTargets ? JULY_2026_MIDPOINT_METHODOLOGY_VERSION : METHODOLOGY_VERSION;
 
     // ── Telehealth: apply summer trough per state ────────────────────
     type TelehealthRow = {
@@ -189,8 +260,26 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (julyMidpointTargets) {
+      teleAdjusted.clear();
+      for (const target of julyMidpointTargets) {
+        const midpointMonthly =
+          (target.adjustedMonthlyHours + target.enhancedMonthlyHours) / 2;
+        const midpointWeekly = midpointMonthly / monthWeeks;
+        const adjustedScenarioWeekly = target.adjustedMonthlyHours / monthWeeks;
+        const rawWeekly = adjustedScenarioWeekly / SEASONAL_MULTIPLIER;
+        teleAdjusted.set(target.state, {
+          raw: rawWeekly,
+          adjusted: midpointWeekly,
+          monthly: midpointMonthly,
+          dailyTarget: midpointWeekly / 6,
+          activeMembers: teleByState.get(target.state)?.activeMembers ?? null,
+        });
+      }
+    }
+
     // ── Service-line totals ───────────────────────────────────────────
-    const telehealthRaw = sumMapBy(teleByState, t => t.weeklyDemand);
+    const telehealthRaw = sumMapBy(teleAdjusted, t => t.raw);
     const telehealthAdj = sumMapBy(teleAdjusted, t => t.adjusted);
 
     const coachingRaw = sumValues(coachByState);
@@ -257,7 +346,7 @@ Deno.serve(async (req: Request) => {
         projections.push({
           date,
           state,
-          projected_visits: round2(t.monthly * (weight / totalWeight)),
+          projected_visits: round6(t.monthly * (weight / totalWeight)),
           forecast_run_id: forecastRunId,
           is_baseline: true,
           computed_at: computedAt,
@@ -297,9 +386,9 @@ Deno.serve(async (req: Request) => {
         adjusted_weekly_hours: round2(t.adjusted),
         daily_target_hours: dailyTargetHours,
         active_members: t.activeMembers,
-        methodology_version: METHODOLOGY_VERSION,
+        methodology_version: methodologyVersion,
         seasonal_multiplier: SEASONAL_MULTIPLIER,
-        growth_multiplier: SEASONAL_MULTIPLIER,
+        growth_multiplier: julyMidpointTargets ? 1 : SEASONAL_MULTIPLIER,
         forecast_run_id: forecastRunId,
         computed_at: computedAt,
       });
@@ -330,7 +419,7 @@ Deno.serve(async (req: Request) => {
       ...row,
       month: targetMonth,
       seasonal_multiplier: SEASONAL_MULTIPLIER,
-      methodology_version: METHODOLOGY_VERSION,
+      methodology_version: methodologyVersion,
       forecast_run_id: forecastRunId,
       computed_at: computedAt,
     }));
@@ -399,7 +488,8 @@ Deno.serve(async (req: Request) => {
 
     return json({
       ok: true,
-      methodology_version: METHODOLOGY_VERSION,
+      methodology_version: methodologyVersion,
+      target_scenario: julyMidpointTargets ? 'adjusted_enhanced_midpoint' : 'adjusted',
       forecast_run_id: forecastRunId,
       target_month: targetMonth,
       month_days: monthDays.length,
@@ -533,18 +623,21 @@ function parseTelehealthRows(csv: string, issues: Record<string, number>): Map<s
       bump(issues, 'unparseable_value');
       continue;
     }
-    const activeMembers = membersRaw
+    const parsedActiveMembers = membersRaw
       ? Number(membersRaw.replace(/[^0-9.-]/g, ''))
       : null;
     result.set(abbr, {
       weeklyDemand,
-      activeMembers: Number.isFinite(activeMembers) ? Math.round(activeMembers) : null,
+      activeMembers:
+        parsedActiveMembers !== null && Number.isFinite(parsedActiveMembers)
+          ? Math.round(parsedActiveMembers)
+          : null,
     });
   }
   return result;
 }
 
-async function loadProviderLookup(supabase: ReturnType<typeof createClient>) {
+async function loadProviderLookup(supabase: SupabaseSelectClient) {
   const { data, error } = await supabase
     .from('providers')
     .select('id, name, email, npi')
@@ -806,6 +899,10 @@ function round2(n: number): number {
 
 function round4(n: number): number {
   return Math.round(n * 10000) / 10000;
+}
+
+function round6(n: number): number {
+  return Math.round(n * 1_000_000) / 1_000_000;
 }
 
 function chunked<T>(rows: T[], size: number): T[][] {

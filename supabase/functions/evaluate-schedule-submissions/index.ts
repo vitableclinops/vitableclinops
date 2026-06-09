@@ -38,15 +38,16 @@
  *      MD-only states (AL/IN/GA/MS/MO/SC/TN/LA), and non-physicians cannot
  *      be allocated to those MD-only states.
  *   4. For each eligible state, base_demand_hours = sum of demand_forecast
- *      values over the target month. The telehealth allocator applies a
- *      1.25x access-growth buffer before subtracting committed hours from
- *      decisions made in prior runs for OTHER providers in same state+month.
+ *      values over the target month. July 2026 uses midpoint demand targets,
+ *      so the forecast total is already the final planning target before
+ *      subtracting committed hours from decisions made in prior runs for
+ *      OTHER providers in same state+month.
  *      Note: demand_forecast.projected_visits stores hours of provider
  *      availability (not visits); column name is legacy. See
  *      compute-demand-forecast for the canonical methodology.
- *   5. total_gap = sum of buffered demand-hour gaps across eligible states
- *      (clipped 0). The buffer intentionally schedules above historical
- *      utilization so scheduling can improve same-day / next-day access.
+ *   5. total_gap = sum of demand-hour gaps across eligible states
+ *      (clipped 0). Scarce access windows can still be protected before
+ *      monthly oversupply trimming.
  *   6. Scarce coverage windows (Friday PM, Saturday, Sunday) are protected
  *      before monthly oversupply trimming. This keeps same-day / next-day
  *      access coverage from being rejected just because total monthly hours
@@ -215,8 +216,8 @@ const MH_POLICY_CUT_REASON =
   'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
-const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1.25;
-const ACCESS_GROWTH_BUFFER_POLICY = 'access_growth_buffer_1_25';
+const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1;
+const ACCESS_GROWTH_BUFFER_POLICY = 'midpoint_targets_no_extra_buffer';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1293,8 +1294,10 @@ Deno.serve(async (req: Request) => {
         if (eligibleSourceSummary.length) {
           noteParts.push(`eligible_sources=${eligibleSourceSummary.join(',')}`);
         }
-        noteParts.push(`access_growth_buffer_policy=${ACCESS_GROWTH_BUFFER_POLICY}`);
-        noteParts.push(`access_growth_buffer_multiplier=${ACCESS_GROWTH_BUFFER_MULTIPLIER}`);
+        if (ACCESS_GROWTH_BUFFER_MULTIPLIER !== 1 || accessBufferHours > 0) {
+          noteParts.push(`access_growth_buffer_policy=${ACCESS_GROWTH_BUFFER_POLICY}`);
+          noteParts.push(`access_growth_buffer_multiplier=${ACCESS_GROWTH_BUFFER_MULTIPLIER}`);
+        }
         noteParts.push(`base_total_demand=${baseTotalDemand}h`);
         noteParts.push(`buffered_total_demand=${bufferedTotalDemand}h`);
         noteParts.push(`base_total_gap=${baseTotalGap}h`);

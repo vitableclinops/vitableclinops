@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ACCESS_GROWTH_BUFFER_MULTIPLIER,
   computeStateCoverage,
   coverageStatusFor,
   isEligibleForState,
@@ -43,7 +42,7 @@ describe('computeStateCoverage', () => {
       providers: [{ id: 'p1', name: 'Ready Provider', profession: 'NP', active: true }],
       licenses: [{ provider_id: 'p1', state: 'PA', status: 'active' }],
       submissions: [{ provider_id: 'p1', decision_status: 'accepted' }],
-      demandMultiplier: ACCESS_GROWTH_BUFFER_MULTIPLIER,
+      demandMultiplier: 1.25,
     });
 
     expect(result.rows[0]).toMatchObject({

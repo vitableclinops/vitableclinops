@@ -48,7 +48,7 @@ export type StateCoverageComputedRow = {
   status: CoverageStatus;
 };
 
-export const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1.25;
+export const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1;
 
 export type InHomeProviderHours = {
   provider_name: string;

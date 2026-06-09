@@ -8991,8 +8991,8 @@ function CoverageGapsPanel({
           State coverage guidance · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          This tells the scheduling team whether publishing can continue. Non-protected surplus blocks are split or cut before publish;
-          any remaining extra should be protected Friday/weekend coverage, access-buffer coverage, or explicit out-of-forecast scope.
+          This tells the scheduling team whether publishing can continue. Midpoint demand targets are treated as the final monthly need.
+          Non-protected surplus blocks are split or cut before publish; any remaining extra should be protected Friday/weekend coverage or explicit out-of-forecast scope.
         </p>
       </CardHeader>
       <CardContent className="p-0">
