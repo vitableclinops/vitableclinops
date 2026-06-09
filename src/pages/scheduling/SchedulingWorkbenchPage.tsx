@@ -74,6 +74,7 @@ import {
   Pencil,
   Trash2,
   Save,
+  DollarSign,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
@@ -93,6 +94,8 @@ import {
   useProviderOutreachLog,
   useMarkProviderOutreachSent,
   useProviderSchedulingExceptions,
+  useProviderPayRates,
+  useUpsertProviderPayRate,
   useProviderSearch,
   useSchedulingExceptions,
   useSchedulingRecalculationHistory,
@@ -104,6 +107,7 @@ import {
   isEhrDone,
   type AvailabilitySubmissionRow,
   type ProviderOutreachLog,
+  type ProviderPayRateRow,
   type ProviderPublishView,
   type ProviderStateEligibilityRow,
   type SubmissionRow,
@@ -158,6 +162,10 @@ import {
   formatShiftDateLabelInProviderTime,
   formatShiftTimeRangeInProviderTime,
 } from '@/lib/scheduling/timeZone';
+import {
+  buildSchedulingCostModel,
+  type SchedulingCostProviderRow,
+} from '@/lib/scheduling/costPerVisit';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 const monthParamToIso = (value: string | null): string | null => {
@@ -199,6 +207,21 @@ const weeksInMonth = (iso: string) => {
 
 const formatHours = (n: number | null | undefined) =>
   n === null || n === undefined ? '—' : Number(n).toFixed(1);
+
+const formatWholeNumber = (n: number | null | undefined) =>
+  n === null || n === undefined || !Number.isFinite(Number(n))
+    ? '—'
+    : new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(n));
+
+const formatCurrency = (n: number | null | undefined, fractionDigits = 0) =>
+  n === null || n === undefined || !Number.isFinite(Number(n))
+    ? '—'
+    : new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+      }).format(Number(n));
 
 const finiteHoursFromUnknown = (raw: unknown): number | null => {
   if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
@@ -694,7 +717,7 @@ export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
 type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
 type PublishTabKey = 'provider' | 'queue' | 'day' | 'history';
 type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate';
-type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'forecast';
+type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'cost' | 'forecast';
 type ProviderTimeOffEntry = {
   row: ProviderPublishView;
   ranges: ReturnType<typeof extractUnavailableRanges>;
@@ -715,7 +738,7 @@ const topTabFromParam = (tab: string | null, section?: string | null): TopTabKey
   if (TOP_TAB_VALUES.includes(section as TopTabKey)) return section as TopTabKey;
   if (TOP_TAB_VALUES.includes(tab as TopTabKey)) return tab as TopTabKey;
   if (tab === 'availability') return 'intake';
-  if (tab === 'forecast' || tab === 'matching' || tab === 'coverage' || tab === 'declined') {
+  if (tab === 'forecast' || tab === 'matching' || tab === 'coverage' || tab === 'declined' || tab === 'cost') {
     return 'coverage-plan';
   }
   if (tab === 'audit') return 'data-sources';
@@ -746,7 +769,7 @@ const coveragePlanTabFromView = (view: string | null, tab: string | null): Cover
   const candidate = view ?? tab;
   if (candidate === 'coverage-plan') return 'coverage';
   if (candidate === 'declined') return 'declined';
-  if (candidate === 'forecast' || candidate === 'matching' || candidate === 'coverage') {
+  if (candidate === 'forecast' || candidate === 'matching' || candidate === 'coverage' || candidate === 'cost') {
     return candidate;
   }
   return 'coverage';
@@ -853,7 +876,7 @@ export default function SchedulingWorkbenchPage({
     const legacyView =
       tabParam === 'availability'
         ? viewParam || 'submissions'
-        : tabParam === 'forecast' || tabParam === 'matching' || tabParam === 'coverage' || tabParam === 'declined'
+        : tabParam === 'forecast' || tabParam === 'matching' || tabParam === 'coverage' || tabParam === 'declined' || tabParam === 'cost'
           ? tabParam
         : tabParam === 'publish'
             ? viewParam === 'review' || viewParam === 'needs-review'
@@ -933,6 +956,8 @@ export default function SchedulingWorkbenchPage({
   const { data: availabilitySubmissionsData = [], isLoading: availabilityLoading } =
     useMonthlyAvailabilitySubmissions(month);
   const { data: providerEligibilityData = [] } = useProviderStateEligibility();
+  const { data: providerPayRatesData = [], isLoading: providerPayRatesLoading } =
+    useProviderPayRates(month);
   const { data: outreachLogsData = [] } = useProviderOutreachLog(month);
   const { data: readinessRowsData = [] } = useOnboardingReadiness(30);
 
@@ -944,6 +969,7 @@ export default function SchedulingWorkbenchPage({
   const unmatchedSubs = safeArray<UnmatchedSubmission>(unmatchedSubsData);
   const availabilitySubmissions = safeArray<AvailabilitySubmissionRow>(availabilitySubmissionsData);
   const providerEligibility = safeArray<ProviderStateEligibilityRow>(providerEligibilityData);
+  const providerPayRates = safeArray<ProviderPayRateRow>(providerPayRatesData);
   const outreachLogs = safeArray<ProviderOutreachLog>(outreachLogsData);
   const readinessRows = safeArray<{ readyForSubmissions: boolean }>(readinessRowsData);
   const selectedMonthStart = normalizeMonthStart(month);
@@ -2017,6 +2043,7 @@ export default function SchedulingWorkbenchPage({
                   </Badge>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="cost"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost / Visit</TabsTrigger>
               <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
             </TabsList>
 
@@ -2042,6 +2069,15 @@ export default function SchedulingWorkbenchPage({
                 cutRowsByProvider={cutRowsByProvider}
                 eligibilityByProvider={eligibilityByProvider}
                 isLoading={isLoading || cutsLoading}
+              />
+            </TabsContent>
+
+            <TabsContent value="cost" className="mt-4 space-y-4">
+              <CostPerVisitPanel
+                month={month}
+                rows={scopedRows}
+                payRates={providerPayRates}
+                isLoading={isLoading || providerPayRatesLoading}
               />
             </TabsContent>
 
@@ -8327,6 +8363,421 @@ function PublishGateBanner({
         <div className="mt-1 text-xs text-emerald-800">{body}</div>
       </AlertDescription>
     </Alert>
+  );
+}
+
+function CostPerVisitPanel({
+  month,
+  rows,
+  payRates,
+  isLoading,
+}: {
+  month: string;
+  rows: ProviderPublishView[];
+  payRates: ProviderPayRateRow[];
+  isLoading: boolean;
+}) {
+  const upsertRate = useUpsertProviderPayRate();
+  const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
+
+  const model = useMemo(
+    () =>
+      buildSchedulingCostModel({
+        monthStart: month,
+        payRates,
+        rows: rows.map(row => ({
+          provider_id: row.provider_id,
+          provider_name: row.provider_name,
+          profession: row.profession,
+          employment_type: row.employment_type,
+          provider_source: row.provider_source,
+          decision_status: row.submission?.decision_status ?? null,
+          accepted_hours: row.submission?.accepted_hours ?? null,
+          declined_hours: row.submission?.declined_hours ?? null,
+          decision_notes: row.submission?.decision_notes ?? null,
+        })),
+      }),
+    [month, payRates, rows],
+  );
+
+  const actionableRows = useMemo(
+    () => model.providerRows.filter(row => row.acceptedHours > 0 || row.declinedHours > 0),
+    [model.providerRows],
+  );
+
+  const setDraft = (providerId: string, value: string) => {
+    setRateDrafts(current => ({ ...current, [providerId]: value }));
+  };
+
+  const saveDraft = (row: SchedulingCostProviderRow) => {
+    const raw = rateDrafts[row.provider_id];
+    const hourlyRate = Number(raw);
+    if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
+      toast.error('Enter a valid hourly rate');
+      return;
+    }
+    upsertRate.mutate(
+      {
+        providerId: row.provider_id,
+        hourlyRate,
+        effectiveFrom: month,
+        source: 'manual_workbench',
+      },
+      {
+        onSuccess: () => {
+          toast.success(`Saved ${formatCurrency(hourlyRate, 2)}/hr for ${row.provider_name}`);
+          setRateDrafts(current => {
+            const next = { ...current };
+            delete next[row.provider_id];
+            return next;
+          });
+        },
+        onError: error => toast.error(`Could not save rate: ${(error as Error).message}`),
+      },
+    );
+  };
+
+  if (isLoading) {
+    return <LoadingRow label="Loading cost per visit" />;
+  }
+
+  if (model.providerRows.length === 0) {
+    return (
+      <EmptyState
+        title={`No scheduling decisions for ${formatMonthLabel(month)} yet`}
+        body="Recalculate the schedule after availability submissions are loaded. This view uses accepted hours and provider rates from those monthly decisions."
+      />
+    );
+  }
+
+  const h = model.highlights;
+  const missingCount = model.missingRateRows.length;
+  const cpvSub =
+    missingCount > 0
+      ? `${formatHours(model.knownRateHours)} known-rate hrs; ${formatHours(model.missingRateHours)} hrs excluded until rates are entered`
+      : `${formatHours(model.knownRateHours)} known-rate hrs at 70% utilization`;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <DollarSign className="h-4 w-4 text-emerald-700" />
+            Cost / Visit · {formatMonthLabel(month)}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Uses accepted provider hours for this month. Each hour creates two visit slots; CPV assumes 70% target utilization.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <CostMetricCard
+              label="CPV @ 70%"
+              value={formatCurrency(model.costPerVisitAtTarget, 2)}
+              sub={cpvSub}
+              tone={missingCount > 0 ? 'warn' : 'good'}
+            />
+            <CostMetricCard
+              label="Approved hours"
+              value={formatHours(model.totalApprovedHours)}
+              sub="Accepted provider hours"
+              tone="neutral"
+            />
+            <CostMetricCard
+              label="Available slots"
+              value={formatWholeNumber(model.totalAvailableSlots)}
+              sub="2 visits per approved hour"
+              tone="neutral"
+            />
+            <CostMetricCard
+              label="Visits @ 70%"
+              value={formatWholeNumber(model.totalTargetUtilizedVisits)}
+              sub="Target-utilized slot capacity"
+              tone="neutral"
+            />
+            <CostMetricCard
+              label="Known wage cost"
+              value={formatCurrency(model.totalKnownWageCost)}
+              sub={missingCount > 0 ? `${missingCount} provider${missingCount === 1 ? '' : 's'} excluded` : 'All accepted hours rated'}
+              tone={missingCount > 0 ? 'warn' : 'good'}
+            />
+          </div>
+
+          {missingCount > 0 && (
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertCircle className="h-4 w-4 text-amber-700" />
+              <AlertDescription className="text-xs text-amber-900">
+                CPV excludes {formatHours(model.missingRateHours)} accepted hour{model.missingRateHours === 1 ? '' : 's'} without a provider rate.
+                Enter rates below to sync them to provider_pay_rates and refresh this estimate.
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {missingCount > 0 && (
+        <Card className="border-amber-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Missing rates</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              These accepted hours are counted in capacity, but excluded from wage cost until a rate is saved.
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead className="text-right">Accepted hrs</TableHead>
+                  <TableHead className="text-right">Slots</TableHead>
+                  <TableHead>Rate</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {model.missingRateRows.map(row => (
+                  <TableRow key={row.provider_id}>
+                    <TableCell>
+                      <div className="font-medium">{row.provider_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.profession ?? '—'}
+                        {row.employment_type ? ` · ${row.employment_type}` : ''}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatHours(row.acceptedHours)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatWholeNumber(row.availableSlots)}</TableCell>
+                    <TableCell>
+                      <div className="relative max-w-40">
+                        <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                        <Input
+                          inputMode="decimal"
+                          value={rateDrafts[row.provider_id] ?? ''}
+                          onChange={event => setDraft(row.provider_id, event.target.value)}
+                          placeholder="Hourly rate"
+                          className="pl-7"
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        onClick={() => saveDraft(row)}
+                        disabled={upsertRate.isPending || !rateDrafts[row.provider_id]}
+                      >
+                        {upsertRate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                        Save
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <RoutingDecisionCard
+          label="Lower-rate providers used"
+          value={`${h.lowerRateAcceptedProviders}`}
+          detail={`${formatHours(h.lowerRateAcceptedHours)} accepted hrs followed the lowest-rate routing rule.`}
+          tone="good"
+        />
+        <RoutingDecisionCard
+          label="Higher-rate/capacity cuts"
+          value={`${h.higherRateDeprioritizedProviders}`}
+          detail={`${formatHours(h.higherRateDeprioritizedHours)} hrs cut or deprioritized; est. ${formatCurrency(h.estimatedCutCost)} in avoided wages.`}
+          tone={h.higherRateDeprioritizedProviders > 0 ? 'warn' : 'neutral'}
+        />
+        <RoutingDecisionCard
+          label="Clinical lead overrides"
+          value={`${h.clinicalLeadProviders}`}
+          detail={`${formatHours(h.clinicalLeadHours)} hrs kept ahead of rate ranking for clinical lead priority.`}
+          tone={h.clinicalLeadProviders > 0 ? 'blue' : 'neutral'}
+        />
+        <RoutingDecisionCard
+          label="Utilization tie-breaks"
+          value={`${h.utilizationTieBreakProviders}`}
+          detail="Providers with the same rate tier used recent utilization as the fairness tie-break."
+          tone={h.utilizationTieBreakProviders > 0 ? 'blue' : 'neutral'}
+        />
+        <RoutingDecisionCard
+          label="Access protected"
+          value={`${h.protectedAccessProviders}`}
+          detail={`${formatHours(h.protectedAccessHours)} hrs protected for Friday afternoon, weekend, or access-buffer coverage.`}
+          tone={h.protectedAccessProviders > 0 ? 'good' : 'neutral'}
+        />
+        <RoutingDecisionCard
+          label="Missing-rate risk"
+          value={`${h.missingRateProviders}`}
+          detail={`${formatHours(h.missingRateHours)} accepted hrs need a rate before the CPV estimate is complete.`}
+          tone={h.missingRateProviders > 0 ? 'warn' : 'good'}
+        />
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Provider cost and routing detail</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Provider-level view of accepted hours, wage rate, projected cost, and the concise routing signals behind the decision.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Accepted</TableHead>
+                  <TableHead className="text-right">Declined</TableHead>
+                  <TableHead className="text-right">Rate</TableHead>
+                  <TableHead className="text-right">Est. cost</TableHead>
+                  <TableHead className="text-right">CPV @ 70%</TableHead>
+                  <TableHead>Routing tags</TableHead>
+                  <TableHead>Details</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {actionableRows.map(row => (
+                  <CostProviderTableRow key={row.provider_id} row={row} />
+                ))}
+                {actionableRows.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="py-6 text-center text-xs text-muted-foreground">
+                      No accepted or declined hours are available for this month yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CostMetricCard({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  tone: 'good' | 'warn' | 'neutral';
+}) {
+  const toneClass =
+    tone === 'good'
+      ? 'text-emerald-700'
+      : tone === 'warn'
+        ? 'text-amber-700'
+        : 'text-foreground';
+  return (
+    <div className="rounded-md border bg-background px-3 py-3">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className={`mt-1 text-2xl font-bold tabular-nums ${toneClass}`}>{value}</div>
+      <div className="mt-1 min-h-8 text-xs leading-snug text-muted-foreground">{sub}</div>
+    </div>
+  );
+}
+
+function RoutingDecisionCard({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: 'good' | 'warn' | 'blue' | 'neutral';
+}) {
+  const toneClass =
+    tone === 'good'
+      ? 'text-emerald-700'
+      : tone === 'warn'
+        ? 'text-amber-700'
+        : tone === 'blue'
+          ? 'text-blue-700'
+          : 'text-foreground';
+  return (
+    <Card>
+      <CardContent className="py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-medium text-muted-foreground">{label}</div>
+            <div className="mt-1 text-xs leading-snug text-muted-foreground">{detail}</div>
+          </div>
+          <div className={`text-2xl font-bold tabular-nums ${toneClass}`}>{value}</div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CostProviderTableRow({ row }: { row: SchedulingCostProviderRow }) {
+  const details = formatDecisionNoteForStaff(row.decisionDetails);
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="font-medium">{row.provider_name}</div>
+        <div className="text-xs text-muted-foreground">
+          {row.profession ?? '—'}
+          {row.employment_type ? ` · ${row.employment_type}` : ''}
+          {row.provider_source ? ` · ${row.provider_source}` : ''}
+        </div>
+      </TableCell>
+      <TableCell>
+        <StatusBadge status={row.decision_status as DecisionStatus | null | undefined} />
+      </TableCell>
+      <TableCell className="text-right tabular-nums">{formatHours(row.acceptedHours)}</TableCell>
+      <TableCell className={`text-right tabular-nums ${row.declinedHours > 0 ? 'text-red-700' : ''}`}>
+        {formatHours(row.declinedHours)}
+      </TableCell>
+      <TableCell className="text-right tabular-nums">
+        {row.hourlyRate != null ? (
+          <>
+            {formatCurrency(row.hourlyRate, 2)}
+            <div className="text-[11px] text-muted-foreground">{row.rateSourceLabel}</div>
+          </>
+        ) : (
+          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
+            Missing
+          </Badge>
+        )}
+      </TableCell>
+      <TableCell className="text-right tabular-nums">{formatCurrency(row.wageCost)}</TableCell>
+      <TableCell className="text-right tabular-nums">{formatCurrency(row.costPerVisitAtTarget, 2)}</TableCell>
+      <TableCell className="min-w-52">
+        <div className="flex flex-wrap gap-1">
+          {row.routingTags.slice(0, 4).map(tag => (
+            <Badge key={tag} variant="outline" className="text-[11px] font-medium">
+              {tag}
+            </Badge>
+          ))}
+          {row.routingTags.length > 4 && (
+            <Badge variant="outline" className="text-[11px] font-medium">
+              +{row.routingTags.length - 4}
+            </Badge>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="min-w-64 max-w-80 text-xs text-muted-foreground">
+        {details ? (
+          <details>
+            <summary className="cursor-pointer">Details</summary>
+            <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 leading-snug">
+              {details}
+            </div>
+          </details>
+        ) : (
+          '—'
+        )}
+      </TableCell>
+    </TableRow>
   );
 }
 

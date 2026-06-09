@@ -174,6 +174,17 @@ export type ProviderStateEligibilityRow = {
   metabase_active: boolean | null;
 };
 
+export type ProviderPayRateRow = {
+  id: string;
+  provider_id: string;
+  hourly_rate: number;
+  role: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  source: string | null;
+  created_at: string | null;
+};
+
 export type AvailabilitySubmissionRow = {
   id: string;
   jotform_submission_id: string;
@@ -201,6 +212,13 @@ export type AvailabilitySubmissionRow = {
 const monthIso = (m: string) => (m.length === 7 ? `${m}-01` : m);
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
+
+const monthEndIso = (m: string) => {
+  const monthStart = monthIso(m);
+  const [year, month] = monthStart.split('-').map(Number);
+  const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${year}-${pad2(month)}-${pad2(endDay)}`;
+};
 
 /** Parse a Jotform widget date string like "06-06-2026" or "2026-06-06" into ISO (YYYY-MM-DD). */
 const parseFormDateToIso = (raw: unknown): string | null => {
@@ -581,6 +599,58 @@ export function useProviderStateEligibility() {
       return (data ?? []) as ProviderStateEligibilityRow[];
     },
     staleTime: 30_000,
+  });
+}
+
+export function useProviderPayRates(month: string) {
+  const monthStart = monthIso(month);
+  const monthEnd = monthEndIso(month);
+  return useQuery({
+    queryKey: ['workbench', 'provider-pay-rates', monthStart],
+    queryFn: async (): Promise<ProviderPayRateRow[]> => {
+      const { data, error } = await clinopsDb
+        .from('provider_pay_rates')
+        .select('id, provider_id, hourly_rate, role, effective_from, effective_to, source, created_at')
+        .lte('effective_from', monthEnd)
+        .or(`effective_to.is.null,effective_to.gte.${monthStart}`)
+        .order('effective_from', { ascending: false })
+        .range(0, 49999);
+      if (error) throw error;
+      return (data ?? []) as ProviderPayRateRow[];
+    },
+    staleTime: 30_000,
+    enabled: Boolean(monthStart),
+  });
+}
+
+export function useUpsertProviderPayRate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      providerId: string;
+      hourlyRate: number;
+      effectiveFrom: string;
+      role?: string | null;
+      source?: string | null;
+    }) => {
+      const hourlyRate = Number(args.hourlyRate);
+      if (!args.providerId) throw new Error('Missing provider.');
+      if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
+        throw new Error('Enter a valid hourly rate.');
+      }
+      const { error } = await clinopsDb.rpc('upsert_provider_pay_rate', {
+        p_provider_id: args.providerId,
+        p_hourly_rate: hourlyRate,
+        p_effective_from: monthIso(args.effectiveFrom),
+        p_role: args.role ?? null,
+        p_source: args.source ?? 'manual_workbench',
+      });
+      if (error) throw new Error(error.message || 'Unable to save provider rate');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-pay-rates'] });
+      queryClient.invalidateQueries({ queryKey: ['scheduling-source-audit'] });
+    },
   });
 }
 
