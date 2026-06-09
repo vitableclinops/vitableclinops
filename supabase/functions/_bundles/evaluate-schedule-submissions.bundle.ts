@@ -139,6 +139,13 @@ export interface ProviderOverride {
   email?: string;
   /** Provider UUID, if known. */
   providerId?: string;
+  /** Exact unavailable date ranges to ignore when ClinOps has confirmed the
+   *  provider's free-text availability should supersede a bad blackout row. */
+  ignoredUnavailableDateRanges?: Array<{
+    startDate: string;
+    endDate?: string;
+    reason?: string;
+  }>;
   rules: ProviderOverrideRule[];
 }
 
@@ -147,6 +154,18 @@ export interface ProviderOverride {
  * Add new entries here rather than encoding fixes inside the validator.
  */
 export const AVAILABILITY_OVERRIDES: ProviderOverride[] = [
+  {
+    fullName: 'Abiah Grant',
+    email: 'abiah.grant@vitablehealth.com',
+    ignoredUnavailableDateRanges: [
+      {
+        startDate: '2026-07-01',
+        endDate: '2026-07-29',
+        reason: 'Abiah Grant July 2026: free-text comment confirms Wednesday 11 AM-4 PM ET availability for the month; the broad unavailable range was an entry error',
+      },
+    ],
+    rules: [],
+  },
   {
     fullName: 'Cassondra Hawkins',
     rules: [
@@ -1308,6 +1327,14 @@ export interface BuildTimelineResult extends NormalizationResult {
   forecastPolicyCutTimeline: ExpandedSlot[];
   /** Mandatory scheduling-layer removals applied after availability validation. */
   schedulingAdjustments: SchedulingAdjustmentSummary;
+  /** Confirmed provider-specific unavailable ranges ignored before expansion. */
+  unavailableDateOverrides: UnavailableDateOverrideUse[];
+}
+
+export interface UnavailableDateOverrideUse {
+  startDate: string;
+  endDate: string;
+  reason?: string;
 }
 
 /**
@@ -1327,7 +1354,8 @@ export function buildSubmissionTimeline(
     a.submitted_at.localeCompare(b.submitted_at),
   );
 
-  const unavailableDates = collectUnavailableDates(ordered);
+  const unavailableDateResolution = collectUnavailableDateResolution(ordered, identity);
+  const unavailableDates = unavailableDateResolution.dates;
 
   const input: NormalizationInput = {
     identity,
@@ -1374,6 +1402,7 @@ export function buildSubmissionTimeline(
     forecastOutOfHoursTimeline,
     forecastPolicyCutTimeline,
     schedulingAdjustments: adjusted.summary,
+    unavailableDateOverrides: unavailableDateResolution.ignoredRanges,
   };
 }
 
@@ -1418,7 +1447,17 @@ export function emailFromParsedShifts(parsed: ParsedShiftsBlob | null): string |
   return typeof e === 'string' && e.trim() ? e.trim() : null;
 }
 
-export function collectUnavailableDates(submissions: SubmissionRow[]): string[] {
+export function collectUnavailableDates(
+  submissions: SubmissionRow[],
+  identity?: ProviderIdentity,
+): string[] {
+  return collectUnavailableDateResolution(submissions, identity).dates;
+}
+
+function collectUnavailableDateResolution(
+  submissions: SubmissionRow[],
+  identity?: ProviderIdentity,
+): { dates: string[]; ignoredRanges: UnavailableDateOverrideUse[] } {
   // We take the union of all listed unavailable dates across submissions in
   // the group: a provider who lists 6/15 off in their first submission and
   // forgets to re-list it in a resubmission still shouldn't be scheduled
@@ -1430,6 +1469,8 @@ export function collectUnavailableDates(submissions: SubmissionRow[]): string[] 
   // each range and also accept a single `Date` value as a fallback for any
   // legacy entry shape.
   const out = new Set<string>();
+  const ignoredRanges: UnavailableDateOverrideUse[] = [];
+  const providerOverride = identity ? findProviderOverride(identity) : null;
   for (const sub of submissions) {
     const parsed = sub.parsed_shifts;
     if (!parsed) continue;
@@ -1437,10 +1478,34 @@ export function collectUnavailableDates(submissions: SubmissionRow[]): string[] 
       const start = parseFormDate(e['Start Date'] ?? e['Date']);
       const end = parseFormDate(e['End Date']) ?? start;
       if (!start) continue;
+      const ignored = matchIgnoredUnavailableRange(
+        start,
+        end ?? start,
+        providerOverride?.ignoredUnavailableDateRanges,
+      );
+      if (ignored) {
+        ignoredRanges.push(ignored);
+        continue;
+      }
       for (const d of expandDateRange(start, end ?? start)) out.add(d);
     }
   }
-  return Array.from(out);
+  return { dates: Array.from(out), ignoredRanges };
+}
+
+function matchIgnoredUnavailableRange(
+  start: string,
+  end: string,
+  ignoredRanges?: Array<{ startDate: string; endDate?: string; reason?: string }>,
+): UnavailableDateOverrideUse | null {
+  for (const range of ignoredRanges ?? []) {
+    const rangeStart = parseFormDate(range.startDate) ?? range.startDate;
+    const rangeEnd = parseFormDate(range.endDate) ?? range.endDate ?? rangeStart;
+    if (rangeStart === start && rangeEnd === end) {
+      return { startDate: start, endDate: end, reason: range.reason };
+    }
+  }
+  return null;
 }
 
 export function parseAllocationsFromNotes(notes: string): Array<{ state: string; hours: number }> {
@@ -3001,6 +3066,17 @@ function schedulingAdjustmentNoteParts(validation: BuildTimelineResult): string[
       `provider_meeting_blackout_hours=${roundEval2(validation.schedulingAdjustments.hours_removed_for_provider_meeting_blackouts)}`,
       `provider_meeting_blackout_reason=${first.reason}`,
     );
+  }
+
+  if (validation.unavailableDateOverrides.length > 0) {
+    const first = validation.unavailableDateOverrides[0];
+    noteParts.push(
+      `unavailable_override_count=${validation.unavailableDateOverrides.length}`,
+      `unavailable_override_ranges=${validation.unavailableDateOverrides.map(r => `${r.startDate}..${r.endDate}`).join(',')}`,
+    );
+    if (first.reason) {
+      noteParts.push(`unavailable_override_reason=${first.reason}`);
+    }
   }
 
   return noteParts;

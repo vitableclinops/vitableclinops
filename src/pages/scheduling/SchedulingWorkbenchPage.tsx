@@ -2987,6 +2987,11 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   if (unavailableHours) {
     add(`${unavailableHours.replace(/h$/, '')} hours were intentionally removed because the provider listed those dates as unavailable.`);
   }
+  const unavailableOverrideRanges = valueFromDecisionNote(raw, 'unavailable_override_ranges');
+  if (unavailableOverrideRanges) {
+    const unavailableOverrideReason = valueFromDecisionNote(raw, 'unavailable_override_reason');
+    add(`Confirmed availability override: ignored unavailable range ${unavailableOverrideRanges} so the provider's stated availability could be considered${unavailableOverrideReason ? ` (${unavailableOverrideReason})` : ''}.`);
+  }
   const allocations = valueFromDecisionNote(raw, 'alloc');
   if (allocations) {
     add(`Accepted hours were assigned by state: ${allocations}.`);
@@ -3063,6 +3068,9 @@ const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
   }
   if (/unavailable|off-day|off day/.test(text)) {
     add('Unavailable date', 'amber');
+  }
+  if (/unavailable_override|confirmed availability override/.test(text)) {
+    add('Availability correction', 'emerald');
   }
   if (/license|licensure|state-coverage|eligib|no state allocation/.test(text)) {
     add('License/state issue', 'red');
@@ -9547,6 +9555,8 @@ function classifyReason(text: string): string {
     return 'Provider meeting blocked';
   if (t.includes('long_shift_break') || t.includes('mandatory 1-hour break'))
     return 'Required shift break';
+  if (t.includes('unavailable_override'))
+    return 'Availability correction';
   if (t.includes('directshifts_brittany_priority'))
     return 'DirectShifts Brittney Afram priority';
   if (t.includes('access_growth_buffer') || t.includes('access buffer'))

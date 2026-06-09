@@ -475,7 +475,8 @@ describe('Forecast usage', () => {
 });
 
 describe('Default override config covers required providers', () => {
-  it('has rules for the four named providers', () => {
+  it('has rules for the named providers with confirmed submission corrections', () => {
+    expect(AVAILABILITY_OVERRIDES.find(o => o.fullName === 'Abiah Grant')).toBeDefined();
     expect(AVAILABILITY_OVERRIDES.find(o => o.fullName === 'Cassondra Hawkins')).toBeDefined();
     expect(AVAILABILITY_OVERRIDES.find(o => o.fullName === 'Akosua Norgbey')).toBeDefined();
     expect(AVAILABILITY_OVERRIDES.find(o => o.fullName === 'Melissa Harris-Perotti')).toBeDefined();

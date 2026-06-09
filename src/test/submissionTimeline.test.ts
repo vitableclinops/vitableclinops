@@ -614,6 +614,45 @@ describe('unavailable_dates filtering', () => {
     );
     expect(result.timeline.map(s => s.date)).not.toContain('2026-06-01');
   });
+
+  it('keeps Abiah Grant July Wednesdays when the confirmed comment contradicts a broad unavailable range', () => {
+    const submission: SubmissionRow = {
+      id: 'sub-abiah-july',
+      submitted_at: '2026-06-01T21:01:26Z',
+      parsed_shifts: {
+        email: 'abiah.grant@vitablehealth.com',
+        comments: 'I am available every Wednesday, 11 am - 4 pm ET for the month of July. Thank you',
+        recurring_virtual: JSON.stringify([
+          { 'Day of Week': 'Wednesday', 'Start Time (ET)': '11:00 AM', 'End Time (ET)': '04:00 PM' },
+        ]),
+        unavailable_dates: JSON.stringify([
+          { 'Start Date': '07-01-2026', 'End Date': '07-29-2026' },
+        ]),
+      } as ParsedShiftsBlob,
+    };
+
+    const result = buildSubmissionTimeline(
+      [submission],
+      { name: 'Abiah Grant', email: 'abiah.grant@vitablehealth.com' },
+      '2026-07-01',
+    );
+
+    expect(result.summary.final_approvable_hours).toBe(25);
+    expect(result.summary.hours_removed_for_unavailability).toBe(0);
+    expect(result.timeline.map(s => s.date).sort()).toEqual([
+      '2026-07-01',
+      '2026-07-08',
+      '2026-07-15',
+      '2026-07-22',
+      '2026-07-29',
+    ]);
+    expect(result.unavailableDateOverrides).toEqual([
+      expect.objectContaining({
+        startDate: '2026-07-01',
+        endDate: '2026-07-29',
+      }),
+    ]);
+  });
 });
 
 describe('needs_review scenarios (no auto-decision)', () => {

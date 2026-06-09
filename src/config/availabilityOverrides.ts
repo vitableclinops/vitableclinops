@@ -88,6 +88,13 @@ export interface ProviderOverride {
   email?: string;
   /** Provider UUID, if known. */
   providerId?: string;
+  /** Exact unavailable date ranges to ignore when ClinOps has confirmed the
+   *  provider's free-text availability should supersede a bad blackout row. */
+  ignoredUnavailableDateRanges?: Array<{
+    startDate: string;
+    endDate?: string;
+    reason?: string;
+  }>;
   rules: ProviderOverrideRule[];
 }
 
@@ -96,6 +103,18 @@ export interface ProviderOverride {
  * Add new entries here rather than encoding fixes inside the validator.
  */
 export const AVAILABILITY_OVERRIDES: ProviderOverride[] = [
+  {
+    fullName: 'Abiah Grant',
+    email: 'abiah.grant@vitablehealth.com',
+    ignoredUnavailableDateRanges: [
+      {
+        startDate: '2026-07-01',
+        endDate: '2026-07-29',
+        reason: 'Abiah Grant July 2026: free-text comment confirms Wednesday 11 AM-4 PM ET availability for the month; the broad unavailable range was an entry error',
+      },
+    ],
+    rules: [],
+  },
   {
     fullName: 'Cassondra Hawkins',
     rules: [

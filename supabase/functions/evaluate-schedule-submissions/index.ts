@@ -551,6 +551,17 @@ function schedulingAdjustmentNoteParts(validation: BuildTimelineResult): string[
     );
   }
 
+  if (validation.unavailableDateOverrides.length > 0) {
+    const first = validation.unavailableDateOverrides[0];
+    noteParts.push(
+      `unavailable_override_count=${validation.unavailableDateOverrides.length}`,
+      `unavailable_override_ranges=${validation.unavailableDateOverrides.map(r => `${r.startDate}..${r.endDate}`).join(',')}`,
+    );
+    if (first.reason) {
+      noteParts.push(`unavailable_override_reason=${first.reason}`);
+    }
+  }
+
   return noteParts;
 }
 
