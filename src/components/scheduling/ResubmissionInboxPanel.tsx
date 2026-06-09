@@ -18,13 +18,6 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Table,
   TableBody,
   TableCell,
@@ -46,6 +39,7 @@ import {
   canonicalShiftHours,
   diffParsedShifts,
   extractProviderNotes,
+  filterCanonicalSubmissionByMonth,
   type CanonicalSubmission,
   type SubmissionDiff,
 } from '@/lib/scheduling/submissionDiff';
@@ -93,6 +87,8 @@ const formatMonthShort = (iso: string) => {
     timeZone: 'UTC',
   });
 };
+
+const normalizeMonthStart = (iso: string) => (iso.length === 7 ? `${iso}-01` : iso);
 
 const formatTimestamp = (iso: string) => new Date(iso).toLocaleString();
 
@@ -150,6 +146,7 @@ function computeNecessity(
   prior: CanonicalSubmission,
   next: CanonicalSubmission,
   publishedShifts: ShiftRow[],
+  targetMonth: string,
 ): NecessitySignals {
   // Touches-already-published: which prior shifts were removed or modified
   // and already have publish_status=published_to_homebase or confirmed?
@@ -166,7 +163,10 @@ function computeNecessity(
 
   const publishedShiftHits: ShiftRow[] = [];
   const DOW_NAME = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const targetMonthStart = normalizeMonthStart(targetMonth);
+  const targetMonthPrefix = targetMonthStart.slice(0, 7);
   for (const s of publishedShifts) {
+    if (!s.shift_date.startsWith(targetMonthPrefix)) continue;
     if (!isHomebaseDone(s) && !isEhrDone(s)) continue;
     if (removedOrModifiedDates.has(s.shift_date)) {
       publishedShiftHits.push(s);
@@ -246,15 +246,33 @@ export function ResubmissionInboxPanel({
     return map;
   }, [windowShifts]);
 
+  const anchorMonthStart = normalizeMonthStart(anchorMonth);
+
   const allEnriched: EnrichedGroup[] = useMemo(() => {
-    const groups = groupSubmissionsForInbox(submissions);
+    const groups = groupSubmissionsForInbox(submissions).filter(
+      g => normalizeMonthStart(g.target_month) === anchorMonthStart,
+    );
     return groups
       .map(g => {
-        const priorCanonical = canonicalizeParsedShifts(g.prior.parsed_shifts);
-        const latestCanonical = canonicalizeParsedShifts(g.latest.parsed_shifts);
-        const diff = diffParsedShifts(g.prior.parsed_shifts, g.latest.parsed_shifts);
+        const priorCanonical = filterCanonicalSubmissionByMonth(
+          canonicalizeParsedShifts(g.prior.parsed_shifts),
+          g.target_month,
+        );
+        const latestCanonical = filterCanonicalSubmissionByMonth(
+          canonicalizeParsedShifts(g.latest.parsed_shifts),
+          g.target_month,
+        );
+        const diff = diffParsedShifts(g.prior.parsed_shifts, g.latest.parsed_shifts, {
+          targetMonth: g.target_month,
+        });
         const publishedShifts = shiftsByProvider.get(g.provider_id) ?? [];
-        const signals = computeNecessity(diff, priorCanonical, latestCanonical, publishedShifts);
+        const signals = computeNecessity(
+          diff,
+          priorCanonical,
+          latestCanonical,
+          publishedShifts,
+          g.target_month,
+        );
         return {
           ...g,
           diff,
@@ -264,22 +282,7 @@ export function ResubmissionInboxPanel({
         };
       })
       .filter(g => g.diff.hasChanges || g.latest.human_review_state === 'pending');
-  }, [submissions, shiftsByProvider]);
-
-  // Month chips for filtering. Default = all months in scope. Provider may
-  // resubmit May while we're scheduling June, so showing every month at once
-  // is the default.
-  const monthsInScope = useMemo(() => {
-    const set = new Set(allEnriched.map(g => g.target_month));
-    return Array.from(set).sort();
-  }, [allEnriched]);
-
-  const [monthFilter, setMonthFilter] = useState<string>('all');
-
-  const enriched = useMemo(
-    () => (monthFilter === 'all' ? allEnriched : allEnriched.filter(g => g.target_month === monthFilter)),
-    [allEnriched, monthFilter],
-  );
+  }, [submissions, shiftsByProvider, anchorMonthStart]);
 
   const [open, setOpen] = useState<EnrichedGroup | null>(null);
 
@@ -299,17 +302,11 @@ export function ResubmissionInboxPanel({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No resubmissions to review. Every provider has either one submission
-          per month or no content-changing follow-ups.
+          No {formatMonth(anchorMonthStart)} resubmissions to review. Every provider has either
+          one submission for this month or no content-changing follow-ups.
         </AlertDescription>
       </Alert>
     );
-  }
-
-  // Group counts per month for the filter labels.
-  const countsByMonth = new Map<string, number>();
-  for (const g of allEnriched) {
-    countsByMonth.set(g.target_month, (countsByMonth.get(g.target_month) ?? 0) + 1);
   }
 
   return (
@@ -323,28 +320,12 @@ export function ResubmissionInboxPanel({
                 Resubmission inbox
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                {allEnriched.length} resubmission{allEnriched.length === 1 ? '' : 's'} across{' '}
-                {monthsInScope.length} month{monthsInScope.length === 1 ? '' : 's'}. Providers can
-                resubmit any month at any time — each (provider, month) is reviewed independently.
-                Open a card to see prior vs new, the diff, and whether the change is worth taking
-                on (Approve) or pushing back on (Park for follow-up).
+                {allEnriched.length} resubmission{allEnriched.length === 1 ? '' : 's'} for{' '}
+                {formatMonth(anchorMonthStart)}. Open a card to see prior vs new, the diff, and
+                whether the change is worth taking on (Approve) or pushing back on (Park for
+                follow-up).
               </p>
             </div>
-            {monthsInScope.length > 1 && (
-              <Select value={monthFilter} onValueChange={setMonthFilter}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All months ({allEnriched.length})</SelectItem>
-                  {monthsInScope.map(m => (
-                    <SelectItem key={m} value={m}>
-                      {formatMonthShort(m)} ({countsByMonth.get(m) ?? 0})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -360,7 +341,7 @@ export function ResubmissionInboxPanel({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {enriched.map(g => (
+              {allEnriched.map(g => (
                 <TableRow
                   key={`${g.provider_id}|${g.target_month}`}
                   className="cursor-pointer"

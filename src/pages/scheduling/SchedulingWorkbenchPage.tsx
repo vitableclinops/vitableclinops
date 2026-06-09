@@ -190,6 +190,8 @@ const formatMonthLabel = (iso: string) => {
   });
 };
 
+const normalizeMonthStart = (iso: string) => (iso.length === 7 ? `${iso}-01` : iso);
+
 const weeksInMonth = (iso: string) => {
   const [y, m] = iso.split('-').map(Number);
   return new Date(Date.UTC(y, m, 0)).getUTCDate() / 7;
@@ -928,6 +930,7 @@ export default function SchedulingWorkbenchPage({
   const providerEligibility = safeArray<ProviderStateEligibilityRow>(providerEligibilityData);
   const outreachLogs = safeArray<ProviderOutreachLog>(outreachLogsData);
   const readinessRows = safeArray<{ readyForSubmissions: boolean }>(readinessRowsData);
+  const selectedMonthStart = normalizeMonthStart(month);
   const setupIssuesCount = useMemo(
     () => readinessRows.filter(r => !r.readyForSubmissions).length,
     [readinessRows],
@@ -1191,13 +1194,17 @@ export default function SchedulingWorkbenchPage({
   // Resubmission inbox count — # of groups with a content-changing latest
   // submission that hasn't been resolved yet. Drives the tab badge.
   const inboxActionableCount = useMemo(() => {
-    const groups = groupSubmissionsForInbox(inboxSubmissions);
+    const groups = groupSubmissionsForInbox(
+      inboxSubmissions.filter(s => normalizeMonthStart(s.target_month) === selectedMonthStart),
+    );
     return groups.filter(g => {
       if (g.latest.human_review_state === 'approved') return false;
-      const d = diffParsedShifts(g.prior.parsed_shifts, g.latest.parsed_shifts);
+      const d = diffParsedShifts(g.prior.parsed_shifts, g.latest.parsed_shifts, {
+        targetMonth: selectedMonthStart,
+      });
       return d.hasChanges;
     }).length;
-  }, [inboxSubmissions]);
+  }, [inboxSubmissions, selectedMonthStart]);
 
   // Providers who listed off-days for this month — Lindsay's request so MSS can
   // see at-a-glance who's unavailable when sourcing a licensed provider.
@@ -1334,10 +1341,11 @@ export default function SchedulingWorkbenchPage({
   const scopedInboxSubs = useMemo(
     () =>
       inboxSubmissions.filter(s =>
+        normalizeMonthStart(s.target_month) === selectedMonthStart &&
         (isMh ? mhProviderName(s.provider_name) : !mhProviderName(s.provider_name)) &&
         mhSlMatches(null, s.provider_name),
       ),
-    [inboxSubmissions, isMh, mhSlMatches],
+    [inboxSubmissions, selectedMonthStart, isMh, mhSlMatches],
   );
   const scopedUnmatched = useMemo(
     () =>
@@ -1359,10 +1367,12 @@ export default function SchedulingWorkbenchPage({
     const groups = groupSubmissionsForInbox(scopedInboxSubs);
     return groups.filter(g => {
       if (g.latest.human_review_state === 'approved') return false;
-      const d = diffParsedShifts(g.prior.parsed_shifts, g.latest.parsed_shifts);
+      const d = diffParsedShifts(g.prior.parsed_shifts, g.latest.parsed_shifts, {
+        targetMonth: selectedMonthStart,
+      });
       return d.hasChanges;
     }).length;
-  }, [scopedInboxSubs]);
+  }, [scopedInboxSubs, selectedMonthStart]);
   const scopedSubmittedAvailabilityHours = useMemo(() => {
     const latest = new Map<string, AvailabilitySubmissionRow>();
     for (const row of scopedAvailabilitySubs) {
@@ -1518,6 +1528,46 @@ export default function SchedulingWorkbenchPage({
 
   const reevaluateNow = () => {
     runScheduleRecalculation();
+  };
+
+  const handleResolveNeedsReview = (args: ResolveArgs) => {
+    const shouldRecalculateAfterApproval =
+      Boolean(args.correction_summary) && args.decision === 'accepted';
+    const beforeRecalculation = buildRecalculationSnapshot(
+      scopedRows,
+      scopedFlatAccepted,
+      scopedCutRows,
+    );
+    resolveReview.mutate(args, {
+      onSuccess: () => {
+        if (shouldRecalculateAfterApproval) {
+          toast.success(
+            `Approved corrected hours for ${args.provider_name}. Recalculating ${formatMonthLabel(month)} now.`,
+          );
+          setReviewTab('recalculate');
+          updateWorkbenchParams({ section: 'review', view: 'recalculate', replace: true });
+          runScheduleRecalculation(
+            beforeRecalculation,
+            `Approved corrected hours and recalculated ${formatMonthLabel(month)}`,
+          );
+        } else {
+          toast.success(
+            args.decision === 'accepted'
+              ? `Approved hours for ${args.provider_name}`
+              : `Declined hours for ${args.provider_name}`,
+          );
+        }
+        refetch();
+        refetchShifts();
+        refetchCuts();
+      },
+      onError: e => {
+        toast.error(`Could not resolve: ${(e as Error).message}`);
+        refetch();
+        refetchShifts();
+        refetchCuts();
+      },
+    });
   };
 
   return (
@@ -1810,6 +1860,8 @@ export default function SchedulingWorkbenchPage({
             month={month}
             rows={scopedAvailabilitySubs}
             isLoading={availabilityLoading}
+            onResolve={handleResolveNeedsReview}
+            isResolvePending={resolveReview.isPending}
           />
         </TabsContent>
 
@@ -1901,45 +1953,7 @@ export default function SchedulingWorkbenchPage({
                 month={month}
                 rows={scopedNeedsReview}
                 isLoading={isLoading}
-                onResolve={(args) => {
-                  const shouldRecalculateAfterApproval =
-                    Boolean(args.correction_summary) && args.decision === 'accepted';
-                  const beforeRecalculation = buildRecalculationSnapshot(
-                    scopedRows,
-                    scopedFlatAccepted,
-                    scopedCutRows,
-                  );
-                  resolveReview.mutate(args, {
-                    onSuccess: () => {
-                      if (shouldRecalculateAfterApproval) {
-                        toast.success(
-                          `Approved corrected hours for ${args.provider_name}. Recalculating ${formatMonthLabel(month)} now.`,
-                        );
-                        setReviewTab('recalculate');
-                        updateWorkbenchParams({ section: 'review', view: 'recalculate', replace: true });
-                        runScheduleRecalculation(
-                          beforeRecalculation,
-                          `Approved corrected hours and recalculated ${formatMonthLabel(month)}`,
-                        );
-                      } else {
-                        toast.success(
-                          args.decision === 'accepted'
-                          ? `Approved hours for ${args.provider_name}`
-                          : `Declined hours for ${args.provider_name}`,
-                        );
-                      }
-                      refetch();
-                      refetchShifts();
-                      refetchCuts();
-                    },
-                    onError: e => {
-                      toast.error(`Could not resolve: ${(e as Error).message}`);
-                      refetch();
-                      refetchShifts();
-                      refetchCuts();
-                    },
-                  });
-                }}
+                onResolve={handleResolveNeedsReview}
                 isPending={resolveReview.isPending}
               />
             </TabsContent>
@@ -2613,17 +2627,22 @@ function ProviderStatusSearchPanel({
 
   const resubmitStatus = useMemo(() => {
     if (!selectedRow) return 'No resubmit pending';
-    const groups = groupSubmissionsForInbox(inboxSubmissions);
+    const targetMonth = normalizeMonthStart(month);
+    const groups = groupSubmissionsForInbox(
+      inboxSubmissions.filter(s => normalizeMonthStart(s.target_month) === targetMonth),
+    );
     const group = groups.find(g =>
       (g.provider_id && g.provider_id === selectedRow.provider_id) ||
       g.provider_name.toLowerCase() === selectedRow.provider_name.toLowerCase(),
     );
     if (!group) return 'No resubmit pending';
-    const diff = diffParsedShifts(group.prior.parsed_shifts, group.latest.parsed_shifts);
+    const diff = diffParsedShifts(group.prior.parsed_shifts, group.latest.parsed_shifts, {
+      targetMonth,
+    });
     if (group.latest.human_review_state === 'approved') return 'Approved resubmit';
     if (group.latest.human_review_state === 'parked') return 'Parked resubmit';
     return diff.hasChanges ? 'Needs resubmit review' : 'Resubmit has no schedule change';
-  }, [inboxSubmissions, selectedRow]);
+  }, [inboxSubmissions, month, selectedRow]);
 
   const timeOff = selectedRow
     ? timeOffRows.find(entry => entry.row.provider_id === selectedRow.provider_id)
@@ -2916,6 +2935,134 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   return lines.length > 0 ? lines.join('\n') : raw;
 }
 
+type ReasonTag = {
+  label: string;
+  tone?: 'amber' | 'blue' | 'red' | 'slate' | 'emerald';
+};
+
+const REASON_TAG_STYLES: Record<NonNullable<ReasonTag['tone']>, string> = {
+  amber: 'border-amber-200 bg-amber-50 text-amber-800',
+  blue: 'border-blue-200 bg-blue-50 text-blue-800',
+  red: 'border-red-200 bg-red-50 text-red-800',
+  slate: 'border-slate-200 bg-slate-50 text-slate-700',
+  emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+};
+
+const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
+  const text = (raw ?? '').toLowerCase();
+  const tags: ReasonTag[] = [];
+  const add = (label: string, tone: ReasonTag['tone'] = 'slate') => {
+    if (!tags.some(tag => tag.label === label)) tags.push({ label, tone });
+  };
+
+  if (!text.trim()) return [];
+  if (/end time.*before start|end time is at or before start|overnight/.test(text)) {
+    add('End before start', 'red');
+  }
+  if (/single shift duration|exceeds max_single_shift|over 12h|over 12/.test(text)) {
+    add('Shift too long', 'red');
+  }
+  if (/malformed|unparseable|parse|invalid time|could not be read/.test(text)) {
+    add('Malformed time', 'red');
+  }
+  if (/unrealistic|too many|high hours/.test(text)) {
+    add('High hours', 'amber');
+  }
+  if (/trimmed|oversupply|surplus|accepted hours capped|network demand|state already had enough/.test(text)) {
+    add('Oversupply cut', 'amber');
+  }
+  if (/outside.*business|outside approved scheduling|operating hours|out-of-hours/.test(text)) {
+    add('Outside hours', 'amber');
+  }
+  if (/unavailable|off-day|off day/.test(text)) {
+    add('Unavailable date', 'amber');
+  }
+  if (/license|licensure|state-coverage|eligib|no state allocation/.test(text)) {
+    add('License/state issue', 'red');
+  }
+  if (/physician_reserved|md\/do|md-only|physician capacity/.test(text)) {
+    add('MD-only reserve', 'blue');
+  }
+  if (/clinical lead|clinical supervisor/.test(text)) {
+    add('Clinical lead priority', 'emerald');
+  }
+  if (/rate-ranked|lowest current hourly rate|provider_rate_policy|current scheduling rate|same rate tier|rate tier|directshifts/.test(text)) {
+    add('Rate ranking', 'blue');
+  }
+  if (/utilization|fairness tie-break/.test(text)) {
+    add('Utilization tiebreak', 'blue');
+  }
+  if (/scarce_window|friday afternoon|weekend access|protected/.test(text)) {
+    add('Protected access', 'emerald');
+  }
+  if (/access_growth_buffer|access buffer|buffer hours|monthly targets/.test(text)) {
+    add('Access buffer', 'emerald');
+  }
+  if (/alloc=|assigned by state|state allocation/.test(text)) {
+    add('State allocation', 'blue');
+  }
+  if (/state_gaps|still under-covered|under-covered/.test(text)) {
+    add('Remaining gaps', 'amber');
+  }
+  if (/base_state_demand|historical state need/.test(text)) {
+    add('Historical demand', 'slate');
+  }
+  if (/provider_meeting_blackout|provider meeting/.test(text)) {
+    add('Meeting blackout', 'slate');
+  }
+  if (/long_shift_break|required 1-hour break|mandatory 1-hour break/.test(text)) {
+    add('Required break', 'slate');
+  }
+
+  return tags.length > 0 ? tags : [{ label: 'Needs review', tone: 'slate' }];
+};
+
+function ReasonSummary({
+  text,
+  detailsText,
+  maxTags = 4,
+}: {
+  text: string | null | undefined;
+  detailsText?: string | null;
+  maxTags?: number;
+}) {
+  const raw = (text ?? '').trim();
+  const details = (detailsText ?? raw).trim();
+  const tags = reasonTagsForText(raw);
+  const visibleTags = tags.slice(0, maxTags);
+  if (!raw && !details) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-1">
+        {visibleTags.map(tag => (
+          <Badge
+            key={tag.label}
+            variant="outline"
+            className={cn('text-[11px] font-medium', REASON_TAG_STYLES[tag.tone ?? 'slate'])}
+          >
+            {tag.label}
+          </Badge>
+        ))}
+        {tags.length > visibleTags.length && (
+          <Badge variant="outline" className="text-[11px] font-medium">
+            +{tags.length - visibleTags.length}
+          </Badge>
+        )}
+      </div>
+      {details && (
+        <details>
+          <summary className="cursor-pointer text-[11px] text-muted-foreground">
+            Details
+          </summary>
+          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-snug text-muted-foreground">
+            {details}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function needsReviewReasonLabel(warnings: string[], notes: string | null | undefined): string {
   const text = [...warnings, notes ?? ''].join(' ').toLowerCase();
   if (text.includes('state') || text.includes('license') || text.includes('eligib')) {
@@ -2957,11 +3104,32 @@ function AvailabilitySubmissionsPanel({
   month,
   rows,
   isLoading,
+  onResolve,
+  isResolvePending,
 }: {
   month: string;
   rows: AvailabilitySubmissionRow[];
   isLoading: boolean;
+  onResolve: (args: ResolveArgs) => void;
+  isResolvePending: boolean;
 }) {
+  const [resolutionTarget, setResolutionTarget] = useState<SubmissionResolutionTarget | null>(null);
+
+  const openResolutionDialog = (
+    row: AvailabilitySubmissionRow,
+    decision: 'accepted' | 'declined',
+    reasonLabel: string,
+    startWithCorrection = false,
+  ) => {
+    setResolutionTarget({
+      submission: row,
+      providerName: row.provider_name,
+      decision,
+      reasonLabel,
+      startWithCorrection,
+    });
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -2985,105 +3153,178 @@ function AvailabilitySubmissionsPanel({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
-          Availability submissions · {formatMonthLabel(month)}
-        </CardTitle>
-        <p className="text-xs text-muted-foreground mt-1">
-          Source: Jotform form 252224341308043 → sync-jotform-submissions →
-          schedule_submissions.
-        </p>
-      </CardHeader>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Provider</TableHead>
-              <TableHead>Shift type</TableHead>
-              <TableHead>Recurring virtual</TableHead>
-              <TableHead>One-off virtual</TableHead>
-              <TableHead>In-home / clinic</TableHead>
-              <TableHead>Unavailable / exceptions</TableHead>
-              <TableHead className="text-right">Expanded hrs</TableHead>
-              <TableHead>Submitted</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map(row => {
-              const parsed = asParsedBlob(row.parsed_shifts);
-              const shiftTypes = Array.isArray(parsed.shift_types)
-                ? (parsed.shift_types as unknown[]).map(String).join(', ')
-                : String(parsed.shift_types ?? '—');
-              const warnings = Array.isArray(row.validation_warnings)
-                ? row.validation_warnings
-                : [];
-              return (
-                <TableRow key={row.id}>
-                  <TableCell className="align-top">
-                    <div className="font-medium">{row.provider_name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.provider_email ?? 'No email'} · {formatMonthLabel(row.target_month)}
-                    </div>
-                    {!row.provider_id && (
-                      <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
-                        Unmatched
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="align-top text-xs">{shiftTypes || '—'}</TableCell>
-                  <TableCell className="align-top text-xs max-w-[220px]">
-                    {formatAvailabilityRows(parsed.recurring_virtual, 'recurring')}
-                  </TableCell>
-                  <TableCell className="align-top text-xs max-w-[220px]">
-                    {formatAvailabilityRows(parsed.one_off_virtual, 'dated')}
-                  </TableCell>
-                  <TableCell className="align-top text-xs max-w-[220px]">
-                    {formatAvailabilityRows(parsed.in_home_clinic, 'dated')}
-                  </TableCell>
-                  <TableCell className="align-top text-xs max-w-[220px]">
-                    {formatAvailabilityRows(parsed.unavailable_dates, 'unavailable')}
-                    <div className="mt-1 text-muted-foreground">
-                      Last-minute: {parsed.last_minute_ok == null ? '—' : parsed.last_minute_ok ? 'yes' : 'no'}
-                      {parsed.travel_miles != null ? ` · ${parsed.travel_miles} mi` : ''}
-                    </div>
-                    {parsed.comments ? (
-                      <div className="mt-1 text-muted-foreground">Comments: {String(parsed.comments)}</div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="align-top text-right tabular-nums">
-                    <div>{formatHours(expandedSubmittedHours(row))}</div>
-                    <div className="text-xs text-muted-foreground">
-                      accepted {formatHours(row.accepted_hours)}
-                    </div>
-                  </TableCell>
-                  <TableCell className="align-top text-xs text-muted-foreground">
-                    <div>{formatRelativeTime(row.submitted_at)}</div>
-                    <StatusBadge status={row.decision_status as DecisionStatus} />
-                    {warnings.length > 0 && (
-                      <div className="mt-1 text-amber-700">
-                        {warnings.slice(0, 2).map(String).join(' · ')}
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Availability submissions · {formatMonthLabel(month)}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Source: Jotform form 252224341308043 → sync-jotform-submissions →
+            schedule_submissions.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead>Shift type</TableHead>
+                <TableHead>Recurring virtual</TableHead>
+                <TableHead>One-off virtual</TableHead>
+                <TableHead>In-home / clinic</TableHead>
+                <TableHead>Unavailable / exceptions</TableHead>
+                <TableHead className="text-right">Expanded hrs</TableHead>
+                <TableHead>Submitted</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(row => {
+                const parsed = asParsedBlob(row.parsed_shifts);
+                const shiftTypes = Array.isArray(parsed.shift_types)
+                  ? (parsed.shift_types as unknown[]).map(String).join(', ')
+                  : String(parsed.shift_types ?? '—');
+                const warnings = warningStringsFromUnknown(row.validation_warnings);
+                const needsReview = row.decision_status === 'needs_review';
+                const isPending = row.decision_status === 'pending';
+                const isSuperseded = row.decision_status === 'superseded';
+                const isActionable = needsReview || isPending;
+                const reasonLabel = needsReviewReasonLabel(warnings, row.decision_notes);
+                const canResolve = Boolean(row.provider_id);
+                const reviewReasonText = [...warnings, row.decision_notes ?? ''].filter(Boolean).join('\n');
+                return (
+                  <TableRow
+                    key={row.id}
+                    className={isSuperseded ? 'bg-slate-100/80 text-muted-foreground opacity-70' : undefined}
+                  >
+                    <TableCell className="align-top">
+                      <div className="font-medium">{row.provider_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.provider_email ?? 'No email'} · {formatMonthLabel(row.target_month)}
                       </div>
-                    )}
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-[11px] text-muted-foreground">
-                        Raw / parsed
-                      </summary>
-                      <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-[10px] leading-snug">
-                        {compactJson({
-                          parsed_shifts: row.parsed_shifts,
-                          raw_answers: row.raw_answers,
-                        })}
-                      </pre>
-                    </details>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+                      {!row.provider_id && (
+                        <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                          Unmatched
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="align-top text-xs">{shiftTypes || '—'}</TableCell>
+                    <TableCell className="align-top text-xs max-w-[220px]">
+                      {formatAvailabilityRows(parsed.recurring_virtual, 'recurring')}
+                    </TableCell>
+                    <TableCell className="align-top text-xs max-w-[220px]">
+                      {formatAvailabilityRows(parsed.one_off_virtual, 'dated')}
+                    </TableCell>
+                    <TableCell className="align-top text-xs max-w-[220px]">
+                      {formatAvailabilityRows(parsed.in_home_clinic, 'dated')}
+                    </TableCell>
+                    <TableCell className="align-top text-xs max-w-[220px]">
+                      {formatAvailabilityRows(parsed.unavailable_dates, 'unavailable')}
+                      <div className="mt-1 text-muted-foreground">
+                        Last-minute: {parsed.last_minute_ok == null ? '—' : parsed.last_minute_ok ? 'yes' : 'no'}
+                        {parsed.travel_miles != null ? ` · ${parsed.travel_miles} mi` : ''}
+                      </div>
+                      {parsed.comments ? (
+                        <div className="mt-1 text-muted-foreground">Comments: {String(parsed.comments)}</div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="align-top text-right tabular-nums">
+                      <div>{formatHours(expandedSubmittedHours(row))}</div>
+                      <div className="text-xs text-muted-foreground">
+                        accepted {formatHours(row.accepted_hours)}
+                      </div>
+                    </TableCell>
+                    <TableCell className="align-top text-xs text-muted-foreground">
+                      <div>{formatRelativeTime(row.submitted_at)}</div>
+                      <StatusBadge status={row.decision_status as DecisionStatus} />
+                      {warnings.length > 0 && (
+                        <div className="mt-1">
+                          <ReasonSummary text={reviewReasonText} detailsText={warnings.join('\n')} />
+                        </div>
+                      )}
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                          Raw / parsed
+                        </summary>
+                        <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-[10px] leading-snug">
+                          {compactJson({
+                            parsed_shifts: row.parsed_shifts,
+                            raw_answers: row.raw_answers,
+                          })}
+                        </pre>
+                      </details>
+                    </TableCell>
+                    <TableCell className="align-top text-right">
+                      {isActionable ? (
+                        canResolve ? (
+                          <div className="flex flex-col items-end gap-1">
+                            {needsReview && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7"
+                                disabled={isResolvePending}
+                                onClick={() => openResolutionDialog(row, 'accepted', reasonLabel, true)}
+                              >
+                                <Pencil className="h-3 w-3 mr-1" />
+                                Set times
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              className="h-7"
+                              disabled={isResolvePending}
+                              onClick={() =>
+                                openResolutionDialog(
+                                  row,
+                                  'accepted',
+                                  needsReview ? reasonLabel : 'pending submission',
+                                )
+                              }
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                              disabled={isResolvePending}
+                              onClick={() =>
+                                openResolutionDialog(
+                                  row,
+                                  'declined',
+                                  needsReview ? reasonLabel : 'pending submission',
+                                )
+                              }
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="bg-amber-50 text-amber-800">
+                            Link provider first
+                          </Badge>
+                        )
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      <SubmissionResolutionDialog
+        month={month}
+        target={resolutionTarget}
+        onClose={() => setResolutionTarget(null)}
+        onResolve={onResolve}
+        isPending={isResolvePending}
+      />
+    </>
   );
 }
 
@@ -4306,98 +4547,71 @@ type ResolveArgs = {
   provider_name: string;
 };
 
-function NeedsReviewPanel({
+type ReviewableSubmission = Pick<
+  AvailabilitySubmissionRow,
+  | 'id'
+  | 'provider_id'
+  | 'provider_name'
+  | 'target_month'
+  | 'decision_status'
+  | 'decision_notes'
+  | 'parsed_shifts'
+  | 'validation_warnings'
+  | 'raw_requested_hours'
+  | 'normalized_requested_hours'
+  | 'effective_hours_used_for_forecast'
+>;
+
+type SubmissionResolutionTarget = {
+  submission: ReviewableSubmission;
+  providerName: string;
+  decision: 'accepted' | 'declined';
+  reasonLabel: string;
+  startWithCorrection: boolean;
+};
+
+function SubmissionResolutionDialog({
   month,
-  rows,
-  isLoading,
+  target,
+  onClose,
   onResolve,
   isPending,
 }: {
   month: string;
-  rows: ProviderPublishView[];
-  isLoading: boolean;
+  target: SubmissionResolutionTarget | null;
+  onClose: () => void;
   onResolve: (args: ResolveArgs) => void;
   isPending: boolean;
 }) {
-  const [resolutionTarget, setResolutionTarget] = useState<{
-    row: ProviderPublishView;
-    decision: 'accepted' | 'declined';
-  } | null>(null);
   const [resolutionReason, setResolutionReason] = useState('');
   const [useCorrectedTimes, setUseCorrectedTimes] = useState(false);
   const [manualDrafts, setManualDrafts] = useState<ManualAvailabilityDraft[]>([]);
 
-  const openResolutionDialog = (
-    row: ProviderPublishView,
-    decision: 'accepted' | 'declined',
-    reasonLabel: string,
-    startWithCorrection = false,
-  ) => {
-    const warnings = warningStringsFromUnknown(row.submission?.validation_warnings);
-    setResolutionTarget({ row, decision });
-    setUseCorrectedTimes(startWithCorrection);
+  useEffect(() => {
+    if (!target) {
+      setResolutionReason('');
+      setUseCorrectedTimes(false);
+      setManualDrafts([]);
+      return;
+    }
+    const warnings = warningStringsFromUnknown(target.submission.validation_warnings);
+    setUseCorrectedTimes(target.startWithCorrection);
     setManualDrafts(
       manualDraftsFromParsedShifts(
-        row.submission?.parsed_shifts,
+        target.submission.parsed_shifts,
         month,
         warnings,
-        row.submission?.decision_notes,
+        target.submission.decision_notes,
       ),
     );
     setResolutionReason(
-      startWithCorrection && decision === 'accepted'
-        ? `ClinOps corrected the submitted availability to the exact reviewed times and approved those hours for use.`
-        : decision === 'accepted'
-        ? `ClinOps reviewed ${reasonLabel} and approved the submitted hours for use.`
-        : `ClinOps reviewed ${reasonLabel} and declined the submitted hours so they are greyed out.`,
+      target.startWithCorrection && target.decision === 'accepted'
+        ? 'ClinOps corrected the submitted availability to the exact reviewed times and approved those hours for use.'
+        : target.decision === 'accepted'
+          ? `ClinOps reviewed ${target.reasonLabel} and approved the submitted hours for use.`
+          : `ClinOps reviewed ${target.reasonLabel} and declined the submitted hours so they are greyed out.`,
     );
-  };
-
-  const submitResolution = () => {
-    if (!resolutionTarget?.row.submission) return;
-    const reason = resolutionReason.trim();
-    if (!reason) {
-      toast.error('Add a reason before saving the review decision.');
-      return;
-    }
-    const sub = resolutionTarget.row.submission;
-    const originalHours = expandedSubmittedHours(sub);
-    const correctedHours = totalManualAvailabilityHours(manualDrafts, month);
-    let correctedParsedShifts: unknown;
-    let correctionSummary: string | null = null;
-    let hoursBasis = originalHours;
-    if (useCorrectedTimes) {
-      const errors = validateManualAvailabilityDrafts(manualDrafts, month);
-      if (errors.length > 0) {
-        toast.error(errors[0]);
-        return;
-      }
-      hoursBasis = correctedHours;
-      correctedParsedShifts = buildCorrectedParsedShifts(sub.parsed_shifts, manualDrafts, month);
-      correctionSummary = summarizeManualAvailability(manualDrafts, month);
-      if (resolutionTarget.decision === 'accepted' && correctedHours <= 0) {
-        toast.error('Corrected availability must include more than 0 hours before approval.');
-        return;
-      }
-    }
-    onResolve({
-      submission_id: sub.id,
-      provider_id: sub.provider_id,
-      target_month: sub.target_month,
-      prior_status: sub.decision_status,
-      decision: resolutionTarget.decision,
-      hours_basis: hoursBasis,
-      original_hours_basis: originalHours,
-      reason,
-      existing_notes: sub.decision_notes,
-      corrected_parsed_shifts: correctedParsedShifts,
-      correction_summary: correctionSummary,
-      provider_name: resolutionTarget.row.provider_name,
-    });
-    setResolutionTarget(null);
-    setUseCorrectedTimes(false);
-    setManualDrafts([]);
-  };
+  }, [month, target]);
 
   const updateManualDraft = (
     id: string,
@@ -4419,14 +4633,341 @@ function NeedsReviewPanel({
     });
   };
 
+  const submitResolution = () => {
+    if (!target) return;
+    const reason = resolutionReason.trim();
+    if (!reason) {
+      toast.error('Add a reason before saving the review decision.');
+      return;
+    }
+    const sub = target.submission;
+    const originalHours = expandedSubmittedHours(sub);
+    const correctedHours = totalManualAvailabilityHours(manualDrafts, month);
+    let correctedParsedShifts: unknown;
+    let correctionSummary: string | null = null;
+    let hoursBasis = originalHours;
+    if (useCorrectedTimes) {
+      const errors = validateManualAvailabilityDrafts(manualDrafts, month);
+      if (errors.length > 0) {
+        toast.error(errors[0]);
+        return;
+      }
+      hoursBasis = correctedHours;
+      correctedParsedShifts = buildCorrectedParsedShifts(sub.parsed_shifts, manualDrafts, month);
+      correctionSummary = summarizeManualAvailability(manualDrafts, month);
+      if (target.decision === 'accepted' && correctedHours <= 0) {
+        toast.error('Corrected availability must include more than 0 hours before approval.');
+        return;
+      }
+    }
+    onResolve({
+      submission_id: sub.id,
+      provider_id: sub.provider_id,
+      target_month: sub.target_month,
+      prior_status: sub.decision_status ? String(sub.decision_status) : null,
+      decision: target.decision,
+      hours_basis: hoursBasis,
+      original_hours_basis: originalHours,
+      reason,
+      existing_notes: sub.decision_notes,
+      corrected_parsed_shifts: correctedParsedShifts,
+      correction_summary: correctionSummary,
+      provider_name: target.providerName,
+    });
+    onClose();
+  };
+
   const decisionLabel =
-    resolutionTarget?.decision === 'accepted'
+    target?.decision === 'accepted'
       ? 'Approve hours'
-      : resolutionTarget?.decision === 'declined'
+      : target?.decision === 'declined'
         ? 'Decline hours'
         : '—';
-  const submittedHours = expandedSubmittedHours(resolutionTarget?.row.submission);
+  const submittedHours = expandedSubmittedHours(target?.submission);
   const correctedHours = totalManualAvailabilityHours(manualDrafts, month);
+
+  return (
+    <Dialog
+      open={Boolean(target)}
+      onOpenChange={open => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>
+            {target?.decision === 'accepted' ? 'Approve hours' : 'Decline hours'}
+          </DialogTitle>
+          <DialogDescription>
+            {target?.providerName ?? 'Provider'} · {formatMonthLabel(month)}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid gap-3 text-sm md:grid-cols-3">
+            <div className="rounded-md border px-3 py-2">
+              <div className="text-xs text-muted-foreground">Submitted hours</div>
+              <div className="font-medium">
+                {formatHours(submittedHours)}
+              </div>
+            </div>
+            <div className="rounded-md border px-3 py-2">
+              <div className="text-xs text-muted-foreground">Corrected hours</div>
+              <div className="font-medium">
+                {formatHours(correctedHours)}
+              </div>
+            </div>
+            <div className="rounded-md border px-3 py-2">
+              <div className="text-xs text-muted-foreground">Decision</div>
+              <div className="font-medium">{decisionLabel}</div>
+            </div>
+          </div>
+
+          <div className="rounded-md border p-3 space-y-3">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="use-corrected-times"
+                    checked={useCorrectedTimes}
+                    onCheckedChange={checked => setUseCorrectedTimes(Boolean(checked))}
+                  />
+                  <Label htmlFor="use-corrected-times" className="text-sm font-medium">
+                    Use corrected times for this decision
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Corrected rows replace the submitted availability for this provider-month before publish rows are rebuilt.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setUseCorrectedTimes(true);
+                  setManualDrafts(current => [...current, defaultManualAvailabilityDraft(month)]);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add row
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              {manualDrafts.map((draft, index) => {
+                const issues = manualDraftIssues(draft, month);
+                const hasIssue = issues.length > 0;
+                const startInvalid = parseTimeToMinutes(draft.startTime) == null;
+                const endInvalid = parseTimeToMinutes(draft.endTime) == null;
+                const dateInvalid =
+                  draft.kind !== 'recurring_virtual' &&
+                  (!draft.date || !draft.date.startsWith(month.slice(0, 7)));
+                const endBeforeStart =
+                  parseTimeToMinutes(draft.startTime) != null &&
+                  parseTimeToMinutes(draft.endTime) != null &&
+                  parseTimeToMinutes(draft.endTime)! <= parseTimeToMinutes(draft.startTime)!;
+                return (
+                  <div
+                    key={draft.id}
+                    className={cn(
+                      'grid gap-2 rounded-md border bg-background p-2 md:grid-cols-[minmax(150px,0.9fr)_minmax(140px,0.9fr)_minmax(140px,0.9fr)_minmax(110px,0.6fr)_minmax(110px,0.6fr)_auto]',
+                      hasIssue && 'border-red-300 bg-red-50/70',
+                    )}
+                  >
+                    <div className="space-y-1">
+                      {index === 0 && <Label className="text-xs">Type</Label>}
+                      <Select
+                        value={draft.kind}
+                        onValueChange={value => {
+                          setUseCorrectedTimes(true);
+                          updateManualDraft(draft.id, { kind: value as ManualAvailabilityKind });
+                        }}
+                      >
+                        <SelectTrigger className="h-9 bg-background">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(MANUAL_AVAILABILITY_KIND_LABEL).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      {index === 0 && (
+                        <Label className="text-xs">
+                          {draft.kind === 'recurring_virtual' ? 'Weekday' : 'Date'}
+                        </Label>
+                      )}
+                      {draft.kind === 'recurring_virtual' ? (
+                        <Select
+                          value={draft.dayOfWeek}
+                          onValueChange={value => {
+                            setUseCorrectedTimes(true);
+                            updateManualDraft(draft.id, { dayOfWeek: value });
+                          }}
+                        >
+                          <SelectTrigger
+                            className={cn(
+                              'h-9 bg-background',
+                              hasIssue &&
+                                !WEEKDAY_INDEX.has(draft.dayOfWeek.toLowerCase()) &&
+                                'border-red-300 text-red-800',
+                            )}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {WEEKDAY_OPTIONS.map(day => (
+                              <SelectItem key={day} value={day}>
+                                {day}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          type="date"
+                          className={cn('h-9 bg-background', dateInvalid && 'border-red-300 text-red-800')}
+                          value={draft.date}
+                          onChange={event => {
+                            setUseCorrectedTimes(true);
+                            updateManualDraft(draft.id, { date: event.target.value });
+                          }}
+                        />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      {index === 0 && <Label className="text-xs">Start</Label>}
+                      <Input
+                        type="time"
+                        className={cn('h-9 bg-background', (startInvalid || endBeforeStart) && 'border-red-300 text-red-800')}
+                        value={draft.startTime}
+                        onChange={event => {
+                          setUseCorrectedTimes(true);
+                          updateManualDraft(draft.id, { startTime: event.target.value });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      {index === 0 && <Label className="text-xs">End</Label>}
+                      <Input
+                        type="time"
+                        className={cn('h-9 bg-background', (endInvalid || endBeforeStart) && 'border-red-300 text-red-800')}
+                        value={draft.endTime}
+                        onChange={event => {
+                          setUseCorrectedTimes(true);
+                          updateManualDraft(draft.id, { endTime: event.target.value });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      {index === 0 && <Label className="text-xs">Hrs</Label>}
+                      <div
+                        className={cn(
+                          'flex h-9 items-center justify-end rounded-md border bg-background px-2 text-sm tabular-nums',
+                          hasIssue && 'border-red-300 bg-red-100 text-red-800',
+                        )}
+                      >
+                        {formatHours(draftShiftHours(draft, month))}
+                      </div>
+                    </div>
+                    <div className="flex items-end justify-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        title="Remove corrected row"
+                        aria-label="Remove corrected row"
+                        onClick={() => {
+                          setUseCorrectedTimes(true);
+                          removeManualDraft(draft.id);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {hasIssue && (
+                      <div className="space-y-1 md:col-span-6">
+                        <div>
+                          <Badge variant="outline" className="border-red-200 bg-red-100 text-red-800">
+                            Needs adjustment
+                          </Badge>
+                        </div>
+                        <div className="text-xs leading-snug text-red-800">
+                          {issues.join(' · ')}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="needs-review-reason">Review note</Label>
+            <Textarea
+              id="needs-review-reason"
+              value={resolutionReason}
+              onChange={event => setResolutionReason(event.target.value)}
+              className="mt-1 min-h-24"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button onClick={submitResolution} disabled={isPending || !target}>
+            {isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+            {useCorrectedTimes && target?.decision === 'accepted'
+              ? 'Approve corrected hours & recalculate'
+              : target?.decision === 'accepted'
+                ? 'Approve hours'
+                : 'Decline hours'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function NeedsReviewPanel({
+  month,
+  rows,
+  isLoading,
+  onResolve,
+  isPending,
+}: {
+  month: string;
+  rows: ProviderPublishView[];
+  isLoading: boolean;
+  onResolve: (args: ResolveArgs) => void;
+  isPending: boolean;
+}) {
+  const [resolutionTarget, setResolutionTarget] = useState<SubmissionResolutionTarget | null>(null);
+
+  const openResolutionDialog = (
+    row: ProviderPublishView,
+    decision: 'accepted' | 'declined',
+    reasonLabel: string,
+    startWithCorrection = false,
+  ) => {
+    if (!row.submission) {
+      return;
+    }
+    setResolutionTarget({
+      submission: row.submission,
+      providerName: row.provider_name,
+      decision,
+      reasonLabel,
+      startWithCorrection,
+    });
+  };
 
   if (isLoading) {
     return (
@@ -4566,258 +5107,13 @@ function NeedsReviewPanel({
           </Table>
         </CardContent>
       </Card>
-      <Dialog
-        open={Boolean(resolutionTarget)}
-        onOpenChange={open => {
-          if (!open) {
-            setResolutionTarget(null);
-            setUseCorrectedTimes(false);
-            setManualDrafts([]);
-          }
-        }}
-      >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>
-              {resolutionTarget?.decision === 'accepted'
-                ? 'Approve hours'
-                : 'Decline hours'}
-            </DialogTitle>
-            <DialogDescription>
-              {resolutionTarget?.row.provider_name ?? 'Provider'} · {formatMonthLabel(month)}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid gap-3 text-sm md:grid-cols-3">
-              <div className="rounded-md border px-3 py-2">
-                <div className="text-xs text-muted-foreground">Submitted hours</div>
-                <div className="font-medium">
-                  {formatHours(submittedHours)}
-                </div>
-              </div>
-              <div className="rounded-md border px-3 py-2">
-                <div className="text-xs text-muted-foreground">Corrected hours</div>
-                <div className="font-medium">
-                  {formatHours(correctedHours)}
-                </div>
-              </div>
-              <div className="rounded-md border px-3 py-2">
-                <div className="text-xs text-muted-foreground">Decision</div>
-                <div className="font-medium">{decisionLabel}</div>
-              </div>
-            </div>
-
-            <div className="rounded-md border p-3 space-y-3">
-              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="use-corrected-times"
-                      checked={useCorrectedTimes}
-                      onCheckedChange={checked => setUseCorrectedTimes(Boolean(checked))}
-                    />
-                    <Label htmlFor="use-corrected-times" className="text-sm font-medium">
-                      Use corrected times for this decision
-                    </Label>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Corrected rows replace the submitted availability for this provider-month before publish rows are rebuilt.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setUseCorrectedTimes(true);
-                    setManualDrafts(current => [...current, defaultManualAvailabilityDraft(month)]);
-                  }}
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  Add row
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                {manualDrafts.map((draft, index) => {
-                  const issues = manualDraftIssues(draft, month);
-                  const hasIssue = issues.length > 0;
-                  const startInvalid = parseTimeToMinutes(draft.startTime) == null;
-                  const endInvalid = parseTimeToMinutes(draft.endTime) == null;
-                  const dateInvalid =
-                    draft.kind !== 'recurring_virtual' &&
-                    (!draft.date || !draft.date.startsWith(month.slice(0, 7)));
-                  const endBeforeStart =
-                    parseTimeToMinutes(draft.startTime) != null &&
-                    parseTimeToMinutes(draft.endTime) != null &&
-                    parseTimeToMinutes(draft.endTime)! <= parseTimeToMinutes(draft.startTime)!;
-                  return (
-                    <div
-                      key={draft.id}
-                      className={cn(
-                        'grid gap-2 rounded-md border bg-background p-2 md:grid-cols-[minmax(150px,0.9fr)_minmax(140px,0.9fr)_minmax(140px,0.9fr)_minmax(110px,0.6fr)_minmax(110px,0.6fr)_auto]',
-                        hasIssue && 'border-red-300 bg-red-50/70',
-                      )}
-                    >
-                      <div className="space-y-1">
-                        {index === 0 && <Label className="text-xs">Type</Label>}
-                        <Select
-                          value={draft.kind}
-                          onValueChange={value => {
-                            setUseCorrectedTimes(true);
-                            updateManualDraft(draft.id, { kind: value as ManualAvailabilityKind });
-                          }}
-                        >
-                          <SelectTrigger className="h-9 bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(MANUAL_AVAILABILITY_KIND_LABEL).map(([value, label]) => (
-                              <SelectItem key={value} value={value}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        {index === 0 && (
-                          <Label className="text-xs">
-                            {draft.kind === 'recurring_virtual' ? 'Weekday' : 'Date'}
-                          </Label>
-                        )}
-                        {draft.kind === 'recurring_virtual' ? (
-                          <Select
-                            value={draft.dayOfWeek}
-                            onValueChange={value => {
-                              setUseCorrectedTimes(true);
-                              updateManualDraft(draft.id, { dayOfWeek: value });
-                            }}
-                          >
-                            <SelectTrigger
-                              className={cn(
-                                'h-9 bg-background',
-                                hasIssue &&
-                                  !WEEKDAY_INDEX.has(draft.dayOfWeek.toLowerCase()) &&
-                                  'border-red-300 text-red-800',
-                              )}
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {WEEKDAY_OPTIONS.map(day => (
-                                <SelectItem key={day} value={day}>
-                                  {day}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Input
-                            type="date"
-                            className={cn('h-9 bg-background', dateInvalid && 'border-red-300 text-red-800')}
-                            value={draft.date}
-                            onChange={event => {
-                              setUseCorrectedTimes(true);
-                              updateManualDraft(draft.id, { date: event.target.value });
-                            }}
-                          />
-                        )}
-                      </div>
-                      <div className="space-y-1">
-                        {index === 0 && <Label className="text-xs">Start</Label>}
-                        <Input
-                          type="time"
-                          className={cn('h-9 bg-background', (startInvalid || endBeforeStart) && 'border-red-300 text-red-800')}
-                          value={draft.startTime}
-                          onChange={event => {
-                            setUseCorrectedTimes(true);
-                            updateManualDraft(draft.id, { startTime: event.target.value });
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        {index === 0 && <Label className="text-xs">End</Label>}
-                        <Input
-                          type="time"
-                          className={cn('h-9 bg-background', (endInvalid || endBeforeStart) && 'border-red-300 text-red-800')}
-                          value={draft.endTime}
-                          onChange={event => {
-                            setUseCorrectedTimes(true);
-                            updateManualDraft(draft.id, { endTime: event.target.value });
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        {index === 0 && <Label className="text-xs">Hrs</Label>}
-                        <div
-                          className={cn(
-                            'flex h-9 items-center justify-end rounded-md border bg-background px-2 text-sm tabular-nums',
-                            hasIssue && 'border-red-300 bg-red-100 text-red-800',
-                          )}
-                        >
-                          {formatHours(draftShiftHours(draft, month))}
-                        </div>
-                      </div>
-                      <div className="flex items-end justify-end">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9"
-                          title="Remove corrected row"
-                          aria-label="Remove corrected row"
-                          onClick={() => {
-                            setUseCorrectedTimes(true);
-                            removeManualDraft(draft.id);
-                          }}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      {hasIssue && (
-                        <div className="space-y-1 md:col-span-6">
-                          <div>
-                            <Badge variant="outline" className="border-red-200 bg-red-100 text-red-800">
-                              Needs adjustment
-                            </Badge>
-                          </div>
-                          <div className="text-xs leading-snug text-red-800">
-                            {issues.join(' · ')}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="needs-review-reason">Review note</Label>
-              <Textarea
-                id="needs-review-reason"
-                value={resolutionReason}
-                onChange={event => setResolutionReason(event.target.value)}
-                className="mt-1 min-h-24"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setResolutionTarget(null)} disabled={isPending}>
-              Cancel
-            </Button>
-            <Button onClick={submitResolution} disabled={isPending || !resolutionTarget}>
-              {isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              {useCorrectedTimes && resolutionTarget?.decision === 'accepted'
-                ? 'Approve corrected hours & recalculate'
-                : resolutionTarget?.decision === 'accepted'
-                  ? 'Approve hours'
-                  : 'Decline hours'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SubmissionResolutionDialog
+        month={month}
+        target={resolutionTarget}
+        onClose={() => setResolutionTarget(null)}
+        onResolve={onResolve}
+        isPending={isPending}
+      />
     </>
   );
 }
@@ -6315,8 +6611,11 @@ function DeclinedPanel({
                       day: 'numeric',
                     })}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-md whitespace-pre-wrap">
-                    {formatDecisionNoteForStaff(sub.decision_notes) || '—'}
+                  <TableCell className="text-xs max-w-md">
+                    <ReasonSummary
+                      text={sub.decision_notes}
+                      detailsText={formatDecisionNoteForStaff(sub.decision_notes)}
+                    />
                   </TableCell>
                 </TableRow>
               );
@@ -6431,6 +6730,11 @@ function DeclinedHoursPanel({
                   cuts.map(c => c.recommendation_reason).filter(Boolean) as string[],
                 ));
                 const isFullyDeclined = sub.decision_status === 'declined';
+                const reasonText = [sub.decision_notes, ...uniqueCutReasons].filter(Boolean).join('\n');
+                const reasonDetails = [
+                  formatDecisionNoteForStaff(sub.decision_notes),
+                  ...uniqueCutReasons,
+                ].filter(Boolean).join('\n');
                 return (
                   <TableRow
                     key={row.provider_id}
@@ -6503,23 +6807,12 @@ function DeclinedHoursPanel({
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs text-muted-foreground max-w-[360px]">
-                      {uniqueCutReasons.length > 0 && (
-                        <div className="mb-2 space-y-1">
-                          {uniqueCutReasons.slice(0, 3).map(reason => (
-                            <Badge
-                              key={reason}
-                              variant="outline"
-                              className="mr-1 whitespace-normal text-[11px] font-normal"
-                            >
-                              {reason}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                      <div className="whitespace-pre-wrap">
-                        {formatDecisionNoteForStaff(sub.decision_notes) || '—'}
-                      </div>
+                    <TableCell className="align-top text-xs max-w-[360px]">
+                      <ReasonSummary
+                        text={reasonText}
+                        detailsText={reasonDetails}
+                        maxTags={5}
+                      />
                     </TableCell>
                   </TableRow>
                 );

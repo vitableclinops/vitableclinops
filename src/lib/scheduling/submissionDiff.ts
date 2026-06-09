@@ -88,6 +88,12 @@ const recurringKey = (r: CanonicalRecurring) =>
 
 const datedKey = (r: CanonicalDated) => `${r.date}|${r.startMin}|${r.endMin}`;
 
+const normalizeMonthStart = (month: string): string => (month.length === 7 ? `${month}-01` : month);
+
+const monthPrefix = (month: string): string => normalizeMonthStart(month).slice(0, 7);
+
+const isDateInMonth = (iso: string, month: string): boolean => iso.startsWith(monthPrefix(month));
+
 export function canonicalizeParsedShifts(parsedShifts: unknown): CanonicalSubmission {
   const out: CanonicalSubmission = {
     recurring: [],
@@ -134,6 +140,18 @@ export function canonicalizeParsedShifts(parsedShifts: unknown): CanonicalSubmis
   out.oneOff.sort((a, b) => datedKey(a).localeCompare(datedKey(b)));
   out.inHome.sort((a, b) => datedKey(a).localeCompare(datedKey(b)));
   return out;
+}
+
+export function filterCanonicalSubmissionByMonth(
+  canonical: CanonicalSubmission,
+  targetMonth: string,
+): CanonicalSubmission {
+  return {
+    recurring: canonical.recurring,
+    oneOff: canonical.oneOff.filter(r => isDateInMonth(r.date, targetMonth)),
+    inHome: canonical.inHome.filter(r => isDateInMonth(r.date, targetMonth)),
+    unavailableDates: canonical.unavailableDates.filter(d => isDateInMonth(d, targetMonth)),
+  };
 }
 
 export type SubmissionDiff = {
@@ -281,6 +299,10 @@ export function diffParsedShifts(
      *  past dates that weren't re-listed to flag as removals. Defaults to
      *  today (UTC). */
     ignoreDatesBefore?: string;
+    /** ISO month (YYYY-MM or YYYY-MM-DD). Dated changes outside this month
+     *  are dropped so the selected Workbench month remains the source of
+     *  truth for resubmission review. */
+    targetMonth?: string;
   } = {},
 ): SubmissionDiff {
   const a = canonicalizeParsedShifts(before);
@@ -292,6 +314,9 @@ export function diffParsedShifts(
   })();
   const cutoff = options.ignoreDatesBefore ?? today;
   const isPast = (iso: string) => iso < cutoff;
+  const targetMonth = options.targetMonth ? normalizeMonthStart(options.targetMonth) : null;
+  const isOutOfTargetMonth = (iso: string) =>
+    targetMonth ? !isDateInMonth(iso, targetMonth) : false;
 
   const rawRecurring = diffRecurring(a.recurring, b.recurring);
   const rawOneOff = diffDated(a.oneOff, b.oneOff);
@@ -306,14 +331,17 @@ export function diffParsedShifts(
     const removed: CanonicalDated[] = [];
     const modified: Array<{ before: CanonicalDated; after: CanonicalDated }> = [];
     for (const r of raw.added) {
+      if (isOutOfTargetMonth(r.date)) continue;
       if (isPast(r.date)) filteredPastCount++;
       else added.push(r);
     }
     for (const r of raw.removed) {
+      if (isOutOfTargetMonth(r.date)) continue;
       if (isPast(r.date)) filteredPastCount++;
       else removed.push(r);
     }
     for (const r of raw.modified) {
+      if (isOutOfTargetMonth(r.before.date) && isOutOfTargetMonth(r.after.date)) continue;
       if (isPast(r.before.date) && isPast(r.after.date)) filteredPastCount++;
       else modified.push(r);
     }
@@ -330,12 +358,14 @@ export function diffParsedShifts(
   const unavailRemoved: string[] = [];
   for (const d of afterUnavail) {
     if (!beforeUnavail.has(d)) {
+      if (isOutOfTargetMonth(d)) continue;
       if (isPast(d)) filteredPastCount++;
       else unavailAdded.push(d);
     }
   }
   for (const d of beforeUnavail) {
     if (!afterUnavail.has(d)) {
+      if (isOutOfTargetMonth(d)) continue;
       if (isPast(d)) filteredPastCount++;
       else unavailRemoved.push(d);
     }

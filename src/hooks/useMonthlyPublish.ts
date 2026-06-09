@@ -1164,7 +1164,8 @@ export function useResolveNeedsReview() {
         args.original_hours_basis !== args.hours_basis
           ? `; original_hours=${args.original_hours_basis}h`
           : '';
-      const auditLine = `Resolved needs_review → ${auditDecision} by ${actor} at ${nowIso}: ${args.reason}${originalPart}${correctionPart}`;
+      const priorStatusLabel = args.prior_status || 'submission';
+      const auditLine = `Resolved ${priorStatusLabel} → ${auditDecision} by ${actor} at ${nowIso}: ${args.reason}${originalPart}${correctionPart}`;
       const newNotes = args.existing_notes
         ? `${args.existing_notes}\n${auditLine}`
         : auditLine;
