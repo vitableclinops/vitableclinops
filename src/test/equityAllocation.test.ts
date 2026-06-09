@@ -106,6 +106,32 @@ describe('allocateSchedulingEquity', () => {
     expect(second.acceptedHours).toBeCloseTo(40, 1);
   });
 
+  it('does not keep routing DirectShifts/access above the target while compatible standard supply remains', () => {
+    const allocations = allocateSchedulingEquity({
+      stateGaps: [{ state: 'PA', gapHours: 100, demandHours: 100 }],
+      candidates: [
+        candidate({
+          id: 'cheap-directshifts',
+          providerName: 'Cheap DirectShifts',
+          cohort: 'directshifts_access',
+          hourlyRate: 50,
+          effectiveHours: 100,
+        }),
+        candidate({
+          id: 'standard-provider',
+          providerName: 'Standard Provider',
+          hourlyRate: 80,
+          effectiveHours: 100,
+        }),
+      ],
+    });
+
+    const accepted = sumAccepted(allocations);
+    const accessAccepted = allocations.find(a => a.id === 'cheap-directshifts')!.acceptedHours;
+    expect(accessAccepted / accepted).toBeLessThanOrEqual(DIRECTSHIFTS_ACCESS_TARGET_SHARE + 0.01);
+    expect(accessAccepted / accepted).toBeGreaterThanOrEqual(DIRECTSHIFTS_ACCESS_TARGET_SHARE - 0.01);
+  });
+
   it('uses the 75% soft cap to redistribute hours before allowing over-cap allocation', () => {
     const allocations = allocateSchedulingEquity({
       stateGaps: [{ state: 'PA', gapHours: 180, demandHours: 180 }],

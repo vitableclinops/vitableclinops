@@ -2351,13 +2351,21 @@ export function allocateSchedulingEquity({
 
     const clinicalLeadEligible = eligible.filter(isClinicalLeadCandidate);
     const accessEligible = eligible.filter(candidate => candidate.cohort === 'directshifts_access');
+    const nonAccessEligible = eligible.filter(candidate => candidate.cohort !== 'directshifts_access');
+    const directshiftsAtOrAboveTarget =
+      currentDirectshiftsShare(allocations, normalizedCandidates) >= directshiftsTargetShare - 0.001;
     const shouldCatchUpAccess =
       clinicalLeadEligible.length === 0 &&
+      !directshiftsAtOrAboveTarget &&
       currentDirectshiftsShare(allocations, normalizedCandidates) < directshiftsTargetShare &&
       accessEligible.length > 0;
     const pool = clinicalLeadEligible.length > 0
       ? clinicalLeadEligible
-      : shouldCatchUpAccess ? accessEligible : eligible;
+      : shouldCatchUpAccess
+        ? accessEligible
+        : directshiftsAtOrAboveTarget && nonAccessEligible.length > 0
+          ? nonAccessEligible
+          : eligible;
     const underCap = pool.filter(candidate => {
       const allocation = allocations.get(candidate.id);
       return allocation ? allocation.acceptedHours < allocation.softCapHours - 0.001 : false;
