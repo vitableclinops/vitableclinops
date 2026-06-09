@@ -1,5 +1,5 @@
 export const FAIRNESS_POLICY_VERSION = '2026-06-09';
-export const DIRECTSHIFTS_ACCESS_TARGET_SHARE = 0.25;
+export const DIRECTSHIFTS_ACCESS_TARGET_SHARE = 0.15;
 export const PROVIDER_SOFT_CAP_SHARE = 0.75;
 export const SAME_RATE_DIRECTSHIFTS_TOLERANCE_PCT = 10;
 
@@ -186,11 +186,15 @@ export function allocateSchedulingEquity({
     );
     if (eligible.length === 0) break;
 
+    const clinicalLeadEligible = eligible.filter(isClinicalLeadCandidate);
     const accessEligible = eligible.filter(candidate => candidate.cohort === 'directshifts_access');
     const shouldCatchUpAccess =
+      clinicalLeadEligible.length === 0 &&
       currentDirectshiftsShare(allocations, normalizedCandidates) < directshiftsTargetShare &&
       accessEligible.length > 0;
-    const pool = shouldCatchUpAccess ? accessEligible : eligible;
+    const pool = clinicalLeadEligible.length > 0
+      ? clinicalLeadEligible
+      : shouldCatchUpAccess ? accessEligible : eligible;
     const underCap = pool.filter(candidate => {
       const allocation = allocations.get(candidate.id);
       return allocation ? allocation.acceptedHours < allocation.softCapHours - 0.001 : false;
@@ -251,6 +255,10 @@ function compareBaseCandidatePriority(
   const countB = b.eligibleStates.length;
   if (countA !== countB) return countA - countB;
   return a.providerName.localeCompare(b.providerName, undefined, { sensitivity: 'base' });
+}
+
+function isClinicalLeadCandidate(candidate: SchedulingEquityCandidate) {
+  return candidate.cohort === 'clinical_lead' || candidate.priorityRank === 0;
 }
 
 function compareEquityFloorPriority(

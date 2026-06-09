@@ -2162,7 +2162,7 @@ export function compareProviderAllocationPriority(
 }
 // === supabase/functions/_shared/equityAllocation.ts ===
 export const FAIRNESS_POLICY_VERSION = '2026-06-09';
-export const DIRECTSHIFTS_ACCESS_TARGET_SHARE = 0.25;
+export const DIRECTSHIFTS_ACCESS_TARGET_SHARE = 0.15;
 export const PROVIDER_SOFT_CAP_SHARE = 0.75;
 export const SAME_RATE_DIRECTSHIFTS_TOLERANCE_PCT = 10;
 
@@ -2349,11 +2349,15 @@ export function allocateSchedulingEquity({
     );
     if (eligible.length === 0) break;
 
+    const clinicalLeadEligible = eligible.filter(isClinicalLeadCandidate);
     const accessEligible = eligible.filter(candidate => candidate.cohort === 'directshifts_access');
     const shouldCatchUpAccess =
+      clinicalLeadEligible.length === 0 &&
       currentDirectshiftsShare(allocations, normalizedCandidates) < directshiftsTargetShare &&
       accessEligible.length > 0;
-    const pool = shouldCatchUpAccess ? accessEligible : eligible;
+    const pool = clinicalLeadEligible.length > 0
+      ? clinicalLeadEligible
+      : shouldCatchUpAccess ? accessEligible : eligible;
     const underCap = pool.filter(candidate => {
       const allocation = allocations.get(candidate.id);
       return allocation ? allocation.acceptedHours < allocation.softCapHours - 0.001 : false;
@@ -2414,6 +2418,10 @@ function compareBaseCandidatePriority(
   const countB = b.eligibleStates.length;
   if (countA !== countB) return countA - countB;
   return a.providerName.localeCompare(b.providerName, undefined, { sensitivity: 'base' });
+}
+
+function isClinicalLeadCandidate(candidate: SchedulingEquityCandidate) {
+  return candidate.cohort === 'clinical_lead' || candidate.priorityRank === 0;
 }
 
 function compareEquityFloorPriority(
@@ -2604,7 +2612,8 @@ function equityRound2(value: number) {
  *        - Protect scarce Friday/weekend access windows first.
  *        - Give each eligible submitter a no-zero floor when compatible
  *          demand remains.
- *        - Target DirectShifts/access at ~25% of accepted telehealth hours.
+ *        - Target DirectShifts/access at ~15% of accepted telehealth hours
+ *          after clinical leads and hourly rate routing.
  *        - Keep same-rate DirectShifts/access providers close by accepted
  *          percentage of submitted forecastable hours.
  *        - Apply a 75% submitted-hours soft cap before relaxing the cap to
@@ -2960,7 +2969,7 @@ function pushProviderPriorityNotes(
   useUtilizationTieBreak = false,
 ) {
   noteParts.push(`provider_priority=${priority.key}`);
-  noteParts.push('provider_rate_policy=clinical_leads_then_lowest_hourly_rate');
+  noteParts.push('provider_rate_policy=clinical_leads_then_hourly_rate_then_directshifts_share');
   const hourlyRate = providerHourlyRate(providerProfile);
   if (hourlyRate == null) {
     noteParts.push('provider_hourly_rate=missing');

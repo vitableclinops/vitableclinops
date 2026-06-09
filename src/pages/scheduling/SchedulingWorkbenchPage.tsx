@@ -2894,7 +2894,9 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   } else if (priority === 'access_provider') {
     add('This access provider is in the same rate-ranked pool as internal providers.');
   }
-  if (providerRatePolicy === 'clinical_leads_then_lowest_hourly_rate') {
+  if (providerRatePolicy === 'clinical_leads_then_hourly_rate_then_directshifts_share') {
+    add('Order of operations: clinical leads first, then current hourly rate, then the DirectShifts/access share target.');
+  } else if (providerRatePolicy === 'clinical_leads_then_lowest_hourly_rate') {
     add('After clinical leads, providers are ranked by lowest current hourly rate regardless of internal or DirectShifts source.');
   }
   if (providerHourlyRate && providerHourlyRate !== 'missing') {
@@ -9363,7 +9365,7 @@ function ProviderPriorityPolicyCard() {
           Priority policy
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Provider source does not decide priority by itself. After clinical leads, scheduling uses hourly rate as the cost signal while reserving roughly 25% of telehealth hours for DirectShifts/access and keeping same-rate DirectShifts providers proportional.
+          Order of operations: clinical leads first, current hourly rate second, then the DirectShifts/access share target. DirectShifts/access now targets roughly 15% of accepted telehealth hours.
         </p>
       </CardHeader>
       <CardContent className="pt-0">
@@ -9373,12 +9375,12 @@ function ProviderPriorityPolicyCard() {
             <div className="text-muted-foreground">Clinical lead/supervisor coverage is considered before rate.</div>
           </div>
           <div>
-            <div className="font-medium">2. Lowest rate</div>
+            <div className="font-medium">2. Hourly rate</div>
             <div className="text-muted-foreground">Known current hourly rate is the main cost rule across provider sources.</div>
           </div>
           <div>
-            <div className="font-medium">3. Equity share</div>
-            <div className="text-muted-foreground">DirectShifts/access targets 25%; same-rate DirectShifts providers stay close by accepted share.</div>
+            <div className="font-medium">3. DirectShifts rate</div>
+            <div className="text-muted-foreground">DirectShifts/access targets 15%; same-rate DirectShifts providers stay close by accepted share.</div>
           </div>
           <div>
             <div className="font-medium">4. Caps and visibility</div>

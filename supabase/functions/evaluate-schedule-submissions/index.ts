@@ -57,7 +57,8 @@
  *        - Protect scarce Friday/weekend access windows first.
  *        - Give each eligible submitter a no-zero floor when compatible
  *          demand remains.
- *        - Target DirectShifts/access at ~25% of accepted telehealth hours.
+ *        - Target DirectShifts/access at ~15% of accepted telehealth hours
+ *          after clinical leads and hourly rate routing.
  *        - Keep same-rate DirectShifts/access providers close by accepted
  *          percentage of submitted forecastable hours.
  *        - Apply a 75% submitted-hours soft cap before relaxing the cap to
@@ -443,7 +444,7 @@ function pushProviderPriorityNotes(
   useUtilizationTieBreak = false,
 ) {
   noteParts.push(`provider_priority=${priority.key}`);
-  noteParts.push('provider_rate_policy=clinical_leads_then_lowest_hourly_rate');
+  noteParts.push('provider_rate_policy=clinical_leads_then_hourly_rate_then_directshifts_share');
   const hourlyRate = providerHourlyRate(providerProfile);
   if (hourlyRate == null) {
     noteParts.push('provider_hourly_rate=missing');

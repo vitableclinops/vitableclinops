@@ -18,7 +18,7 @@ describe('scheduling cost per visit', () => {
           decision_status: 'accepted',
           accepted_hours: 10,
           declined_hours: 0,
-          decision_notes: 'provider_hourly_rate=100; provider_rate_policy=clinical_leads_then_lowest_hourly_rate',
+          decision_notes: 'provider_hourly_rate=100; provider_rate_policy=clinical_leads_then_hourly_rate_then_directshifts_share',
         },
         {
           provider_id: 'p2',
@@ -144,7 +144,7 @@ describe('scheduling cost per visit', () => {
   it('summarizes routing notes into concise decision tags', () => {
     const tags = routingSynopsisTags(
       [
-        'provider_rate_policy=clinical_leads_then_lowest_hourly_rate',
+        'provider_rate_policy=clinical_leads_then_hourly_rate_then_directshifts_share',
         'provider_utilization_policy=lower_utilization_secondary_after_rate',
         'Trimmed as oversupply — accepted hours capped at network demand',
         'scarce_window_policy=protected_before_monthly_trim',
@@ -201,7 +201,7 @@ describe('scheduling cost per visit', () => {
           decision_notes: [
             'provider_hourly_rate=80',
             'cohort=directshifts_access',
-            'directshifts_target_share=25',
+            'directshifts_target_share=15',
             'provider_acceptance_pct=50',
             'equity_floor=met',
             'soft_cap_exceeded=0',
@@ -235,7 +235,7 @@ describe('scheduling cost per visit', () => {
     expect(model.highlights.directshiftsAccessProviders).toBe(2);
     expect(model.highlights.directshiftsAccessHours).toBe(38);
     expect(model.highlights.directshiftsAccessSharePct).toBe(38);
-    expect(model.highlights.directshiftsTargetSharePct).toBe(25);
+    expect(model.highlights.directshiftsTargetSharePct).toBe(15);
     expect(model.highlights.equityFloorMetProviders).toBe(3);
     expect(model.highlights.softCapExceededProviders).toBe(1);
     expect(model.highlights.sameRateDirectshiftsGroups).toBe(1);

@@ -24,7 +24,7 @@ function candidate(
 }
 
 describe('allocateSchedulingEquity', () => {
-  it('moves DirectShifts/access providers toward 25% of accepted telehealth hours when eligible supply exists', () => {
+  it('moves DirectShifts/access providers toward 15% of accepted telehealth hours when eligible supply exists', () => {
     const allocations = allocateSchedulingEquity({
       stateGaps,
       candidates: [
@@ -48,6 +48,34 @@ describe('allocateSchedulingEquity', () => {
     const accessAccepted = allocations.find(a => a.id === 'directshifts')!.acceptedHours;
     expect(accepted).toBe(100);
     expect(accessAccepted / accepted).toBeGreaterThanOrEqual(DIRECTSHIFTS_ACCESS_TARGET_SHARE);
+  });
+
+  it('allocates compatible clinical lead demand before DirectShifts/access catch-up', () => {
+    const allocations = allocateSchedulingEquity({
+      stateGaps: [{ state: 'PA', gapHours: 100, demandHours: 100 }],
+      candidates: [
+        candidate({
+          id: 'clinical-lead',
+          providerName: 'Clinical Lead',
+          cohort: 'clinical_lead',
+          priorityRank: 0,
+          hourlyRate: 150,
+          effectiveHours: 100,
+        }),
+        candidate({
+          id: 'directshifts',
+          providerName: 'DirectShifts Provider',
+          cohort: 'directshifts_access',
+          priorityRank: 1,
+          hourlyRate: 80,
+          effectiveHours: 100,
+        }),
+      ],
+    });
+
+    expect(allocations.find(a => a.id === 'clinical-lead')!.acceptedHours).toBeGreaterThan(
+      allocations.find(a => a.id === 'directshifts')!.acceptedHours,
+    );
   });
 
   it('keeps same-rate DirectShifts/access providers close by accepted percentage of submitted hours', () => {

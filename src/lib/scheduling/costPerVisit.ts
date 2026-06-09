@@ -147,6 +147,7 @@ export function routingSynopsisTags(
 
   const priority = decisionNoteValue(raw, 'provider_priority');
   const hasRatePolicy =
+    decisionNoteValue(raw, 'provider_rate_policy') === 'clinical_leads_then_hourly_rate_then_directshifts_share' ||
     decisionNoteValue(raw, 'provider_rate_policy') === 'clinical_leads_then_lowest_hourly_rate' ||
     lower.includes('lowest current hourly rate') ||
     lower.includes('rate-ranked');
@@ -323,7 +324,7 @@ export function buildSchedulingCostModel({
       directshiftsAccessProviders: 0,
       directshiftsAccessHours: 0,
       directshiftsAccessSharePct: 0,
-      directshiftsTargetSharePct: 25,
+      directshiftsTargetSharePct: 15,
       equityFloorMetProviders: 0,
       equityFloorUnmetProviders: 0,
       softCapExceededProviders: 0,
