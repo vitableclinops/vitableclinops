@@ -9365,32 +9365,6 @@ function formatLicenseSources(sources: Set<string> | undefined): string {
     .join(', ');
 }
 
-function inferPriorityReason(row: ProviderPublishView): string {
-  const priority = providerPriorityForRow(row);
-  const reasons: string[] = [];
-  reasons.push(`P${priority.rank + 1} ${priority.label}`);
-  const rate = providerRateFromNotes(row.submission?.decision_notes);
-  if (rate != null) reasons.push(`$${rate.toFixed(2)}/hr`);
-  else if (valueFromDecisionNote(row.submission?.decision_notes, 'provider_hourly_rate') === 'missing') {
-    reasons.push('rate missing');
-  }
-  const cohort = valueFromDecisionNote(row.submission?.decision_notes, 'cohort');
-  if (cohort === 'directshifts_access') reasons.push('DS/access share');
-  const acceptancePct = valueFromDecisionNote(row.submission?.decision_notes, 'provider_acceptance_pct');
-  const acceptancePctNumber = Number(acceptancePct);
-  if (Number.isFinite(acceptancePctNumber)) reasons.push(`${acceptancePctNumber.toFixed(1)}% of submitted`);
-  const equityFloor = valueFromDecisionNote(row.submission?.decision_notes, 'equity_floor');
-  if (equityFloor === 'met') reasons.push('floor met');
-  else if (equityFloor?.startsWith('unmet')) reasons.push('floor unmet');
-  const emp = (row.employment_type ?? '').trim();
-  if (emp) reasons.push(emp.toUpperCase());
-  const accepted = Number(row.submission?.accepted_hours ?? 0);
-  const declined = Number(row.submission?.declined_hours ?? 0);
-  if (accepted > 0 && declined === 0) reasons.push('Full accept');
-  if (declined > 0 && accepted > 0) reasons.push('Partial accept');
-  return reasons.join(' · ') || '—';
-}
-
 function providerRateFromNotes(notes: string | null | undefined): number | null {
   const raw = valueFromDecisionNote(notes, 'provider_hourly_rate');
   if (!raw || raw === 'missing') return null;
@@ -9398,8 +9372,139 @@ function providerRateFromNotes(notes: string | null | undefined): number | null 
   return Number.isFinite(rate) ? rate : null;
 }
 
-function providerRateSortValue(row: ProviderPublishView): number {
-  return providerRateFromNotes(row.submission?.decision_notes) ?? Number.POSITIVE_INFINITY;
+type MatchingStatusFilter = 'all' | 'accepted' | 'partial' | 'needs_review' | 'declined';
+type MatchingPriorityFilter = 'all' | ProviderPriorityKey;
+type MatchingHoursFilter = 'all' | 'has_accepted' | 'has_declined' | 'full_accept' | 'no_accepted';
+type MatchingSortKey =
+  | 'recommended'
+  | 'accepted_desc'
+  | 'accepted_asc'
+  | 'total_desc'
+  | 'declined_desc'
+  | 'shifts_desc'
+  | 'provider_az'
+  | 'rate_asc';
+
+type MatchingProviderRow = {
+  row: ProviderPublishView;
+  shifts: ShiftRow[];
+  assignedStateList: string[];
+  eligibleStates: string[];
+  sourceLabels: string;
+  accepted: number;
+  declined: number;
+  totalHours: number;
+  status: string | null;
+  priority: ProviderPriority;
+  rate: number | null;
+  searchText: string;
+};
+
+const MATCHING_SORT_OPTIONS: Array<{ value: MatchingSortKey; label: string }> = [
+  { value: 'recommended', label: 'Recommended order' },
+  { value: 'accepted_desc', label: 'Accepted hours high-low' },
+  { value: 'accepted_asc', label: 'Accepted hours low-high' },
+  { value: 'total_desc', label: 'Total submitted hours high-low' },
+  { value: 'declined_desc', label: 'Cut hours high-low' },
+  { value: 'shifts_desc', label: 'Shift rows high-low' },
+  { value: 'provider_az', label: 'Provider A-Z' },
+  { value: 'rate_asc', label: 'Rate low-high' },
+];
+
+function buildMatchingProviderRow(
+  row: ProviderPublishView,
+  shiftsByProvider: Map<string, ShiftRow[]>,
+  eligibilityByProvider: Map<string, ProviderEligibilitySummary>,
+): MatchingProviderRow {
+  const shifts = shiftsByProvider.get(row.provider_id) ?? [];
+  const assignedStates = new Set<string>();
+  for (const shift of Array.isArray(shifts) ? shifts : []) {
+    if (shift.assigned_state) assignedStates.add(shift.assigned_state);
+  }
+  const parsedShifts = row.submission?.parsed_shifts;
+  for (const shift of Array.isArray(parsedShifts) ? parsedShifts : []) {
+    if (shift && typeof shift === 'object' && 'state' in shift) {
+      const state = (shift as { state?: unknown }).state;
+      if (state) assignedStates.add(String(state).toUpperCase());
+    }
+  }
+  const eligibility = eligibilityByProvider.get(row.provider_id);
+  const eligibleStates = eligibility ? Array.from(eligibility.states).sort() : [];
+  const assignedStateList = Array.from(assignedStates).sort();
+  const sourceLabels = formatLicenseSources(eligibility?.sources);
+  const accepted = Number(row.submission?.accepted_hours ?? 0);
+  const declined = Number(row.submission?.declined_hours ?? 0);
+  const priority = providerPriorityForRow(row);
+  const rate = providerRateFromNotes(row.submission?.decision_notes);
+  const status = row.submission?.decision_status ?? null;
+  const searchText = [
+    row.provider_name,
+    row.profession,
+    row.employment_type,
+    row.provider_source,
+    status,
+    priority.label,
+    `P${priority.rank + 1}`,
+    assignedStateList.join(' '),
+    eligibleStates.join(' '),
+    sourceLabels,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return {
+    row,
+    shifts,
+    assignedStateList,
+    eligibleStates,
+    sourceLabels,
+    accepted,
+    declined,
+    totalHours: accepted + declined,
+    status,
+    priority,
+    rate,
+    searchText,
+  };
+}
+
+function compareMatchingRecommended(a: MatchingProviderRow, b: MatchingProviderRow): number {
+  if (a.priority.rank !== b.priority.rank) return a.priority.rank - b.priority.rank;
+  const rateDiff = (a.rate ?? Number.POSITIVE_INFINITY) - (b.rate ?? Number.POSITIVE_INFINITY);
+  if (rateDiff !== 0) return rateDiff;
+  const statusDiff = statusSort(a.row) - statusSort(b.row);
+  if (statusDiff !== 0) return statusDiff;
+  if (a.accepted !== b.accepted) return b.accepted - a.accepted;
+  return a.row.provider_name.localeCompare(b.row.provider_name, undefined, { sensitivity: 'base' });
+}
+
+function compareMatchingRows(
+  a: MatchingProviderRow,
+  b: MatchingProviderRow,
+  sortKey: MatchingSortKey,
+): number {
+  const fallback = () => compareMatchingRecommended(a, b);
+  if (sortKey === 'provider_az') {
+    return a.row.provider_name.localeCompare(b.row.provider_name, undefined, { sensitivity: 'base' });
+  }
+  if (sortKey === 'accepted_desc') return (b.accepted - a.accepted) || fallback();
+  if (sortKey === 'accepted_asc') return (a.accepted - b.accepted) || fallback();
+  if (sortKey === 'total_desc') return (b.totalHours - a.totalHours) || fallback();
+  if (sortKey === 'declined_desc') return (b.declined - a.declined) || fallback();
+  if (sortKey === 'shifts_desc') return (b.shifts.length - a.shifts.length) || fallback();
+  if (sortKey === 'rate_asc') {
+    return ((a.rate ?? Number.POSITIVE_INFINITY) - (b.rate ?? Number.POSITIVE_INFINITY)) || fallback();
+  }
+  return fallback();
+}
+
+function matchesMatchingHoursFilter(row: MatchingProviderRow, filter: MatchingHoursFilter): boolean {
+  if (filter === 'has_accepted') return row.accepted > 0;
+  if (filter === 'has_declined') return row.declined > 0;
+  if (filter === 'full_accept') return row.accepted > 0 && row.declined <= 0;
+  if (filter === 'no_accepted') return row.accepted <= 0;
+  return true;
 }
 
 const stripUtilizationReasonLines = (details: string) =>
@@ -9703,7 +9808,13 @@ function MatchingPanel({
   shiftsByProvider: Map<string, ShiftRow[]>;
   eligibilityByProvider: Map<string, ProviderEligibilitySummary>;
 }) {
-  const all = useMemo(() => {
+  const [providerFilter, setProviderFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<MatchingStatusFilter>('all');
+  const [priorityFilter, setPriorityFilter] = useState<MatchingPriorityFilter>('all');
+  const [hoursFilter, setHoursFilter] = useState<MatchingHoursFilter>('all');
+  const [sortKey, setSortKey] = useState<MatchingSortKey>('recommended');
+
+  const all = useMemo<MatchingProviderRow[]>(() => {
     const seen = new Set<string>();
     const merged: ProviderPublishView[] = [];
     for (const r of [...acceptedRows, ...declinedRows, ...needsReviewRows]) {
@@ -9711,22 +9822,35 @@ function MatchingPanel({
       seen.add(r.provider_id);
       merged.push(r);
     }
-    return merged.sort((a, b) => {
-      const pa = providerPriorityForRow(a);
-      const pb = providerPriorityForRow(b);
-      if (pa.rank !== pb.rank) return pa.rank - pb.rank;
-      const ra = providerRateSortValue(a);
-      const rb = providerRateSortValue(b);
-      if (ra !== rb) return ra - rb;
-      const sa = statusSort(a);
-      const sb = statusSort(b);
-      if (sa !== sb) return sa - sb;
-      const ha = Number(a.submission?.accepted_hours ?? 0);
-      const hb = Number(b.submission?.accepted_hours ?? 0);
-      if (ha !== hb) return hb - ha;
-      return a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' });
-    });
-  }, [acceptedRows, declinedRows, needsReviewRows]);
+    return merged.map(row => buildMatchingProviderRow(row, shiftsByProvider, eligibilityByProvider));
+  }, [acceptedRows, declinedRows, eligibilityByProvider, needsReviewRows, shiftsByProvider]);
+
+  const visibleRows = useMemo(() => {
+    const query = providerFilter.trim().toLowerCase();
+    return all
+      .filter(row => !query || row.searchText.includes(query))
+      .filter(row => statusFilter === 'all' || row.status === statusFilter)
+      .filter(row => priorityFilter === 'all' || row.priority.key === priorityFilter)
+      .filter(row => matchesMatchingHoursFilter(row, hoursFilter))
+      .sort((a, b) => compareMatchingRows(a, b, sortKey));
+  }, [all, hoursFilter, priorityFilter, providerFilter, sortKey, statusFilter]);
+
+  const visibleAcceptedHours = visibleRows.reduce((sum, row) => sum + row.accepted, 0);
+  const visibleDeclinedHours = visibleRows.reduce((sum, row) => sum + row.declined, 0);
+  const filtersActive =
+    providerFilter.trim() !== '' ||
+    statusFilter !== 'all' ||
+    priorityFilter !== 'all' ||
+    hoursFilter !== 'all' ||
+    sortKey !== 'recommended';
+
+  const clearFilters = () => {
+    setProviderFilter('');
+    setStatusFilter('all');
+    setPriorityFilter('all');
+    setHoursFilter('all');
+    setSortKey('recommended');
+  };
 
   if (all.length === 0) {
     return (
@@ -9752,6 +9876,123 @@ function MatchingPanel({
           </p>
         </CardHeader>
         <CardContent className="p-0">
+          <div className="space-y-3 border-b p-4">
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.4fr)_160px_190px_170px_220px_auto] xl:items-end">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                  Provider
+                </Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    value={providerFilter}
+                    onChange={event => setProviderFilter(event.target.value)}
+                    placeholder="Filter provider, state, type"
+                    className="h-9 pl-8"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                  Status
+                </Label>
+                <Select
+                  value={statusFilter}
+                  onValueChange={value => setStatusFilter(value as MatchingStatusFilter)}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="accepted">Accepted</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                    <SelectItem value="needs_review">Needs review</SelectItem>
+                    <SelectItem value="declined">Declined</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                  Priority
+                </Label>
+                <Select
+                  value={priorityFilter}
+                  onValueChange={value => setPriorityFilter(value as MatchingPriorityFilter)}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All priority groups</SelectItem>
+                    <SelectItem value="clinical_supervisor">Clinical lead/admin</SelectItem>
+                    <SelectItem value="vitable_internal">Rate-ranked Vitable</SelectItem>
+                    <SelectItem value="access_provider">Access/DirectShifts</SelectItem>
+                    <SelectItem value="directshifts_brittany_priority">Brittney Afram</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                  Hours
+                </Label>
+                <Select
+                  value={hoursFilter}
+                  onValueChange={value => setHoursFilter(value as MatchingHoursFilter)}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All hours</SelectItem>
+                    <SelectItem value="has_accepted">Has accepted</SelectItem>
+                    <SelectItem value="has_declined">Has cuts</SelectItem>
+                    <SelectItem value="full_accept">Full accepts</SelectItem>
+                    <SelectItem value="no_accepted">No accepted</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                  Sort by
+                </Label>
+                <Select
+                  value={sortKey}
+                  onValueChange={value => setSortKey(value as MatchingSortKey)}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MATCHING_SORT_OPTIONS.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9"
+                disabled={!filtersActive}
+                onClick={clearFilters}
+              >
+                <X className="mr-1 h-3.5 w-3.5" />
+                Reset
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                Showing {visibleRows.length} of {all.length} providers
+              </span>
+              <span>Accepted {formatHours(visibleAcceptedHours)} hrs</span>
+              <span>Cut {formatHours(visibleDeclinedHours)} hrs</span>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
           <Table>
           <TableHeader>
             <TableRow>
@@ -9761,33 +10002,22 @@ function MatchingPanel({
               <TableHead className="text-right">Shifts</TableHead>
               <TableHead className="text-right">Accepted</TableHead>
               <TableHead className="text-right">Declined</TableHead>
-              <TableHead>Priority reason</TableHead>
               <TableHead>Cut / decline reason</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {all.map(r => {
-              const shifts = shiftsByProvider.get(r.provider_id) ?? [];
-              const assignedStates = new Set<string>();
-              for (const s of Array.isArray(shifts) ? shifts : []) {
-                if (s.assigned_state) assignedStates.add(s.assigned_state);
-              }
-              const parsedShifts = r.submission?.parsed_shifts;
-              for (const s of Array.isArray(parsedShifts) ? parsedShifts : []) {
-                if (s && typeof s === 'object' && 'state' in s) {
-                  const state = (s as { state?: unknown }).state;
-                  if (state) assignedStates.add(String(state).toUpperCase());
-                }
-              }
-              const eligibility = eligibilityByProvider.get(r.provider_id);
-              const eligibleStates = eligibility ? Array.from(eligibility.states).sort() : [];
-              const assignedStateList = Array.from(assignedStates).sort();
-              const sourceLabels = formatLicenseSources(eligibility?.sources);
-              const accepted = Number(r.submission?.accepted_hours ?? 0);
-              const declined = Number(r.submission?.declined_hours ?? 0);
-              const status = r.submission?.decision_status ?? null;
-              const priority = providerPriorityForRow(r);
+            {visibleRows.map(({
+              row: r,
+              shifts,
+              assignedStateList,
+              eligibleStates,
+              sourceLabels,
+              accepted,
+              declined,
+              status,
+              priority,
+            }) => {
               return (
                 <TableRow key={r.provider_id}>
                   <TableCell className="font-medium">{r.provider_name}</TableCell>
@@ -9832,9 +10062,6 @@ function MatchingPanel({
                   <TableCell className={`text-right tabular-nums ${declined > 0 ? 'text-red-700' : ''}`}>
                     {declined.toFixed(1)}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[200px]">
-                    {inferPriorityReason(r)}
-                  </TableCell>
                   <TableCell className="align-top text-xs text-muted-foreground min-w-[280px] max-w-[340px]">
                     <DecisionReasonSummaryTiles row={r} />
                   </TableCell>
@@ -9844,8 +10071,16 @@ function MatchingPanel({
                 </TableRow>
               );
             })}
+            {visibleRows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center text-sm text-muted-foreground">
+                  No providers match the current filters.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
     </>
