@@ -195,6 +195,7 @@ export type AvailabilitySubmissionRow = {
   raw_requested_hours: number | null;
   normalized_requested_hours: number | null;
   effective_hours_used_for_forecast: number | null;
+  human_review_state: 'pending' | 'approved' | 'parked' | null;
 };
 
 const monthIso = (m: string) => (m.length === 7 ? `${m}-01` : m);
@@ -592,7 +593,7 @@ export function useMonthlyAvailabilitySubmissions(month: string) {
         clinopsSupabase
         .from('schedule_submissions')
         .select(
-            'id, jotform_submission_id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, parsed_shifts, raw_answers, submitted_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast',
+            'id, jotform_submission_id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, parsed_shifts, raw_answers, submitted_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast, human_review_state',
         )
           .eq('target_month', monthStart)
           .order('submitted_at', { ascending: false })

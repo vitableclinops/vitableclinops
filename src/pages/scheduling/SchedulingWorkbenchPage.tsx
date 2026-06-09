@@ -200,17 +200,33 @@ const weeksInMonth = (iso: string) => {
 const formatHours = (n: number | null | undefined) =>
   n === null || n === undefined ? '—' : Number(n).toFixed(1);
 
+const finiteHoursFromUnknown = (raw: unknown): number | null => {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string') {
+    const value = Number(raw);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+};
+
+const requestedHoursFromParsedShifts = (parsedShifts: unknown): number | null => {
+  if (!parsedShifts || typeof parsedShifts !== 'object' || Array.isArray(parsedShifts)) return null;
+  const requested = (parsedShifts as Record<string, unknown>).requested_hours_total;
+  return finiteHoursFromUnknown(requested);
+};
+
 const expandedSubmittedHours = (
   row:
-    | Pick<SubmissionRow, 'effective_hours_used_for_forecast' | 'normalized_requested_hours' | 'raw_requested_hours'>
-    | Pick<AvailabilitySubmissionRow, 'effective_hours_used_for_forecast' | 'normalized_requested_hours' | 'raw_requested_hours'>
-    | Pick<SubmissionForInbox, 'effective_hours_used_for_forecast' | 'normalized_requested_hours' | 'raw_requested_hours'>
+    | Pick<SubmissionRow, 'effective_hours_used_for_forecast' | 'normalized_requested_hours' | 'raw_requested_hours' | 'parsed_shifts'>
+    | Pick<AvailabilitySubmissionRow, 'effective_hours_used_for_forecast' | 'normalized_requested_hours' | 'raw_requested_hours' | 'parsed_shifts'>
+    | Pick<SubmissionForInbox, 'effective_hours_used_for_forecast' | 'normalized_requested_hours' | 'raw_requested_hours' | 'parsed_shifts'>
     | null
     | undefined,
 ) =>
   row?.effective_hours_used_for_forecast ??
   row?.normalized_requested_hours ??
   row?.raw_requested_hours ??
+  requestedHoursFromParsedShifts(row?.parsed_shifts) ??
   null;
 
 type ManualAvailabilityKind = 'recurring_virtual' | 'one_off_virtual' | 'in_home_clinic';
@@ -3188,9 +3204,14 @@ function AvailabilitySubmissionsPanel({
                 const warnings = warningStringsFromUnknown(row.validation_warnings);
                 const needsReview = row.decision_status === 'needs_review';
                 const isPending = row.decision_status === 'pending';
+                const isHumanReviewPending = row.human_review_state === 'pending';
                 const isSuperseded = row.decision_status === 'superseded';
-                const isActionable = needsReview || isPending;
-                const reasonLabel = needsReviewReasonLabel(warnings, row.decision_notes);
+                const isActionable = needsReview || isPending || isHumanReviewPending;
+                const canSetTimes = needsReview || isPending || isHumanReviewPending;
+                const reasonLabel =
+                  needsReview || warnings.length > 0 || row.decision_notes
+                    ? needsReviewReasonLabel(warnings, row.decision_notes)
+                    : 'Review submitted times';
                 const canResolve = Boolean(row.provider_id);
                 const reviewReasonText = [...warnings, row.decision_notes ?? ''].filter(Boolean).join('\n');
                 return (
@@ -3259,7 +3280,7 @@ function AvailabilitySubmissionsPanel({
                       {isActionable ? (
                         canResolve ? (
                           <div className="flex flex-col items-end gap-1">
-                            {needsReview && (
+                            {canSetTimes && (
                               <Button
                                 size="sm"
                                 variant="outline"
