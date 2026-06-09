@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Dialog,
@@ -9413,6 +9414,260 @@ function providerUtilizationFromNotes(notes: string | null | undefined): number 
   return Number.isFinite(utilization) ? utilization : null;
 }
 
+type DecisionReasonTile = {
+  label: string;
+  value: string;
+  detail?: string;
+  tone: NonNullable<ReasonTag['tone']>;
+};
+
+const REASON_TILE_STYLES: Record<NonNullable<ReasonTag['tone']>, string> = {
+  amber: 'border-amber-200 bg-amber-50/80 text-amber-950',
+  blue: 'border-blue-200 bg-blue-50/80 text-blue-950',
+  red: 'border-red-200 bg-red-50/80 text-red-950',
+  slate: 'border-slate-200 bg-slate-50/90 text-slate-900',
+  emerald: 'border-emerald-200 bg-emerald-50/80 text-emerald-950',
+};
+
+const cleanDecisionValue = (value: string | null | undefined) =>
+  (value ?? '')
+    .replace(/\s*\(.+?\)\s*$/, '')
+    .trim()
+    .toLowerCase();
+
+const humanizeDecisionNoteValue = (value: string | null | undefined) =>
+  (value ?? '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+function decisionReasonTilesForRow(
+  row: ProviderPublishView,
+  details: string,
+): DecisionReasonTile[] {
+  const notes = row.submission?.decision_notes ?? '';
+  const accepted = Number(row.submission?.accepted_hours ?? 0);
+  const declined = Number(row.submission?.declined_hours ?? 0);
+  const status = row.submission?.decision_status ?? cleanDecisionValue(valueFromDecisionNote(notes, 'decision'));
+  const detailLines = details.split('\n').map(line => line.trim()).filter(Boolean);
+  const findDetail = (...patterns: RegExp[]) =>
+    detailLines.find(line => patterns.some(pattern => pattern.test(line.toLowerCase())));
+  const tiles: DecisionReasonTile[] = [];
+  const addTile = (tile: DecisionReasonTile) => {
+    if (!tiles.some(existing => existing.label === tile.label)) tiles.push(tile);
+  };
+
+  if (status === 'accepted' && declined <= 0) {
+    addTile({
+      label: 'Decision',
+      value: 'Full accept',
+      detail: `${formatHours(accepted)} accepted; no cut hours.`,
+      tone: 'emerald',
+    });
+  } else if (status === 'partial' || (accepted > 0 && declined > 0)) {
+    addTile({
+      label: 'Decision',
+      value: 'Partial',
+      detail: `${formatHours(accepted)} accepted; ${formatHours(declined)} cut.`,
+      tone: 'amber',
+    });
+  } else if (status === 'needs_review') {
+    addTile({
+      label: 'Decision',
+      value: 'Needs review',
+      detail: findDetail(/review|invalid|duration|malformed|before start/) ?? 'ClinOps review is required before publishing.',
+      tone: 'amber',
+    });
+  } else if (status === 'declined' || declined > 0) {
+    addTile({
+      label: 'Decision',
+      value: declined > 0 ? `${formatHours(declined)} cut` : 'Declined',
+      detail: findDetail(/no effective|no allocation|license|outside|oversupply|declined/) ?? 'No publishable hours from this decision.',
+      tone: 'red',
+    });
+  }
+
+  const serviceLine = valueFromDecisionNote(notes, 'service_line');
+  if (serviceLine) {
+    addTile({
+      label: 'Service line',
+      value: humanizeDecisionNoteValue(serviceLine),
+      detail: valueFromDecisionNote(notes, 'mh_visit_capacity')
+        ? `${valueFromDecisionNote(notes, 'mh_visit_capacity')} visit slots from accepted MH hours.`
+        : 'Mental health service-line forecast.',
+      tone: 'blue',
+    });
+  } else {
+    const priority = providerPriorityForRow(row);
+    addTile({
+      label: 'Priority',
+      value: priority.label,
+      detail:
+        priority.key === 'clinical_supervisor'
+          ? 'Clinical lead/admin hours are protected before rate and share trims.'
+          : findDetail(/rate|directshifts|priority|order of operations/),
+      tone: priority.key === 'clinical_supervisor' ? 'emerald' : 'blue',
+    });
+  }
+
+  const rate = providerRateFromNotes(notes);
+  const utilization = providerUtilizationFromNotes(notes);
+  if (rate != null || utilization != null) {
+    addTile({
+      label: rate != null ? 'Rate' : 'Utilization',
+      value: rate != null ? `$${rate.toFixed(2)}/hr` : `${utilization?.toFixed(1)}% util`,
+      detail: utilization != null
+        ? `${utilization.toFixed(1)}% recent utilization${rate != null ? '; visible after rate ranking.' : '.'}`
+        : findDetail(/current scheduling rate|hourly rate/),
+      tone: 'slate',
+    });
+  } else if (valueFromDecisionNote(notes, 'provider_hourly_rate') === 'missing') {
+    addTile({
+      label: 'Rate',
+      value: 'Missing',
+      detail: 'No current hourly rate was available for this decision.',
+      tone: 'amber',
+    });
+  }
+
+  const directShiftsShare = valueFromDecisionNote(notes, 'directshifts_actual_share');
+  const directShiftsTarget = valueFromDecisionNote(notes, 'directshifts_target_share');
+  if (directShiftsShare || directShiftsTarget) {
+    addTile({
+      label: 'DS/access',
+      value: `${directShiftsShare ?? directShiftsTarget}% share`,
+      detail: directShiftsTarget
+        ? `Target ${directShiftsTarget}% of accepted telehealth hours.`
+        : findDetail(/directshifts|access share/),
+      tone: 'blue',
+    });
+  }
+
+  const alloc = valueFromDecisionNote(notes, 'alloc');
+  if (alloc) {
+    const stateCount = alloc.split(',').filter(Boolean).length;
+    addTile({
+      label: 'Allocation',
+      value: stateCount === 1 ? alloc : `${stateCount} states`,
+      detail: `Assigned by state: ${alloc}.`,
+      tone: 'blue',
+    });
+  }
+
+  const forecastDeclined = valueFromDecisionNote(notes, 'forecast_declined_hours');
+  const outsideHours = valueFromDecisionNote(notes, 'hours_removed_outside_business_hours');
+  const minShiftHours = valueFromDecisionNote(notes, 'hours_removed_below_minimum_shift');
+  if (forecastDeclined && Number.parseFloat(forecastDeclined) > 0) {
+    addTile({
+      label: 'Forecast cut',
+      value: forecastDeclined,
+      detail: findDetail(/forecast|oversupply|state already/) ?? 'Cut after forecast demand was filled.',
+      tone: 'amber',
+    });
+  } else if (outsideHours || minShiftHours) {
+    addTile({
+      label: 'Policy cut',
+      value: outsideHours ? `${outsideHours} outside` : `${minShiftHours} min-shift`,
+      detail: findDetail(/outside|minimum|2\.5h|business/) ?? 'Removed by scheduling policy.',
+      tone: 'amber',
+    });
+  }
+
+  const noEligibleStateDetail = findDetail(/no eligible states|no allocation-eligible|license|licensure/);
+  if (noEligibleStateDetail) {
+    addTile({
+      label: 'Eligibility',
+      value: 'No eligible state',
+      detail: noEligibleStateDetail,
+      tone: 'red',
+    });
+  }
+
+  const equityFloor = valueFromDecisionNote(notes, 'equity_floor');
+  if (equityFloor) {
+    addTile({
+      label: 'Equity',
+      value: humanizeDecisionNoteValue(equityFloor),
+      detail: findDetail(/equity floor|eligible submitter|floor/),
+      tone: equityFloor === 'met' ? 'emerald' : 'amber',
+    });
+  }
+
+  if (tiles.length === 0) {
+    const fallbackTags = reasonTagsForText(details || notes);
+    fallbackTags.slice(0, 3).forEach(tag => addTile({
+      label: 'Reason',
+      value: tag.label,
+      detail: findDetail(new RegExp(tag.label.toLowerCase().replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'))) ?? detailLines[0],
+      tone: tag.tone ?? 'slate',
+    }));
+  }
+
+  return tiles;
+}
+
+function DecisionReasonSummaryTiles({ row }: { row: ProviderPublishView }) {
+  const [open, setOpen] = useState(false);
+  const rawNotes = row.submission?.decision_notes ?? '';
+  const fallback = inferDeclineReason(row);
+  const details = formatDecisionNoteForStaff(rawNotes) || fallback;
+  const raw = [rawNotes, fallback].filter(Boolean).join('\n');
+  const tiles = decisionReasonTilesForRow(row, details);
+  const visibleTiles = tiles.slice(0, 4);
+  if (!raw.trim() && visibleTiles.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="space-y-1.5">
+      <div className="grid min-w-[240px] max-w-[320px] grid-cols-2 gap-1.5">
+        {visibleTiles.map(tile => (
+          <div
+            key={`${tile.label}-${tile.value}`}
+            title={tile.detail ?? tile.value}
+            className={cn(
+              'min-h-[46px] rounded-md border px-2 py-1.5 shadow-sm',
+              REASON_TILE_STYLES[tile.tone],
+            )}
+          >
+            <div className="text-[10px] font-semibold uppercase tracking-normal opacity-70">
+              {tile.label}
+            </div>
+            <div className="mt-0.5 break-words text-xs font-semibold leading-tight">
+              {tile.value}
+            </div>
+          </div>
+        ))}
+        {tiles.length > visibleTiles.length && (
+          <div className="flex min-h-[46px] items-center justify-center rounded-md border border-slate-200 bg-slate-50/90 px-2 py-1.5 text-xs font-medium text-slate-700">
+            +{tiles.length - visibleTiles.length} more
+          </div>
+        )}
+      </div>
+      {details && (
+        <>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              {open ? 'Hide reasoning' : 'Show reasoning'}
+              <ChevronDown className={cn('ml-1 h-3 w-3 transition-transform', open && 'rotate-180')} />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="whitespace-pre-wrap rounded-md border bg-muted/50 p-2 text-[11px] leading-snug text-muted-foreground">
+              {details}
+            </div>
+          </CollapsibleContent>
+        </>
+      )}
+    </Collapsible>
+  );
+}
+
 function inferDeclineReason(row: ProviderPublishView): string {
   const notes = (row.submission?.decision_notes ?? '').trim();
   if (notes) return formatDecisionNoteForStaff(notes);
@@ -9592,8 +9847,8 @@ function MatchingPanel({
                   <TableCell className="text-xs text-muted-foreground max-w-[200px]">
                     {inferPriorityReason(r)}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[280px]">
-                    {inferDeclineReason(r) || '—'}
+                  <TableCell className="align-top text-xs text-muted-foreground min-w-[280px] max-w-[340px]">
+                    <DecisionReasonSummaryTiles row={r} />
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={status} />
