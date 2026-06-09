@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COST_MH_VISIT_SLOTS_PER_HOUR,
   buildSchedulingCostModel,
   protectedAccessHoursFromDecisionNotes,
   rateFromDecisionNotes,
   routingSynopsisTags,
   selectRateForProviderMonth,
+  visitSlotsPerHourForCost,
 } from '@/lib/scheduling/costPerVisit';
 
 describe('scheduling cost per visit', () => {
@@ -107,6 +109,48 @@ describe('scheduling cost per visit', () => {
     expect(model.missingRateHours).toBe(10);
     expect(model.missingRateRows).toHaveLength(1);
     expect(model.costPerVisitAtTarget).toBeCloseTo(1000 / 14, 3);
+  });
+
+  it('uses 3 visits per 2.5h block for mental health CPV capacity except Matthew Vazquez', () => {
+    const model = buildSchedulingCostModel({
+      monthStart: '2026-07-01',
+      rows: [
+        {
+          provider_id: 'therapy',
+          provider_name: 'Mishelle Lockerby',
+          profession: 'Therapist',
+          decision_status: 'accepted',
+          accepted_hours: 20,
+          declined_hours: 0,
+          decision_notes: 'provider_hourly_rate=100',
+        },
+        {
+          provider_id: 'matthew',
+          provider_name: 'Matthew Vazquez',
+          profession: 'Mental Health Coach',
+          decision_status: 'accepted',
+          accepted_hours: 10,
+          declined_hours: 0,
+          decision_notes: 'provider_hourly_rate=100',
+        },
+      ],
+      payRates: [],
+    });
+
+    const therapy = model.providerRows.find(row => row.provider_id === 'therapy');
+    const matthew = model.providerRows.find(row => row.provider_id === 'matthew');
+
+    expect(visitSlotsPerHourForCost({
+      provider_name: 'Mishelle Lockerby',
+      profession: 'Therapist',
+    }).slotsPerHour).toBe(COST_MH_VISIT_SLOTS_PER_HOUR);
+    expect(therapy?.availableSlots).toBe(24);
+    expect(therapy?.targetUtilizedVisits).toBeCloseTo(16.8, 3);
+    expect(therapy?.costPerVisitAtTarget).toBeCloseTo(2000 / 16.8, 3);
+    expect(matthew?.availableSlots).toBe(20);
+    expect(matthew?.visitSlotModel).toBe('standard');
+    expect(model.totalAvailableSlots).toBe(44);
+    expect(model.knownRateTargetUtilizedVisits).toBeCloseTo(30.8, 3);
   });
 
   it('selects the month-active lowest rate when decision notes do not have a rate', () => {

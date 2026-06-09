@@ -238,6 +238,17 @@ const MENTAL_HEALTH_VALIDATION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
   min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
+const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
+  ...DEFAULT_VALIDATION_CONFIG,
+  weekday_window_start_min: 0,
+  weekday_window_end_min: 24 * 60,
+  weekend_window_start_min: 0,
+  weekend_window_end_min: 24 * 60,
+};
+const MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
+  ...OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG,
+  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
+};
 const MH_POLICY_CUT_REASON =
   'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
 const MH_PUBLISH_REASON =
@@ -321,6 +332,42 @@ type Submission = {
   decision_run_id: string | null;
   submitted_at: string;
   human_review_state: string | null;
+};
+
+const hasManualOutsideOperatingHoursException = (
+  parsedShifts: Submission['parsed_shifts'],
+) => {
+  if (!parsedShifts || typeof parsedShifts !== 'object' || Array.isArray(parsedShifts)) {
+    return false;
+  }
+  const correction = parsedShifts.clinops_manual_correction;
+  return Boolean(
+    correction &&
+      typeof correction === 'object' &&
+      !Array.isArray(correction) &&
+      (correction as Record<string, unknown>).allow_outside_operating_hours === true,
+  );
+};
+
+const validationOptionsForSubmission = (
+  latest: Submission,
+  isMentalHealth: boolean,
+) => {
+  const allowOutsideOperatingHours = hasManualOutsideOperatingHoursException(latest.parsed_shifts);
+  if (allowOutsideOperatingHours) {
+    return {
+      allowOutsideOperatingHours,
+      options: {
+        config: isMentalHealth
+          ? MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG
+          : OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG,
+      },
+    };
+  }
+  return {
+    allowOutsideOperatingHours,
+    options: isMentalHealth ? { config: MENTAL_HEALTH_VALIDATION_CONFIG } : {},
+  };
 };
 
 type CommittedSubmission = {
@@ -1088,10 +1135,14 @@ Deno.serve(async (req: Request) => {
         counters.groups++;
         const [providerId, targetMonth] = key.split('|');
 
-        // Parked submissions are user-rejected and should NOT participate in
-        // the "latest wins" computation — they stay superseded and the prior
-        // submission remains authoritative.
-        const groupSubs = allGroupSubs.filter(s => s.human_review_state !== 'parked');
+        // Parked/user-rejected and already-superseded submissions should not
+        // participate in the "latest wins" computation. Keeping superseded
+        // rows in the validation timeline can make a corrected latest
+        // submission look broken again on a later full-month recalculation.
+        const groupSubs = allGroupSubs.filter(s =>
+          s.human_review_state !== 'parked' &&
+          s.decision_status !== 'superseded'
+        );
         if (groupSubs.length === 0) {
           decisions.push({ group: key, status: 'skipped', reason: 'all_parked' });
           continue;
@@ -1178,6 +1229,7 @@ Deno.serve(async (req: Request) => {
         // the SAME inputs, so timelines match.
         // Raw submission data on the row is preserved verbatim — we only
         // read it here.
+        const validationSelection = validationOptionsForSubmission(latest, isMentalHealth);
         const validation: BuildTimelineResult = buildSubmissionTimeline(
           groupSubs.map(s => ({
             id: s.id,
@@ -1190,7 +1242,7 @@ Deno.serve(async (req: Request) => {
             name: latest.provider_name,
           },
           targetMonth,
-          isMentalHealth ? { config: MENTAL_HEALTH_VALIDATION_CONFIG } : {},
+          validationSelection.options,
         );
         const fullTimeline = validation.timeline;
         const forecastTimeline = validation.forecastTimeline;
@@ -1271,6 +1323,9 @@ Deno.serve(async (req: Request) => {
               `mh_visit_cadence=${MH_VISIT_MINUTES}m_visit+${MH_CHARTING_BUFFER_MINUTES}m_charting_buffer`,
               `mh_ehr_slot_gap_minutes=${MH_EHR_SLOT_GAP_MINUTES}`,
             );
+          }
+          if (validationSelection.allowOutsideOperatingHours) {
+            noHoursNoteParts.push('manual_outside_operating_hours_exception=1');
           }
           if (oohDeclined > 0) {
             noHoursNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
@@ -1378,6 +1433,9 @@ Deno.serve(async (req: Request) => {
           }
           if (oohDeclined > 0) {
             mhNoteParts.push(`hours_removed_outside_business_hours=${oohDeclined}h`);
+          }
+          if (validationSelection.allowOutsideOperatingHours) {
+            mhNoteParts.push('manual_outside_operating_hours_exception=1');
           }
           if (policyDeclined > 0) {
             mhNoteParts.push(`hours_removed_below_minimum_shift=${policyDeclined}h`);

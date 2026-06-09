@@ -97,6 +97,17 @@ const MENTAL_HEALTH_VALIDATION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
   min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
+const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
+  ...DEFAULT_VALIDATION_CONFIG,
+  weekday_window_start_min: 0,
+  weekday_window_end_min: 24 * 60,
+  weekend_window_start_min: 0,
+  weekend_window_end_min: 24 * 60,
+};
+const MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
+  ...OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG,
+  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
+};
 const MH_POLICY_CUT_REASON =
   'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
 const MH_PUBLISH_REASON =
@@ -147,6 +158,40 @@ type ProviderProfile = {
   profession: string | null;
 };
 
+const hasManualOutsideOperatingHoursException = (
+  parsedShifts: Submission['parsed_shifts'],
+) => {
+  if (!parsedShifts || typeof parsedShifts !== 'object' || Array.isArray(parsedShifts)) {
+    return false;
+  }
+  const correction = parsedShifts.clinops_manual_correction;
+  return Boolean(
+    correction &&
+      typeof correction === 'object' &&
+      !Array.isArray(correction) &&
+      (correction as Record<string, unknown>).allow_outside_operating_hours === true,
+  );
+};
+
+const validationOptionsForSubmission = (
+  latest: Submission,
+  isMentalHealth: boolean,
+) => {
+  const allowOutsideOperatingHours = hasManualOutsideOperatingHoursException(latest.parsed_shifts);
+  if (allowOutsideOperatingHours) {
+    return {
+      options: {
+        config: isMentalHealth
+          ? MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG
+          : OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG,
+      },
+    };
+  }
+  return {
+    options: isMentalHealth ? { config: MENTAL_HEALTH_VALIDATION_CONFIG } : {},
+  };
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -195,8 +240,8 @@ Deno.serve(async (req: Request) => {
       groups.get(k)!.push(s);
     }
 
-    // Need every submission in the group (including superseded) to rebuild
-    // the timeline correctly — superseded rows still contributed slots.
+    // Load superseded peers only so stale recommendation rows can be deleted.
+    // They are intentionally excluded from the rebuilt timeline below.
     const providerMonths = Array.from(groups.keys());
     if (providerMonths.length > 0) {
       const providerIds = Array.from(new Set(providerMonths.map(k => k.split('|')[0])));
@@ -234,8 +279,8 @@ Deno.serve(async (req: Request) => {
     for (const [key, groupSubs] of groups) {
       try {
         counters.groups++;
-        const decided = groupSubs
-          .filter(s => s.decision_status !== 'superseded')
+        const activeGroupSubs = groupSubs.filter(s => s.decision_status !== 'superseded');
+        const decided = activeGroupSubs
           .sort((a, b) => b.submitted_at.localeCompare(a.submitted_at))[0];
         if (!decided) {
           counters.skipped_no_decision++;
@@ -265,8 +310,9 @@ Deno.serve(async (req: Request) => {
         // Build the canonical timeline using the same shared pipeline that
         // the evaluator used. Inputs (submissions, identity, target_month)
         // produce identical timelines on both sides.
+        const validationSelection = validationOptionsForSubmission(decided, isMentalHealth);
         const validation = buildSubmissionTimeline(
-          groupSubs.map(s => ({
+          activeGroupSubs.map(s => ({
             id: s.id,
             submitted_at: s.submitted_at,
             parsed_shifts: s.parsed_shifts ?? null,
@@ -277,7 +323,7 @@ Deno.serve(async (req: Request) => {
             name: decided.provider_name,
           },
           decided.target_month,
-          isMentalHealth ? { config: MENTAL_HEALTH_VALIDATION_CONFIG } : {},
+          validationSelection.options,
         );
 
         if (

@@ -2726,6 +2726,12 @@ function ProviderStatusSearchPanel({
       : selectedRow?.submission?.decision_status
         ? STATUS_STYLE[selectedRow.submission.decision_status as DecisionStatus]?.label ?? selectedRow.submission.decision_status
         : 'No submission';
+  const selectedCorrectionSummary =
+    manualTimeCorrectionSummary(selectedRow?.submission?.parsed_shifts) ??
+    manualTimeCorrectionSummary(latestAvailability?.parsed_shifts);
+  const selectedHasTimeCorrection = Boolean(selectedCorrectionSummary) ||
+    hasManualTimeCorrection(selectedRow?.submission?.parsed_shifts) ||
+    hasManualTimeCorrection(latestAvailability?.parsed_shifts);
 
   const handleSelect = (providerId: string) => {
     setSelectedProviderId(providerId);
@@ -2782,14 +2788,25 @@ function ProviderStatusSearchPanel({
                     {selectedRow.provider_email ?? 'No email'} · {selectedRow.profession ?? '—'} · {formatMonthLabel(month)}
                   </div>
                 </div>
-                <Badge variant="outline" className="bg-white">
-                  {reviewLabel}
-                </Badge>
+                <div className="flex flex-wrap gap-1 md:justify-end">
+                  {selectedHasTimeCorrection && (
+                    <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                      <CheckCircle2 className="mr-1 h-3 w-3" />
+                      Times updated
+                    </Badge>
+                  )}
+                  <Badge variant="outline" className="bg-white">
+                    {reviewLabel}
+                  </Badge>
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
                 <ProviderStatusMetric label="Submitted" value={formatHours(submittedHours)} />
                 <ProviderStatusMetric label="Accepted" value={formatHours(acceptedHours)} />
-                <ProviderStatusMetric label="Review" value={reviewLabel} />
+                <ProviderStatusMetric
+                  label="Review"
+                  value={selectedHasTimeCorrection ? 'Updated times' : reviewLabel}
+                />
                 <ProviderStatusMetric label="Resubmit" value={resubmitStatus} />
                 <ProviderStatusMetric
                   label="Time off"
@@ -2850,6 +2867,21 @@ const asParsedBlob = (raw: unknown): Record<string, unknown> =>
   raw && typeof raw === 'object' && !Array.isArray(raw)
     ? (raw as Record<string, unknown>)
     : {};
+
+const manualCorrectionFromParsedShifts = (raw: unknown): Record<string, unknown> | null => {
+  const correction = asParsedBlob(raw).clinops_manual_correction;
+  return correction && typeof correction === 'object' && !Array.isArray(correction)
+    ? (correction as Record<string, unknown>)
+    : null;
+};
+
+const hasManualTimeCorrection = (raw: unknown): boolean =>
+  Boolean(manualCorrectionFromParsedShifts(raw));
+
+const manualTimeCorrectionSummary = (raw: unknown): string | null => {
+  const summary = manualCorrectionFromParsedShifts(raw)?.summary;
+  return typeof summary === 'string' && summary.trim() ? summary.trim() : null;
+};
 
 const compactJson = (raw: unknown) => {
   try {
@@ -3074,7 +3106,7 @@ const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
   if (/unavailable|off-day|off day/.test(text)) {
     add('Unavailable date', 'amber');
   }
-  if (/unavailable_override|confirmed availability override/.test(text)) {
+  if (/unavailable_override|confirmed availability override|clinops_manual_correction|clinops corrected|correction=|availability corrected|corrected availability/.test(text)) {
     add('Availability correction', 'emerald');
   }
   if (/license|licensure|state-coverage|eligib|no state allocation/.test(text)) {
@@ -3301,6 +3333,9 @@ function AvailabilitySubmissionsPanel({
                     : 'Review submitted times';
                 const canResolve = Boolean(row.provider_id);
                 const reviewReasonText = [...warnings, row.decision_notes ?? ''].filter(Boolean).join('\n');
+                const correctionSummary = manualTimeCorrectionSummary(row.parsed_shifts);
+                const hasTimeCorrection = Boolean(correctionSummary) ||
+                  hasManualTimeCorrection(row.parsed_shifts);
                 return (
                   <TableRow
                     key={row.id}
@@ -3346,6 +3381,19 @@ function AvailabilitySubmissionsPanel({
                     <TableCell className="align-top text-xs text-muted-foreground">
                       <div>{formatRelativeTime(row.submitted_at)}</div>
                       <StatusBadge status={row.decision_status as DecisionStatus} />
+                      {hasTimeCorrection && (
+                        <div className="mt-1">
+                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                            <CheckCircle2 className="mr-1 h-3 w-3" />
+                            Times updated
+                          </Badge>
+                          {correctionSummary && (
+                            <div className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                              {correctionSummary}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {warnings.length > 0 && (
                         <div className="mt-1">
                           <ReasonSummary text={reviewReasonText} detailsText={warnings.join('\n')} />
@@ -3415,7 +3463,13 @@ function AvailabilitySubmissionsPanel({
                           </Badge>
                         )
                       ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
+                        hasTimeCorrection ? (
+                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                            Updated
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )
                       )}
                     </TableCell>
                   </TableRow>
@@ -8517,7 +8571,7 @@ function CostPerVisitPanel({
             Cost / Visit · {formatMonthLabel(month)}
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Uses accepted provider hours for this month. Each hour creates two visit slots; CPV assumes 70% target utilization.
+            Uses accepted provider hours for this month. Standard care uses 2 visits/hr; mental health coach, therapist, and LPC rows use 3 visits per 2.5h shift. CPV assumes 70% target utilization.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -8537,7 +8591,7 @@ function CostPerVisitPanel({
             <CostMetricCard
               label="Available slots"
               value={formatWholeNumber(model.totalAvailableSlots)}
-              sub="2 visits per approved hour"
+              sub="Standard 2/hr; MH 3 per 2.5h"
               tone="neutral"
             />
             <CostMetricCard
@@ -8825,7 +8879,10 @@ function CostProviderTableRow({ row }: { row: SchedulingCostProviderRow }) {
         )}
       </TableCell>
       <TableCell className="text-right tabular-nums">{formatCurrency(row.wageCost)}</TableCell>
-      <TableCell className="text-right tabular-nums">{formatCurrency(row.costPerVisitAtTarget, 2)}</TableCell>
+      <TableCell className="text-right tabular-nums">
+        {formatCurrency(row.costPerVisitAtTarget, 2)}
+        <div className="text-[11px] text-muted-foreground">{row.visitSlotModelLabel}</div>
+      </TableCell>
       <TableCell className="min-w-52">
         <div className="flex flex-wrap gap-1">
           {row.routingTags.slice(0, 4).map(tag => (

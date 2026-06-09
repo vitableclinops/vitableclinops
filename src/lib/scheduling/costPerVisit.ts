@@ -1,4 +1,10 @@
+import { mentalHealthServiceLineForProvider } from './mentalHealth';
+
 export const COST_VISIT_SLOTS_PER_HOUR = 2;
+export const COST_MH_VISIT_BLOCK_HOURS = 2.5;
+export const COST_MH_VISITS_PER_BLOCK = 3;
+export const COST_MH_VISIT_SLOTS_PER_HOUR =
+  COST_MH_VISITS_PER_BLOCK / COST_MH_VISIT_BLOCK_HOURS;
 export const COST_VISIT_TARGET_UTILIZATION = 0.7;
 
 export type ProviderPayRateLike = {
@@ -31,6 +37,9 @@ export type SchedulingCostProviderRow = SchedulingCostInputRow & {
   rateSource: SchedulingCostRateSource;
   rateSourceLabel: string;
   wageCost: number | null;
+  visitSlotsPerHour: number;
+  visitSlotModel: 'standard' | 'mental_health';
+  visitSlotModelLabel: string;
   availableSlots: number;
   targetUtilizedVisits: number;
   costPerVisitAtTarget: number | null;
@@ -82,6 +91,14 @@ export type SchedulingCostModel = {
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const normProviderName = (value: string | null | undefined) =>
+  (value ?? '').toLowerCase().trim().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+const MH_CAPACITY_EXCLUDED_PROVIDER_NAMES = new Set([
+  'matthew vazquez',
+  'matthew vasquez',
+]);
+
 export function decisionNoteValue(notes: string | null | undefined, key: string): string | null {
   const match = (notes ?? '').match(new RegExp(`${escapeRegExp(key)}=([^;\\n]+)`));
   return match?.[1]?.trim() || null;
@@ -129,6 +146,28 @@ export function protectedAccessHoursFromDecisionNotes(notes: string | null | und
   const scarceWindowHours = numericValue(decisionNoteValue(notes, 'scarce_window_hours'));
   const accessBufferUsedHours = numericValue(decisionNoteValue(notes, 'access_buffer_used_hours'));
   return Math.max(0, scarceWindowHours) + Math.max(0, accessBufferUsedHours);
+}
+
+export function visitSlotsPerHourForCost(row: Pick<SchedulingCostInputRow, 'provider_name' | 'profession'>): {
+  slotsPerHour: number;
+  model: 'standard' | 'mental_health';
+  label: string;
+} {
+  const isExcluded = MH_CAPACITY_EXCLUDED_PROVIDER_NAMES.has(normProviderName(row.provider_name));
+  const isMentalHealth = !isExcluded &&
+    mentalHealthServiceLineForProvider(row.profession, row.provider_name) !== null;
+  if (!isMentalHealth) {
+    return {
+      slotsPerHour: COST_VISIT_SLOTS_PER_HOUR,
+      model: 'standard',
+      label: '2 visits/hr',
+    };
+  }
+  return {
+    slotsPerHour: COST_MH_VISIT_SLOTS_PER_HOUR,
+    model: 'mental_health',
+    label: '3 visits/2.5h',
+  };
 }
 
 export function routingSynopsisTags(
@@ -212,7 +251,8 @@ export function buildSchedulingCostModel({
       const hourlyRate = decisionRate ?? (payRate ? numericValue(payRate.hourly_rate) : null);
       const rateSource: SchedulingCostRateSource =
         decisionRate != null ? 'decision_note' : payRate ? 'provider_pay_rates' : 'missing';
-      const availableSlots = acceptedHours * slotsPerHour;
+      const visitSlotCapacity = visitSlotsPerHourForCost(row);
+      const availableSlots = acceptedHours * visitSlotCapacity.slotsPerHour;
       const targetUtilizedVisits = availableSlots * targetUtilization;
       const wageCost = hourlyRate != null ? acceptedHours * hourlyRate : null;
       const costPerVisitAtTarget =
@@ -244,6 +284,9 @@ export function buildSchedulingCostModel({
               ? payRate?.source ?? 'Rate table'
               : 'Missing',
         wageCost,
+        visitSlotsPerHour: visitSlotCapacity.slotsPerHour,
+        visitSlotModel: visitSlotCapacity.model,
+        visitSlotModelLabel: visitSlotCapacity.label,
         availableSlots,
         targetUtilizedVisits,
         costPerVisitAtTarget,
@@ -257,10 +300,16 @@ export function buildSchedulingCostModel({
       return a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' });
     });
 
-  const totalAvailableSlots = totalApprovedHours * slotsPerHour;
+  const totalAvailableSlots = providerRows.reduce((sum, row) => sum + row.availableSlots, 0);
   const totalTargetUtilizedVisits = totalAvailableSlots * targetUtilization;
-  const knownRateSlots = knownRateHours * slotsPerHour;
-  const knownRateTargetUtilizedVisits = knownRateSlots * targetUtilization;
+  const knownRateSlots = providerRows.reduce(
+    (sum, row) => sum + (row.rateSource === 'missing' ? 0 : row.availableSlots),
+    0,
+  );
+  const knownRateTargetUtilizedVisits = providerRows.reduce(
+    (sum, row) => sum + (row.rateSource === 'missing' ? 0 : row.targetUtilizedVisits),
+    0,
+  );
   const costPerVisitAtTarget =
     knownRateTargetUtilizedVisits > 0 ? totalKnownWageCost / knownRateTargetUtilizedVisits : null;
   const missingRateRows = providerRows.filter(row => row.acceptedHours > 0 && row.rateSource === 'missing');
