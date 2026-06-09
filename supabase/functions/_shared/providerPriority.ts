@@ -21,7 +21,7 @@ export type ProviderPriorityProfile = {
 };
 
 export const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPriority> = {
-  clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' },
+  clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical lead/admin' },
   vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Rate-ranked Vitable provider' },
   directshifts_brittany_priority: {
     key: 'directshifts_brittany_priority',
@@ -32,6 +32,12 @@ export const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPrior
 };
 
 const DEFAULT_PROVIDER_PRIORITY = PROVIDER_PRIORITY_BY_KEY.vitable_internal;
+
+export const NAMED_CLINICAL_LEAD_ADMIN_PROVIDERS = [
+  { first: 'genevieve', last: 'teetie', displayName: 'Genevieve Teetie' },
+  { first: 'shanta', last: 'williams', displayName: 'Shanta Williams' },
+  { first: 'rebecca', last: 'keuch', displayName: 'Rebecca Keuch' },
+] as const;
 
 const normalizedProviderText = (profile: ProviderPriorityProfile | null | undefined) => {
   if (!profile) return '';
@@ -53,10 +59,29 @@ const normalizedProviderText = (profile: ProviderPriorityProfile | null | undefi
     .trim();
 };
 
+function nameTokenSet(name: string | null | undefined): Set<string> {
+  return new Set(
+    (name ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean),
+  );
+}
+
 function isBrittneyAframName(profile: ProviderPriorityProfile | null | undefined): boolean {
-  const name = (profile?.name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const tokens = new Set(name.split(/\s+/).filter(Boolean));
+  const tokens = nameTokenSet(profile?.name);
   return tokens.has('afram') && (tokens.has('brittney') || tokens.has('brittany'));
+}
+
+export function isNamedClinicalLeadAdminProvider(
+  profile: ProviderPriorityProfile | null | undefined,
+): boolean {
+  const tokens = nameTokenSet(profile?.name);
+  if (tokens.size === 0) return false;
+  return NAMED_CLINICAL_LEAD_ADMIN_PROVIDERS.some(provider =>
+    tokens.has(provider.first) && tokens.has(provider.last),
+  );
 }
 
 export function isDirectShiftsProvider(profile: ProviderPriorityProfile | null | undefined): boolean {
@@ -90,8 +115,11 @@ export function providerPriorityFor(
   const haystack = normalizedProviderText(profile);
 
   if (
+    isNamedClinicalLeadAdminProvider(profile) ||
     haystack.includes('clinical supervisor') ||
     haystack.includes('clinical lead') ||
+    haystack.includes('clinical admin') ||
+    haystack.includes('clinical administrator') ||
     haystack.includes('supervisor')
   ) {
     return PROVIDER_PRIORITY_BY_KEY.clinical_supervisor;

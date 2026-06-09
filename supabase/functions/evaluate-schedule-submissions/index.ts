@@ -103,6 +103,7 @@ import {
 import {
   compareProviderAllocationPriority,
   isDirectShiftsProvider,
+  isNamedClinicalLeadAdminProvider,
   providerHourlyRate,
   providerUtilizationPct,
   providerPriorityFor,
@@ -487,6 +488,8 @@ function pushProviderPriorityNotes(
       'provider_priority_reason=Brittney Afram keeps the DirectShifts compatibility key; lowest hourly rate still decides before this tie-break.',
       'directshifts_priority_tiebreak=1',
     );
+  } else if (priority.key === 'clinical_supervisor' && isNamedClinicalLeadAdminProvider(providerProfile)) {
+    noteParts.push('provider_priority_reason=named_clinical_lead_admin_override');
   }
 }
 

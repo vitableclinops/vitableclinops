@@ -9207,7 +9207,7 @@ type ProviderPriority = {
 };
 
 const PROVIDER_PRIORITY_BY_KEY: Record<ProviderPriorityKey, ProviderPriority> = {
-  clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical supervisor' },
+  clinical_supervisor: { key: 'clinical_supervisor', rank: 0, label: 'Clinical lead/admin' },
   vitable_internal: { key: 'vitable_internal', rank: 1, label: 'Rate-ranked Vitable provider' },
   directshifts_brittany_priority: {
     key: 'directshifts_brittany_priority',
@@ -9248,17 +9248,24 @@ function providerPriorityForRow(row: ProviderPublishView): ProviderPriority {
     .join(' ')
     .toLowerCase()
     .replace(/[_-]+/g, ' ');
+  const providerNameTokens = new Set(
+    row.provider_name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(Boolean),
+  );
+  const isNamedClinicalLeadAdmin =
+    (providerNameTokens.has('genevieve') && providerNameTokens.has('teetie')) ||
+    (providerNameTokens.has('shanta') && providerNameTokens.has('williams')) ||
+    (providerNameTokens.has('rebecca') && providerNameTokens.has('keuch'));
 
   if (
+    isNamedClinicalLeadAdmin ||
     haystack.includes('clinical supervisor') ||
     haystack.includes('clinical lead') ||
+    haystack.includes('clinical admin') ||
+    haystack.includes('clinical administrator') ||
     haystack.includes('supervisor')
   ) {
     return PROVIDER_PRIORITY_BY_KEY.clinical_supervisor;
   }
-  const providerNameTokens = new Set(
-    row.provider_name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(Boolean),
-  );
   const isBrittneyAfram =
     providerNameTokens.has('afram') &&
     (providerNameTokens.has('brittney') || providerNameTokens.has('brittany'));

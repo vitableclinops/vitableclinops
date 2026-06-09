@@ -91,7 +91,7 @@ Three sub-questions, written to `recommendations_daily`:
 - **Lower bound:** cover projected demand with wiggle room (target = `monthly_visits/20 × 1.5`, floor 5 slots/day per state).
 - **Upper bound:** stay under cost-per-visit ceiling. **Target: <$60/visit. Current state: well above target.**
 - Overshooting inflates cost-per-visit by paying for unused capacity; undershooting hurts member experience and SLA. Optimize for the smallest provider footprint that still keeps every state at `ratio ≥ 1.5` on the daily SLA bucket.
-- **Equity guardrails:** Validated clinical lead hours are accepted in full before demand trimming, hourly rate is the next routing signal, and DirectShifts/access should land near 15% of accepted telehealth appointment volume when eligible supply exists; same-rate DirectShifts/access providers should receive similar accepted percentages of submitted forecastable hours; non-clinical providers hit a 75% submitted-hours soft cap before additional hours are routed to them.
+- **Equity guardrails:** Validated clinical lead/admin hours are accepted in full before demand trimming, hourly rate is the next routing signal, and DirectShifts/access should land near 15% of accepted telehealth appointment volume when eligible supply exists; same-rate DirectShifts/access providers should receive similar accepted percentages of submitted forecastable hours; non-clinical providers hit a 75% submitted-hours soft cap before additional hours are routed to them. Genevieve Teetie, Shanta Williams, and Rebecca Keuch are explicit clinical lead/admin overrides even when source metadata does not carry that label.
 
 **Outputs (per provider):**
 - `accepted_hours` — subset of their Jotform submission we approve

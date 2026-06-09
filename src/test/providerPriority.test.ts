@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   compareProviderAllocationPriority,
+  isNamedClinicalLeadAdminProvider,
   providerPriorityFor,
   type ProviderPriorityProfile,
 } from '@/lib/scheduling/providerPriority';
@@ -81,6 +82,24 @@ describe('DirectShifts Brittney Afram priority', () => {
       .toBe('low-rate-ds');
     expect(selectProviderForState([higherRateInternal, lowerRateDirectShifts, clinicalLead], 'PA', '2026-06-23')?.id)
       .toBe('clinical-lead');
+  });
+
+  it('treats named clinical lead/admin overrides as clinical supervisors even without a source label', () => {
+    const leadNames = [
+      'Genevieve Teetie',
+      'Genevieve Rivera Teetie',
+      'Shanta Williams',
+      'Rebecca Keuch',
+    ];
+
+    for (const name of leadNames) {
+      const profile = { name, profession: 'NP', source: 'medallion' };
+      expect(isNamedClinicalLeadAdminProvider(profile)).toBe(true);
+      expect(providerPriorityFor(profile).key).toBe('clinical_supervisor');
+    }
+
+    expect(isNamedClinicalLeadAdminProvider({ name: 'Tylene Williams', profession: 'NP' })).toBe(false);
+    expect(providerPriorityFor({ name: 'Tylene Williams', profession: 'NP' }).key).toBe('vitable_internal');
   });
 
   it('lets a lower-rate DirectShifts provider outrank Brittney Afram when cost decides', () => {
