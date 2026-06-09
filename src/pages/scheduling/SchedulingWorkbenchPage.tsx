@@ -9374,11 +9374,6 @@ function inferPriorityReason(row: ProviderPublishView): string {
   else if (valueFromDecisionNote(row.submission?.decision_notes, 'provider_hourly_rate') === 'missing') {
     reasons.push('rate missing');
   }
-  const utilization = providerUtilizationFromNotes(row.submission?.decision_notes);
-  if (utilization != null) reasons.push(`${utilization.toFixed(1)}% util`);
-  else if (valueFromDecisionNote(row.submission?.decision_notes, 'provider_utilization_pct') === 'missing') {
-    reasons.push('util missing');
-  }
   const cohort = valueFromDecisionNote(row.submission?.decision_notes, 'cohort');
   if (cohort === 'directshifts_access') reasons.push('DS/access share');
   const acceptancePct = valueFromDecisionNote(row.submission?.decision_notes, 'provider_acceptance_pct');
@@ -9407,12 +9402,12 @@ function providerRateSortValue(row: ProviderPublishView): number {
   return providerRateFromNotes(row.submission?.decision_notes) ?? Number.POSITIVE_INFINITY;
 }
 
-function providerUtilizationFromNotes(notes: string | null | undefined): number | null {
-  const raw = valueFromDecisionNote(notes, 'provider_utilization_pct');
-  if (!raw || raw === 'missing') return null;
-  const utilization = Number(raw);
-  return Number.isFinite(utilization) ? utilization : null;
-}
+const stripUtilizationReasonLines = (details: string) =>
+  details
+    .split('\n')
+    .filter(line => !/utilization|util\b/i.test(line))
+    .join('\n')
+    .trim();
 
 type DecisionReasonTile = {
   label: string;
@@ -9429,12 +9424,6 @@ const REASON_TILE_STYLES: Record<NonNullable<ReasonTag['tone']>, string> = {
   emerald: 'border-emerald-200 bg-emerald-50/80 text-emerald-950',
 };
 
-const cleanDecisionValue = (value: string | null | undefined) =>
-  (value ?? '')
-    .replace(/\s*\(.+?\)\s*$/, '')
-    .trim()
-    .toLowerCase();
-
 const humanizeDecisionNoteValue = (value: string | null | undefined) =>
   (value ?? '')
     .replace(/_/g, ' ')
@@ -9446,9 +9435,6 @@ function decisionReasonTilesForRow(
   details: string,
 ): DecisionReasonTile[] {
   const notes = row.submission?.decision_notes ?? '';
-  const accepted = Number(row.submission?.accepted_hours ?? 0);
-  const declined = Number(row.submission?.declined_hours ?? 0);
-  const status = row.submission?.decision_status ?? cleanDecisionValue(valueFromDecisionNote(notes, 'decision'));
   const detailLines = details.split('\n').map(line => line.trim()).filter(Boolean);
   const findDetail = (...patterns: RegExp[]) =>
     detailLines.find(line => patterns.some(pattern => pattern.test(line.toLowerCase())));
@@ -9456,36 +9442,6 @@ function decisionReasonTilesForRow(
   const addTile = (tile: DecisionReasonTile) => {
     if (!tiles.some(existing => existing.label === tile.label)) tiles.push(tile);
   };
-
-  if (status === 'accepted' && declined <= 0) {
-    addTile({
-      label: 'Decision',
-      value: 'Full accept',
-      detail: `${formatHours(accepted)} accepted; no cut hours.`,
-      tone: 'emerald',
-    });
-  } else if (status === 'partial' || (accepted > 0 && declined > 0)) {
-    addTile({
-      label: 'Decision',
-      value: 'Partial',
-      detail: `${formatHours(accepted)} accepted; ${formatHours(declined)} cut.`,
-      tone: 'amber',
-    });
-  } else if (status === 'needs_review') {
-    addTile({
-      label: 'Decision',
-      value: 'Needs review',
-      detail: findDetail(/review|invalid|duration|malformed|before start/) ?? 'ClinOps review is required before publishing.',
-      tone: 'amber',
-    });
-  } else if (status === 'declined' || declined > 0) {
-    addTile({
-      label: 'Decision',
-      value: declined > 0 ? `${formatHours(declined)} cut` : 'Declined',
-      detail: findDetail(/no effective|no allocation|license|outside|oversupply|declined/) ?? 'No publishable hours from this decision.',
-      tone: 'red',
-    });
-  }
 
   const serviceLine = valueFromDecisionNote(notes, 'service_line');
   if (serviceLine) {
@@ -9497,28 +9453,23 @@ function decisionReasonTilesForRow(
         : 'Mental health service-line forecast.',
       tone: 'blue',
     });
-  } else {
-    const priority = providerPriorityForRow(row);
-    addTile({
-      label: 'Priority',
-      value: priority.label,
-      detail:
-        priority.key === 'clinical_supervisor'
-          ? 'Clinical lead/admin hours are protected before rate and share trims.'
-          : findDetail(/rate|directshifts|priority|order of operations/),
-      tone: priority.key === 'clinical_supervisor' ? 'emerald' : 'blue',
-    });
+    const visitCapacity = valueFromDecisionNote(notes, 'mh_visit_capacity');
+    if (visitCapacity) {
+      addTile({
+        label: 'Visit capacity',
+        value: `${visitCapacity} visits`,
+        detail: 'Mental health capacity from accepted 2.5-hour blocks.',
+        tone: 'emerald',
+      });
+    }
   }
 
   const rate = providerRateFromNotes(notes);
-  const utilization = providerUtilizationFromNotes(notes);
-  if (rate != null || utilization != null) {
+  if (rate != null) {
     addTile({
-      label: rate != null ? 'Rate' : 'Utilization',
-      value: rate != null ? `$${rate.toFixed(2)}/hr` : `${utilization?.toFixed(1)}% util`,
-      detail: utilization != null
-        ? `${utilization.toFixed(1)}% recent utilization${rate != null ? '; visible after rate ranking.' : '.'}`
-        : findDetail(/current scheduling rate|hourly rate/),
+      label: 'Rate',
+      value: `$${rate.toFixed(2)}/hr`,
+      detail: findDetail(/current scheduling rate|hourly rate/),
       tone: 'slate',
     });
   } else if (valueFromDecisionNote(notes, 'provider_hourly_rate') === 'missing') {
@@ -9530,16 +9481,14 @@ function decisionReasonTilesForRow(
     });
   }
 
-  const directShiftsShare = valueFromDecisionNote(notes, 'directshifts_actual_share');
-  const directShiftsTarget = valueFromDecisionNote(notes, 'directshifts_target_share');
-  if (directShiftsShare || directShiftsTarget) {
+  const acceptancePct = valueFromDecisionNote(notes, 'provider_acceptance_pct');
+  const acceptancePctNumber = Number(acceptancePct);
+  if (Number.isFinite(acceptancePctNumber)) {
     addTile({
-      label: 'DS/access',
-      value: `${directShiftsShare ?? directShiftsTarget}% share`,
-      detail: directShiftsTarget
-        ? `Target ${directShiftsTarget}% of accepted telehealth hours.`
-        : findDetail(/directshifts|access share/),
-      tone: 'blue',
+      label: 'Submitted kept',
+      value: `${acceptancePctNumber.toFixed(1)}%`,
+      detail: `${acceptancePctNumber.toFixed(1)}% of forecastable submitted hours were accepted.`,
+      tone: acceptancePctNumber >= 100 ? 'emerald' : 'amber',
     });
   }
 
@@ -9573,7 +9522,32 @@ function decisionReasonTilesForRow(
     });
   }
 
-  const noEligibleStateDetail = findDetail(/no eligible states|no allocation-eligible|license|licensure/);
+  const scarceHours = valueFromDecisionNote(notes, 'scarce_window_hours');
+  if (scarceHours && Number.parseFloat(scarceHours) > 0) {
+    addTile({
+      label: 'Protected access',
+      value: scarceHours,
+      detail: findDetail(/friday afternoon|weekend access|protected/) ?? 'Protected for scarce Friday/weekend access windows.',
+      tone: 'emerald',
+    });
+  }
+
+  const softCapExceeded = valueFromDecisionNote(notes, 'soft_cap_exceeded');
+  if (softCapExceeded === '1') {
+    addTile({
+      label: 'Soft cap',
+      value: 'Relaxed',
+      detail: findDetail(/soft cap/),
+      tone: 'amber',
+    });
+  }
+
+  const noEligibleStateDetail = findDetail(
+    /no eligible states/,
+    /no allocation-eligible/,
+    /no compatible state/,
+    /could not safely assign/,
+  );
   if (noEligibleStateDetail) {
     addTile({
       label: 'Eligibility',
@@ -9610,10 +9584,10 @@ function DecisionReasonSummaryTiles({ row }: { row: ProviderPublishView }) {
   const [open, setOpen] = useState(false);
   const rawNotes = row.submission?.decision_notes ?? '';
   const fallback = inferDeclineReason(row);
-  const details = formatDecisionNoteForStaff(rawNotes) || fallback;
+  const details = stripUtilizationReasonLines(formatDecisionNoteForStaff(rawNotes) || fallback);
   const raw = [rawNotes, fallback].filter(Boolean).join('\n');
   const tiles = decisionReasonTilesForRow(row, details);
-  const visibleTiles = tiles.slice(0, 4);
+  const visibleTiles = tiles.slice(0, 6);
   if (!raw.trim() && visibleTiles.length === 0) {
     return <span className="text-muted-foreground">—</span>;
   }
@@ -9705,8 +9679,8 @@ function ProviderPriorityPolicyCard() {
             <div className="text-muted-foreground">DirectShifts/access targets 15%; same-rate DirectShifts providers stay close by accepted share.</div>
           </div>
           <div>
-            <div className="font-medium">4. Caps and visibility</div>
-            <div className="text-muted-foreground">A 75% soft cap redistributes first. Utilization is visible only unless explicitly enabled.</div>
+            <div className="font-medium">4. Soft cap</div>
+            <div className="text-muted-foreground">A 75% soft cap redistributes first, then relaxes only when demand would otherwise remain uncovered.</div>
           </div>
         </div>
       </CardContent>
@@ -9813,12 +9787,26 @@ function MatchingPanel({
               const accepted = Number(r.submission?.accepted_hours ?? 0);
               const declined = Number(r.submission?.declined_hours ?? 0);
               const status = r.submission?.decision_status ?? null;
+              const priority = providerPriorityForRow(r);
               return (
                 <TableRow key={r.provider_id}>
                   <TableCell className="font-medium">{r.provider_name}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {r.profession ?? '—'}
-                    {r.employment_type ? ` · ${r.employment_type}` : ''}
+                    <div>
+                      {r.profession ?? '—'}
+                      {r.employment_type ? ` · ${r.employment_type}` : ''}
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'mt-1 max-w-[180px] whitespace-normal text-[11px] font-medium leading-tight',
+                        priority.key === 'clinical_supervisor'
+                          ? REASON_TAG_STYLES.emerald
+                          : REASON_TAG_STYLES.blue,
+                      )}
+                    >
+                      P{priority.rank + 1} {priority.label}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-xs">
                     {assignedStateList.length > 0 ? (
