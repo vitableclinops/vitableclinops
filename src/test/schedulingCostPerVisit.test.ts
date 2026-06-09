@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSchedulingCostModel,
+  protectedAccessHoursFromDecisionNotes,
   rateFromDecisionNotes,
   routingSynopsisTags,
   selectRateForProviderMonth,
@@ -158,5 +159,32 @@ describe('scheduling cost per visit', () => {
     expect(tags).toContain('Higher-rate/capacity cut');
     expect(tags).toContain('Utilization tiebreak');
     expect(tags).toContain('Protected access');
+  });
+
+  it('counts only explicitly protected access hours instead of all accepted hours', () => {
+    const notes = [
+      'provider_hourly_rate=100',
+      'scarce_window_policy=protected_before_monthly_trim',
+      'scarce_window_hours=4h',
+      'access_buffer_used_hours=2h',
+    ].join('; ');
+    const model = buildSchedulingCostModel({
+      monthStart: '2026-07-01',
+      rows: [
+        {
+          provider_id: 'p1',
+          provider_name: 'Protected Slice Provider',
+          decision_status: 'accepted',
+          accepted_hours: 100,
+          declined_hours: 0,
+          decision_notes: notes,
+        },
+      ],
+      payRates: [],
+    });
+
+    expect(protectedAccessHoursFromDecisionNotes(notes)).toBe(6);
+    expect(model.highlights.protectedAccessProviders).toBe(1);
+    expect(model.highlights.protectedAccessHours).toBe(6);
   });
 });

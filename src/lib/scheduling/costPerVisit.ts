@@ -80,7 +80,9 @@ export function decisionNoteValue(notes: string | null | undefined, key: string)
 
 export function numericValue(raw: number | string | null | undefined): number {
   if (raw === null || raw === undefined || raw === '') return 0;
-  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(/[$,%]/g, ''));
+  const n = typeof raw === 'number'
+    ? raw
+    : Number(String(raw).replace(/[$,%]/g, '').match(/-?\d+(?:\.\d+)?/)?.[0] ?? NaN);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -112,6 +114,12 @@ export function selectRateForProviderMonth(
       return (b.effective_from ?? '').localeCompare(a.effective_from ?? '');
     });
   return candidates[0] ?? null;
+}
+
+export function protectedAccessHoursFromDecisionNotes(notes: string | null | undefined): number {
+  const scarceWindowHours = numericValue(decisionNoteValue(notes, 'scarce_window_hours'));
+  const accessBufferUsedHours = numericValue(decisionNoteValue(notes, 'access_buffer_used_hours'));
+  return Math.max(0, scarceWindowHours) + Math.max(0, accessBufferUsedHours);
 }
 
 export function routingSynopsisTags(
@@ -263,9 +271,10 @@ export function buildSchedulingCostModel({
         acc.clinicalLeadHours += row.acceptedHours;
       }
       if (tagSet.has('Utilization tiebreak')) acc.utilizationTieBreakProviders += 1;
-      if ((tagSet.has('Protected access') || tagSet.has('Access buffer')) && row.acceptedHours > 0) {
+      const protectedAccessHours = protectedAccessHoursFromDecisionNotes(row.decision_notes);
+      if (protectedAccessHours > 0) {
         acc.protectedAccessProviders += 1;
-        acc.protectedAccessHours += row.acceptedHours;
+        acc.protectedAccessHours += protectedAccessHours;
       }
       if (row.rateSource === 'missing' && row.acceptedHours > 0) {
         acc.missingRateProviders += 1;

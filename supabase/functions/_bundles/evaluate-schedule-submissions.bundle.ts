@@ -2133,15 +2133,16 @@ export function compareProviderAllocationPriority(
  *      MD-only states (AL/IN/GA/MS/MO/SC/TN/LA), and non-physicians cannot
  *      be allocated to those MD-only states.
  *   4. For each eligible state, base_demand_hours = sum of demand_forecast
- *      values over the target month. The telehealth allocator applies a
- *      1.25x access-growth buffer before subtracting committed hours from
- *      decisions made in prior runs for OTHER providers in same state+month.
+ *      values over the target month. July 2026 uses midpoint demand targets,
+ *      so the forecast total is already the final planning target before
+ *      subtracting committed hours from decisions made in prior runs for
+ *      OTHER providers in same state+month.
  *      Note: demand_forecast.projected_visits stores hours of provider
  *      availability (not visits); column name is legacy. See
  *      compute-demand-forecast for the canonical methodology.
- *   5. total_gap = sum of buffered demand-hour gaps across eligible states
- *      (clipped 0). The buffer intentionally schedules above historical
- *      utilization so scheduling can improve same-day / next-day access.
+ *   5. total_gap = sum of demand-hour gaps across eligible states
+ *      (clipped 0). Scarce access windows can still be protected before
+ *      monthly oversupply trimming.
  *   6. Scarce coverage windows (Friday PM, Saturday, Sunday) are protected
  *      before monthly oversupply trimming. This keeps same-day / next-day
  *      access coverage from being rejected just because total monthly hours
@@ -2292,8 +2293,8 @@ const MH_POLICY_CUT_REASON =
   'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
-const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1.25;
-const ACCESS_GROWTH_BUFFER_POLICY = 'access_growth_buffer_1_25';
+const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1;
+const ACCESS_GROWTH_BUFFER_POLICY = 'midpoint_targets_no_extra_buffer';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -2352,6 +2353,12 @@ type ProviderProfile = {
   shift_types: string[] | null;
   hourly_rate?: number | null;
   utilization_pct?: number | null;
+  utilization_source?: string | null;
+  utilization_basis?: string | null;
+  utilization_month?: string | null;
+  utilization_state_count?: number | null;
+  utilization_available_count?: number | null;
+  utilization_booked_count?: number | null;
 };
 
 type ProviderPayRateRow = {
@@ -2367,6 +2374,28 @@ type ProviderUtilizationRow = {
   window_start: string | null;
   window_end: string | null;
   imported_at: string | null;
+};
+
+type ProviderStateUtilizationRow = {
+  provider_id: string | null;
+  provider_name: string | null;
+  month_date: string | null;
+  state: string | null;
+  available_count: number | string | null;
+  booked_count: number | string | null;
+  booking_rate_pct: number | string | null;
+  imported_at: string | null;
+  synced_at: string | null;
+};
+
+type ProviderUtilizationSummary = {
+  pct: number;
+  source: 'provider_state_utilization' | 'provider_utilization';
+  basis: 'state_gap_weighted' | 'provider_latest';
+  month?: string | null;
+  stateCount?: number | null;
+  availableCount?: number | null;
+  bookedCount?: number | null;
 };
 
 type ServiceLineDemandTarget = {
@@ -2433,6 +2462,24 @@ function pushProviderPriorityNotes(
     noteParts.push('provider_utilization_pct=missing');
   } else {
     noteParts.push(`provider_utilization_pct=${utilizationPct}`);
+    if (providerProfile?.utilization_source) {
+      noteParts.push(`provider_utilization_source=${providerProfile.utilization_source}`);
+    }
+    if (providerProfile?.utilization_basis) {
+      noteParts.push(`provider_utilization_basis=${providerProfile.utilization_basis}`);
+    }
+    if (providerProfile?.utilization_month) {
+      noteParts.push(`provider_utilization_month=${providerProfile.utilization_month}`);
+    }
+    if (providerProfile?.utilization_state_count != null) {
+      noteParts.push(`provider_utilization_state_count=${providerProfile.utilization_state_count}`);
+    }
+    if (providerProfile?.utilization_available_count != null) {
+      noteParts.push(`provider_utilization_available_count=${providerProfile.utilization_available_count}`);
+    }
+    if (providerProfile?.utilization_booked_count != null) {
+      noteParts.push(`provider_utilization_booked_count=${providerProfile.utilization_booked_count}`);
+    }
   }
   if (priority.key === 'directshifts_brittany_priority') {
     noteParts.push(
@@ -2648,7 +2695,7 @@ Deno.serve(async (req: Request) => {
       return chosen;
     };
 
-    const utilizationByProvider = new Map<string, number>();
+    const utilizationByProvider = new Map<string, ProviderUtilizationSummary>();
     if (allEligibilityProviderIds.length > 0) {
       const { data: utilizationRows, error: utilizationErr } = await supabase
         .from('provider_utilization')
@@ -2670,23 +2717,50 @@ Deno.serve(async (req: Request) => {
         }
         for (const [providerId, row] of latestByProvider) {
           const utilization = providerUtilizationPct({ utilization_pct: row.avg_utilization_pct });
-          if (utilization != null) utilizationByProvider.set(providerId, utilization);
+          if (utilization != null) {
+            utilizationByProvider.set(providerId, {
+              pct: utilization,
+              source: 'provider_utilization',
+              basis: 'provider_latest',
+              month: row.window_end ?? row.window_start ?? null,
+            });
+          }
         }
       }
     }
 
-    const providerProfileForMonth = (
-      providerId: string,
-      targetMonth: string,
-    ): ProviderProfile | undefined => {
-      const profile = providerProfileByProvider.get(providerId);
-      if (!profile) return undefined;
-      return {
-        ...profile,
-        hourly_rate: rateForProviderMonth(providerId, targetMonth),
-        utilization_pct: utilizationByProvider.get(providerId) ?? null,
-      };
-    };
+    const providerStateUtilizationRowsByProvider = new Map<string, ProviderStateUtilizationRow[]>();
+    const providerStateUtilizationRowsByName = new Map<string, ProviderStateUtilizationRow[]>();
+    const providerNameKeysInScope = new Set<string>();
+    for (const profile of providerProfileByProvider.values()) {
+      const key = canonicalName(profile.name);
+      if (key) providerNameKeysInScope.add(key);
+    }
+    if (providerNameKeysInScope.size > 0 || allEligibilityProviderIds.length > 0) {
+      const { data: stateUtilizationRows, error: stateUtilizationErr } = await supabase
+        .from('provider_state_utilization')
+        .select('provider_id, provider_name, month_date, state, available_count, booked_count, booking_rate_pct, imported_at, synced_at')
+        .range(0, 49999);
+      if (stateUtilizationErr) {
+        console.warn(`Provider-state utilization load failed; falling back to provider utilization: ${stateUtilizationErr.message}`);
+      } else {
+        for (const row of (stateUtilizationRows ?? []) as ProviderStateUtilizationRow[]) {
+          if (row.provider_id && allEligibilityProviderIds.includes(row.provider_id)) {
+            if (!providerStateUtilizationRowsByProvider.has(row.provider_id)) {
+              providerStateUtilizationRowsByProvider.set(row.provider_id, []);
+            }
+            providerStateUtilizationRowsByProvider.get(row.provider_id)!.push(row);
+          }
+          const key = canonicalName(row.provider_name);
+          if (key && providerNameKeysInScope.has(key)) {
+            if (!providerStateUtilizationRowsByName.has(key)) {
+              providerStateUtilizationRowsByName.set(key, []);
+            }
+            providerStateUtilizationRowsByName.get(key)!.push(row);
+          }
+        }
+      }
+    }
 
     // ── Preload provider-state eligibility from canonical view ─────────
     // The view rolls up ClinOps manual licenses, Medallion API licenses,
@@ -2794,6 +2868,131 @@ Deno.serve(async (req: Request) => {
         committedByKey.set(key, (committedByKey.get(key) ?? 0) + perState);
       }
     }
+
+    const stateWeightedUtilizationForProviderMonth = (
+      providerId: string,
+      targetMonth: string,
+    ): ProviderUtilizationSummary | null => {
+      const profile = providerProfileByProvider.get(providerId);
+      const nameKey = canonicalName(profile?.name);
+      const combined = [
+        ...(providerStateUtilizationRowsByProvider.get(providerId) ?? []),
+        ...(nameKey ? providerStateUtilizationRowsByName.get(nameKey) ?? [] : []),
+      ];
+      if (combined.length === 0) return null;
+
+      const dedupedByKey = new Map<string, ProviderStateUtilizationRow>();
+      for (const row of combined) {
+        const state = (row.state ?? '').trim().toUpperCase();
+        const month = (row.month_date ?? '').slice(0, 10);
+        if (!/^[A-Z]{2}$/.test(state) || !month) continue;
+        const providerKey = row.provider_id ?? canonicalName(row.provider_name) ?? '';
+        dedupedByKey.set(
+          `${providerKey}|${month}|${state}|${row.available_count ?? ''}|${row.booked_count ?? ''}|${row.booking_rate_pct ?? ''}`,
+          row,
+        );
+      }
+
+      const validRows = Array.from(dedupedByKey.values());
+      if (validRows.length === 0) return null;
+      const rowsBeforeTarget = validRows.filter(row => (row.month_date ?? '').slice(0, 10) <= targetMonth);
+      const candidateRows = rowsBeforeTarget.length > 0 ? rowsBeforeTarget : validRows;
+      const monthsForRows = candidateRows
+        .map(row => (row.month_date ?? '').slice(0, 10))
+        .filter(Boolean)
+        .sort();
+      const latestMonth = monthsForRows[monthsForRows.length - 1];
+      if (!latestMonth) return null;
+
+      const licensed = licensedStatesByProvider.get(providerId) ?? new Set<string>();
+      const rowsForLatestMonth = candidateRows.filter(row => (row.month_date ?? '').slice(0, 10) === latestMonth);
+      const licensedRows = rowsForLatestMonth.filter(row => licensed.has((row.state ?? '').trim().toUpperCase()));
+      const rowsForWeighting = licensedRows.length > 0 ? licensedRows : rowsForLatestMonth;
+
+      const byState = new Map<string, { available: number; booked: number; rateSum: number; rateCount: number }>();
+      for (const row of rowsForWeighting) {
+        const state = (row.state ?? '').trim().toUpperCase();
+        if (!/^[A-Z]{2}$/.test(state)) continue;
+        const available = Math.max(0, Number(row.available_count ?? 0) || 0);
+        const booked = Math.max(0, Number(row.booked_count ?? 0) || 0);
+        const pct = providerUtilizationPct({ utilization_pct: row.booking_rate_pct });
+        const current = byState.get(state) ?? { available: 0, booked: 0, rateSum: 0, rateCount: 0 };
+        current.available += available;
+        current.booked += booked;
+        if (pct != null) {
+          current.rateSum += pct;
+          current.rateCount += 1;
+        }
+        byState.set(state, current);
+      }
+
+      let weightedPctSum = 0;
+      let totalWeight = 0;
+      let totalAvailable = 0;
+      let totalBooked = 0;
+      for (const [state, stateRow] of byState) {
+        const pct = stateRow.available > 0
+          ? (stateRow.booked / stateRow.available) * 100
+          : stateRow.rateCount > 0
+            ? stateRow.rateSum / stateRow.rateCount
+            : null;
+        if (pct == null || !Number.isFinite(pct)) continue;
+        const demandKey = `${state}_${targetMonth}`;
+        const demandHours = demandByKey.get(demandKey) ?? 0;
+        const committedHours = committedByKey.get(demandKey) ?? 0;
+        const gapHours = Math.max(0, demandHours - committedHours);
+        const weight = gapHours > 0
+          ? gapHours
+          : demandHours > 0
+            ? demandHours
+            : stateRow.available > 0
+              ? stateRow.available
+              : 1;
+        weightedPctSum += pct * weight;
+        totalWeight += weight;
+        totalAvailable += stateRow.available;
+        totalBooked += stateRow.booked;
+      }
+
+      if (totalWeight <= 0) return null;
+      return {
+        pct: round2(weightedPctSum / totalWeight),
+        source: 'provider_state_utilization',
+        basis: 'state_gap_weighted',
+        month: latestMonth,
+        stateCount: byState.size,
+        availableCount: Math.round(totalAvailable),
+        bookedCount: Math.round(totalBooked),
+      };
+    };
+
+    const utilizationForProviderMonth = (
+      providerId: string,
+      targetMonth: string,
+    ): ProviderUtilizationSummary | null =>
+      stateWeightedUtilizationForProviderMonth(providerId, targetMonth)
+      ?? utilizationByProvider.get(providerId)
+      ?? null;
+
+    const providerProfileForMonth = (
+      providerId: string,
+      targetMonth: string,
+    ): ProviderProfile | undefined => {
+      const profile = providerProfileByProvider.get(providerId);
+      if (!profile) return undefined;
+      const utilization = utilizationForProviderMonth(providerId, targetMonth);
+      return {
+        ...profile,
+        hourly_rate: rateForProviderMonth(providerId, targetMonth),
+        utilization_pct: utilization?.pct ?? null,
+        utilization_source: utilization?.source ?? null,
+        utilization_basis: utilization?.basis ?? null,
+        utilization_month: utilization?.month ?? null,
+        utilization_state_count: utilization?.stateCount ?? null,
+        utilization_available_count: utilization?.availableCount ?? null,
+        utilization_booked_count: utilization?.bookedCount ?? null,
+      };
+    };
 
     // ── Sort groups by provider priority, then constrained coverage ─────
     // Clinical supervisors get first pass at demand, then lower-rate providers
@@ -3370,8 +3569,10 @@ Deno.serve(async (req: Request) => {
         if (eligibleSourceSummary.length) {
           noteParts.push(`eligible_sources=${eligibleSourceSummary.join(',')}`);
         }
-        noteParts.push(`access_growth_buffer_policy=${ACCESS_GROWTH_BUFFER_POLICY}`);
-        noteParts.push(`access_growth_buffer_multiplier=${ACCESS_GROWTH_BUFFER_MULTIPLIER}`);
+        if (ACCESS_GROWTH_BUFFER_MULTIPLIER !== 1 || accessBufferHours > 0) {
+          noteParts.push(`access_growth_buffer_policy=${ACCESS_GROWTH_BUFFER_POLICY}`);
+          noteParts.push(`access_growth_buffer_multiplier=${ACCESS_GROWTH_BUFFER_MULTIPLIER}`);
+        }
         noteParts.push(`base_total_demand=${baseTotalDemand}h`);
         noteParts.push(`buffered_total_demand=${bufferedTotalDemand}h`);
         noteParts.push(`base_total_gap=${baseTotalGap}h`);

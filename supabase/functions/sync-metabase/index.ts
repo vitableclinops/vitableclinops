@@ -16,6 +16,7 @@
  *   Sum of same_next_day_available_slots ...  → leftover_slots
  *   Weekly demand forecast + active members   → demand_forecast
  *   Utilization Rate by Provider (5-week)     → provider_utilization
+ *   Provider State Utilization                → provider_state_utilization
  *   Daily Provider Utilization                → provider_utilization_daily (per-provider-per-day, powers same-day activation candidates)
  *   rpt_telemedicine_availability_by_state..  → metabase_raw_exports (storage)
  *   Average of SLA Attainment Rate            → metabase_raw_exports (storage)
@@ -24,6 +25,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { canonicalName } from '../_shared/nameNormalization.ts';
 import { toAbbreviation } from '../_shared/stateNormalization.ts';
 
 const CORS = {
@@ -39,12 +41,13 @@ const METABASE_URL = Deno.env.get('METABASE_URL') ?? 'https://metabase.vitablehe
 
 type Handler = (rows: Row[], supabase: SupabaseClient) => Promise<ImportResult>;
 type Row = Record<string, string>;
-type SupabaseClient = ReturnType<typeof createClient>;
+type SupabaseClient = ReturnType<typeof createClient<any, 'public', any>>;
 type ImportResult = { inserted: number; errors: string[] };
+type ReportConfig = { name: string; cardId?: number; handler: Handler; optional?: boolean };
 
 // Known card IDs are pinned to bypass fuzzy search and avoid "Card not found".
 // Names are still used for fuzzy fallback if a card is moved/renamed.
-const REPORTS: Array<{ name: string; cardId?: number; handler: Handler }> = [
+const REPORTS: ReportConfig[] = [
   {
     name: 'SLA Attainment Rate by State',
     handler: handleSlaByState,
@@ -80,6 +83,11 @@ const REPORTS: Array<{ name: string; cardId?: number; handler: Handler }> = [
   {
     name: 'Utilization Rate by Provider (5-week)',
     handler: handleProviderUtilization,
+  },
+  {
+    name: 'Provider State Utilization',
+    handler: handleProviderStateUtilization,
+    optional: true,
   },
   {
     cardId: 2424,
@@ -177,7 +185,7 @@ Deno.serve(async (req: Request) => {
       const cardId = report.cardId ?? await findCardId(token, report.name);
       if (!cardId) {
         results[report.name] = { skipped: true, reason: 'Card not found in Metabase' };
-        reportFailures++;
+        if (!report.optional) reportFailures++;
         continue;
       }
 
@@ -697,6 +705,102 @@ async function handleProviderUtilization(rows: Row[], supabase: SupabaseClient):
   const { error } = await supabase
     .from('provider_utilization')
     .upsert(records, { onConflict: 'provider_name,window_start' });
+  if (error) throw new Error(error.message);
+
+  return { inserted: records.length, errors };
+}
+
+async function handleProviderStateUtilization(rows: Row[], supabase: SupabaseClient): Promise<ImportResult> {
+  const records = [];
+  const errors: string[] = [];
+  const nowIso = new Date().toISOString();
+
+  const { data: providers } = await supabase
+    .from('providers')
+    .select('id, name')
+    .range(0, 49999);
+  const providerIdByCanonical = new Map<string, string>();
+  for (const provider of (providers ?? []) as Array<{ id: string; name: string | null }>) {
+    const key = canonicalName(provider.name);
+    if (key && !providerIdByCanonical.has(key)) providerIdByCanonical.set(key, provider.id);
+  }
+
+  for (const row of rows) {
+    const monthRaw = col(row, 'month_date', 'Month Date', 'Month', 'month', 'Report Month', 'report_month');
+    const providerName = col(
+      row,
+      'provider_full_name',
+      'Provider Full Name',
+      'Provider',
+      'provider',
+      'Provider Name',
+      'provider_name',
+      'Name',
+      'name',
+    );
+    const appointmentType = col(
+      row,
+      'covered_appointment_type',
+      'Covered Appointment Type',
+      'Appointment Type',
+      'appointment_type',
+    ) || 'unknown';
+    const roleCategory = col(
+      row,
+      'provider_role_category',
+      'Provider Role Category',
+      'Role Category',
+      'role_category',
+      'Provider Role',
+    ) || 'unknown';
+    const stateRaw = col(row, 'state', 'State', 'State Abbreviation', 'state_abbreviation');
+    const availableRaw = col(row, 'available_count', 'Available Count', 'Available', 'available', 'Total Timeslots', 'total_timeslots');
+    const bookedRaw = col(row, 'booked_count', 'Booked Count', 'Booked', 'booked', 'Booked Timeslots', 'booked_timeslots');
+    const rateRaw = col(row, 'booking_rate', 'Booking Rate', 'Utilization Rate', 'utilization', 'Utilization');
+
+    const monthDate = parseDate(monthRaw);
+    if (!monthDate) { errors.push(`Unparseable month_date: "${monthRaw}"`); continue; }
+    if (!providerName) { errors.push(`Row missing provider name: ${JSON.stringify(row)}`); continue; }
+
+    const state = (toAbbreviation(stateRaw) ?? stateRaw).trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(state)) { errors.push(`Unknown state: "${stateRaw}" for ${providerName}`); continue; }
+
+    const available = intOrNull(availableRaw);
+    const booked = intOrNull(bookedRaw);
+    if (available === null) { errors.push(`Missing available_count for ${providerName} ${state}`); continue; }
+    if (booked === null) { errors.push(`Missing booked_count for ${providerName} ${state}`); continue; }
+
+    let bookingRate = parsePct(rateRaw);
+    if (bookingRate === null && available > 0) {
+      bookingRate = Math.round((booked / available) * 10000) / 100;
+    }
+    if (bookingRate === null) bookingRate = 0;
+
+    records.push({
+      month_date: monthDate,
+      provider_id: providerIdByCanonical.get(canonicalName(providerName)) ?? null,
+      provider_name: providerName,
+      covered_appointment_type: appointmentType,
+      provider_role_category: roleCategory,
+      state,
+      available_count: available,
+      booked_count: booked,
+      booking_rate_pct: bookingRate,
+      imported_at: nowIso,
+      source: 'metabase_sync',
+      synced_at: nowIso,
+      raw_payload: row,
+      updated_at: nowIso,
+    });
+  }
+
+  if (records.length === 0) return { inserted: 0, errors };
+
+  const { error } = await supabase
+    .from('provider_state_utilization')
+    .upsert(records, {
+      onConflict: 'provider_name,month_date,state,covered_appointment_type,provider_role_category',
+    });
   if (error) throw new Error(error.message);
 
   return { inserted: records.length, errors };

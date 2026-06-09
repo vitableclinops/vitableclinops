@@ -8598,13 +8598,13 @@ function CostPerVisitPanel({
         <RoutingDecisionCard
           label="Utilization tie-breaks"
           value={`${h.utilizationTieBreakProviders}`}
-          detail="Providers with the same rate tier used recent utilization as the fairness tie-break."
+          detail="Providers with the same rate tier used state-weighted recent utilization when available."
           tone={h.utilizationTieBreakProviders > 0 ? 'blue' : 'neutral'}
         />
         <RoutingDecisionCard
           label="Access protected"
           value={`${h.protectedAccessProviders}`}
-          detail={`${formatHours(h.protectedAccessHours)} hrs protected for Friday afternoon, weekend, or access-buffer coverage.`}
+          detail={`${formatHours(h.protectedAccessHours)} protected hrs from Friday afternoon, weekend, or access-buffer slices.`}
           tone={h.protectedAccessProviders > 0 ? 'good' : 'neutral'}
         />
         <RoutingDecisionCard
