@@ -2161,10 +2161,10 @@ export default function SchedulingWorkbenchPage({
                               {formatHours(sub.accepted_hours)}
                             </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
-                              <ShiftProgress done={hbDone} total={totalShifts} />
+                              <ShiftProgress done={hbDone} total={totalShifts} tone="homebase" />
                             </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
-                              <ShiftProgress done={ehrDone} total={totalShifts} />
+                              <ShiftProgress done={ehrDone} total={totalShifts} tone="ehr" />
                             </TableCell>
                             <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex justify-end gap-1">
@@ -2343,15 +2343,46 @@ function SopStep({ day, label }: { day: string; label: string }) {
   );
 }
 
-function ShiftProgress({ done, total }: { done: number; total: number }) {
+function ShiftProgress({
+  done,
+  total,
+  tone = 'homebase',
+}: {
+  done: number;
+  total: number;
+  tone?: 'homebase' | 'ehr';
+}) {
   if (total === 0) {
     return <div className="text-xs text-muted-foreground">—</div>;
   }
   const pct = Math.round((done / total) * 100);
+  const complete = done === total;
+  const started = done > 0;
+  const progressClass =
+    tone === 'homebase'
+      ? complete
+        ? 'bg-emerald-100 [&>div]:bg-emerald-600'
+        : started
+          ? 'bg-amber-100 [&>div]:bg-amber-500'
+          : 'bg-emerald-50 [&>div]:bg-emerald-300'
+      : complete
+        ? 'bg-blue-100 [&>div]:bg-blue-600'
+        : started
+          ? 'bg-sky-100 [&>div]:bg-sky-500'
+          : 'bg-slate-100 [&>div]:bg-slate-300';
   return (
     <div className="flex items-center gap-2">
-      <Progress value={pct} className="h-2 flex-1" />
-      <span className="text-xs tabular-nums w-12 text-right">
+      <Progress value={pct} className={cn('h-2 flex-1', progressClass)} />
+      <span
+        className={cn(
+          'text-xs tabular-nums w-12 text-right',
+          complete
+            ? tone === 'homebase' ? 'text-emerald-700' : 'text-blue-700'
+            : started
+              ? 'text-amber-700'
+              : 'text-muted-foreground',
+        )}
+      >
         {done}/{total}
       </span>
     </div>
@@ -2375,10 +2406,20 @@ function PublishCheckbox({
   onToggle: (s: ShiftRow, step: ShiftPublishStep, done: boolean) => void;
   audit?: PublishAuditEntry;
 }) {
+  const colorClass = checked
+    ? step === 'homebase'
+      ? 'border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:text-white'
+      : 'border-blue-600 data-[state=checked]:bg-blue-600 data-[state=checked]:text-white'
+    : disabled
+      ? 'border-slate-300 bg-slate-50'
+      : step === 'homebase'
+        ? 'border-emerald-500 bg-emerald-50'
+        : 'border-blue-300 bg-blue-50';
   const box = (
     <Checkbox
       checked={checked}
       disabled={disabled}
+      className={cn('h-5 w-5 rounded-md', colorClass)}
       onCheckedChange={c => onToggle(shift, step, !!c)}
     />
   );
@@ -5248,7 +5289,7 @@ function MentalHealthPanel({
                     </TableCell>
                     <TableCell>
                       {flats.length > 0 ? (
-                        <ShiftProgress done={hbShiftDone} total={flats.length} />
+                        <ShiftProgress done={hbShiftDone} total={flats.length} tone="homebase" />
                       ) : (
                         <Checkbox
                           checked={hbAggregate}
@@ -5258,7 +5299,7 @@ function MentalHealthPanel({
                     </TableCell>
                     <TableCell>
                       {flats.length > 0 ? (
-                        <ShiftProgress done={ehrShiftDone} total={flats.length} />
+                        <ShiftProgress done={ehrShiftDone} total={flats.length} tone="ehr" />
                       ) : (
                         <Checkbox
                           checked={ehrAggregate}

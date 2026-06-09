@@ -61,6 +61,7 @@ import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
 import UsabilityGuidePage from "./pages/UsabilityGuidePage";
 import NotFound from "./pages/NotFound";
 import SchedulingWorkbenchPage from "./pages/scheduling/SchedulingWorkbenchPage";
+import HomebaseScheduleHubPage from "./pages/scheduling/HomebaseScheduleHubPage";
 
 const queryClient = new QueryClient();
 
@@ -93,6 +94,7 @@ const ROUTE_TITLES: Array<{ match: (p: string) => boolean; title: string }> = [
   { match: p => p === '/admin/homebase-schedule', title: 'Homebase Schedule' },
   { match: p => p === '/admin/scheduled-hours', title: 'Scheduled Hours' },
   { match: p => p === '/admin/workbench', title: 'Workbench' },
+  { match: p => p === '/scheduling/homebase-schedule', title: 'Homebase Schedule' },
   { match: p => p.startsWith('/scheduling'), title: 'July 2026 Scheduling Workbench' },
   { match: p => p === '/admin/contractor-strategy', title: 'Contractor Strategy' },
   { match: p => p === '/admin/sla-aggregate', title: 'SLA Aggregate' },
@@ -408,6 +410,11 @@ const App = () => (
             <Route path="/scheduling/workbench" element={
               <ProtectedRoute requiredRoles={['admin', 'scheduling']}>
                 <SchedulingWorkbenchPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/scheduling/homebase-schedule" element={
+              <ProtectedRoute requiredRoles={['admin', 'scheduling', 'pod_lead']}>
+                <HomebaseScheduleHubPage />
               </ProtectedRoute>
             } />
             <Route path="/scheduling/mental-health" element={

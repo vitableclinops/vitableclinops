@@ -172,15 +172,9 @@ const useHomebaseSchedule = (startDate: string, endDate: string, enabled: boolea
     },
   });
 
-const HomebaseSchedulePage = () => {
-  const { profile, roles } = useAuth();
+export const HomebaseScheduleContent = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const userRole = roles.includes('admin')
-    ? 'admin'
-    : roles.includes('pod_lead')
-    ? 'pod_lead'
-    : 'provider';
 
   const today = useMemo(() => formatLocalDate(new Date()), []);
   const [startDate, setStartDate] = useState(today);
@@ -298,16 +292,7 @@ const HomebaseSchedulePage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppSidebar
-        userRole={userRole}
-        userName={profile?.full_name || 'User'}
-        userEmail={profile?.email || ''}
-        userAvatarUrl={profile?.avatar_url || undefined}
-      />
-
-      <main className="ml-16 lg:ml-64 transition-all duration-300 min-w-0">
-        <div className="p-4 md:p-6 lg:p-8 space-y-6">
+    <div className="space-y-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -483,6 +468,30 @@ const HomebaseSchedulePage = () => {
               )}
             </CardContent>
           </Card>
+    </div>
+  );
+};
+
+const HomebaseSchedulePage = () => {
+  const { profile, roles } = useAuth();
+  const userRole = roles.includes('admin')
+    ? 'admin'
+    : roles.includes('pod_lead')
+    ? 'pod_lead'
+    : 'provider';
+
+  return (
+    <div className="min-h-screen bg-background">
+      <AppSidebar
+        userRole={userRole}
+        userName={profile?.full_name || 'User'}
+        userEmail={profile?.email || ''}
+        userAvatarUrl={profile?.avatar_url || undefined}
+      />
+
+      <main className="ml-16 lg:ml-64 transition-all duration-300 min-w-0">
+        <div className="p-4 md:p-6 lg:p-8">
+          <HomebaseScheduleContent />
         </div>
       </main>
     </div>
