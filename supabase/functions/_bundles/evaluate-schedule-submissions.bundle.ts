@@ -2314,6 +2314,7 @@ export function allocateSchedulingEquity({
   };
 
   const candidatesByPriority = [...normalizedCandidates].sort(compareBaseCandidatePriority);
+  const hasNonAccessCandidate = normalizedCandidates.some(candidate => candidate.cohort !== 'directshifts_access');
 
   // Protected Friday/weekend access survives before monthly surplus trims.
   for (const candidate of candidatesByPriority) {
@@ -2379,11 +2380,15 @@ export function allocateSchedulingEquity({
     const allocation = allocations.get(candidate.id)!;
     const capRemaining = Math.max(0, allocation.softCapHours - allocation.acceptedHours);
     const capLimited = underCap.length > 0 ? capRemaining : Number.POSITIVE_INFINITY;
+    const directshiftsShareLimited = hasNonAccessCandidate && candidate.cohort === 'directshifts_access'
+      ? directshiftsAdditionalCapacity(allocations, normalizedCandidates, directshiftsTargetShare)
+      : Number.POSITIVE_INFINITY;
     const take = Math.min(
       BULK_ALLOCATION_QUANTUM_HOURS,
       candidateRemaining(candidate, allocations),
       eligibleGapHours(candidate, stateRemaining),
       capLimited,
+      directshiftsShareLimited,
     );
     if (take <= 0) break;
     allocateToCandidate(candidate, take, false);
@@ -2510,6 +2515,23 @@ function currentDirectshiftsShare(
     if (candidate.cohort === 'directshifts_access') access += accepted;
   }
   return total > 0 ? access / total : 0;
+}
+
+function directshiftsAdditionalCapacity(
+  allocations: Map<string, MutableAllocation>,
+  candidates: SchedulingEquityCandidate[],
+  targetShare: number,
+) {
+  if (targetShare >= 1) return Number.POSITIVE_INFINITY;
+  let access = 0;
+  let nonAccess = 0;
+  for (const candidate of candidates) {
+    const accepted = allocations.get(candidate.id)?.acceptedHours ?? 0;
+    if (candidate.cohort === 'directshifts_access') access += accepted;
+    else nonAccess += accepted;
+  }
+  const maxAccess = (targetShare / Math.max(0.001, 1 - targetShare)) * nonAccess;
+  return equityRound2(Math.max(0, maxAccess - access));
 }
 
 function statesByNeed(
