@@ -153,6 +153,14 @@ export function allocateSchedulingEquity({
   const candidatesByPriority = [...normalizedCandidates].sort(compareBaseCandidatePriority);
   const hasNonAccessCandidate = normalizedCandidates.some(candidate => candidate.cohort !== 'directshifts_access');
 
+  // Clinical lead hours are not demand-trimmed. Once validation/licensure
+  // admits the submission into this allocator, accept the full forecastable
+  // clinical lead capacity before rate, DirectShifts share, and soft caps.
+  for (const candidate of candidatesByPriority) {
+    if (!isClinicalLeadCandidate(candidate)) continue;
+    allocateToCandidate(candidate, candidate.effectiveHours, true);
+  }
+
   // Protected Friday/weekend access survives before monthly surplus trims.
   for (const candidate of candidatesByPriority) {
     if (candidate.scarceHours <= 0) continue;
@@ -243,7 +251,8 @@ export function allocateSchedulingEquity({
     allocation.providerAcceptancePct = candidate.effectiveHours > 0
       ? equityRound2((allocation.acceptedHours / candidate.effectiveHours) * 100)
       : 0;
-    allocation.softCapExceeded = allocation.acceptedHours > allocation.softCapHours + 0.001;
+    allocation.softCapExceeded = !isClinicalLeadCandidate(candidate) &&
+      allocation.acceptedHours > allocation.softCapHours + 0.001;
     allocation.directshiftsShareAfter = directshiftsShareAfter;
     allocation.acceptedHours = equityRound2(allocation.acceptedHours);
     allocation.allocations = allocation.allocations

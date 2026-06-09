@@ -2316,6 +2316,14 @@ export function allocateSchedulingEquity({
   const candidatesByPriority = [...normalizedCandidates].sort(compareBaseCandidatePriority);
   const hasNonAccessCandidate = normalizedCandidates.some(candidate => candidate.cohort !== 'directshifts_access');
 
+  // Clinical lead hours are not demand-trimmed. Once validation/licensure
+  // admits the submission into this allocator, accept the full forecastable
+  // clinical lead capacity before rate, DirectShifts share, and soft caps.
+  for (const candidate of candidatesByPriority) {
+    if (!isClinicalLeadCandidate(candidate)) continue;
+    allocateToCandidate(candidate, candidate.effectiveHours, true);
+  }
+
   // Protected Friday/weekend access survives before monthly surplus trims.
   for (const candidate of candidatesByPriority) {
     if (candidate.scarceHours <= 0) continue;
@@ -2406,7 +2414,8 @@ export function allocateSchedulingEquity({
     allocation.providerAcceptancePct = candidate.effectiveHours > 0
       ? equityRound2((allocation.acceptedHours / candidate.effectiveHours) * 100)
       : 0;
-    allocation.softCapExceeded = allocation.acceptedHours > allocation.softCapHours + 0.001;
+    allocation.softCapExceeded = !isClinicalLeadCandidate(candidate) &&
+      allocation.acceptedHours > allocation.softCapHours + 0.001;
     allocation.directshiftsShareAfter = directshiftsShareAfter;
     allocation.acceptedHours = equityRound2(allocation.acceptedHours);
     allocation.allocations = allocation.allocations
@@ -2639,6 +2648,8 @@ function equityRound2(value: number) {
  *      look full.
  *   7. Telehealth decisions are collected as monthly candidates, then a
  *      fairness-aware allocation pass assigns accepted hours:
+ *        - Accept validated clinical lead hours in full before all demand
+ *          trimming, rate, share, and soft-cap policies.
  *        - Protect scarce Friday/weekend access windows first.
  *        - Give each eligible submitter a no-zero floor when compatible
  *          demand remains.
@@ -3077,6 +3088,8 @@ function pushEquityAllocationNotes(
   noteParts.push(`equity_floor=${allocation.equityFloor}`);
   if (cohort === 'directshifts_access') {
     noteParts.push(`directshifts_same_rate_tolerance_pct=10`);
+  } else if (cohort === 'clinical_lead') {
+    noteParts.push('clinical_lead_full_accept=1');
   }
 }
 

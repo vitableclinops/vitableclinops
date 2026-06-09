@@ -2886,7 +2886,7 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   const softCapPolicy = valueFromDecisionNote(raw, 'soft_cap_policy');
   const softCapExceeded = valueFromDecisionNote(raw, 'soft_cap_exceeded');
   if (priority === 'clinical_supervisor' || priority === 'clinical_lead') {
-    add('Accepted first because this provider is a clinical lead.');
+    add('Accepted in full because this provider is a clinical lead.');
   } else if (priority === 'vitable_internal') {
     add('This provider is in the rate-ranked scheduling pool.');
   } else if (priority === 'directshifts_brittany_priority') {
@@ -2895,7 +2895,7 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
     add('This access provider is in the same rate-ranked pool as internal providers.');
   }
   if (providerRatePolicy === 'clinical_leads_then_hourly_rate_then_directshifts_share') {
-    add('Order of operations: clinical leads first, then current hourly rate, then the DirectShifts/access share target.');
+    add('Order of operations: accept validated clinical lead hours in full first, then current hourly rate, then the DirectShifts/access share target.');
   } else if (providerRatePolicy === 'clinical_leads_then_lowest_hourly_rate') {
     add('After clinical leads, providers are ranked by lowest current hourly rate regardless of internal or DirectShifts source.');
   }
@@ -2941,6 +2941,9 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   }
   if (softCapExceeded === '1') {
     add('Soft cap was relaxed because demand would otherwise remain uncovered.');
+  }
+  if (valueFromDecisionNote(raw, 'clinical_lead_full_accept') === '1') {
+    add('Validated clinical lead hours were accepted in full and were not trimmed by demand, rate, DirectShifts share, or soft-cap policy.');
   }
 
   if (valueFromDecisionNote(raw, 'state_policy') === 'physician_reserved_for_md_only') {
@@ -9365,14 +9368,14 @@ function ProviderPriorityPolicyCard() {
           Priority policy
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Order of operations: clinical leads first, current hourly rate second, then the DirectShifts/access share target. DirectShifts/access now targets roughly 15% of accepted telehealth hours.
+          Order of operations: validated clinical lead hours are accepted in full first, current hourly rate routes remaining hours second, then the DirectShifts/access share target applies. DirectShifts/access now targets roughly 15% of accepted telehealth hours.
         </p>
       </CardHeader>
       <CardContent className="pt-0">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
           <div>
             <div className="font-medium">1. Clinical leads</div>
-            <div className="text-muted-foreground">Clinical lead/supervisor coverage is considered before rate.</div>
+            <div className="text-muted-foreground">Validated clinical lead/supervisor hours are accepted in full before rate.</div>
           </div>
           <div>
             <div className="font-medium">2. Hourly rate</div>

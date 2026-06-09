@@ -54,6 +54,8 @@
  *      look full.
  *   7. Telehealth decisions are collected as monthly candidates, then a
  *      fairness-aware allocation pass assigns accepted hours:
+ *        - Accept validated clinical lead hours in full before all demand
+ *          trimming, rate, share, and soft-cap policies.
  *        - Protect scarce Friday/weekend access windows first.
  *        - Give each eligible submitter a no-zero floor when compatible
  *          demand remains.
@@ -522,6 +524,8 @@ function pushEquityAllocationNotes(
   noteParts.push(`equity_floor=${allocation.equityFloor}`);
   if (cohort === 'directshifts_access') {
     noteParts.push(`directshifts_same_rate_tolerance_pct=10`);
+  } else if (cohort === 'clinical_lead') {
+    noteParts.push('clinical_lead_full_accept=1');
   }
 }
 

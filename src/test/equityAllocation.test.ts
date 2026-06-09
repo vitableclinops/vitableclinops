@@ -78,6 +78,35 @@ describe('allocateSchedulingEquity', () => {
     );
   });
 
+  it('accepts validated clinical lead hours in full even when they exceed monthly demand', () => {
+    const allocations = allocateSchedulingEquity({
+      stateGaps: [{ state: 'PA', gapHours: 40, demandHours: 40 }],
+      candidates: [
+        candidate({
+          id: 'clinical-lead',
+          providerName: 'Clinical Lead',
+          cohort: 'clinical_lead',
+          priorityRank: 0,
+          hourlyRate: 150,
+          effectiveHours: 100,
+        }),
+        candidate({
+          id: 'standard-provider',
+          providerName: 'Standard Provider',
+          hourlyRate: 70,
+          effectiveHours: 100,
+        }),
+      ],
+    });
+
+    const clinicalLead = allocations.find(a => a.id === 'clinical-lead')!;
+    expect(clinicalLead.acceptedHours).toBe(100);
+    expect(clinicalLead.providerAcceptancePct).toBe(100);
+    expect(clinicalLead.scarceOverflowHours).toBe(60);
+    expect(clinicalLead.softCapExceeded).toBe(false);
+    expect(allocations.find(a => a.id === 'standard-provider')!.acceptedHours).toBe(0);
+  });
+
   it('keeps same-rate DirectShifts/access providers close by accepted percentage of submitted hours', () => {
     const allocations = allocateSchedulingEquity({
       stateGaps: [{ state: 'PA', gapHours: 80, demandHours: 80 }],

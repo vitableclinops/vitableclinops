@@ -64,7 +64,7 @@ This SOP covers the monthly scheduling hub workflow for medical and mental healt
 
 5. Review priority and matching.
 
-   - Clinical leads are prioritized first.
+   - Validated clinical lead hours are accepted in full before demand trimming, rate routing, DirectShifts/access share, or soft-cap policy.
    - After clinical leads, lower hourly rate remains the main cost signal across internal and DirectShifts/access providers.
    - DirectShifts/access providers target roughly 15% of accepted telehealth appointment volume after clinical lead and hourly-rate routing when eligible supply exists.
    - DirectShifts/access providers with the same rate should receive a similar accepted percentage of submitted forecastable hours.
