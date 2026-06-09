@@ -1247,6 +1247,11 @@ export function useResolveNeedsReview() {
         declined_hours: args.decision === 'declined' ? hours : 0,
         decided_at: nowIso,
         decision_notes: newNotes,
+        human_review_state: 'approved',
+        human_review_resolved_at: nowIso,
+        human_review_resolved_by: user?.id ?? null,
+        human_review_resolved_label: actor,
+        human_review_notes: args.reason,
       };
       if (args.corrected_parsed_shifts !== undefined) {
         patch.parsed_shifts = args.corrected_parsed_shifts;
@@ -1276,11 +1281,23 @@ export function useResolveNeedsReview() {
         });
       if (logErr) throw logErr;
 
-      // Corrected approvals are followed by a full month recalculation in the
-      // workbench. That run is the source of truth for rebalancing provider
-      // priority and rebuilding publish rows, so do not block the saved
-      // correction on this narrower per-provider emitter.
-      if (args.provider_id && args.target_month && args.corrected_parsed_shifts === undefined) {
+      // Accepted reviews need the allocator, not just the emitter: the
+      // evaluator supersedes prior submissions, writes state allocations, and
+      // rebuilds publish rows from the canonical schedule path. Keep this
+      // best-effort because the review decision and audit log have already
+      // landed; a later full/monthly recalculation can recover if needed.
+      if (args.provider_id && args.target_month && args.decision === 'accepted') {
+        const monthStart = monthIso(args.target_month);
+        const providerParam = encodeURIComponent(args.provider_id);
+        const monthParam = encodeURIComponent(monthStart);
+        const { error: evalErr } = await clinopsSupabase.functions.invoke(
+          `evaluate-schedule-submissions?provider_id=${providerParam}&target_month=${monthParam}`,
+          { body: {} },
+        );
+        if (evalErr) {
+          console.warn(`Per-group re-evaluate failed: ${evalErr.message}`);
+        }
+      } else if (args.provider_id && args.target_month) {
         const monthStart = monthIso(args.target_month);
         const providerParam = encodeURIComponent(args.provider_id);
         const monthParam = encodeURIComponent(monthStart);
@@ -1289,9 +1306,7 @@ export function useResolveNeedsReview() {
           { body: {} },
         );
         if (emitErr) {
-          throw new Error(
-            `Decision saved, but publish-row rebuild failed: ${emitErr.message}`,
-          );
+          console.warn(`Per-group publish-row rebuild failed: ${emitErr.message}`);
         }
       }
     },
