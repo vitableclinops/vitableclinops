@@ -2898,12 +2898,14 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   }
   if (providerUtilizationPolicy === 'lower_utilization_secondary_after_rate') {
     add('For providers with the same rate tier, lower recent utilization is used as the fairness tie-break.');
+  } else if (providerUtilizationPolicy === 'not_used_for_scheduling') {
+    add('Recent utilization was measured for visibility only and was not used to rank this schedule.');
   }
   if (providerUtilizationPct && providerUtilizationPct !== 'missing') {
     const utilization = Number(providerUtilizationPct);
-    if (Number.isFinite(utilization)) add(`Recent utilization used: ${utilization.toFixed(1)}%.`);
+    if (Number.isFinite(utilization)) add(`Recent utilization measured: ${utilization.toFixed(1)}%.`);
   } else if (providerUtilizationPct === 'missing') {
-    add('No recent utilization was found, so this provider sorts after providers with known utilization in the same rate tier.');
+    add('No recent utilization was found.');
   }
 
   if (valueFromDecisionNote(raw, 'state_policy') === 'physician_reserved_for_md_only') {
@@ -3041,7 +3043,7 @@ const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
   if (/rate-ranked|lowest current hourly rate|provider_rate_policy|current scheduling rate|same rate tier|rate tier|directshifts/.test(text)) {
     add('Rate ranking', 'blue');
   }
-  if (/utilization|fairness tie-break/.test(text)) {
+  if (/lower_utilization_secondary_after_rate|fairness tie-break/.test(text)) {
     add('Utilization tiebreak', 'blue');
   }
   if (/scarce_window|friday afternoon|weekend access|protected/.test(text)) {
@@ -8598,7 +8600,7 @@ function CostPerVisitPanel({
         <RoutingDecisionCard
           label="Utilization tie-breaks"
           value={`${h.utilizationTieBreakProviders}`}
-          detail="Providers with the same rate tier used state-weighted recent utilization when available."
+          detail="Providers whose decisions explicitly used utilization as a tie-break."
           tone={h.utilizationTieBreakProviders > 0 ? 'blue' : 'neutral'}
         />
         <RoutingDecisionCard
@@ -9304,11 +9306,11 @@ function ProviderPriorityPolicyCard() {
           </div>
           <div>
             <div className="font-medium">3. Utilization</div>
-            <div className="text-muted-foreground">If rate does not decide, lower recent utilization is the fairness tie-break.</div>
+            <div className="text-muted-foreground">Measured for visibility only unless explicitly enabled for recalculation.</div>
           </div>
           <div>
             <div className="font-medium">4. Final tie-breaks</div>
-            <div className="text-muted-foreground">DirectShifts labels and Brittney Afram's compatibility key only matter after rate and utilization do not decide.</div>
+            <div className="text-muted-foreground">DirectShifts labels and Brittney Afram's compatibility key only matter after rate does not decide.</div>
           </div>
         </div>
       </CardContent>

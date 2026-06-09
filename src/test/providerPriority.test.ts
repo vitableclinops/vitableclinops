@@ -103,7 +103,7 @@ describe('DirectShifts Brittney Afram priority', () => {
       .toBe('peer');
   });
 
-  it('uses lower utilization as the secondary tie-break after hourly rate', () => {
+  it('does not use utilization as a tie-break by default', () => {
     const highUtilization: Candidate = {
       id: 'high-utilization',
       profile: {
@@ -130,7 +130,43 @@ describe('DirectShifts Brittney Afram priority', () => {
     };
 
     expect(selectProviderForState([highUtilization, lowUtilization], 'PA', '2026-06-23')?.id)
-      .toBe('low-utilization');
+      .toBe('high-utilization');
+  });
+
+  it('can opt into lower utilization as the secondary tie-break after hourly rate', () => {
+    const highUtilization: Candidate = {
+      id: 'high-utilization',
+      profile: {
+        name: 'High Utilization',
+        profession: 'NP',
+        employment_type: 'employee',
+        source: 'Vitable',
+        hourly_rate: 80,
+        utilization_pct: 92,
+      },
+      licensedStates: ['PA'],
+    };
+    const lowUtilization: Candidate = {
+      id: 'low-utilization',
+      profile: {
+        name: 'Low Utilization',
+        profession: 'NP',
+        employment_type: 'agency',
+        source: 'DirectShifts',
+        hourly_rate: 80,
+        utilization_pct: 41,
+      },
+      licensedStates: ['PA'],
+    };
+
+    expect(
+      selectProviderForState(
+        [highUtilization, lowUtilization],
+        'PA',
+        '2026-06-23',
+        { useUtilization: true },
+      )?.id,
+    ).toBe('low-utilization');
   });
 
   it('does not treat a different first-name-only Brittany as the priority provider', () => {
@@ -212,6 +248,7 @@ function selectProviderForState(
   candidates: Candidate[],
   state: string,
   date: string,
+  options: { useUtilization?: boolean } = {},
 ): Candidate | undefined {
   return candidates
     .filter(candidate =>
@@ -220,7 +257,7 @@ function selectProviderForState(
       isEligibleForState({ profession: candidate.profile.profession }, state),
     )
     .sort((a, b) =>
-      compareProviderAllocationPriority(a.profile, b.profile) ||
+      compareProviderAllocationPriority(a.profile, b.profile, options) ||
       a.profile.name!.localeCompare(b.profile.name!, undefined, { sensitivity: 'base' }),
     )[0];
 }

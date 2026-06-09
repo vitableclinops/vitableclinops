@@ -153,8 +153,7 @@ export function routingSynopsisTags(
     add('Higher-rate/capacity cut');
   }
   if (
-    decisionNoteValue(raw, 'provider_utilization_policy') === 'lower_utilization_secondary_after_rate' ||
-    lower.includes('utilization')
+    decisionNoteValue(raw, 'provider_utilization_policy') === 'lower_utilization_secondary_after_rate'
   ) {
     add('Utilization tiebreak');
   }

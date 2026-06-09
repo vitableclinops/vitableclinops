@@ -225,6 +225,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const parseBooleanFlag = (value: string | null | undefined): boolean => {
+  const normalized = (value ?? '').trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+};
+
 type ParsedShifts = {
   requested_states?: string[];
   recurring_virtual?: unknown;
@@ -371,6 +376,7 @@ function pushProviderPriorityNotes(
   noteParts: string[],
   priority: ProviderPriority,
   providerProfile?: ProviderProfile | null,
+  useUtilizationTieBreak = false,
 ) {
   noteParts.push(`provider_priority=${priority.key}`);
   noteParts.push('provider_rate_policy=clinical_leads_then_lowest_hourly_rate');
@@ -380,7 +386,11 @@ function pushProviderPriorityNotes(
   } else {
     noteParts.push(`provider_hourly_rate=${hourlyRate}`);
   }
-  noteParts.push('provider_utilization_policy=lower_utilization_secondary_after_rate');
+  noteParts.push(
+    useUtilizationTieBreak
+      ? 'provider_utilization_policy=lower_utilization_secondary_after_rate'
+      : 'provider_utilization_policy=not_used_for_scheduling',
+  );
   const utilizationPct = providerUtilizationPct(providerProfile);
   if (utilizationPct == null) {
     noteParts.push('provider_utilization_pct=missing');
@@ -460,6 +470,10 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const monthFilter = url.searchParams.get('target_month');
   const providerFilter = url.searchParams.get('provider_id');
+  const useUtilizationTieBreak = parseBooleanFlag(
+    url.searchParams.get('use_utilization') ??
+      Deno.env.get('SCHEDULING_USE_UTILIZATION_TIEBREAK'),
+  );
 
   const decisionRunId = crypto.randomUUID();
   const counters = {
@@ -920,8 +934,8 @@ Deno.serve(async (req: Request) => {
 
     // ── Sort groups by provider priority, then constrained coverage ─────
     // Clinical supervisors get first pass at demand, then lower-rate providers
-    // across both internal and DirectShifts/access sources, then lower recent
-    // utilization as a fairness tie-break. Within each tier, process providers
+    // across both internal and DirectShifts/access sources. Utilization is
+    // available as an explicit opt-in tie-break, but is off by default. Within each tier, process providers
     // with the fewest licensed-states-with-demand first so single-state
     // providers are not displaced by flexible providers with alternatives.
     const groupKeysSorted = Array.from(submissionsByGroup.keys()).sort((a, b) => {
@@ -930,6 +944,7 @@ Deno.serve(async (req: Request) => {
       const priorityOrder = compareProviderAllocationPriority(
         providerProfileForMonth(provA, monthA),
         providerProfileForMonth(provB, monthB),
+        { useUtilization: useUtilizationTieBreak },
       );
       if (priorityOrder !== 0) return priorityOrder;
       const licA = licensedStatesByProvider.get(provA) ?? new Set();
@@ -1100,7 +1115,7 @@ Deno.serve(async (req: Request) => {
             `forecastable_hours=${effectiveHours}h`,
             `reasons=${reviewReasons.join(' | ') || '(see validation_report)'}`,
           ];
-          pushProviderPriorityNotes(reviewNoteParts, providerPriority, providerProfile);
+          pushProviderPriorityNotes(reviewNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
           reviewNoteParts.push(...schedulingAdjustmentNoteParts(validation));
           await writeDecision(supabase, latest.id, {
             status: 'needs_review',
@@ -1128,7 +1143,7 @@ Deno.serve(async (req: Request) => {
           // Mark older as superseded; latest becomes 'declined' with note
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; group has 0 effective hours`);
           const noHoursNoteParts = ['No effective hours in any submission for this provider+month'];
-          pushProviderPriorityNotes(noHoursNoteParts, providerPriority, providerProfile);
+          pushProviderPriorityNotes(noHoursNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
           if (isMentalHealth) {
             noHoursNoteParts.push(
               `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
@@ -1231,7 +1246,7 @@ Deno.serve(async (req: Request) => {
             `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
             'note=MH uses service-line forecast; bypasses telehealth state allocator',
           ];
-          pushProviderPriorityNotes(mhNoteParts, providerPriority, providerProfile);
+          pushProviderPriorityNotes(mhNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
           if (targetHours == null) {
             mhNoteParts.push('service_line_forecast=missing');
           } else {
@@ -1301,7 +1316,7 @@ Deno.serve(async (req: Request) => {
           counters.skipped_no_licensed_states++;
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
           const noLicNoteParts = ['Provider has no allocation-eligible states on file'];
-          pushProviderPriorityNotes(noLicNoteParts, providerPriority, providerProfile);
+          pushProviderPriorityNotes(noLicNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
           if (isPhysician) {
             noLicNoteParts.push('state_policy=physician_reserved_for_md_only');
           }
@@ -1454,7 +1469,7 @@ Deno.serve(async (req: Request) => {
 
         const noteParts: string[] = [];
         noteParts.push(`group_size=${groupSubs.length}`);
-        pushProviderPriorityNotes(noteParts, providerPriority, providerProfile);
+        pushProviderPriorityNotes(noteParts, providerPriority, providerProfile, useUtilizationTieBreak);
         if (isPhysician) {
           noteParts.push('state_policy=physician_reserved_for_md_only');
         }

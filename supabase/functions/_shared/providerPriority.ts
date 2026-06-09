@@ -136,6 +136,7 @@ export function providerUtilizationPct(
 export function compareProviderAllocationPriority(
   a: ProviderPriorityProfile | null | undefined,
   b: ProviderPriorityProfile | null | undefined,
+  options: { useUtilization?: boolean } = {},
 ): number {
   const priorityA = providerPriorityFor(a);
   const priorityB = providerPriorityFor(b);
@@ -147,11 +148,13 @@ export function compareProviderAllocationPriority(
   const rateSortB = rateB ?? Number.POSITIVE_INFINITY;
   if (rateSortA !== rateSortB) return rateSortA - rateSortB;
 
-  const utilizationA = providerUtilizationPct(a);
-  const utilizationB = providerUtilizationPct(b);
-  const utilizationSortA = utilizationA ?? Number.POSITIVE_INFINITY;
-  const utilizationSortB = utilizationB ?? Number.POSITIVE_INFINITY;
-  if (utilizationSortA !== utilizationSortB) return utilizationSortA - utilizationSortB;
+  if (options.useUtilization) {
+    const utilizationA = providerUtilizationPct(a);
+    const utilizationB = providerUtilizationPct(b);
+    const utilizationSortA = utilizationA ?? Number.POSITIVE_INFINITY;
+    const utilizationSortB = utilizationB ?? Number.POSITIVE_INFINITY;
+    if (utilizationSortA !== utilizationSortB) return utilizationSortA - utilizationSortB;
+  }
 
   const bothDirectShifts = isDirectShiftsProvider(a) && isDirectShiftsProvider(b);
   if (bothDirectShifts) {
