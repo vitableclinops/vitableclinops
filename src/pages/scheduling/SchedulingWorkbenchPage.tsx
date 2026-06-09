@@ -2079,6 +2079,8 @@ export default function SchedulingWorkbenchPage({
                 rows={scopedRows}
                 payRates={providerPayRates}
                 isLoading={isLoading || providerPayRatesLoading}
+                onRecalculate={reevaluateNow}
+                isReevaluating={reevaluate.isPending}
               />
             </TabsContent>
 
@@ -8477,11 +8479,15 @@ function CostPerVisitPanel({
   rows,
   payRates,
   isLoading,
+  onRecalculate,
+  isReevaluating,
 }: {
   month: string;
   rows: ProviderPublishView[];
   payRates: ProviderPayRateRow[];
   isLoading: boolean;
+  onRecalculate: () => void;
+  isReevaluating: boolean;
 }) {
   const upsertRate = useUpsertProviderPayRate();
   const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
@@ -8543,16 +8549,50 @@ function CostPerVisitPanel({
     );
   };
 
+  const recalculateButton = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onRecalculate}
+          disabled={isReevaluating}
+          className="shrink-0"
+        >
+          {isReevaluating ? (
+            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-1" />
+          )}
+          Recalculate schedule
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        Rebuilds Cost / Visit from the latest accepted hours, provider rates, and scheduling decisions for {formatMonthLabel(month)}.
+      </TooltipContent>
+    </Tooltip>
+  );
+
   if (isLoading) {
     return <LoadingRow label="Loading cost per visit" />;
   }
 
   if (model.providerRows.length === 0) {
     return (
-      <EmptyState
-        title={`No scheduling decisions for ${formatMonthLabel(month)} yet`}
-        body="Recalculate the schedule after availability submissions are loaded. This view uses accepted hours and provider rates from those monthly decisions."
-      />
+      <Card>
+        <CardContent className="py-10 text-center space-y-3">
+          <div className="font-medium text-sm">
+            No scheduling decisions for {formatMonthLabel(month)} yet
+          </div>
+          <div className="text-xs text-muted-foreground max-w-md mx-auto">
+            Recalculate the schedule after availability submissions are loaded. This view uses accepted hours and provider rates from those monthly decisions.
+          </div>
+          <div className="flex justify-center">
+            {recalculateButton}
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -8567,13 +8607,18 @@ function CostPerVisitPanel({
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <DollarSign className="h-4 w-4 text-emerald-700" />
-            Cost / Visit · {formatMonthLabel(month)}
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Uses accepted provider hours for this month. Standard care uses 2 visits/hr; mental health coach, therapist, and LPC rows use 3 visits per 2.5h shift. CPV assumes 70% target utilization.
-          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-emerald-700" />
+                Cost / Visit · {formatMonthLabel(month)}
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Uses accepted provider hours for this month. Standard care uses 2 visits/hr; mental health coach, therapist, and LPC rows use 3 visits per 2.5h shift. CPV assumes 70% target utilization.
+              </p>
+            </div>
+            {recalculateButton}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
