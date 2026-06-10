@@ -8629,9 +8629,9 @@ function CostPerVisitPanel({
               tone={missingCount > 0 ? 'warn' : 'good'}
             />
             <CostMetricCard
-              label="Approved hours"
+              label="Approved hours (TH + MH)"
               value={formatHours(model.totalApprovedHours)}
-              sub="Accepted provider hours"
+              sub={`${formatHours(model.telehealthApprovedHours)} TH · ${formatHours(model.mentalHealthApprovedHours)} MH (${formatHours(model.mhCoachingApprovedHours)} coaching, ${formatHours(model.therapyApprovedHours)} therapy)`}
               tone="neutral"
             />
             <CostMetricCard
