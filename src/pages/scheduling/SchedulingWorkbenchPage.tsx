@@ -146,6 +146,7 @@ import {
 } from '@/hooks/useMonthlySchedulingForecast';
 import { useStateCoverage, type StateCoverageRow } from '@/hooks/useStateCoverage';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
+import { useAuth } from '@/hooks/useAuth';
 import {
   useSchedulingSourceAudit,
   type SourceAuditSection,
@@ -7320,6 +7321,58 @@ function ReadinessPanel({
   const coverageQ = useStateCoverage(month);
   const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
 
+  // Admin override: an admin can acknowledge a blocker so it stops blocking publish.
+  // Stored per-month in localStorage so it survives reloads but resets per month.
+  const { roles, profile } = useAuth();
+  const isAdmin = roles.includes('admin');
+  const overrideStorageKey = `scheduling-blocker-overrides:${month}`;
+  type BlockerOverride = { reason: string; by: string; at: string };
+  const [blockerOverrides, setBlockerOverrides] = useState<Record<string, BlockerOverride>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = window.localStorage.getItem(overrideStorageKey);
+      return raw ? (JSON.parse(raw) as Record<string, BlockerOverride>) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(overrideStorageKey, JSON.stringify(blockerOverrides));
+    } catch {
+      /* ignore */
+    }
+  }, [overrideStorageKey, blockerOverrides]);
+  // Reset cache when month changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(overrideStorageKey);
+      setBlockerOverrides(raw ? (JSON.parse(raw) as Record<string, BlockerOverride>) : {});
+    } catch {
+      setBlockerOverrides({});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month]);
+  const addOverride = (key: string, reason: string) => {
+    setBlockerOverrides(prev => ({
+      ...prev,
+      [key]: {
+        reason,
+        by: profile?.full_name || profile?.email || 'Admin',
+        at: new Date().toISOString(),
+      },
+    }));
+  };
+  const removeOverride = (key: string) => {
+    setBlockerOverrides(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
   const demandHours = useMemo(
     () => coverageRows.reduce((s, r) => s + r.needed, 0),
     [coverageRows],
@@ -7385,6 +7438,7 @@ function ReadinessPanel({
   type BlockerCategory = 'Scheduler can do this' | 'Escalate to ClinOps lead' | 'System/admin issue';
 
   type OperatorBlocker = {
+    key: string;
     label: string;
     detail: string;
     category: BlockerCategory;
@@ -7396,6 +7450,7 @@ function ReadinessPanel({
     const out: OperatorBlocker[] = [];
     if (coverageQ.isError) {
       out.push({
+        key: 'coverage_error',
         label: 'Coverage could not load',
         detail: 'Do not publish until the Coverage Gaps tab loads successfully.',
         category: 'System/admin issue',
@@ -7404,6 +7459,7 @@ function ReadinessPanel({
       });
     } else if (!coverageQ.isLoading && coverageRows.length === 0) {
       out.push({
+        key: 'no_coverage_rows',
         label: 'No coverage rows for this month',
         detail: 'Recalculate the schedule from the latest submissions. If coverage still does not load, ask an admin for help.',
         category: 'System/admin issue',
@@ -7413,6 +7469,7 @@ function ReadinessPanel({
     }
     if (!checksLoading && !hasPublishRows) {
       out.push({
+        key: 'no_publish_rows',
         label: 'No publishable shift list yet',
         detail: submittedHours > 0
           ? 'Availability exists, but the accepted shift list is not ready. Recalculate the schedule from the latest submissions.'
@@ -7424,6 +7481,7 @@ function ReadinessPanel({
     }
     if (hasPublishRows && unmatchedCount > 0) {
       out.push({
+        key: 'unmatched',
         label: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
         detail: 'A provider name or email did not match the provider directory. If the match is obvious, fix it; otherwise escalate.',
         category: 'Scheduler can do this',
@@ -7433,6 +7491,7 @@ function ReadinessPanel({
     }
     if (reviewCount > 0) {
       out.push({
+        key: 'manual_review',
         label: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need manual review`,
         detail: `${summary.needsReviewCount} unusual-hours flag${summary.needsReviewCount === 1 ? '' : 's'} and ${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} need a ClinOps lead decision.`,
         category: 'Escalate to ClinOps lead',
@@ -7442,6 +7501,7 @@ function ReadinessPanel({
     }
     if (criticalGapStates.length > 0) {
       out.push({
+        key: 'critical_gap',
         label: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} critically under-covered`,
         detail: `Affected states: ${criticalGapStates.slice(0, 6).map(s => `${s.state} ${Math.round(s.pct_filled)}% covered`).join(', ')}${criticalGapStates.length > 6 ? ', plus more' : ''}.`,
         category: 'Escalate to ClinOps lead',
@@ -7451,6 +7511,7 @@ function ReadinessPanel({
     }
     if (missingCount > 0) {
       out.push({
+        key: 'missing_availability',
         label: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing ${formatMonthLabel(month)} availability`,
         detail: `These active providers have not submitted ${formatMonthLabel(month)} availability. Send reminders before publishing so staff can capture any last covered hours.`,
         category: 'Scheduler can do this',
@@ -7479,7 +7540,15 @@ function ReadinessPanel({
     onJumpToReview,
   ]);
 
-  const workbenchReady = !checksLoading && hardBlockers.length === 0 && hasPublishRows;
+  const activeBlockers = useMemo(
+    () => hardBlockers.filter(b => !blockerOverrides[b.key]),
+    [hardBlockers, blockerOverrides],
+  );
+  const overriddenBlockers = useMemo(
+    () => hardBlockers.filter(b => blockerOverrides[b.key]),
+    [hardBlockers, blockerOverrides],
+  );
+  const workbenchReady = !checksLoading && activeBlockers.length === 0 && hasPublishRows;
   const publishingComplete = workbenchReady && homebasePct === 100 && ehrPct === 100;
 
   type Readiness = {
@@ -7488,7 +7557,7 @@ function ReadinessPanel({
   };
   const readiness: Readiness = (() => {
     if (checksLoading) return { label: 'Checking', tone: 'bg-slate-100 text-slate-700 border-slate-200' };
-    if (hardBlockers.length > 0) return { label: 'Blocked', tone: 'bg-red-100 text-red-800 border-red-200' };
+    if (activeBlockers.length > 0) return { label: 'Blocked', tone: 'bg-red-100 text-red-800 border-red-200' };
     if (missingCount > 0) return { label: 'Action Needed', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
     if (publishingComplete) return { label: 'Complete', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
     if (homebasePct > 0 || ehrPct > 0) return { label: 'Publishing', tone: 'bg-blue-100 text-blue-800 border-blue-200' };
@@ -7511,7 +7580,7 @@ function ReadinessPanel({
         nextDisabled: isReevaluating,
       };
     }
-    if (unmatchedCount > 0) {
+    if (unmatchedCount > 0 && !blockerOverrides['unmatched']) {
       return {
         blocker: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
         nextAction: 'Fix unmatched submissions',
@@ -7519,7 +7588,7 @@ function ReadinessPanel({
         nextCategory: 'Scheduler can do this',
       };
     }
-    if (reviewCount > 0) {
+    if (reviewCount > 0 && !blockerOverrides['manual_review']) {
       return {
         blocker: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need ClinOps lead review`,
         nextAction: summary.needsReviewCount > 0
@@ -7529,7 +7598,7 @@ function ReadinessPanel({
         nextCategory: 'Escalate to ClinOps lead',
       };
     }
-    if (criticalGapStates.length > 0) {
+    if (criticalGapStates.length > 0 && !blockerOverrides['critical_gap']) {
       return {
         blocker: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} critically under-covered`,
         nextAction: 'Escalate coverage gaps to ClinOps lead',
@@ -7537,7 +7606,7 @@ function ReadinessPanel({
         nextCategory: 'Escalate to ClinOps lead',
       };
     }
-    if (missingCount > 0) {
+    if (missingCount > 0 && !blockerOverrides['missing_availability']) {
       return {
         blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing ${formatMonthLabel(month)} availability`,
         nextAction: 'Send missing availability reminders',
@@ -7583,6 +7652,7 @@ function ReadinessPanel({
     onJumpToCoverage,
     onJumpToReview,
     onJumpToPublish,
+    blockerOverrides,
   ]);
 
   type OperatorStep = {
@@ -7660,6 +7730,7 @@ function ReadinessPanel({
     const out: OperatorBlocker[] = [];
     if (watchGapStates.length > 0 && criticalGapStates.length === 0) {
       out.push({
+        key: 'thin_coverage',
         label: `${watchGapStates.length} state${watchGapStates.length === 1 ? '' : 's'} with thin coverage`,
         detail: 'Continue only if approved; ask the ClinOps lead whether extra hours are needed before launch.',
         category: 'Escalate to ClinOps lead',
@@ -7928,7 +7999,12 @@ function ReadinessPanel({
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)] gap-4">
         <OperatorWorkflowCard steps={workflowSteps} />
         <OperatorBlockersCard
-          hardBlockers={hardBlockers}
+          hardBlockers={activeBlockers}
+          overriddenBlockers={overriddenBlockers}
+          blockerOverrides={blockerOverrides}
+          isAdmin={isAdmin}
+          onApplyOverride={addOverride}
+          onRemoveOverride={removeOverride}
           softWarnings={softWarnings}
           isLoading={checksLoading}
         />
@@ -8225,16 +8301,34 @@ function OperatorStepIcon({
 
 function OperatorBlockersCard({
   hardBlockers,
+  overriddenBlockers,
+  blockerOverrides,
+  isAdmin,
+  onApplyOverride,
+  onRemoveOverride,
   softWarnings,
   isLoading,
 }: {
   hardBlockers: {
+    key: string;
     label: string;
     detail: string;
     category: string;
     action: string;
     onClick: () => void;
   }[];
+  overriddenBlockers: {
+    key: string;
+    label: string;
+    detail: string;
+    category: string;
+    action: string;
+    onClick: () => void;
+  }[];
+  blockerOverrides: Record<string, { reason: string; by: string; at: string }>;
+  isAdmin: boolean;
+  onApplyOverride: (key: string, reason: string) => void;
+  onRemoveOverride: (key: string) => void;
   softWarnings: {
     label: string;
     detail: string;
@@ -8244,6 +8338,14 @@ function OperatorBlockersCard({
   }[];
   isLoading: boolean;
 }) {
+  const handleOverrideClick = (key: string, label: string) => {
+    const reason = window.prompt(
+      `Admin override for: ${label}\n\nProvide a brief reason. This will be logged locally with your name.`,
+    );
+    if (reason && reason.trim()) {
+      onApplyOverride(key, reason.trim());
+    }
+  };
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -8275,14 +8377,63 @@ function OperatorBlockersCard({
                     </Badge>
                   </div>
                   <div className="text-xs text-red-700 mt-1">{item.detail}</div>
-                  <Button size="sm" variant="outline" className="mt-2 h-7" onClick={item.onClick}>
-                    {item.action}
-                  </Button>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="h-7" onClick={item.onClick}>
+                      {item.action}
+                    </Button>
+                    {isAdmin && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 border-red-300 text-red-800 hover:bg-red-100"
+                        onClick={() => handleOverrideClick(item.key, item.label)}
+                      >
+                        <ShieldCheck className="mr-1 h-3.5 w-3.5" />
+                        Admin override
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
           </div>
         </div>
+
+        {overriddenBlockers.length > 0 && (
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Admin-acknowledged (no longer blocking)
+            </div>
+            <div className="mt-2 space-y-2">
+              {overriddenBlockers.map(item => {
+                const ov = blockerOverrides[item.key];
+                return (
+                  <div key={item.key} className="rounded-md border border-emerald-200 bg-emerald-50 p-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-medium text-emerald-900">{item.label}</div>
+                      <Badge variant="outline" className="bg-white text-[11px]">
+                        Override applied
+                      </Badge>
+                    </div>
+                    {ov && (
+                      <div className="text-xs text-emerald-800 mt-1">
+                        "{ov.reason}" — {ov.by}, {new Date(ov.at).toLocaleString()}
+                      </div>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="mt-2 h-7 text-emerald-900"
+                      onClick={() => onRemoveOverride(item.key)}
+                    >
+                      Remove override
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
