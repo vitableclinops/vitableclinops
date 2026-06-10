@@ -5,6 +5,30 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const patchParsedShiftTimes = (raw: unknown, dates: Set<string>, startMin: number, endMin: number): unknown => {
+  const time = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+  const dateKeys = ['date', 'shift_date', 'Date', 'Start Date'];
+  const startKeys = ['start_time', 'start', 'Start Time', 'startTime'];
+  const endKeys = ['end_time', 'end', 'End Time', 'endTime'];
+  const walk = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(walk);
+    if (!value || typeof value !== 'object') return value;
+    const obj = { ...(value as Record<string, unknown>) };
+    const dateValue = dateKeys.map(k => obj[k]).find(v => typeof v === 'string') as string | undefined;
+    const iso = dateValue?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+    if (iso && dates.has(iso)) {
+      for (const key of startKeys) if (key in obj) obj[key] = time(startMin);
+      for (const key of endKeys) if (key in obj) obj[key] = time(endMin);
+      if ('start_min' in obj) obj.start_min = startMin;
+      if ('end_min' in obj) obj.end_min = endMin;
+      if ('hours' in obj) obj.hours = (endMin - startMin) / 60;
+    }
+    for (const [key, val] of Object.entries(obj)) obj[key] = walk(val);
+    return obj;
+  };
+  return walk(raw);
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -60,7 +84,7 @@ Deno.serve(async (req) => {
       const hours = (end_min - start_min) / 60;
       const { data: rows, error: selErr } = await sb2
         .from('shift_recommendations')
-        .select('id, shift_date, start_min, end_min, hours, provider_name, notes')
+        .select('id, submission_id, shift_date, start_min, end_min, hours, provider_name, notes')
         .eq('target_month', target_month)
         .ilike('provider_name', `%${provider_name}%`)
         .in('shift_date', dates);
@@ -71,6 +95,7 @@ Deno.serve(async (req) => {
           status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+      const submissionIds = Array.from(new Set((rows || []).map((r: any) => r.submission_id).filter(Boolean)));
       const note = body.note || `ClinOps manual time adjustment: ${start_min}→${end_min} min (per provider comment).`;
       const { data: upd, error: updErr } = await sb2
         .from('shift_recommendations')
@@ -78,7 +103,50 @@ Deno.serve(async (req) => {
         .in('id', ids)
         .select('id, shift_date, start_min, end_min, hours');
       if (updErr) throw updErr;
-      return new Response(JSON.stringify({ ok: true, updated: upd }), {
+
+      let submission_updates: unknown[] = [];
+      if (submissionIds.length) {
+        const { data: shiftTotals, error: totalsErr } = await sb2
+          .from('shift_recommendations')
+          .select('submission_id, recommendation, hours')
+          .in('submission_id', submissionIds);
+        if (totalsErr) throw totalsErr;
+        const acceptedBySubmission = new Map<string, number>();
+        for (const row of shiftTotals || []) {
+          if ((row as any).recommendation !== 'publish') continue;
+          const sid = (row as any).submission_id;
+          acceptedBySubmission.set(sid, (acceptedBySubmission.get(sid) || 0) + Number((row as any).hours || 0));
+        }
+        const { data: submissions, error: subErr } = await sb2
+          .from('schedule_submissions')
+          .select('id, parsed_shifts, decision_status')
+          .in('id', submissionIds);
+        if (subErr) throw subErr;
+        const dateSet = new Set(dates);
+        const updates = [];
+        for (const sub of submissions || []) {
+          const accepted = Number((acceptedBySubmission.get((sub as any).id) || 0).toFixed(2));
+          const patch: Record<string, unknown> = {
+            accepted_hours: accepted,
+            declined_hours: 0,
+            effective_hours_used_for_forecast: accepted,
+            normalized_requested_hours: accepted,
+            raw_requested_hours: accepted,
+            parsed_shifts: patchParsedShiftTimes((sub as any).parsed_shifts, dateSet, start_min, end_min),
+            decision_notes: note,
+          };
+          const { data: updatedSub, error: updateSubErr } = await sb2
+            .from('schedule_submissions')
+            .update(patch)
+            .eq('id', (sub as any).id)
+            .select('id, accepted_hours, declined_hours, effective_hours_used_for_forecast')
+            .maybeSingle();
+          if (updateSubErr) throw updateSubErr;
+          updates.push(updatedSub);
+        }
+        submission_updates = updates;
+      }
+      return new Response(JSON.stringify({ ok: true, updated: upd, submission_updates }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
