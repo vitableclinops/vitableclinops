@@ -8614,7 +8614,7 @@ function CostPerVisitPanel({
                 Cost / Visit · {formatMonthLabel(month)}
               </CardTitle>
               <p className="mt-1 text-xs text-muted-foreground">
-                Uses accepted provider hours for this month. Standard care uses 2 visits/hr; mental health coach, therapist, and LPC rows use 3 visits per 2.5h shift. CPV assumes 70% target utilization.
+                Includes telehealth and mental health hours. State-coverage math on the readiness tab counts telehealth only. Standard care uses 2 visits/hr; mental health coach, therapist, and LPC rows use 3 visits per 2.5h shift. CPV assumes 70% target utilization.
               </p>
             </div>
             {recalculateButton}
