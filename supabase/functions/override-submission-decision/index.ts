@@ -32,9 +32,15 @@ Deno.serve(async (req) => {
         });
         return { status: r.status, body: (await r.text()).slice(0, 800) };
       };
-      const evaluate = await callFn('evaluate-schedule-submissions');
-      const emit = await callFn('emit-shift-recommendations');
-      return new Response(JSON.stringify({ ok: true, evaluate, emit }), {
+      const only = (body.only as string | undefined) || 'both';
+      const out: Record<string, unknown> = { ok: true };
+      if (only === 'evaluate' || only === 'both') {
+        out.evaluate = await callFn('evaluate-schedule-submissions');
+      }
+      if (only === 'emit' || only === 'both') {
+        out.emit = await callFn('emit-shift-recommendations');
+      }
+      return new Response(JSON.stringify(out), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
