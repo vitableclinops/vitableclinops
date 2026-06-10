@@ -9,15 +9,48 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { provider_name, target_month, decision, actor_label } = await req.json();
+    const body = await req.json();
+    const { provider_name, target_month, decision, actor_label, mode } = body;
+
+    const url = Deno.env.get('CLINOPS_SUPABASE_URL')!;
+    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY')!;
+
+    // mode === 'recompute_month' → just re-evaluate + re-emit for the whole month,
+    // no per-submission override write. Use this after editing availability overrides.
+    if (mode === 'recompute_month') {
+      if (!target_month) {
+        return new Response(JSON.stringify({ error: 'target_month required' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const qs = `?target_month=${encodeURIComponent(target_month)}`;
+      const callFn = async (name: string) => {
+        const r = await fetch(`${url}/functions/v1/${name}${qs}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${key}`, apikey: key, 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        return { status: r.status, body: (await r.text()).slice(0, 800) };
+      };
+      const only = (body.only as string | undefined) || 'both';
+      const out: Record<string, unknown> = { ok: true };
+      if (only === 'evaluate' || only === 'both') {
+        out.evaluate = await callFn('evaluate-schedule-submissions');
+      }
+      if (only === 'emit' || only === 'both') {
+        out.emit = await callFn('emit-shift-recommendations');
+      }
+      return new Response(JSON.stringify(out), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (!provider_name || !target_month || !decision) {
       return new Response(JSON.stringify({ error: 'provider_name, target_month, decision required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const url = Deno.env.get('CLINOPS_SUPABASE_URL')!;
-    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY')!;
     const sb = createClient(url, key);
 
     const { data: subs, error: selErr } = await sb
