@@ -85,11 +85,6 @@ Deno.serve(async (req) => {
       };
     }
 
-    const updatePayload: Record<string, unknown> = {
-      .from('schedule_submissions')
-    };
-    // (placeholder to keep diff small — real update below)
-
     const { error: updErr } = await sb
       .from('schedule_submissions')
       .update({
