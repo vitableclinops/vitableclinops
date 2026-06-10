@@ -149,6 +149,32 @@ export const AVAILABILITY_OVERRIDES: ProviderOverride[] = [
   },
   {
     fullName: 'Shadae McMillan',
+    perDateShiftEdits: [
+      {
+        date: '2026-07-13',
+        newStart: '12:00 PM',
+        newEnd: '3:00 PM',
+        reason: 'Shadae McMillan 2026-07-13 (Mon): provider note "On July 13th–16th I will start at 12:00 instead"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+      {
+        date: '2026-07-14',
+        newStart: '12:00 PM',
+        newEnd: '3:00 PM',
+        reason: 'Shadae McMillan 2026-07-14 (Tue): provider note "On July 13th–16th I will start at 12:00 instead"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+      {
+        date: '2026-07-15',
+        newStart: '12:00 PM',
+        newEnd: '3:00 PM',
+        reason: 'Shadae McMillan 2026-07-15 (Wed): provider note "On July 13th–16th I will start at 12:00 instead"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+      {
+        date: '2026-07-16',
+        newStart: '12:00 PM',
+        newEnd: '3:00 PM',
+        reason: 'Shadae McMillan 2026-07-16 (Thu): provider note "On July 13th–16th I will start at 12:00 instead"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+    ],
     rules: [
       {
         rawStart: '12:00 AM',
