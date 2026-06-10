@@ -95,6 +95,17 @@ export interface ProviderOverride {
     endDate?: string;
     reason?: string;
   }>;
+  /** One-off per-date shift-window edits applied AFTER expansion. Use this
+   *  when ClinOps needs to override a provider's normal recurring/one-off
+   *  window on a specific calendar date (e.g. "this week she works
+   *  10 AM–3:15 PM instead of her usual 9:45 AM–3 PM"). Matches by `date`
+   *  only — replaces every slot on that date with the new window. */
+  perDateShiftEdits?: Array<{
+    date: string; // YYYY-MM-DD
+    newStart: string; // "10:00 AM"
+    newEnd: string; // "3:15 PM"
+    reason?: string;
+  }>;
   rules: ProviderOverrideRule[];
 }
 
