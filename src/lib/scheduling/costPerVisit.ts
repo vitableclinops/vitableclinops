@@ -75,6 +75,10 @@ export type SchedulingCostModel = {
   providerRows: SchedulingCostProviderRow[];
   missingRateRows: SchedulingCostProviderRow[];
   totalApprovedHours: number;
+  telehealthApprovedHours: number;
+  mentalHealthApprovedHours: number;
+  mhCoachingApprovedHours: number;
+  therapyApprovedHours: number;
   totalAvailableSlots: number;
   totalTargetUtilizedVisits: number;
   knownRateHours: number;
