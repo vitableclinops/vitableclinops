@@ -45,6 +45,44 @@ Deno.serve(async (req) => {
       });
     }
 
+    // mode === 'patch_shift_times' → manually adjust start/end time on specific publish rows.
+    // body: { mode, provider_name, target_month, dates: ['YYYY-MM-DD', ...], start_min, end_min, note? }
+    if (mode === 'patch_shift_times') {
+      const dates = body.dates as string[] | undefined;
+      const start_min = body.start_min as number | undefined;
+      const end_min = body.end_min as number | undefined;
+      if (!provider_name || !target_month || !dates || !dates.length || start_min == null || end_min == null) {
+        return new Response(JSON.stringify({ error: 'provider_name, target_month, dates, start_min, end_min required' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const sb2 = createClient(url, key);
+      const hours = (end_min - start_min) / 60;
+      const { data: rows, error: selErr } = await sb2
+        .from('shift_recommendations')
+        .select('id, shift_date, start_min, end_min, hours, provider_name, notes')
+        .eq('target_month', target_month)
+        .ilike('provider_name', `%${provider_name}%`)
+        .in('shift_date', dates);
+      if (selErr) throw selErr;
+      const ids = (rows || []).map((r: any) => r.id);
+      if (!ids.length) {
+        return new Response(JSON.stringify({ error: 'No matching shift_recommendations rows', dates }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const note = body.note || `ClinOps manual time adjustment: ${start_min}→${end_min} min (per provider comment).`;
+      const { data: upd, error: updErr } = await sb2
+        .from('shift_recommendations')
+        .update({ start_min, end_min, hours, notes: note, updated_at: new Date().toISOString() })
+        .in('id', ids)
+        .select('id, shift_date, start_min, end_min, hours');
+      if (updErr) throw updErr;
+      return new Response(JSON.stringify({ ok: true, updated: upd }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (!provider_name || !target_month || !decision) {
       return new Response(JSON.stringify({ error: 'provider_name, target_month, decision required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
