@@ -52,7 +52,29 @@ Deno.serve(async (req) => {
       .eq('id', sub.id);
     if (updErr) throw updErr;
 
-    return new Response(JSON.stringify({ ok: true, submission_id: sub.id, hours, candidates: subs.length }), {
+    // Trigger shift-recommendations re-emit so the publish stage picks up
+    // the overridden decision. We call ClinOps's emit function with the
+    // service-role key so it bypasses verify_jwt.
+    let emit_status: number | null = null;
+    let emit_body: string | null = null;
+    try {
+      const emitUrl = `${url}/functions/v1/emit-shift-recommendations?target_month=${encodeURIComponent(target_month)}&provider_id=${encodeURIComponent(sub.provider_id)}`;
+      const r = await fetch(emitUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'apikey': key,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      emit_status = r.status;
+      emit_body = (await r.text()).slice(0, 500);
+    } catch (e) {
+      emit_body = `emit error: ${String(e?.message || e)}`;
+    }
+
+    return new Response(JSON.stringify({ ok: true, submission_id: sub.id, hours, candidates: subs.length, emit_status, emit_body }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e) {
