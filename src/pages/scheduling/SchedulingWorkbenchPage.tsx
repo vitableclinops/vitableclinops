@@ -7911,7 +7911,7 @@ function ReadinessPanel({
           sub="Recurring expanded minus off dates"
         />
         <SummaryCard
-          label="Accepted usable"
+          label="Accepted usable (telehealth)"
           value={acceptedHours ? `${acceptedHours.toFixed(0)} hrs` : '—'}
           sub={acceptedPct !== null ? `${acceptedPct}% total · ${formatSignedCoverageHours(netCoverageHours)} net` : undefined}
         />
