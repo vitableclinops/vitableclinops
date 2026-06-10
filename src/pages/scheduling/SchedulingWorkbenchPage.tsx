@@ -10111,7 +10111,7 @@ function MatchingPanel({
                     <DecisionReasonSummaryTiles row={r} />
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={status} />
+                    <StatusBadge status={status as DecisionStatus | null | undefined} />
                   </TableCell>
                 </TableRow>
               );

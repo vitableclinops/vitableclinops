@@ -468,7 +468,7 @@ export function useProviderSchedulingExceptions() {
         .eq('scheduling_outreach_exempt', true)
         .order('name', { ascending: true });
       if (error) throw error;
-      return (data ?? []).map((p: {
+      return ((data ?? []) as Array<{
         id: string;
         name: string;
         email: string | null;
@@ -478,7 +478,7 @@ export function useProviderSchedulingExceptions() {
         scheduling_outreach_exempt: boolean | null;
         scheduling_outreach_exemption_reason: string | null;
         active: boolean | null;
-      }) => ({
+      }>).map((p) => ({
         provider_id: p.id,
         provider_name: p.name,
         provider_email: p.email ?? null,
@@ -683,7 +683,7 @@ export function useMonthlyAvailabilitySubmissions(month: string) {
         ]),
       );
 
-      return (submissionsRes.data ?? []).map(s => {
+      return ((submissionsRes.data ?? []) as any[]).map((s: any) => {
         const provider = s.provider_id ? providerById.get(s.provider_id) : null;
         const parsed = (s.parsed_shifts ?? null) as Record<string, unknown> | null;
         const parsedEmail =
