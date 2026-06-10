@@ -7386,6 +7386,7 @@ function ReadinessPanel({
   type BlockerCategory = 'Scheduler can do this' | 'Escalate to ClinOps lead' | 'System/admin issue';
 
   type OperatorBlocker = {
+    key: string;
     label: string;
     detail: string;
     category: BlockerCategory;
@@ -7397,6 +7398,7 @@ function ReadinessPanel({
     const out: OperatorBlocker[] = [];
     if (coverageQ.isError) {
       out.push({
+        key: 'coverage_error',
         label: 'Coverage could not load',
         detail: 'Do not publish until the Coverage Gaps tab loads successfully.',
         category: 'System/admin issue',
@@ -7405,6 +7407,7 @@ function ReadinessPanel({
       });
     } else if (!coverageQ.isLoading && coverageRows.length === 0) {
       out.push({
+        key: 'no_coverage_rows',
         label: 'No coverage rows for this month',
         detail: 'Recalculate the schedule from the latest submissions. If coverage still does not load, ask an admin for help.',
         category: 'System/admin issue',
@@ -7414,6 +7417,7 @@ function ReadinessPanel({
     }
     if (!checksLoading && !hasPublishRows) {
       out.push({
+        key: 'no_publish_rows',
         label: 'No publishable shift list yet',
         detail: submittedHours > 0
           ? 'Availability exists, but the accepted shift list is not ready. Recalculate the schedule from the latest submissions.'
@@ -7425,6 +7429,7 @@ function ReadinessPanel({
     }
     if (hasPublishRows && unmatchedCount > 0) {
       out.push({
+        key: 'unmatched',
         label: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
         detail: 'A provider name or email did not match the provider directory. If the match is obvious, fix it; otherwise escalate.',
         category: 'Scheduler can do this',
@@ -7434,6 +7439,7 @@ function ReadinessPanel({
     }
     if (reviewCount > 0) {
       out.push({
+        key: 'manual_review',
         label: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need manual review`,
         detail: `${summary.needsReviewCount} unusual-hours flag${summary.needsReviewCount === 1 ? '' : 's'} and ${inboxNeedsReviewCount} resubmission${inboxNeedsReviewCount === 1 ? '' : 's'} need a ClinOps lead decision.`,
         category: 'Escalate to ClinOps lead',
@@ -7443,6 +7449,7 @@ function ReadinessPanel({
     }
     if (criticalGapStates.length > 0) {
       out.push({
+        key: 'critical_gap',
         label: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} critically under-covered`,
         detail: `Affected states: ${criticalGapStates.slice(0, 6).map(s => `${s.state} ${Math.round(s.pct_filled)}% covered`).join(', ')}${criticalGapStates.length > 6 ? ', plus more' : ''}.`,
         category: 'Escalate to ClinOps lead',
@@ -7452,6 +7459,7 @@ function ReadinessPanel({
     }
     if (missingCount > 0) {
       out.push({
+        key: 'missing_availability',
         label: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing ${formatMonthLabel(month)} availability`,
         detail: `These active providers have not submitted ${formatMonthLabel(month)} availability. Send reminders before publishing so staff can capture any last covered hours.`,
         category: 'Scheduler can do this',
