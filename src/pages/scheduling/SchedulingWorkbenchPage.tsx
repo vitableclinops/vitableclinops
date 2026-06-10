@@ -145,6 +145,7 @@ import {
   useMonthlySlaRisk,
 } from '@/hooks/useMonthlySchedulingForecast';
 import { useStateCoverage, type StateCoverageRow } from '@/hooks/useStateCoverage';
+import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import {
   useSchedulingSourceAudit,
   type SourceAuditSection,
@@ -946,6 +947,7 @@ export default function SchedulingWorkbenchPage({
     setExpanded(p => ({ ...p, [id]: !p[id] }));
 
   const { data: dbRowsData = [], isLoading, refetch } = useMonthlyPublishView(month);
+  const [syncingJotform, setSyncingJotform] = useState(false);
   const { data: shiftRowsData = [], isLoading: shiftsLoading, refetch: refetchShifts } =
     useShiftRecommendationsForMonth(month);
   const { data: cutRowsData = [], isLoading: cutsLoading, refetch: refetchCuts } =
@@ -1804,6 +1806,39 @@ export default function SchedulingWorkbenchPage({
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={syncingJotform}
+                onClick={async () => {
+                  setSyncingJotform(true);
+                  const toastId = toast.loading('Syncing Jotform submissions…');
+                  try {
+                    const { error: syncErr } = await clinopsSupabase.functions.invoke(
+                      'sync-jotform-submissions',
+                      { body: {} },
+                    );
+                    if (syncErr) throw syncErr;
+                    toast.loading('Re-evaluating submissions…', { id: toastId });
+                    const { error: evalErr } = await clinopsSupabase.functions.invoke(
+                      `evaluate-schedule-submissions?target_month=${encodeURIComponent(month)}`,
+                      { body: {} },
+                    );
+                    if (evalErr) throw evalErr;
+                    toast.success('Jotform sync complete', { id: toastId });
+                    refetch();
+                    refetchShifts();
+                    refetchCuts();
+                  } catch (e: any) {
+                    toast.error(`Sync failed: ${e?.message ?? 'unknown error'}`, { id: toastId });
+                  } finally {
+                    setSyncingJotform(false);
+                  }
+                }}
+              >
+                <RefreshCw className={cn('h-4 w-4 mr-1', syncingJotform && 'animate-spin')} />
+                {syncingJotform ? 'Syncing…' : 'Sync Jotform now'}
+              </Button>
               <input
                 id="jotform-upload"
                 type="file"
