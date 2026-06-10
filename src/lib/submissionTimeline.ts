@@ -179,10 +179,11 @@ export function buildSubmissionTimeline(
   const forecastSet = new Set(forecastKinds);
   const result = normalizeProviderAvailability(input);
   const adjusted = applySchedulingRules(result.timeline);
+  const editedTimeline = applyPerDateShiftEdits(adjusted.timeline, identity);
   const summary = {
     ...result.summary,
-    total_normalized_timeline_hours: roundSubmission2(sumHours(adjusted.timeline)),
-    final_approvable_hours: roundSubmission2(adjusted.timeline.reduce(
+    total_normalized_timeline_hours: roundSubmission2(sumHours(editedTimeline)),
+    final_approvable_hours: roundSubmission2(editedTimeline.reduce(
       (sum, s) => forecastSet.has(s.source.kind)
         ? sum + (s.endMin - s.startMin) / 60
         : sum,
@@ -193,7 +194,7 @@ export function buildSubmissionTimeline(
     hours_removed_for_provider_meeting_blackouts:
       adjusted.summary.hours_removed_for_provider_meeting_blackouts,
   };
-  const forecastTimeline = adjusted.timeline.filter(s => forecastSet.has(s.source.kind));
+  const forecastTimeline = editedTimeline.filter(s => forecastSet.has(s.source.kind));
   const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
     forecastSet.has(s.source.kind),
   );
@@ -202,7 +203,7 @@ export function buildSubmissionTimeline(
   );
   return {
     ...result,
-    timeline: adjusted.timeline,
+    timeline: editedTimeline,
     summary,
     forecastTimeline,
     forecastOutOfHoursTimeline,
@@ -210,6 +211,49 @@ export function buildSubmissionTimeline(
     schedulingAdjustments: adjusted.summary,
     unavailableDateOverrides: unavailableDateResolution.ignoredRanges,
   };
+}
+
+/** Parse "10:00 AM" / "3:15 PM" / "14:30" into minutes-from-midnight. */
+function parseClockToMinutes(s: string): number | null {
+  const t = String(s ?? '').trim();
+  if (!t) return null;
+  const ampm = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const min = parseInt(ampm[2], 10);
+    const pm = ampm[3].toUpperCase() === 'PM';
+    if (h === 12) h = 0;
+    if (pm) h += 12;
+    return h * 60 + min;
+  }
+  const m24 = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) return parseInt(m24[1], 10) * 60 + parseInt(m24[2], 10);
+  return null;
+}
+
+/** Apply provider-specific per-date shift-window edits (admin overrides for
+ *  a single calendar date). Replaces every slot on the matched date with the
+ *  new window; preserves source linkage for audit/reporting. */
+function applyPerDateShiftEdits(
+  slots: ExpandedSlot[],
+  identity: ProviderIdentity,
+): ExpandedSlot[] {
+  const override = findProviderOverride(identity);
+  const edits = override?.perDateShiftEdits;
+  if (!edits || edits.length === 0) return slots;
+  const byDate = new Map<string, { startMin: number; endMin: number }>();
+  for (const e of edits) {
+    const startMin = parseClockToMinutes(e.newStart);
+    const endMin = parseClockToMinutes(e.newEnd);
+    if (startMin == null || endMin == null || endMin <= startMin) continue;
+    byDate.set(e.date, { startMin, endMin });
+  }
+  if (byDate.size === 0) return slots;
+  return slots.map(slot => {
+    const edit = byDate.get(slot.date);
+    if (!edit) return slot;
+    return { ...slot, startMin: edit.startMin, endMin: edit.endMin };
+  });
 }
 
 export function extractRawIntervalsFromParsedShifts(parsed: ParsedShiftsBlob | null): RawInterval[] {

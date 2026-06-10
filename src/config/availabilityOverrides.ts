@@ -95,6 +95,17 @@ export interface ProviderOverride {
     endDate?: string;
     reason?: string;
   }>;
+  /** One-off per-date shift-window edits applied AFTER expansion. Use this
+   *  when ClinOps needs to override a provider's normal recurring/one-off
+   *  window on a specific calendar date (e.g. "this week she works
+   *  10 AM–3:15 PM instead of her usual 9:45 AM–3 PM"). Matches by `date`
+   *  only — replaces every slot on that date with the new window. */
+  perDateShiftEdits?: Array<{
+    date: string; // YYYY-MM-DD
+    newStart: string; // "10:00 AM"
+    newEnd: string; // "3:15 PM"
+    reason?: string;
+  }>;
   rules: ProviderOverrideRule[];
 }
 
@@ -223,5 +234,35 @@ export const AVAILABILITY_OVERRIDES: ProviderOverride[] = [
         reason: 'Michelle Diederich (MH Coach) 2026-07-09: trim to 150 min (3 x 50-min visit blocks) per ClinOps approval',
       },
     ],
+  },
+  {
+    fullName: 'Laura Maleknia',
+    perDateShiftEdits: [
+      {
+        date: '2026-07-27',
+        newStart: '10:00 AM',
+        newEnd: '3:15 PM',
+        reason: 'Laura Maleknia 2026-07-27 (Mon): provider note "week of Jul 27–30 hours need to be a little different — 10am–3:15pm instead of usual 9:45–3"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+      {
+        date: '2026-07-28',
+        newStart: '10:00 AM',
+        newEnd: '3:15 PM',
+        reason: 'Laura Maleknia 2026-07-28 (Tue): provider note "week of Jul 27–30 hours need to be a little different — 10am–3:15pm instead of usual 9:45–3"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+      {
+        date: '2026-07-29',
+        newStart: '10:00 AM',
+        newEnd: '3:15 PM',
+        reason: 'Laura Maleknia 2026-07-29 (Wed): provider note "week of Jul 27–30 hours need to be a little different — 10am–3:15pm instead of usual 9:45–3"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+      {
+        date: '2026-07-30',
+        newStart: '10:00 AM',
+        newEnd: '3:15 PM',
+        reason: 'Laura Maleknia 2026-07-30 (Thu): provider note "week of Jul 27–30 hours need to be a little different — 10am–3:15pm instead of usual 9:45–3"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+    ],
+    rules: [],
   },
 ];
