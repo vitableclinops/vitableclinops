@@ -244,6 +244,9 @@ export function buildSchedulingCostModel({
   let totalApprovedHours = 0;
   let knownRateHours = 0;
   let totalKnownWageCost = 0;
+  let telehealthApprovedHours = 0;
+  let mhCoachingApprovedHours = 0;
+  let therapyApprovedHours = 0;
 
   const providerRows = rows
     .filter(row => row.decision_status && row.decision_status !== 'superseded')
@@ -270,6 +273,10 @@ export function buildSchedulingCostModel({
       );
 
       totalApprovedHours += acceptedHours;
+      const mhLine = mentalHealthServiceLineForProvider(row.profession, row.provider_name);
+      if (mhLine === 'mh_coaching') mhCoachingApprovedHours += acceptedHours;
+      else if (mhLine === 'therapy') therapyApprovedHours += acceptedHours;
+      else telehealthApprovedHours += acceptedHours;
       if (wageCost != null && acceptedHours > 0) {
         knownRateHours += acceptedHours;
         totalKnownWageCost += wageCost;
