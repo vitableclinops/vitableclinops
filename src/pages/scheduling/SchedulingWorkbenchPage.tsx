@@ -947,6 +947,7 @@ export default function SchedulingWorkbenchPage({
     setExpanded(p => ({ ...p, [id]: !p[id] }));
 
   const { data: dbRowsData = [], isLoading, refetch } = useMonthlyPublishView(month);
+  const [syncingJotform, setSyncingJotform] = useState(false);
   const { data: shiftRowsData = [], isLoading: shiftsLoading, refetch: refetchShifts } =
     useShiftRecommendationsForMonth(month);
   const { data: cutRowsData = [], isLoading: cutsLoading, refetch: refetchCuts } =
