@@ -235,4 +235,34 @@ export const AVAILABILITY_OVERRIDES: ProviderOverride[] = [
       },
     ],
   },
+  {
+    fullName: 'Laura Maleknia',
+    perDateShiftEdits: [
+      {
+        date: '2026-07-27',
+        newStart: '10:00 AM',
+        newEnd: '3:15 PM',
+        reason: 'Laura Maleknia 2026-07-27 (Mon): provider note "week of Jul 27–30 hours need to be a little different — 10am–3:15pm instead of usual 9:45–3"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+      {
+        date: '2026-07-28',
+        newStart: '10:00 AM',
+        newEnd: '3:15 PM',
+        reason: 'Laura Maleknia 2026-07-28 (Tue): provider note "week of Jul 27–30 hours need to be a little different — 10am–3:15pm instead of usual 9:45–3"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+      {
+        date: '2026-07-29',
+        newStart: '10:00 AM',
+        newEnd: '3:15 PM',
+        reason: 'Laura Maleknia 2026-07-29 (Wed): provider note "week of Jul 27–30 hours need to be a little different — 10am–3:15pm instead of usual 9:45–3"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+      {
+        date: '2026-07-30',
+        newStart: '10:00 AM',
+        newEnd: '3:15 PM',
+        reason: 'Laura Maleknia 2026-07-30 (Thu): provider note "week of Jul 27–30 hours need to be a little different — 10am–3:15pm instead of usual 9:45–3"; approved by ClinOps (Sarabjeet, 2026-06-10)',
+      },
+    ],
+    rules: [],
+  },
 ];
