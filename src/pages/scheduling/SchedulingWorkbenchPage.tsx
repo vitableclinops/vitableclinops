@@ -7669,6 +7669,7 @@ function ReadinessPanel({
     const out: OperatorBlocker[] = [];
     if (watchGapStates.length > 0 && criticalGapStates.length === 0) {
       out.push({
+        key: 'thin_coverage',
         label: `${watchGapStates.length} state${watchGapStates.length === 1 ? '' : 's'} with thin coverage`,
         detail: 'Continue only if approved; ask the ClinOps lead whether extra hours are needed before launch.',
         category: 'Escalate to ClinOps lead',
