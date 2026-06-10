@@ -7540,7 +7540,15 @@ function ReadinessPanel({
     onJumpToReview,
   ]);
 
-  const workbenchReady = !checksLoading && hardBlockers.length === 0 && hasPublishRows;
+  const activeBlockers = useMemo(
+    () => hardBlockers.filter(b => !blockerOverrides[b.key]),
+    [hardBlockers, blockerOverrides],
+  );
+  const overriddenBlockers = useMemo(
+    () => hardBlockers.filter(b => blockerOverrides[b.key]),
+    [hardBlockers, blockerOverrides],
+  );
+  const workbenchReady = !checksLoading && activeBlockers.length === 0 && hasPublishRows;
   const publishingComplete = workbenchReady && homebasePct === 100 && ehrPct === 100;
 
   type Readiness = {
