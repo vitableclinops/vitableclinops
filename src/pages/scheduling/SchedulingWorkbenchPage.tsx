@@ -7580,7 +7580,7 @@ function ReadinessPanel({
         nextDisabled: isReevaluating,
       };
     }
-    if (unmatchedCount > 0) {
+    if (unmatchedCount > 0 && !blockerOverrides['unmatched']) {
       return {
         blocker: `${unmatchedCount} unmatched submission${unmatchedCount === 1 ? '' : 's'}`,
         nextAction: 'Fix unmatched submissions',
@@ -7588,7 +7588,7 @@ function ReadinessPanel({
         nextCategory: 'Scheduler can do this',
       };
     }
-    if (reviewCount > 0) {
+    if (reviewCount > 0 && !blockerOverrides['manual_review']) {
       return {
         blocker: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need ClinOps lead review`,
         nextAction: summary.needsReviewCount > 0
@@ -7598,7 +7598,7 @@ function ReadinessPanel({
         nextCategory: 'Escalate to ClinOps lead',
       };
     }
-    if (criticalGapStates.length > 0) {
+    if (criticalGapStates.length > 0 && !blockerOverrides['critical_gap']) {
       return {
         blocker: `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} critically under-covered`,
         nextAction: 'Escalate coverage gaps to ClinOps lead',
@@ -7606,7 +7606,7 @@ function ReadinessPanel({
         nextCategory: 'Escalate to ClinOps lead',
       };
     }
-    if (missingCount > 0) {
+    if (missingCount > 0 && !blockerOverrides['missing_availability']) {
       return {
         blocker: `${missingCount} provider${missingCount === 1 ? '' : 's'} missing ${formatMonthLabel(month)} availability`,
         nextAction: 'Send missing availability reminders',
@@ -7652,6 +7652,7 @@ function ReadinessPanel({
     onJumpToCoverage,
     onJumpToReview,
     onJumpToPublish,
+    blockerOverrides,
   ]);
 
   type OperatorStep = {
