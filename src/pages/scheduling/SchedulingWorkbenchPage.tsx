@@ -146,6 +146,7 @@ import {
 } from '@/hooks/useMonthlySchedulingForecast';
 import { useStateCoverage, type StateCoverageRow } from '@/hooks/useStateCoverage';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
+import { useAuth } from '@/hooks/useAuth';
 import {
   useSchedulingSourceAudit,
   type SourceAuditSection,
