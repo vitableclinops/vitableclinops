@@ -7911,7 +7911,7 @@ function ReadinessPanel({
           sub="Recurring expanded minus off dates"
         />
         <SummaryCard
-          label="Accepted usable"
+          label="Accepted usable (telehealth)"
           value={acceptedHours ? `${acceptedHours.toFixed(0)} hrs` : '—'}
           sub={acceptedPct !== null ? `${acceptedPct}% total · ${formatSignedCoverageHours(netCoverageHours)} net` : undefined}
         />
@@ -8614,7 +8614,7 @@ function CostPerVisitPanel({
                 Cost / Visit · {formatMonthLabel(month)}
               </CardTitle>
               <p className="mt-1 text-xs text-muted-foreground">
-                Uses accepted provider hours for this month. Standard care uses 2 visits/hr; mental health coach, therapist, and LPC rows use 3 visits per 2.5h shift. CPV assumes 70% target utilization.
+                Includes telehealth and mental health hours. State-coverage math on the readiness tab counts telehealth only. Standard care uses 2 visits/hr; mental health coach, therapist, and LPC rows use 3 visits per 2.5h shift. CPV assumes 70% target utilization.
               </p>
             </div>
             {recalculateButton}
@@ -8629,9 +8629,9 @@ function CostPerVisitPanel({
               tone={missingCount > 0 ? 'warn' : 'good'}
             />
             <CostMetricCard
-              label="Approved hours"
+              label="Approved hours (TH + MH)"
               value={formatHours(model.totalApprovedHours)}
-              sub="Accepted provider hours"
+              sub={`${formatHours(model.telehealthApprovedHours)} TH · ${formatHours(model.mentalHealthApprovedHours)} MH (${formatHours(model.mhCoachingApprovedHours)} coaching, ${formatHours(model.therapyApprovedHours)} therapy)`}
               tone="neutral"
             />
             <CostMetricCard
