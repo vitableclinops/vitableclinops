@@ -8301,16 +8301,34 @@ function OperatorStepIcon({
 
 function OperatorBlockersCard({
   hardBlockers,
+  overriddenBlockers,
+  blockerOverrides,
+  isAdmin,
+  onApplyOverride,
+  onRemoveOverride,
   softWarnings,
   isLoading,
 }: {
   hardBlockers: {
+    key: string;
     label: string;
     detail: string;
     category: string;
     action: string;
     onClick: () => void;
   }[];
+  overriddenBlockers: {
+    key: string;
+    label: string;
+    detail: string;
+    category: string;
+    action: string;
+    onClick: () => void;
+  }[];
+  blockerOverrides: Record<string, { reason: string; by: string; at: string }>;
+  isAdmin: boolean;
+  onApplyOverride: (key: string, reason: string) => void;
+  onRemoveOverride: (key: string) => void;
   softWarnings: {
     label: string;
     detail: string;
@@ -8320,6 +8338,14 @@ function OperatorBlockersCard({
   }[];
   isLoading: boolean;
 }) {
+  const handleOverrideClick = (key: string, label: string) => {
+    const reason = window.prompt(
+      `Admin override for: ${label}\n\nProvide a brief reason. This will be logged locally with your name.`,
+    );
+    if (reason && reason.trim()) {
+      onApplyOverride(key, reason.trim());
+    }
+  };
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -8351,14 +8377,63 @@ function OperatorBlockersCard({
                     </Badge>
                   </div>
                   <div className="text-xs text-red-700 mt-1">{item.detail}</div>
-                  <Button size="sm" variant="outline" className="mt-2 h-7" onClick={item.onClick}>
-                    {item.action}
-                  </Button>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="h-7" onClick={item.onClick}>
+                      {item.action}
+                    </Button>
+                    {isAdmin && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 border-red-300 text-red-800 hover:bg-red-100"
+                        onClick={() => handleOverrideClick(item.key, item.label)}
+                      >
+                        <ShieldCheck className="mr-1 h-3.5 w-3.5" />
+                        Admin override
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
           </div>
         </div>
+
+        {overriddenBlockers.length > 0 && (
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Admin-acknowledged (no longer blocking)
+            </div>
+            <div className="mt-2 space-y-2">
+              {overriddenBlockers.map(item => {
+                const ov = blockerOverrides[item.key];
+                return (
+                  <div key={item.key} className="rounded-md border border-emerald-200 bg-emerald-50 p-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-medium text-emerald-900">{item.label}</div>
+                      <Badge variant="outline" className="bg-white text-[11px]">
+                        Override applied
+                      </Badge>
+                    </div>
+                    {ov && (
+                      <div className="text-xs text-emerald-800 mt-1">
+                        "{ov.reason}" — {ov.by}, {new Date(ov.at).toLocaleString()}
+                      </div>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="mt-2 h-7 text-emerald-900"
+                      onClick={() => onRemoveOverride(item.key)}
+                    >
+                      Remove override
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
