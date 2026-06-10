@@ -7321,6 +7321,58 @@ function ReadinessPanel({
   const coverageQ = useStateCoverage(month);
   const coverageRows = useMemo(() => coverageQ.data?.rows ?? [], [coverageQ.data]);
 
+  // Admin override: an admin can acknowledge a blocker so it stops blocking publish.
+  // Stored per-month in localStorage so it survives reloads but resets per month.
+  const { roles, profile } = useAuth();
+  const isAdmin = roles.includes('admin');
+  const overrideStorageKey = `scheduling-blocker-overrides:${month}`;
+  type BlockerOverride = { reason: string; by: string; at: string };
+  const [blockerOverrides, setBlockerOverrides] = useState<Record<string, BlockerOverride>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = window.localStorage.getItem(overrideStorageKey);
+      return raw ? (JSON.parse(raw) as Record<string, BlockerOverride>) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(overrideStorageKey, JSON.stringify(blockerOverrides));
+    } catch {
+      /* ignore */
+    }
+  }, [overrideStorageKey, blockerOverrides]);
+  // Reset cache when month changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(overrideStorageKey);
+      setBlockerOverrides(raw ? (JSON.parse(raw) as Record<string, BlockerOverride>) : {});
+    } catch {
+      setBlockerOverrides({});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month]);
+  const addOverride = (key: string, reason: string) => {
+    setBlockerOverrides(prev => ({
+      ...prev,
+      [key]: {
+        reason,
+        by: profile?.full_name || profile?.email || 'Admin',
+        at: new Date().toISOString(),
+      },
+    }));
+  };
+  const removeOverride = (key: string) => {
+    setBlockerOverrides(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
   const demandHours = useMemo(
     () => coverageRows.reduce((s, r) => s + r.needed, 0),
     [coverageRows],
