@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
       const hours = (end_min - start_min) / 60;
       const { data: rows, error: selErr } = await sb2
         .from('shift_recommendations')
-        .select('id, shift_date, start_min, end_min, hours, provider_name, notes')
+        .select('id, submission_id, shift_date, start_min, end_min, hours, provider_name, notes')
         .eq('target_month', target_month)
         .ilike('provider_name', `%${provider_name}%`)
         .in('shift_date', dates);
