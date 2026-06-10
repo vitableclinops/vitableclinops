@@ -7999,7 +7999,12 @@ function ReadinessPanel({
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)] gap-4">
         <OperatorWorkflowCard steps={workflowSteps} />
         <OperatorBlockersCard
-          hardBlockers={hardBlockers}
+          hardBlockers={activeBlockers}
+          overriddenBlockers={overriddenBlockers}
+          blockerOverrides={blockerOverrides}
+          isAdmin={isAdmin}
+          onApplyOverride={addOverride}
+          onRemoveOverride={removeOverride}
           softWarnings={softWarnings}
           isLoading={checksLoading}
         />
