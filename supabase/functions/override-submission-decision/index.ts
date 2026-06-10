@@ -5,6 +5,30 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const patchParsedShiftTimes = (raw: unknown, dates: Set<string>, startMin: number, endMin: number): unknown => {
+  const time = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+  const dateKeys = ['date', 'shift_date', 'Date', 'Start Date'];
+  const startKeys = ['start_time', 'start', 'Start Time', 'startTime'];
+  const endKeys = ['end_time', 'end', 'End Time', 'endTime'];
+  const walk = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(walk);
+    if (!value || typeof value !== 'object') return value;
+    const obj = { ...(value as Record<string, unknown>) };
+    const dateValue = dateKeys.map(k => obj[k]).find(v => typeof v === 'string') as string | undefined;
+    const iso = dateValue?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+    if (iso && dates.has(iso)) {
+      for (const key of startKeys) if (key in obj) obj[key] = time(startMin);
+      for (const key of endKeys) if (key in obj) obj[key] = time(endMin);
+      if ('start_min' in obj) obj.start_min = startMin;
+      if ('end_min' in obj) obj.end_min = endMin;
+      if ('hours' in obj) obj.hours = (endMin - startMin) / 60;
+    }
+    for (const [key, val] of Object.entries(obj)) obj[key] = walk(val);
+    return obj;
+  };
+  return walk(raw);
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
