@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
 
     const { data: subs, error: selErr } = await sb
       .from('schedule_submissions')
-      .select('id, provider_id, decision_status, decision_notes, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast, submitted_at')
+      .select('id, provider_id, decision_status, decision_notes, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast, submitted_at, parsed_shifts')
       .eq('target_month', target_month)
       .ilike('provider_name', `%${provider_name}%`)
       .order('submitted_at', { ascending: false });
@@ -73,6 +73,23 @@ Deno.serve(async (req) => {
     const newNotes = sub.decision_notes ? `${sub.decision_notes}\n${auditLine}` : auditLine;
     const hours = sub.effective_hours_used_for_forecast ?? sub.normalized_requested_hours ?? sub.raw_requested_hours ?? 0;
 
+    // Optional manual correction flags (e.g. allow_outside_operating_hours).
+    const allowOutsideOps = body.allow_outside_operating_hours === true;
+    let newParsedShifts = sub.parsed_shifts;
+    if (allowOutsideOps && newParsedShifts && typeof newParsedShifts === 'object' && !Array.isArray(newParsedShifts)) {
+      const prior = (newParsedShifts as Record<string, unknown>).clinops_manual_correction;
+      const priorObj = prior && typeof prior === 'object' && !Array.isArray(prior) ? prior as Record<string, unknown> : {};
+      newParsedShifts = {
+        ...(newParsedShifts as Record<string, unknown>),
+        clinops_manual_correction: { ...priorObj, allow_outside_operating_hours: true, set_by: actor, set_at: nowIso },
+      };
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      .from('schedule_submissions')
+    };
+    // (placeholder to keep diff small — real update below)
+
     const { error: updErr } = await sb
       .from('schedule_submissions')
       .update({
@@ -81,6 +98,7 @@ Deno.serve(async (req) => {
         declined_hours: decision === 'declined' ? hours : 0,
         decided_at: nowIso,
         decision_notes: newNotes,
+        ...(allowOutsideOps ? { parsed_shifts: newParsedShifts } : {}),
       })
       .eq('id', sub.id);
     if (updErr) throw updErr;
