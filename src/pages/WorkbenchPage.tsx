@@ -484,9 +484,14 @@ const WorkbenchPage = () => {
                             <div>{sub ? formatDateTime(sub.submitted_at) : '—'}</div>
                             {sub &&
                               (sub.decision_status === 'pending' ||
-                                sub.decision_status === 'needs_review') && (
+                                sub.decision_status === 'needs_review' ||
+                                sub.decision_status === 'accepted' ||
+                                sub.decision_status === 'declined' ||
+                                sub.decision_status === 'partial') && (
                                 <div className="flex gap-1 mt-1">
-                                  {(['accepted', 'declined'] as const).map(d => {
+                                  {(['accepted', 'declined'] as const)
+                                    .filter(d => d !== sub.decision_status)
+                                    .map(d => {
                                     const k = `${sub.id}-${d}`;
                                     const isConfirming = confirmingOverride === k;
                                     return (
@@ -511,7 +516,11 @@ const WorkbenchPage = () => {
                                         {isConfirming
                                           ? 'Click again to confirm'
                                           : d === 'accepted'
-                                          ? 'Mark accepted'
+                                          ? sub.decision_status === 'declined'
+                                            ? 'Override → accepted'
+                                            : 'Mark accepted'
+                                          : sub.decision_status === 'accepted'
+                                          ? 'Override → declined'
                                           : 'Mark declined'}
                                       </Button>
                                     );
