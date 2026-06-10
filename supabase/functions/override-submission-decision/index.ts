@@ -70,7 +70,13 @@ Deno.serve(async (req) => {
     const nowIso = new Date().toISOString();
     const actor = actor_label || 'ClinOps (manual override)';
     const auditLine = `Manual override: ${decision} by ${actor} at ${nowIso}`;
-    const newNotes = sub.decision_notes ? `${sub.decision_notes}\n${auditLine}` : auditLine;
+    const shouldClearDeclineNotes = decision === 'accepted' && body.clear_decline_notes !== false;
+    const fullAcceptLine = body.full_accept_note || 'ClinOps manual override: accepted in full; no declined hours.';
+    const newNotes = shouldClearDeclineNotes
+      ? `${fullAcceptLine}\n${auditLine}`
+      : sub.decision_notes
+        ? `${sub.decision_notes}\n${auditLine}`
+        : auditLine;
     const hours = sub.effective_hours_used_for_forecast ?? sub.normalized_requested_hours ?? sub.raw_requested_hours ?? 0;
 
     // Optional manual correction flags (e.g. allow_outside_operating_hours).
@@ -120,7 +126,13 @@ Deno.serve(async (req) => {
       emit_body = `emit error: ${String(e?.message || e)}`;
     }
 
-    return new Response(JSON.stringify({ ok: true, submission_id: sub.id, hours, candidates: subs.length, emit_status, emit_body }), {
+    const { data: verified } = await sb
+      .from('schedule_submissions')
+      .select('decision_status, accepted_hours, declined_hours, decision_notes')
+      .eq('id', sub.id)
+      .maybeSingle();
+
+    return new Response(JSON.stringify({ ok: true, submission_id: sub.id, hours, candidates: subs.length, verified, emit_status, emit_body }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e) {
