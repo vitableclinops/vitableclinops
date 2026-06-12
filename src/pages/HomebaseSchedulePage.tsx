@@ -954,11 +954,20 @@ export const HomebaseScheduleContent = () => {
           ) : (
             <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
               <ReconciliationCalendar
-                days={reconciliationDays}
+                days={effectiveDays}
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
+                overrides={overrides}
               />
-              <ReconciliationDayDetails day={selectedDay} />
+              <ReconciliationDayDetails
+                day={selectedDay}
+                overrides={overrides}
+                showResolved={showResolved}
+                onShowResolvedChange={setShowResolved}
+                resolvedCount={reconciliationTotals.resolvedCount}
+                onResync={() => syncMutation.mutate()}
+                isResyncing={syncMutation.isPending}
+              />
             </div>
           )}
         </TabsContent>
