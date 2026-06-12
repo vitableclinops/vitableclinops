@@ -625,6 +625,12 @@ export const HomebaseScheduleContent = () => {
   const invalidRange = !isIsoDate(startDate) || !isIsoDate(endDate) || startDate > endDate;
   const scheduleQ = useHomebaseSchedule(startDate, endDate, !invalidRange);
   const approvedQ = useApprovedSchedule(startDate, endDate, !invalidRange);
+  const overridesQ = useReconciliationOverrides(startDate, endDate, !invalidRange);
+  const overrides = useMemo(
+    () => overridesQ.data ?? new Map<string, ReconciliationOverrideRow>(),
+    [overridesQ.data],
+  );
+  const [showResolved, setShowResolved] = useState(false);
   const rows = useMemo(() => scheduleQ.data ?? [], [scheduleQ.data]);
   const approvedSourceRows = useMemo(() => approvedQ.data ?? [], [approvedQ.data]);
   const approvedRows = useMemo(
