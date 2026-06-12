@@ -1247,7 +1247,7 @@ const ReconciliationDayDetails = ({
                     providerId={issue.approved?.provider_id ?? issue.homebase?.providerId ?? null}
                     providerName={issue.providerName}
                     approvedShiftId={issue.approved?.id ?? null}
-                    homebaseShiftId={issue.homebase?.shift.homebase_id ?? null}
+                    homebaseShiftId={issue.homebase?.shift.homebase_id != null ? String(issue.homebase.shift.homebase_id) : null}
                     override={override}
                     onResync={onResync}
                     isResyncing={isResyncing}
