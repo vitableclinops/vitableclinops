@@ -695,7 +695,7 @@ export function useMonthlyAvailabilitySubmissions(month: string) {
         ]),
       );
 
-      return ((submissionsRes.data ?? []) as AvailabilitySubmissionRecord[]).map(s => {
+      return ((submissionsRes.data ?? []) as unknown as AvailabilitySubmissionRecord[]).map(s => {
         const provider = s.provider_id ? providerById.get(s.provider_id) : null;
         const parsed = (s.parsed_shifts ?? null) as Record<string, unknown> | null;
         const parsedEmail =
