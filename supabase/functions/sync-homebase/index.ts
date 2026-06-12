@@ -106,18 +106,21 @@ Deno.serve(async (req: Request) => {
     const hb = new HomebaseClient(apiKey);
 
     // ── Load ClinOps providers for matching ───────────────────────────────────
+    // Source of truth is `profiles` (employment_status = 'active'). The legacy
+    // `providers` table was removed; reading it here silently returned zero
+    // rows and caused every Homebase employee to land as `unmatched`.
     const { data: providers } = await supabase
-      .from('providers')
-      .select('id, email, name, active')
-      .eq('active', true);
+      .from('profiles')
+      .select('id, email, full_name, employment_status')
+      .eq('employment_status', 'active');
 
     const providersByEmail = new Map<string, string>(); // email → providers.id
     const providersByCanonical = new Map<string, string>(); // canonical_name → providers.id
     const providersForFuzzy: { id: string; canonical: string }[] = [];
 
-    for (const p of (providers ?? [])) {
+    for (const p of (providers ?? []) as Array<{ id: string; email: string | null; full_name: string | null }>) {
       if (p.email) providersByEmail.set(p.email.toLowerCase(), p.id);
-      const c = canonicalName(p.name);
+      const c = canonicalName(p.full_name);
       if (c) {
         providersByCanonical.set(c, p.id);
         providersForFuzzy.push({ id: p.id, canonical: c });
