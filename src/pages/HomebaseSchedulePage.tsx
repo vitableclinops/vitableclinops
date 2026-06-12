@@ -12,6 +12,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import type { ClinOpsTables } from '@/integrations/supabase/clinopsTypes';
+import { IssueActions } from '@/components/scheduling/IssueActions';
+import {
+  useReconciliationOverrides,
+  type ReconciliationOverrideRow,
+} from '@/hooks/useReconciliationOverrides';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   dedupeShiftRecommendationRows,
   filterRowsToLatestAcceptedSubmissions,
