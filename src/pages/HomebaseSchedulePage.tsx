@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -7,17 +7,42 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import type { ClinOpsTables } from '@/integrations/supabase/clinopsTypes';
-import { downloadCSV, formatLocalDate } from '@/lib/utils';
-import { AlertTriangle, CalendarRange, CheckCircle2, Clock, Download, Loader2, RefreshCw, Search } from 'lucide-react';
+import {
+  dedupeShiftRecommendationRows,
+  filterRowsToLatestAcceptedSubmissions,
+  type LatestSchedulingSubmission,
+} from '@/lib/scheduling/latestSubmissions';
+import { cn, downloadCSV, formatLocalDate } from '@/lib/utils';
+import {
+  AlertTriangle,
+  CalendarRange,
+  CheckCircle2,
+  Clock,
+  Download,
+  Loader2,
+  RefreshCw,
+  Search,
+  XCircle,
+} from 'lucide-react';
 
 type HomebaseShift = ClinOpsTables<'homebase_shifts'>;
 type HomebaseEmployee = ClinOpsTables<'homebase_employees'>;
+type ApprovedShift = ClinOpsTables<'shift_recommendations'>;
 type ScheduleStatus = 'published' | 'unpublished' | 'unscheduled';
 type StatusFilter = ScheduleStatus | 'all';
+type ReconciliationSeverity = 'empty' | 'green' | 'yellow' | 'red';
+type ReconciliationIssueType =
+  | 'missing_homebase'
+  | 'time_mismatch'
+  | 'homebase_unpublished'
+  | 'homebase_unscheduled'
+  | 'extra_homebase'
+  | 'unmatched_homebase_employee';
 
 interface HomebaseScheduleRow {
   shift: HomebaseShift;
@@ -32,6 +57,39 @@ interface HomebaseSyncResult {
 }
 
 const DEFAULT_RANGE_DAYS = 29;
+const JULY_2026_START = '2026-07-01';
+const JULY_2026_END = '2026-07-31';
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+interface ComparableHomebaseShift extends HomebaseScheduleRow {
+  providerId: string | null;
+  providerName: string;
+  startMin: number;
+  endMin: number;
+  status: ScheduleStatus;
+}
+
+interface ReconciliationIssue {
+  id: string;
+  type: ReconciliationIssueType;
+  severity: Exclude<ReconciliationSeverity, 'empty' | 'green'>;
+  dateKey: string;
+  providerName: string;
+  title: string;
+  detail: string;
+  fix: string;
+  approved?: ApprovedShift;
+  homebase?: ComparableHomebaseShift;
+}
+
+interface DayReconciliation {
+  dateKey: string;
+  approvedCount: number;
+  homebaseCount: number;
+  matchedCount: number;
+  issues: ReconciliationIssue[];
+  severity: ReconciliationSeverity;
+}
 
 const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
@@ -55,6 +113,16 @@ const etDatePartsFormatter = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
+});
+
+const etDateTimePartsFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
 });
 
 const etDateLabelFormatter = new Intl.DateTimeFormat('en-US', {
@@ -88,6 +156,23 @@ const getEtDateKey = (iso: string | null) => {
   return year && month && day ? `${year}-${month}-${day}` : '';
 };
 
+const getEtDateTimeParts = (iso: string | null): { date: string; minutes: number } | null => {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = etDateTimePartsFormatter.formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  const hour = Number(values.hour) % 24;
+  const minute = Number(values.minute);
+  if (!values.year || !values.month || !values.day || Number.isNaN(hour) || Number.isNaN(minute)) {
+    return null;
+  }
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    minutes: hour * 60 + minute,
+  };
+};
+
 const formatEtDate = (iso: string | null) => {
   if (!iso) return 'No date';
   const date = new Date(iso);
@@ -102,6 +187,29 @@ const formatEtTime = (iso: string | null) => {
 
 const formatEtTimeRange = (startAt: string | null, endAt: string | null) =>
   `${formatEtTime(startAt)}-${formatEtTime(endAt)}`;
+
+const formatDateKey = (dateKey: string) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  if (!year || !month || !day) return dateKey;
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+};
+
+const formatApprovedTimeRange = (row: ApprovedShift) =>
+  `${formatClockMinutes(row.start_min)}-${formatClockMinutes(row.end_min)}`;
+
+const formatClockMinutes = (minutes: number) => {
+  const safe = ((minutes % 1440) + 1440) % 1440;
+  const hour24 = Math.floor(safe / 60);
+  const minute = safe % 60;
+  const ampm = hour24 >= 12 ? 'PM' : 'AM';
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, '0')} ${ampm}`;
+};
 
 const formatSyncedAt = (iso: string | null) => {
   if (!iso) return 'Not synced';
@@ -121,6 +229,34 @@ const getScheduleStatus = (shift: HomebaseShift): ScheduleStatus => {
   if (shift.scheduled === false) return 'unscheduled';
   return shift.published ? 'published' : 'unpublished';
 };
+
+const getMonthStartFromIso = (iso: string) => `${iso.slice(0, 7)}-01`;
+
+const dateRange = (startDate: string, endDate: string): string[] => {
+  if (!isIsoDate(startDate) || !isIsoDate(endDate) || startDate > endDate) return [];
+  const days: string[] = [];
+  for (let cur = startDate; cur <= endDate; cur = addDaysIso(cur, 1)) {
+    days.push(cur);
+  }
+  return days;
+};
+
+const utcDayOfWeek = (dateKey: string) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  if (!year || !month || !day) return 0;
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+};
+
+const issueSeverityRank = (issue: ReconciliationIssue) => (issue.severity === 'red' ? 2 : 1);
+
+const pickBestHomebaseCandidate = (rows: ComparableHomebaseShift[]) =>
+  [...rows].sort((a, b) => {
+    const rank = (row: ComparableHomebaseShift) =>
+      row.status === 'published' ? 0 : row.status === 'unpublished' ? 1 : 2;
+    const rankDelta = rank(a) - rank(b);
+    if (rankDelta !== 0) return rankDelta;
+    return (b.shift.synced_at ?? '').localeCompare(a.shift.synced_at ?? '');
+  })[0] ?? null;
 
 const useHomebaseSchedule = (startDate: string, endDate: string, enabled: boolean) =>
   useQuery({
@@ -172,19 +308,273 @@ const useHomebaseSchedule = (startDate: string, endDate: string, enabled: boolea
     },
   });
 
+const useApprovedSchedule = (startDate: string, endDate: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ['homebase-reconciliation-approved', startDate, endDate],
+    enabled,
+    queryFn: async (): Promise<ApprovedShift[]> => {
+      const startMonth = getMonthStartFromIso(startDate);
+      const endMonth = getMonthStartFromIso(endDate);
+      const [recommendationsRes, submissionsRes] = await Promise.all([
+        clinopsSupabase
+          .from('shift_recommendations')
+          .select('*')
+          .eq('recommendation', 'publish')
+          .gte('shift_date', startDate)
+          .lte('shift_date', endDate)
+          .order('shift_date', { ascending: true })
+          .order('start_min', { ascending: true })
+          .range(0, 49999),
+        clinopsSupabase
+          .from('schedule_submissions')
+          .select('id, provider_id, target_month, decision_status, submitted_at')
+          .gte('target_month', startMonth)
+          .lte('target_month', endMonth)
+          .range(0, 49999),
+      ]);
+      if (recommendationsRes.error) throw recommendationsRes.error;
+      if (submissionsRes.error) throw submissionsRes.error;
+      return dedupeShiftRecommendationRows(
+        filterRowsToLatestAcceptedSubmissions(
+          (recommendationsRes.data ?? []) as ApprovedShift[],
+          (submissionsRes.data ?? []) as LatestSchedulingSubmission[],
+        ),
+      );
+    },
+    staleTime: 30_000,
+  });
+
+const toComparableHomebaseShift = (row: HomebaseScheduleRow): ComparableHomebaseShift | null => {
+  const start = getEtDateTimeParts(row.shift.start_at);
+  const end = getEtDateTimeParts(row.shift.end_at);
+  if (!start || !end) return null;
+  let endMin = end.minutes;
+  if (end.date > start.date || endMin < start.minutes) endMin += 24 * 60;
+  return {
+    ...row,
+    dateKey: start.date,
+    providerId: row.employee?.profile_id ?? null,
+    providerName: getEmployeeName(row.employee, row.shift),
+    startMin: start.minutes,
+    endMin,
+    status: getScheduleStatus(row.shift),
+  };
+};
+
+const buildReconciliation = (
+  approvedRows: ApprovedShift[],
+  homebaseRows: HomebaseScheduleRow[],
+  startDate: string,
+  endDate: string,
+): DayReconciliation[] => {
+  const days = dateRange(startDate, endDate);
+  const dayMap = new Map<string, DayReconciliation>(
+    days.map(dateKey => [
+      dateKey,
+      {
+        dateKey,
+        approvedCount: 0,
+        homebaseCount: 0,
+        matchedCount: 0,
+        issues: [],
+        severity: 'empty',
+      },
+    ]),
+  );
+
+  const homebaseComparable = homebaseRows
+    .map(toComparableHomebaseShift)
+    .filter((row): row is ComparableHomebaseShift =>
+      Boolean(row && row.dateKey >= startDate && row.dateKey <= endDate),
+    );
+  const usedHomebaseIds = new Set<string>();
+
+  for (const row of approvedRows) {
+    const day = dayMap.get(row.shift_date);
+    if (day) day.approvedCount += 1;
+  }
+  for (const row of homebaseComparable) {
+    const day = dayMap.get(row.dateKey);
+    if (day) day.homebaseCount += 1;
+  }
+
+  const pushIssue = (issue: ReconciliationIssue) => {
+    const day = dayMap.get(issue.dateKey);
+    if (!day) return;
+    day.issues.push(issue);
+  };
+
+  for (const approved of approvedRows) {
+    const dateKey = approved.shift_date;
+    const providerName = approved.provider_name;
+    const candidates = homebaseComparable.filter(row =>
+      row.providerId === approved.provider_id &&
+      row.dateKey === dateKey &&
+      !usedHomebaseIds.has(row.shift.id),
+    );
+    const exact = pickBestHomebaseCandidate(
+      candidates.filter(candidate =>
+        candidate.startMin === approved.start_min &&
+        candidate.endMin === approved.end_min,
+      ),
+    );
+
+    if (exact) {
+      usedHomebaseIds.add(exact.shift.id);
+      const day = dayMap.get(dateKey);
+      if (day) day.matchedCount += 1;
+      if (exact.status !== 'published') {
+        const type: ReconciliationIssueType =
+          exact.status === 'unscheduled' ? 'homebase_unscheduled' : 'homebase_unpublished';
+        pushIssue({
+          id: `${type}-${approved.id}-${exact.shift.id}`,
+          type,
+          severity: 'yellow',
+          dateKey,
+          providerName,
+          title: exact.status === 'unscheduled' ? 'Homebase shift is unscheduled' : 'Homebase shift is not published',
+          detail: `${providerName} ${formatApprovedTimeRange(approved)} exists in Homebase but is ${exact.status}.`,
+          fix: exact.status === 'unscheduled'
+            ? 'Schedule or recreate this shift in Homebase, then sync again.'
+            : 'Publish this Homebase shift.',
+          approved,
+          homebase: exact,
+        });
+      }
+      continue;
+    }
+
+    const nearest = pickBestHomebaseCandidate(
+      candidates
+        .map(candidate => ({
+          candidate,
+          delta: Math.abs(candidate.startMin - approved.start_min) + Math.abs(candidate.endMin - approved.end_min),
+        }))
+        .sort((a, b) => a.delta - b.delta)
+        .map(item => item.candidate),
+    );
+
+    if (nearest) {
+      usedHomebaseIds.add(nearest.shift.id);
+      pushIssue({
+        id: `time-mismatch-${approved.id}-${nearest.shift.id}`,
+        type: 'time_mismatch',
+        severity: 'red',
+        dateKey,
+        providerName,
+        title: 'Shift time differs',
+        detail: `${providerName} is approved for ${formatApprovedTimeRange(approved)} but Homebase has ${formatEtTimeRange(nearest.shift.start_at, nearest.shift.end_at)}.`,
+        fix: `Update Homebase to ${formatApprovedTimeRange(approved)}, or update the approved Lovable schedule if Homebase is correct.`,
+        approved,
+        homebase: nearest,
+      });
+      continue;
+    }
+
+    pushIssue({
+      id: `missing-homebase-${approved.id}`,
+      type: 'missing_homebase',
+      severity: 'red',
+      dateKey,
+      providerName,
+      title: 'Approved shift missing from Homebase',
+      detail: `${providerName} ${formatApprovedTimeRange(approved)} is approved in Lovable but no Homebase shift was found for that provider on this date.`,
+      fix: 'Create this shift in Homebase, then sync Homebase again.',
+      approved,
+    });
+  }
+
+  for (const homebase of homebaseComparable) {
+    if (usedHomebaseIds.has(homebase.shift.id)) continue;
+    if (!homebase.providerId) {
+      pushIssue({
+        id: `unmatched-homebase-${homebase.shift.id}`,
+        type: 'unmatched_homebase_employee',
+        severity: 'red',
+        dateKey: homebase.dateKey,
+        providerName: homebase.providerName,
+        title: 'Homebase employee is not matched',
+        detail: `${homebase.providerName} ${formatEtTimeRange(homebase.shift.start_at, homebase.shift.end_at)} is in Homebase but is not linked to a ClinOps provider profile.`,
+        fix: 'Map this Homebase employee to the correct provider profile, sync again, then re-check the day.',
+        homebase,
+      });
+      continue;
+    }
+
+    pushIssue({
+      id: `extra-homebase-${homebase.shift.id}`,
+      type: 'extra_homebase',
+      severity: 'red',
+      dateKey: homebase.dateKey,
+      providerName: homebase.providerName,
+      title: 'Extra Homebase shift',
+      detail: `${homebase.providerName} ${formatEtTimeRange(homebase.shift.start_at, homebase.shift.end_at)} is in Homebase but does not match an approved Lovable shift.`,
+      fix: 'Remove or adjust this Homebase shift, or approve the matching availability in Lovable if it should stay.',
+      homebase,
+    });
+  }
+
+  return days.map(dateKey => {
+    const day = dayMap.get(dateKey)!;
+    const worstIssue = [...day.issues].sort((a, b) => issueSeverityRank(b) - issueSeverityRank(a))[0];
+    const hasAnySchedule = day.approvedCount > 0 || day.homebaseCount > 0;
+    const severity: ReconciliationSeverity = worstIssue
+      ? worstIssue.severity
+      : hasAnySchedule
+        ? 'green'
+        : 'empty';
+    return {
+      ...day,
+      issues: [...day.issues].sort((a, b) =>
+        issueSeverityRank(b) - issueSeverityRank(a) ||
+        a.providerName.localeCompare(b.providerName) ||
+        a.title.localeCompare(b.title),
+      ),
+      severity,
+    };
+  });
+};
+
 export const HomebaseScheduleContent = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const today = useMemo(() => formatLocalDate(new Date()), []);
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(() => addDaysIso(today, DEFAULT_RANGE_DAYS));
+  const [startDate, setStartDate] = useState(JULY_2026_START);
+  const [endDate, setEndDate] = useState(JULY_2026_END);
+  const [selectedDate, setSelectedDate] = useState(JULY_2026_START);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const invalidRange = !isIsoDate(startDate) || !isIsoDate(endDate) || startDate > endDate;
   const scheduleQ = useHomebaseSchedule(startDate, endDate, !invalidRange);
+  const approvedQ = useApprovedSchedule(startDate, endDate, !invalidRange);
   const rows = useMemo(() => scheduleQ.data ?? [], [scheduleQ.data]);
+  const approvedRows = useMemo(() => approvedQ.data ?? [], [approvedQ.data]);
+  const reconciliationDays = useMemo(
+    () => buildReconciliation(approvedRows, rows, startDate, endDate),
+    [approvedRows, rows, startDate, endDate],
+  );
+  const selectedDay = useMemo(
+    () => reconciliationDays.find(day => day.dateKey === selectedDate) ?? reconciliationDays[0] ?? null,
+    [reconciliationDays, selectedDate],
+  );
+
+  const preferredSelectedDate = useMemo(() => {
+    if (reconciliationDays.length === 0) return startDate;
+    return (
+      reconciliationDays.find(day => day.severity === 'red') ??
+      reconciliationDays.find(day => day.severity === 'yellow') ??
+      reconciliationDays.find(day => day.severity === 'green') ??
+      reconciliationDays[0]
+    ).dateKey;
+  }, [reconciliationDays, startDate]);
+
+  useEffect(() => {
+    if (!selectedDate || selectedDate < startDate || selectedDate > endDate) {
+      setSelectedDate(preferredSelectedDate);
+    }
+  }, [endDate, preferredSelectedDate, selectedDate, startDate]);
 
   const syncMutation = useMutation({
     mutationFn: async (): Promise<HomebaseSyncResult> => {
@@ -259,9 +649,34 @@ export const HomebaseScheduleContent = () => {
     return { hours, published, unpublished, unscheduled, matchedProviders: providerIds.size, latestSync };
   }, [rows]);
 
+  const reconciliationTotals = useMemo(() => {
+    const issueDays = reconciliationDays.filter(day => day.severity === 'red').length;
+    const publishDays = reconciliationDays.filter(day => day.severity === 'yellow').length;
+    const cleanDays = reconciliationDays.filter(day => day.severity === 'green').length;
+    const issues = reconciliationDays.flatMap(day => day.issues);
+    const redIssues = issues.filter(issue => issue.severity === 'red').length;
+    const yellowIssues = issues.filter(issue => issue.severity === 'yellow').length;
+    const matchedCount = reconciliationDays.reduce((sum, day) => sum + day.matchedCount, 0);
+    return {
+      issueDays,
+      publishDays,
+      cleanDays,
+      redIssues,
+      yellowIssues,
+      matchedCount,
+      issueCount: issues.length,
+    };
+  }, [reconciliationDays]);
+
   const setNextThirtyDays = () => {
     setStartDate(today);
     setEndDate(addDaysIso(today, DEFAULT_RANGE_DAYS));
+  };
+
+  const setJuly2026 = () => {
+    setStartDate(JULY_2026_START);
+    setEndDate(JULY_2026_END);
+    setSelectedDate(JULY_2026_START);
   };
 
   const setCurrentMonth = () => {
@@ -291,85 +706,154 @@ export const HomebaseScheduleContent = () => {
     );
   };
 
+  const downloadReconciliationCsv = () => {
+    const issues = reconciliationDays.flatMap(day => day.issues);
+    downloadCSV(
+      issues.map(issue => ({
+        date: issue.dateKey,
+        severity: issue.severity,
+        issue: issue.title,
+        provider: issue.providerName,
+        approved_time: issue.approved ? formatApprovedTimeRange(issue.approved) : '',
+        homebase_time: issue.homebase ? formatEtTimeRange(issue.homebase.shift.start_at, issue.homebase.shift.end_at) : '',
+        homebase_status: issue.homebase?.status ?? '',
+        fix: issue.fix,
+        approved_shift_id: issue.approved?.id ?? '',
+        homebase_shift_id: issue.homebase?.shift.homebase_id ?? '',
+      })),
+      `homebase_reconciliation_${startDate}_to_${endDate}.csv`,
+    );
+  };
+
+  const reconciliationError = scheduleQ.error ?? approvedQ.error;
+  const reconciliationLoading = scheduleQ.isLoading || approvedQ.isLoading;
+
   return (
     <div className="space-y-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <CalendarRange className="h-6 w-6 text-emerald-600" />
-                Homebase Schedule
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Synced Homebase shifts, organized for schedule review instead of setup.
-              </p>
-            </div>
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <CalendarRange className="h-6 w-6 text-emerald-600" />
+            Homebase Schedule
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Compare approved Lovable shifts against synced Homebase shifts.
+          </p>
+        </div>
 
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="grid gap-1">
-                <label htmlFor="homebase-start" className="text-xs font-medium text-muted-foreground">Start</label>
-                <Input
-                  id="homebase-start"
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  className="h-9 w-[150px]"
-                />
-              </div>
-              <div className="grid gap-1">
-                <label htmlFor="homebase-end" className="text-xs font-medium text-muted-foreground">End</label>
-                <Input
-                  id="homebase-end"
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  className="h-9 w-[150px]"
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={setNextThirtyDays}
-                className="h-9"
-              >
-                Next 30 days
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={setCurrentMonth}
-                className="h-9"
-              >
-                Current month
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => syncMutation.mutate()}
-                disabled={invalidRange || syncMutation.isPending}
-                className="h-9"
-              >
-                <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-                Sync Homebase
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={downloadScheduleCsv}
-                disabled={!filteredRows.length}
-                className="h-9"
-              >
-                <Download className="h-4 w-4 mr-1" />
-                CSV
-              </Button>
-            </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="grid gap-1">
+            <label htmlFor="homebase-start" className="text-xs font-medium text-muted-foreground">Start</label>
+            <Input
+              id="homebase-start"
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              className="h-9 w-[150px]"
+            />
+          </div>
+          <div className="grid gap-1">
+            <label htmlFor="homebase-end" className="text-xs font-medium text-muted-foreground">End</label>
+            <Input
+              id="homebase-end"
+              type="date"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              className="h-9 w-[150px]"
+            />
+          </div>
+          <Button variant="outline" size="sm" onClick={setJuly2026} className="h-9">
+            July 2026
+          </Button>
+          <Button variant="outline" size="sm" onClick={setNextThirtyDays} className="h-9">
+            Next 30 days
+          </Button>
+          <Button variant="outline" size="sm" onClick={setCurrentMonth} className="h-9">
+            Current month
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => syncMutation.mutate()}
+            disabled={invalidRange || syncMutation.isPending}
+            className="h-9"
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+            Sync Homebase
+          </Button>
+        </div>
+      </div>
+
+      {invalidRange && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>Choose a valid Homebase range with the end date on or after the start date.</AlertDescription>
+        </Alert>
+      )}
+
+      <Tabs defaultValue="reconciliation" className="space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <TabsList>
+            <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
+            <TabsTrigger value="raw">Raw Homebase</TabsTrigger>
+          </TabsList>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadReconciliationCsv}
+              disabled={reconciliationTotals.issueCount === 0}
+              className="h-9"
+            >
+              <Download className="h-4 w-4 mr-1" />
+              Issue CSV
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadScheduleCsv}
+              disabled={!filteredRows.length}
+              className="h-9"
+            >
+              <Download className="h-4 w-4 mr-1" />
+              Raw CSV
+            </Button>
+          </div>
+        </div>
+
+        <TabsContent value="reconciliation" className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <KpiCard label="Mismatch days" value={`${reconciliationTotals.issueDays}`} sub={`${reconciliationTotals.redIssues} blocking issues`} accent={reconciliationTotals.issueDays > 0 ? 'bad' : 'good'} />
+            <KpiCard label="Needs publish" value={`${reconciliationTotals.publishDays}`} sub={`${reconciliationTotals.yellowIssues} yellow shifts`} accent={reconciliationTotals.publishDays > 0 ? 'warn' : 'good'} />
+            <KpiCard label="Clean days" value={`${reconciliationTotals.cleanDays}`} sub="approved matches Homebase" accent="good" />
+            <KpiCard label="Approved shifts" value={`${approvedRows.length}`} sub={`${reconciliationTotals.matchedCount} matched`} />
+            <KpiCard label="Last sync" value={formatSyncedAt(totals.latestSync)} sub={`${rows.length} Homebase rows`} />
           </div>
 
-          {invalidRange && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>Choose a valid Homebase range with the end date on or after the start date.</AlertDescription>
-            </Alert>
+          {reconciliationLoading ? (
+            <Card>
+              <CardContent className="py-16 flex items-center justify-center text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </CardContent>
+            </Card>
+          ) : reconciliationError ? (
+            <Card>
+              <CardContent className="py-12 text-center text-sm text-destructive">
+                {reconciliationError instanceof Error ? reconciliationError.message : 'Unable to load reconciliation data.'}
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
+              <ReconciliationCalendar
+                days={reconciliationDays}
+                selectedDate={selectedDate}
+                onSelectDate={setSelectedDate}
+              />
+              <ReconciliationDayDetails day={selectedDay} />
+            </div>
           )}
+        </TabsContent>
 
+        <TabsContent value="raw" className="space-y-4">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <KpiCard label="Shifts" value={`${rows.length}`} sub={`${filteredRows.length} visible`} />
             <KpiCard label="Published" value={`${totals.published}`} sub={`${totals.unpublished} unpublished`} accent={totals.unpublished > 0 ? 'warn' : 'good'} />
@@ -378,96 +862,17 @@ export const HomebaseScheduleContent = () => {
             <KpiCard label="Last sync" value={formatSyncedAt(totals.latestSync)} sub="from stored Homebase data" />
           </div>
 
-          <Card>
-            <CardContent className="p-4 space-y-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="relative max-w-md flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search provider, role, department"
-                    className="pl-9"
-                  />
-                </div>
-                <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-                  <SelectTrigger className="w-full md:w-[190px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="published">Published</SelectItem>
-                    <SelectItem value="unpublished">Unpublished</SelectItem>
-                    <SelectItem value="unscheduled">Unscheduled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {scheduleQ.isLoading ? (
-                <div className="py-16 flex items-center justify-center text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                </div>
-              ) : scheduleQ.error ? (
-                <div className="py-12 text-center text-sm text-destructive">
-                  {scheduleQ.error instanceof Error ? scheduleQ.error.message : 'Unable to load Homebase shifts.'}
-                </div>
-              ) : filteredRows.length === 0 ? (
-                <div className="py-12 text-center text-sm text-muted-foreground">
-                  No Homebase shifts match this view.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="border-b text-xs uppercase text-muted-foreground">
-                      <tr>
-                        <th className="px-2 py-2 text-left font-medium">Date</th>
-                        <th className="px-2 py-2 text-left font-medium">Time (ET)</th>
-                        <th className="px-2 py-2 text-left font-medium">Provider</th>
-                        <th className="px-2 py-2 text-left font-medium">Role</th>
-                        <th className="px-2 py-2 text-left font-medium">Department</th>
-                        <th className="px-2 py-2 text-right font-medium">Hours</th>
-                        <th className="px-2 py-2 text-left font-medium">Status</th>
-                        <th className="px-2 py-2 text-left font-medium">Synced</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {filteredRows.map(row => (
-                        <tr key={row.shift.id} className="hover:bg-muted/30">
-                          <td className="px-2 py-2 whitespace-nowrap">
-                            <div className="font-medium">{formatEtDate(row.shift.start_at)}</div>
-                            <div className="text-xs text-muted-foreground">{row.dateKey}</div>
-                          </td>
-                          <td className="px-2 py-2 whitespace-nowrap font-mono text-xs">
-                            {formatEtTimeRange(row.shift.start_at, row.shift.end_at)}
-                          </td>
-                          <td className="px-2 py-2 min-w-[190px]">
-                            <div className="font-medium">{getEmployeeName(row.employee, row.shift)}</div>
-                            <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                              {row.employee?.email && <span>{row.employee.email}</span>}
-                              {row.employee?.profile_id ? (
-                                <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">matched</Badge>
-                              ) : (
-                                <Badge variant="outline" className="h-5 px-1.5 text-[11px]">unmatched</Badge>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-2 py-2">{row.shift.role ?? '—'}</td>
-                          <td className="px-2 py-2">{row.shift.department ?? '—'}</td>
-                          <td className="px-2 py-2 text-right tabular-nums">{Number(row.shift.scheduled_hours ?? 0).toFixed(1)}</td>
-                          <td className="px-2 py-2">
-                            <HomebaseStatusBadge status={getScheduleStatus(row.shift)} />
-                          </td>
-                          <td className="px-2 py-2 whitespace-nowrap text-xs text-muted-foreground">
-                            {formatSyncedAt(row.shift.synced_at)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <RawHomebaseScheduleTable
+            rows={filteredRows}
+            isLoading={scheduleQ.isLoading}
+            error={scheduleQ.error}
+            search={search}
+            statusFilter={statusFilter}
+            onSearchChange={setSearch}
+            onStatusFilterChange={setStatusFilter}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
@@ -502,7 +907,7 @@ interface KpiCardProps {
   label: string;
   value: string;
   sub?: string;
-  accent?: 'good' | 'warn' | 'neutral';
+  accent?: 'good' | 'warn' | 'bad' | 'neutral';
 }
 
 const KpiCard = ({ label, value, sub, accent = 'neutral' }: KpiCardProps) => (
@@ -512,6 +917,7 @@ const KpiCard = ({ label, value, sub, accent = 'neutral' }: KpiCardProps) => (
       <div className={`mt-1 text-2xl font-bold ${
         accent === 'good' ? 'text-emerald-600'
         : accent === 'warn' ? 'text-amber-600'
+        : accent === 'bad' ? 'text-red-600'
         : ''
       }`}>
         {value}
@@ -520,6 +926,310 @@ const KpiCard = ({ label, value, sub, accent = 'neutral' }: KpiCardProps) => (
     </CardContent>
   </Card>
 );
+
+const ReconciliationCalendar = ({
+  days,
+  selectedDate,
+  onSelectDate,
+}: {
+  days: DayReconciliation[];
+  selectedDate: string;
+  onSelectDate: (dateKey: string) => void;
+}) => {
+  const firstDayOffset = days[0] ? utcDayOfWeek(days[0].dateKey) : 0;
+  const cells: Array<DayReconciliation | null> = [
+    ...Array.from({ length: firstDayOffset }, () => null),
+    ...days,
+  ];
+
+  return (
+    <Card className="min-w-0">
+      <CardContent className="min-w-0 p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold">Schedule map</h2>
+            <p className="text-xs text-muted-foreground">
+              Green matches, yellow needs publishing, red needs schedule changes.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <LegendDot className="bg-emerald-500" label="Matched" />
+            <LegendDot className="bg-amber-500" label="Needs publish" />
+            <LegendDot className="bg-red-500" label="Mismatch" />
+          </div>
+        </div>
+        <div className="max-w-full overflow-x-auto pb-1">
+          <div className="min-w-[620px] space-y-2">
+            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase text-muted-foreground">
+              {WEEKDAY_LABELS.map(label => (
+                <div key={label} className="py-1">{label}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-2">
+              {cells.map((day, index) => {
+                if (!day) return <div key={`empty-${index}`} className="min-h-24 rounded-md border border-transparent" />;
+                return (
+                  <button
+                    key={day.dateKey}
+                    type="button"
+                    onClick={() => onSelectDate(day.dateKey)}
+                    className={cn(
+                      'min-h-24 rounded-md border p-2 text-left transition hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      day.severity === 'red' && 'border-red-300 bg-red-50 text-red-950',
+                      day.severity === 'yellow' && 'border-amber-300 bg-amber-50 text-amber-950',
+                      day.severity === 'green' && 'border-emerald-300 bg-emerald-50 text-emerald-950',
+                      day.severity === 'empty' && 'border-slate-200 bg-white text-slate-600',
+                      selectedDate === day.dateKey && 'ring-2 ring-offset-1 ring-slate-900',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <span className="text-sm font-semibold tabular-nums">{Number(day.dateKey.slice(-2))}</span>
+                      <DaySeverityBadge severity={day.severity} />
+                    </div>
+                    <div className="mt-3 space-y-1 text-[11px] leading-tight">
+                      <div>{day.approvedCount} approved</div>
+                      <div>{day.homebaseCount} Homebase</div>
+                      {day.issues.length > 0 ? (
+                        <div className="font-medium">{day.issues.length} issue{day.issues.length === 1 ? '' : 's'}</div>
+                      ) : day.severity === 'green' ? (
+                        <div className="font-medium">matched</div>
+                      ) : (
+                        <div className="text-muted-foreground">no shifts</div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+const ReconciliationDayDetails = ({ day }: { day: DayReconciliation | null }) => {
+  if (!day) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-sm text-muted-foreground">
+          No day selected.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="min-w-0">
+      <CardContent className="p-4 space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">{formatDateKey(day.dateKey)}</h2>
+            <p className="text-xs text-muted-foreground">
+              {day.approvedCount} approved · {day.homebaseCount} in Homebase · {day.matchedCount} matched
+            </p>
+          </div>
+          <DayStatusBadge day={day} />
+        </div>
+
+        {day.issues.length === 0 ? (
+          <div className="rounded-md border bg-muted/20 p-4 text-sm">
+            {day.severity === 'green'
+              ? 'Approved Lovable shifts match published Homebase shifts for this day.'
+              : 'No approved or Homebase shifts for this day.'}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {day.issues.map(issue => (
+              <div
+                key={issue.id}
+                className={cn(
+                  'rounded-md border p-3',
+                  issue.severity === 'red' ? 'border-red-200 bg-red-50/80' : 'border-amber-200 bg-amber-50/80',
+                )}
+              >
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {issue.severity === 'red' ? (
+                        <XCircle className="h-4 w-4 text-red-600" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      )}
+                      <span className="font-medium">{issue.title}</span>
+                      <Badge variant="outline" className="bg-white/70">{issue.providerName}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm">{issue.detail}</p>
+                    <p className="mt-2 text-xs font-medium text-muted-foreground">{issue.fix}</p>
+                  </div>
+                  <IssueTypeBadge issue={issue} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+const RawHomebaseScheduleTable = ({
+  rows,
+  isLoading,
+  error,
+  search,
+  statusFilter,
+  onSearchChange,
+  onStatusFilterChange,
+}: {
+  rows: HomebaseScheduleRow[];
+  isLoading: boolean;
+  error: unknown;
+  search: string;
+  statusFilter: StatusFilter;
+  onSearchChange: (value: string) => void;
+  onStatusFilterChange: (value: StatusFilter) => void;
+}) => (
+  <Card>
+    <CardContent className="p-4 space-y-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="relative max-w-md flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search provider, role, department"
+            className="pl-9"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={(value) => onStatusFilterChange(value as StatusFilter)}>
+          <SelectTrigger className="w-full md:w-[190px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="published">Published</SelectItem>
+            <SelectItem value="unpublished">Unpublished</SelectItem>
+            <SelectItem value="unscheduled">Unscheduled</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {isLoading ? (
+        <div className="py-16 flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      ) : error ? (
+        <div className="py-12 text-center text-sm text-destructive">
+          {error instanceof Error ? error.message : 'Unable to load Homebase shifts.'}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="py-12 text-center text-sm text-muted-foreground">
+          No Homebase shifts match this view.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-2 py-2 text-left font-medium">Date</th>
+                <th className="px-2 py-2 text-left font-medium">Time (ET)</th>
+                <th className="px-2 py-2 text-left font-medium">Provider</th>
+                <th className="px-2 py-2 text-left font-medium">Role</th>
+                <th className="px-2 py-2 text-left font-medium">Department</th>
+                <th className="px-2 py-2 text-right font-medium">Hours</th>
+                <th className="px-2 py-2 text-left font-medium">Status</th>
+                <th className="px-2 py-2 text-left font-medium">Synced</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {rows.map(row => (
+                <tr key={row.shift.id} className="hover:bg-muted/30">
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    <div className="font-medium">{formatEtDate(row.shift.start_at)}</div>
+                    <div className="text-xs text-muted-foreground">{row.dateKey}</div>
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap font-mono text-xs">
+                    {formatEtTimeRange(row.shift.start_at, row.shift.end_at)}
+                  </td>
+                  <td className="px-2 py-2 min-w-[190px]">
+                    <div className="font-medium">{getEmployeeName(row.employee, row.shift)}</div>
+                    <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                      {row.employee?.email && <span>{row.employee.email}</span>}
+                      {row.employee?.profile_id ? (
+                        <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">matched</Badge>
+                      ) : (
+                        <Badge variant="outline" className="h-5 px-1.5 text-[11px]">unmatched</Badge>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-2 py-2">{row.shift.role ?? '—'}</td>
+                  <td className="px-2 py-2">{row.shift.department ?? '—'}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{Number(row.shift.scheduled_hours ?? 0).toFixed(1)}</td>
+                  <td className="px-2 py-2">
+                    <HomebaseStatusBadge status={getScheduleStatus(row.shift)} />
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap text-xs text-muted-foreground">
+                    {formatSyncedAt(row.shift.synced_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </CardContent>
+  </Card>
+);
+
+const LegendDot = ({ className, label }: { className: string; label: string }) => (
+  <span className="inline-flex items-center gap-1">
+    <span className={cn('h-2.5 w-2.5 rounded-full', className)} />
+    {label}
+  </span>
+);
+
+const DaySeverityBadge = ({ severity }: { severity: ReconciliationSeverity }) => {
+  if (severity === 'red') return <span className="h-2.5 w-2.5 rounded-full bg-red-500" />;
+  if (severity === 'yellow') return <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />;
+  if (severity === 'green') return <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />;
+  return <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />;
+};
+
+const DayStatusBadge = ({ day }: { day: DayReconciliation }) => {
+  if (day.severity === 'red') {
+    return <Badge className="bg-red-600"><XCircle className="h-3 w-3 mr-1" />Mismatch</Badge>;
+  }
+  if (day.severity === 'yellow') {
+    return <Badge className="bg-amber-600"><AlertTriangle className="h-3 w-3 mr-1" />Needs publish</Badge>;
+  }
+  if (day.severity === 'green') {
+    return <Badge className="bg-emerald-600"><CheckCircle2 className="h-3 w-3 mr-1" />Matched</Badge>;
+  }
+  return <Badge variant="outline"><Clock className="h-3 w-3 mr-1" />No shifts</Badge>;
+};
+
+const IssueTypeBadge = ({ issue }: { issue: ReconciliationIssue }) => {
+  const labels: Record<ReconciliationIssueType, string> = {
+    missing_homebase: 'missing',
+    time_mismatch: 'time',
+    homebase_unpublished: 'unpublished',
+    homebase_unscheduled: 'unscheduled',
+    extra_homebase: 'extra',
+    unmatched_homebase_employee: 'unmatched',
+  };
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'bg-white/70',
+        issue.severity === 'red' ? 'border-red-300 text-red-800' : 'border-amber-300 text-amber-800',
+      )}
+    >
+      {labels[issue.type]}
+    </Badge>
+  );
+};
 
 const HomebaseStatusBadge = ({ status }: { status: ScheduleStatus }) => {
   if (status === 'published') {
