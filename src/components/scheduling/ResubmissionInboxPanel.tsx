@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Card,
   CardContent,
@@ -354,6 +354,16 @@ export function ResubmissionInboxPanel({
                         ? `${g.others.length + 2} total submissions`
                         : '2 submissions'}
                     </div>
+                    {g.latest.human_review_state === 'parked' && (
+                      <Badge variant="outline" className="mt-1 border-amber-200 bg-amber-50 text-amber-800">
+                        Parked
+                      </Badge>
+                    )}
+                    {g.latest.human_review_state === 'approved' && (
+                      <Badge variant="outline" className="mt-1 border-emerald-200 bg-emerald-50 text-emerald-800">
+                        Approved
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-900">
@@ -428,15 +438,24 @@ function ResubmissionDialog({
   group: EnrichedGroup;
   onClose: () => void;
 }) {
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(group.latest.human_review_notes ?? '');
   const resolve = useResolveResubmission();
 
+  useEffect(() => {
+    setNotes(group.latest.human_review_notes ?? '');
+  }, [group.latest.id, group.latest.human_review_notes]);
+
   const handle = (action: 'approved' | 'parked') => {
+    const trimmedNotes = notes.trim();
+    if (action === 'parked' && !trimmedNotes) {
+      toast.error('Add a review note before parking this submission.');
+      return;
+    }
     resolve.mutate(
       {
         submission_id: group.latest.id,
         action,
-        notes: notes.trim() || undefined,
+        notes: trimmedNotes || undefined,
         provider_id: group.provider_id,
         target_month: group.target_month,
       },
@@ -455,11 +474,12 @@ function ResubmissionDialog({
   };
 
   const handleUnpark = () => {
+    const trimmedNotes = notes.trim();
     resolve.mutate(
       {
         submission_id: group.latest.id,
         action: 'pending',
-        notes: notes.trim() || undefined,
+        notes: trimmedNotes || undefined,
         provider_id: group.provider_id,
         target_month: group.target_month,
       },
@@ -548,9 +568,17 @@ function ResubmissionDialog({
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Notes (optional)</CardTitle>
+              <CardTitle className="text-sm">Review note</CardTitle>
             </CardHeader>
             <CardContent>
+              {group.latest.human_review_resolved_label && (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Last saved by {group.latest.human_review_resolved_label}
+                  {group.latest.human_review_resolved_at
+                    ? ` · ${formatRelative(group.latest.human_review_resolved_at)}`
+                    : ''}
+                </p>
+              )}
               <Textarea
                 placeholder="e.g. Confirmed via Slack — provider needs to keep PA Tuesday but cut FL one-offs"
                 value={notes}
@@ -601,7 +629,7 @@ function ResubmissionDialog({
             ) : (
               <Check className="h-4 w-4 mr-1" />
             )}
-            Approve
+            Approve & recalculate
           </Button>
         </DialogFooter>
       </DialogContent>

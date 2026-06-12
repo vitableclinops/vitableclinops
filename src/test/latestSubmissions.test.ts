@@ -51,6 +51,21 @@ describe('latest scheduling submission scoping', () => {
     expect(filterRowsToLatestAcceptedSubmissions(rows, submissions)).toEqual([]);
   });
 
+  it('keeps already-published rows even after a newer submission needs review', () => {
+    const rows = [
+      { submission_id: 'old', hours: 40, publish_status: 'published_to_homebase' },
+      { submission_id: 'review', hours: 60, publish_status: 'pending' },
+    ];
+    const submissions = [
+      submission({ id: 'old', decision_status: 'superseded', submitted_at: '2026-06-01T00:00:00Z' }),
+      submission({ id: 'review', decision_status: 'needs_review', submitted_at: '2026-06-02T00:00:00Z' }),
+    ];
+
+    expect(filterRowsToLatestAcceptedSubmissions(rows, submissions)).toEqual([
+      { submission_id: 'old', hours: 40, publish_status: 'published_to_homebase' },
+    ]);
+  });
+
   it('filters generated rows to the current accepted submission id', () => {
     const rows = [
       { submission_id: 'old', hours: 40 },

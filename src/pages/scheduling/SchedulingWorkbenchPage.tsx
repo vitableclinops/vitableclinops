@@ -1355,10 +1355,26 @@ export default function SchedulingWorkbenchPage({
     () => scopedRows.filter(r => !r.submission && !r.scheduling_outreach_exempt),
     [scopedRows],
   );
+  const scopedLockedPublishProviderIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const shift of shiftRows) {
+      if (shift.provider_id && (isHomebaseDone(shift) || isEhrDone(shift))) {
+        ids.add(shift.provider_id);
+      }
+    }
+    return ids;
+  }, [shiftRows]);
+  const scopedPublishRows = useMemo(
+    () =>
+      scopedRows.filter(row =>
+        isAcceptedSubmission(row) || scopedLockedPublishProviderIds.has(row.provider_id),
+      ),
+    [scopedRows, scopedLockedPublishProviderIds],
+  );
   const scopedFlatAccepted = useMemo(() => {
-    const ids = new Set(scopedAccepted.map(r => r.provider_id));
+    const ids = new Set(scopedPublishRows.map(r => r.provider_id));
     return shiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
-  }, [scopedAccepted, shiftRows]);
+  }, [scopedPublishRows, shiftRows]);
   const scopedCutRows = useMemo(() => {
     const ids = new Set(scopedRows.map(r => r.provider_id));
     return cutRows.filter(s => s.provider_id && ids.has(s.provider_id));
@@ -1366,7 +1382,7 @@ export default function SchedulingWorkbenchPage({
   const scopedSummary = useMemo(() => {
     const totalShifts = scopedFlatAccepted.length;
     return {
-      totalProviders: scopedAccepted.length,
+      totalProviders: scopedPublishRows.length,
       totalShifts,
       homebaseShifts: scopedFlatAccepted.filter(isHomebaseDone).length,
       ehrShifts: scopedFlatAccepted.filter(isEhrDone).length,
@@ -1374,7 +1390,7 @@ export default function SchedulingWorkbenchPage({
       needsReviewCount: scopedNeedsReview.length,
       missingCount: scopedMissing.length,
     };
-  }, [scopedAccepted, scopedFlatAccepted, scopedDeclined, scopedNeedsReview, scopedMissing]);
+  }, [scopedPublishRows, scopedFlatAccepted, scopedDeclined, scopedNeedsReview, scopedMissing]);
 
   const scopedAvailabilitySubs = useMemo(
     () =>
@@ -1472,16 +1488,16 @@ export default function SchedulingWorkbenchPage({
   const filteredScopedAccepted = useMemo(() => {
     const q = filter.trim().toLowerCase();
     const base = q
-      ? scopedAccepted.filter(
+      ? scopedPublishRows.filter(
           r =>
             r.provider_name.toLowerCase().includes(q) ||
             (r.profession ?? '').toLowerCase().includes(q),
         )
-      : scopedAccepted;
+      : scopedPublishRows;
     return [...base].sort((a, b) =>
       a.provider_name.localeCompare(b.provider_name, undefined, { sensitivity: 'base' }),
     );
-  }, [scopedAccepted, filter]);
+  }, [scopedPublishRows, filter]);
 
   const handleToggleProvider = (
     row: ProviderPublishView,
@@ -1830,8 +1846,9 @@ export default function SchedulingWorkbenchPage({
                     refetch();
                     refetchShifts();
                     refetchCuts();
-                  } catch (e: any) {
-                    toast.error(`Sync failed: ${e?.message ?? 'unknown error'}`, { id: toastId });
+                  } catch (e: unknown) {
+                    const message = e instanceof Error ? e.message : 'unknown error';
+                    toast.error(`Sync failed: ${message}`, { id: toastId });
                   } finally {
                     setSyncingJotform(false);
                   }
@@ -2227,12 +2244,14 @@ export default function SchedulingWorkbenchPage({
                   </TableHeader>
                   <TableBody>
                     {filteredScopedAccepted.map(row => {
-                      const sub = row.submission!;
                       const flats = shiftsByProvider.get(row.provider_id) ?? [];
+                      const sub = row.submission;
                       const hbDone = flats.filter(isHomebaseDone).length;
                       const ehrDone = flats.filter(isEhrDone).length;
                       const isOpen = !!expanded[row.provider_id];
                       const totalShifts = flats.length;
+                      const totalShiftHours = flats.reduce((sum, shift) => sum + Number(shift.hours ?? 0), 0);
+                      const hasLockedPublished = flats.some(shift => isHomebaseDone(shift) || isEhrDone(shift));
                       const ehrBulkBlocked = totalShifts > 0 && ehrDone === 0 && hbDone < totalShifts;
                       return (
                         <Fragment key={row.provider_id}>
@@ -2250,7 +2269,7 @@ export default function SchedulingWorkbenchPage({
                             <TableCell>
                               <div className="font-medium flex items-center gap-2">
                                 {row.provider_name}
-                                <ProviderNoteIndicator parsedShifts={sub.parsed_shifts} />
+                                {sub && <ProviderNoteIndicator parsedShifts={sub.parsed_shifts} />}
                               </div>
                               <div className="text-xs text-muted-foreground">
                                 {row.profession ?? '—'}
@@ -2260,10 +2279,23 @@ export default function SchedulingWorkbenchPage({
                               </div>
                             </TableCell>
                             <TableCell>
-                              <StatusBadge status={sub.decision_status} />
+                              {sub ? (
+                                <StatusBadge status={sub.decision_status} />
+                              ) : hasLockedPublished ? (
+                                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                                  Published lock
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                              {sub && hasLockedPublished && !isAcceptedSubmission(row) && (
+                                <Badge variant="outline" className="ml-1 border-emerald-200 bg-emerald-50 text-emerald-800">
+                                  Published lock
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell className="text-right tabular-nums">
-                              {formatHours(sub.accepted_hours)}
+                              {formatHours(sub?.accepted_hours ?? totalShiftHours)}
                             </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
                               <ShiftProgress done={hbDone} total={totalShifts} tone="homebase" />
@@ -2318,10 +2350,12 @@ export default function SchedulingWorkbenchPage({
                             <TableRow className="bg-muted/30 hover:bg-muted/30">
                               <TableCell />
                               <TableCell colSpan={6} className="py-2 space-y-2">
-                                <ProviderNotesCard
-                                  parsedShifts={sub.parsed_shifts}
-                                  variant="inline"
-                                />
+                                {sub && (
+                                  <ProviderNotesCard
+                                    parsedShifts={sub.parsed_shifts}
+                                    variant="inline"
+                                  />
+                                )}
                                 {flats.length === 0 ? (
                                   <div className="text-xs text-muted-foreground italic">
                                     No per-shift data — submission hasn't been expanded yet.
@@ -2907,6 +2941,15 @@ const asParsedBlob = (raw: unknown): Record<string, unknown> =>
     ? (raw as Record<string, unknown>)
     : {};
 
+const formatSubmissionIntent = (raw: unknown): string | null => {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value) return null;
+  if (value === 'full_resubmission') return 'Full resubmission';
+  if (value === 'additional_availability') return 'Additional availability';
+  if (value === 'modification') return 'Modification';
+  return value;
+};
+
 const manualCorrectionFromParsedShifts = (raw: unknown): Record<string, unknown> | null => {
   const correction = asParsedBlob(raw).clinops_manual_correction;
   return correction && typeof correction === 'object' && !Array.isArray(correction)
@@ -3359,6 +3402,7 @@ function AvailabilitySubmissionsPanel({
                 const shiftTypes = Array.isArray(parsed.shift_types)
                   ? (parsed.shift_types as unknown[]).map(String).join(', ')
                   : String(parsed.shift_types ?? '—');
+                const submissionIntent = formatSubmissionIntent(parsed.submission_intent);
                 const warnings = warningStringsFromUnknown(row.validation_warnings);
                 const needsReview = row.decision_status === 'needs_review';
                 const isPending = row.decision_status === 'pending';
@@ -3391,7 +3435,14 @@ function AvailabilitySubmissionsPanel({
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs">{shiftTypes || '—'}</TableCell>
+                    <TableCell className="align-top text-xs">
+                      <div>{shiftTypes || '—'}</div>
+                      {submissionIntent && (
+                        <Badge variant="outline" className="mt-1 border-blue-200 bg-blue-50 text-blue-800">
+                          {submissionIntent}
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="align-top text-xs max-w-[220px]">
                       {formatAvailabilityRows(parsed.recurring_virtual, 'recurring')}
                     </TableCell>
@@ -3420,6 +3471,32 @@ function AvailabilitySubmissionsPanel({
                     <TableCell className="align-top text-xs text-muted-foreground">
                       <div>{formatRelativeTime(row.submitted_at)}</div>
                       <StatusBadge status={row.decision_status as DecisionStatus} />
+                      {row.human_review_state && (
+                        <div className="mt-1">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              row.human_review_state === 'parked' && 'border-amber-200 bg-amber-50 text-amber-800',
+                              row.human_review_state === 'approved' && 'border-emerald-200 bg-emerald-50 text-emerald-800',
+                              row.human_review_state === 'pending' && 'border-blue-200 bg-blue-50 text-blue-800',
+                            )}
+                          >
+                            {row.human_review_state === 'parked'
+                              ? 'Parked'
+                              : row.human_review_state === 'approved'
+                                ? 'Reviewed'
+                                : 'Review pending'}
+                          </Badge>
+                        </div>
+                      )}
+                      {row.human_review_notes && (
+                        <div className="mt-1 rounded border bg-muted/40 px-2 py-1 text-[11px] leading-snug text-muted-foreground">
+                          {row.human_review_resolved_label
+                            ? `${row.human_review_resolved_label}: `
+                            : ''}
+                          {row.human_review_notes}
+                        </div>
+                      )}
                       {hasTimeCorrection && (
                         <div className="mt-1">
                           <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">

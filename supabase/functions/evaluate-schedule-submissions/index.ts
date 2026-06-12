@@ -272,6 +272,8 @@ type TelehealthAllocationCandidate = {
   forecastOutOfHoursTimeline: BuildTimelineResult['forecastOutOfHoursTimeline'];
   forecastPolicyCutTimeline: BuildTimelineResult['forecastPolicyCutTimeline'];
   effectiveHours: number;
+  publishedLocks: PublishedShiftLockRow[];
+  lockedPublishedHours: number;
   oohDeclined: number;
   policyDeclined: number;
   eligibleSourceSummary: string[];
@@ -378,6 +380,105 @@ type CommittedSubmission = {
   accepted_hours: number | null;
   decision_status: string | null;
 };
+
+type PublishedShiftLockRow = {
+  id: string;
+  submission_id: string | null;
+  provider_id: string | null;
+  provider_name: string | null;
+  target_month: string | null;
+  shift_date: string | null;
+  start_min: number | string | null;
+  end_min: number | string | null;
+  hours: number | string | null;
+  shift_type: string | null;
+  assigned_state: string | null;
+  recommendation?: string | null;
+  publish_status: string | null;
+  published_at: string | null;
+  published_by: string | null;
+  ehr_posted_at: string | null;
+  ehr_posted_by: string | null;
+  homebase_shift_id: string | null;
+};
+
+type TimelineSlot = BuildTimelineResult['timeline'][number];
+
+const LOCKED_PUBLISH_STATUSES = new Set(['published_to_homebase', 'confirmed']);
+
+const isLockedPublishStatus = (status: string | null | undefined) =>
+  LOCKED_PUBLISH_STATUSES.has(status ?? '');
+
+const numeric = (value: number | string | null | undefined): number => {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const lockGroupKey = (row: PublishedShiftLockRow): string | null => {
+  if (!row.provider_id || !row.target_month) return null;
+  return `${row.provider_id}|${String(row.target_month).slice(0, 10)}`;
+};
+
+const lockOverlapsSlot = (
+  lock: PublishedShiftLockRow,
+  slot: Pick<TimelineSlot, 'date' | 'startMin' | 'endMin'>,
+) => {
+  if (!lock.shift_date) return false;
+  if (String(lock.shift_date).slice(0, 10) !== slot.date) return false;
+  const start = numeric(lock.start_min);
+  const end = numeric(lock.end_min);
+  return start < slot.endMin && slot.startMin < end;
+};
+
+function filterSlotsOutsidePublishedLocks<T extends Pick<TimelineSlot, 'date' | 'startMin' | 'endMin'>>(
+  slots: T[],
+  locks: PublishedShiftLockRow[],
+): T[] {
+  if (locks.length === 0) return slots;
+  return slots.filter(slot => !locks.some(lock => lockOverlapsSlot(lock, slot)));
+}
+
+const sumLockedHours = (locks: PublishedShiftLockRow[]) =>
+  roundEval2(locks.reduce((sum, row) => sum + numeric(row.hours), 0));
+
+function pushPublishedLockNoteParts(noteParts: string[], locks: PublishedShiftLockRow[]) {
+  if (locks.length === 0) return;
+  noteParts.push('published_lock_policy=preserve_published_rows_fill_gaps_only');
+  noteParts.push(`published_lock_shifts=${locks.length}`);
+  noteParts.push(`published_lock_hours=${sumLockedHours(locks)}h`);
+}
+
+async function loadPublishedShiftLocks(
+  supabase: SupabaseClientAny,
+  providerIds: string[],
+  months: string[],
+): Promise<Map<string, PublishedShiftLockRow[]>> {
+  const byGroup = new Map<string, PublishedShiftLockRow[]>();
+  if (providerIds.length === 0 || months.length === 0) return byGroup;
+
+  const { data, error } = await supabase
+    .from('shift_recommendations')
+    .select(
+      'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, homebase_shift_id',
+    )
+    .in('provider_id', providerIds)
+    .in('target_month', months)
+    .eq('recommendation', 'publish')
+    .in('publish_status', Array.from(LOCKED_PUBLISH_STATUSES))
+    .range(0, 49999);
+  if (error) throw new Error(`published shift lock load failed: ${error.message}`);
+
+  for (const row of (data ?? []) as PublishedShiftLockRow[]) {
+    if (!isLockedPublishStatus(row.publish_status)) continue;
+    const key = lockGroupKey(row);
+    if (!key) continue;
+    const list = byGroup.get(key) ?? [];
+    list.push(row);
+    byGroup.set(key, list);
+  }
+
+  return byGroup;
+}
 
 type ProviderStateEligibilityRow = {
   provider_id: string | null;
@@ -654,6 +755,8 @@ Deno.serve(async (req: Request) => {
     skipped_no_hours: 0,
     skipped_no_licensed_states: 0,
     skipped_awaiting_review: 0,
+    published_locks: 0,
+    published_lock_hours: 0,
     errors: 0,
   };
   const decisions: Array<Record<string, unknown>> = [];
@@ -705,6 +808,17 @@ Deno.serve(async (req: Request) => {
     const months = Array.from(new Set(
       Array.from(groupKeys).map(k => k.split('|')[1])
     ));
+    const publishedLocksByGroup = await loadPublishedShiftLocks(
+      supabase,
+      providerIds,
+      months,
+    );
+    for (const locks of publishedLocksByGroup.values()) {
+      counters.published_locks += locks.length;
+      counters.published_lock_hours = roundEval2(
+        counters.published_lock_hours + sumLockedHours(locks),
+      );
+    }
 
     const { data: subsRaw, error: sErr } = await supabase
       .from('schedule_submissions')
@@ -971,6 +1085,54 @@ Deno.serve(async (req: Request) => {
       for (const st of states) {
         const key = `${st}_${c.target_month}`;
         committedByKey.set(key, (committedByKey.get(key) ?? 0) + perState);
+      }
+    }
+    // Already-published rows in the groups being re-evaluated are hard locks:
+    // they stay on the schedule and consume demand before the allocator fills
+    // any remaining gaps. Out-of-scope accepted submissions are still counted
+    // through committedRows above, so only add locks for in-scope groups here.
+    for (const [lockedGroupKey, lockedRows] of publishedLocksByGroup) {
+      if (!groupKeysInScope.has(lockedGroupKey) || lockedRows.length === 0) continue;
+      const [lockedProviderId, lockedMonth] = lockedGroupKey.split('|');
+      const lockedProfile = providerProfileByProvider.get(lockedProviderId);
+      const serviceLine = mentalHealthServiceLineForProvider(
+        lockedProfile?.profession ?? professionByProvider.get(lockedProviderId),
+        lockedProfile?.name,
+      );
+      if (serviceLine) {
+        const serviceLineKey = `${serviceLine}_${lockedMonth}`;
+        serviceLineCommittedByKey.set(
+          serviceLineKey,
+          roundEval2((serviceLineCommittedByKey.get(serviceLineKey) ?? 0) + sumLockedHours(lockedRows)),
+        );
+        continue;
+      }
+
+      let unassignedHours = 0;
+      for (const locked of lockedRows) {
+        const hours = numeric(locked.hours);
+        if (hours <= 0) continue;
+        const state = (locked.assigned_state ?? '').trim().toUpperCase();
+        if (state) {
+          const demandKey = `${state}_${lockedMonth}`;
+          committedByKey.set(demandKey, roundEval2((committedByKey.get(demandKey) ?? 0) + hours));
+        } else {
+          unassignedHours += hours;
+        }
+      }
+
+      if (unassignedHours > 0) {
+        const states = licensedStatesByProvider.get(lockedProviderId);
+        if (states && states.size > 0) {
+          const perState = unassignedHours / states.size;
+          for (const state of states) {
+            const demandKey = `${state}_${lockedMonth}`;
+            committedByKey.set(
+              demandKey,
+              roundEval2((committedByKey.get(demandKey) ?? 0) + perState),
+            );
+          }
+        }
       }
     }
 
@@ -1244,10 +1406,22 @@ Deno.serve(async (req: Request) => {
           targetMonth,
           validationSelection.options,
         );
-        const fullTimeline = validation.timeline;
-        const forecastTimeline = validation.forecastTimeline;
-        const forecastOutOfHoursTimeline = validation.forecastOutOfHoursTimeline;
-        const effectiveHours = validation.summary.final_approvable_hours;
+        const publishedLocks = publishedLocksByGroup.get(key) ?? [];
+        const fullTimeline = filterSlotsOutsidePublishedLocks(validation.timeline, publishedLocks);
+        const forecastTimeline = filterSlotsOutsidePublishedLocks(
+          validation.forecastTimeline,
+          publishedLocks,
+        );
+        const forecastOutOfHoursTimeline = filterSlotsOutsidePublishedLocks(
+          validation.forecastOutOfHoursTimeline,
+          publishedLocks,
+        );
+        const forecastPolicyCutTimeline = filterSlotsOutsidePublishedLocks(
+          validation.forecastPolicyCutTimeline,
+          publishedLocks,
+        );
+        const effectiveHours = sumSlotHours(forecastTimeline);
+        const lockedPublishedHours = sumLockedHours(publishedLocks);
         // Hours dropped because the slot fell outside the operating-hours
         // window (9a-9p ET weekdays, 9a-12p ET weekends). They count toward
         // declined_hours so the provider sees the full reason their submitted
@@ -1289,6 +1463,7 @@ Deno.serve(async (req: Request) => {
             `reasons=${reviewReasons.join(' | ') || '(see validation_report)'}`,
           ];
           pushProviderPriorityNotes(reviewNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
+          pushPublishedLockNoteParts(reviewNoteParts, publishedLocks);
           reviewNoteParts.push(...schedulingAdjustmentNoteParts(validation));
           await writeDecision(supabase, latest.id, {
             status: 'needs_review',
@@ -1317,6 +1492,7 @@ Deno.serve(async (req: Request) => {
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; group has 0 effective hours`);
           const noHoursNoteParts = ['No effective hours in any submission for this provider+month'];
           pushProviderPriorityNotes(noHoursNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
+          pushPublishedLockNoteParts(noHoursNoteParts, publishedLocks);
           if (isMentalHealth) {
             noHoursNoteParts.push(
               `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
@@ -1355,7 +1531,7 @@ Deno.serve(async (req: Request) => {
               timeline: [],
               forecastTimeline: [],
               outOfHoursTimeline: forecastOutOfHoursTimeline,
-              policyCutTimeline: validation.forecastPolicyCutTimeline,
+              policyCutTimeline: forecastPolicyCutTimeline,
               policyCutReason: isMentalHealth ? MH_POLICY_CUT_REASON : undefined,
               unallocatedForecastPublishReason: isMentalHealth ? MH_PUBLISH_REASON : undefined,
               declinedHours: 0,
@@ -1423,6 +1599,7 @@ Deno.serve(async (req: Request) => {
             'note=MH uses service-line forecast; bypasses telehealth state allocator',
           ];
           pushProviderPriorityNotes(mhNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
+          pushPublishedLockNoteParts(mhNoteParts, publishedLocks);
           if (targetHours == null) {
             mhNoteParts.push('service_line_forecast=missing');
           } else {
@@ -1456,7 +1633,7 @@ Deno.serve(async (req: Request) => {
             timeline: fullTimeline,
             forecastTimeline,
             outOfHoursTimeline: forecastOutOfHoursTimeline,
-            policyCutTimeline: validation.forecastPolicyCutTimeline,
+            policyCutTimeline: forecastPolicyCutTimeline,
             policyCutReason: MH_POLICY_CUT_REASON,
             unallocatedForecastPublishReason: MH_PUBLISH_REASON,
             declinedHours: forecastDeclined,
@@ -1496,6 +1673,7 @@ Deno.serve(async (req: Request) => {
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
           const noLicNoteParts = ['Provider has no allocation-eligible states on file'];
           pushProviderPriorityNotes(noLicNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
+          pushPublishedLockNoteParts(noLicNoteParts, publishedLocks);
           if (isPhysician) {
             noLicNoteParts.push('state_policy=physician_reserved_for_md_only');
           }
@@ -1604,8 +1782,10 @@ Deno.serve(async (req: Request) => {
           fullTimeline,
           forecastTimeline,
           forecastOutOfHoursTimeline,
-          forecastPolicyCutTimeline: validation.forecastPolicyCutTimeline,
+          forecastPolicyCutTimeline,
           effectiveHours,
+          publishedLocks,
+          lockedPublishedHours,
           oohDeclined,
           policyDeclined,
           eligibleSourceSummary,
@@ -1701,6 +1881,7 @@ Deno.serve(async (req: Request) => {
             candidate.providerProfile,
             useUtilizationTieBreak,
           );
+          pushPublishedLockNoteParts(noteParts, candidate.publishedLocks);
           pushEquityAllocationNotes(noteParts, allocation, candidate.equityCohort);
           if (candidate.isPhysician) {
             noteParts.push('state_policy=physician_reserved_for_md_only');
@@ -1813,6 +1994,7 @@ Deno.serve(async (req: Request) => {
             group_size: candidate.groupSubs.length,
             superseded: candidate.olderIds.length,
             effective_hours: candidate.effectiveHours,
+            locked_published_hours: candidate.lockedPublishedHours,
             total_gap_hours: candidate.totalGap,
             base_total_demand_hours: candidate.baseTotalDemand,
             buffered_total_demand_hours: candidate.bufferedTotalDemand,
@@ -2228,6 +2410,15 @@ type PreservedPublishState = {
   homebase_shift_id: string | null;
 };
 
+type ShiftRecommendationWriteRow = Omit<ShiftRecommendationRow, 'publish_status'> & {
+  publish_status: string;
+  published_at?: string | null;
+  published_by?: string | null;
+  ehr_posted_at?: string | null;
+  ehr_posted_by?: string | null;
+  homebase_shift_id?: string | null;
+};
+
 const shiftKey = (r: {
   submission_id: string;
   shift_date: string;
@@ -2236,6 +2427,18 @@ const shiftKey = (r: {
   shift_type: string;
 }) =>
   `${r.submission_id}|${r.shift_date}|${r.start_min}|${r.end_min}|${r.shift_type}`;
+
+const recommendationOverlapsPublishedLock = (
+  row: ShiftRecommendationRow,
+  lock: PublishedShiftLockRow,
+) => {
+  if (!row.provider_id || row.provider_id !== lock.provider_id) return false;
+  if (row.target_month !== String(lock.target_month ?? '').slice(0, 10)) return false;
+  if (row.shift_date !== String(lock.shift_date ?? '').slice(0, 10)) return false;
+  const lockStart = numeric(lock.start_min);
+  const lockEnd = numeric(lock.end_min);
+  return lockStart < row.end_min && row.start_min < lockEnd;
+};
 
 function assertUniqueShiftRecommendationRows(rows: ShiftRecommendationRow[]) {
   const seen = new Set<string>();
@@ -2264,7 +2467,7 @@ async function writeShiftRecommendations(
   const { data: priorRows, error: priorErr } = await supabase
     .from('shift_recommendations')
     .select(
-      'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, shift_type, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, homebase_shift_id',
+      'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, homebase_shift_id',
     )
     .in('submission_id', submissionIds);
   if (priorErr) {
@@ -2273,22 +2476,72 @@ async function writeShiftRecommendations(
 
   const priorByKey = new Map<string, typeof priorRows[number]>();
   for (const r of priorRows ?? []) priorByKey.set(shiftKey(r), r);
+  const lockedPriorRows = ((priorRows ?? []) as PublishedShiftLockRow[])
+    .filter(row => row.recommendation === 'publish' && isLockedPublishStatus(row.publish_status));
 
-  const { error: deleteErr } = await supabase
-    .from('shift_recommendations')
-    .delete({ count: 'exact' })
-    .in('submission_id', submissionIds);
-  if (deleteErr) {
-    throw new Error(`shift_recommendations delete failed: ${deleteErr.message}`);
+  const unlockedPriorIds = (priorRows ?? [])
+    .filter(row => !isLockedPublishStatus(row.publish_status))
+    .map(row => row.id)
+    .filter(Boolean);
+  if (unlockedPriorIds.length > 0) {
+    const { error: deleteErr } = await supabase
+      .from('shift_recommendations')
+      .delete({ count: 'exact' })
+      .in('id', unlockedPriorIds);
+    if (deleteErr) {
+      throw new Error(`shift_recommendations delete failed: ${deleteErr.message}`);
+    }
   }
 
   if (rows.length === 0) return;
 
   // Preserve onto matching new rows.
   const preservedAuditEntries: Record<string, unknown>[] = [];
-  const merged = rows.map(row => {
+  const merged: ShiftRecommendationWriteRow[] = [];
+  for (const row of rows) {
+    const overlappingLock = lockedPriorRows.find(lock =>
+      recommendationOverlapsPublishedLock(row, lock),
+    );
+    if (overlappingLock) {
+      preservedAuditEntries.push({
+        shift_recommendation_id: overlappingLock.id,
+        submission_id: overlappingLock.submission_id,
+        provider_id: overlappingLock.provider_id,
+        provider_name: overlappingLock.provider_name,
+        target_month: overlappingLock.target_month,
+        shift_date: overlappingLock.shift_date,
+        start_min: overlappingLock.start_min,
+        end_min: overlappingLock.end_min,
+        shift_type: overlappingLock.shift_type,
+        step: 'homebase',
+        action: 'preserved',
+        actor_label: 'evaluator re-run',
+        notes: `Locked published shift preserved; skipped overlapping recalculated row for submission ${row.submission_id}`,
+      });
+      if (overlappingLock.publish_status === 'confirmed' || overlappingLock.ehr_posted_at) {
+        preservedAuditEntries.push({
+          shift_recommendation_id: overlappingLock.id,
+          submission_id: overlappingLock.submission_id,
+          provider_id: overlappingLock.provider_id,
+          provider_name: overlappingLock.provider_name,
+          target_month: overlappingLock.target_month,
+          shift_date: overlappingLock.shift_date,
+          start_min: overlappingLock.start_min,
+          end_min: overlappingLock.end_min,
+          shift_type: overlappingLock.shift_type,
+          step: 'ehr',
+          action: 'preserved',
+          actor_label: 'evaluator re-run',
+          notes: `Locked EHR-confirmed shift preserved; skipped overlapping recalculated row for submission ${row.submission_id}`,
+        });
+      }
+      continue;
+    }
     const prior = priorByKey.get(shiftKey(row));
-    if (!prior) return row;
+    if (!prior) {
+      merged.push(row);
+      continue;
+    }
     const carry: PreservedPublishState = {
       publish_status: prior.publish_status,
       published_at: prior.published_at,
@@ -2329,8 +2582,8 @@ async function writeShiftRecommendations(
         notes: `Carried forward from prior shift ${prior.id}`,
       });
     }
-    return { ...row, ...carry };
-  });
+    merged.push({ ...row, ...carry });
+  }
 
   const CHUNK = 500;
   for (let i = 0; i < merged.length; i += CHUNK) {
@@ -2373,12 +2626,25 @@ async function markSuperseded(
     })
     .in('id', ids);
   if (error) throw new Error(error.message);
-  const { error: recErr } = await supabase
+  const { data: rows, error: rowErr } = await supabase
     .from('shift_recommendations')
-    .delete({ count: 'exact' })
+    .select('id, publish_status')
     .in('submission_id', ids);
-  if (recErr) {
-    throw new Error(`failed to delete superseded shift_recommendations: ${recErr.message}`);
+  if (rowErr) {
+    throw new Error(`failed to read superseded shift_recommendations: ${rowErr.message}`);
+  }
+  const deletableIds = (rows ?? [])
+    .filter(row => !isLockedPublishStatus(row.publish_status))
+    .map(row => row.id)
+    .filter(Boolean);
+  if (deletableIds.length > 0) {
+    const { error: recErr } = await supabase
+      .from('shift_recommendations')
+      .delete({ count: 'exact' })
+      .in('id', deletableIds);
+    if (recErr) {
+      throw new Error(`failed to delete superseded shift_recommendations: ${recErr.message}`);
+    }
   }
 }
 

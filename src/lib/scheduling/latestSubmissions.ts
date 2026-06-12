@@ -22,6 +22,12 @@ export type ShiftRecommendationNaturalIdentity = ShiftRecommendationIdentity & {
 };
 
 const ACCEPTED_DECISIONS = new Set(['accepted', 'partial']);
+const LOCKED_PUBLISH_STATUSES = new Set(['published_to_homebase', 'confirmed']);
+
+const isLockedPublishedRow = (row: ShiftRecommendationIdentity) =>
+  LOCKED_PUBLISH_STATUSES.has(
+    (row as ShiftRecommendationIdentity & { publish_status?: string | null }).publish_status ?? '',
+  );
 
 const submissionGroupKey = (row: LatestSchedulingSubmission) => {
   if (!row.provider_id || !row.target_month) return null;
@@ -87,10 +93,10 @@ export function filterRowsToLatestAcceptedSubmissions<T extends ShiftRecommendat
   submissions: LatestSchedulingSubmission[],
 ): T[] {
   const acceptedLatestIds = latestAcceptedSubmissionIds(submissions);
-  if (acceptedLatestIds.size === 0) return [];
+  if (acceptedLatestIds.size === 0) return rows.filter(isLockedPublishedRow);
   return rows.filter(row => {
     const submissionId = row.submission_id;
-    return Boolean(submissionId && acceptedLatestIds.has(submissionId));
+    return isLockedPublishedRow(row) || Boolean(submissionId && acceptedLatestIds.has(submissionId));
   });
 }
 

@@ -158,6 +158,67 @@ type ProviderProfile = {
   profession: string | null;
 };
 
+type PublishedShiftLockRow = {
+  id: string;
+  submission_id: string | null;
+  provider_id: string | null;
+  provider_name: string | null;
+  target_month: string | null;
+  shift_date: string | null;
+  start_min: number | string | null;
+  end_min: number | string | null;
+  hours: number | string | null;
+  shift_type: string | null;
+  assigned_state: string | null;
+  recommendation?: string | null;
+  publish_status: string | null;
+  published_at: string | null;
+  published_by: string | null;
+  ehr_posted_at: string | null;
+  ehr_posted_by: string | null;
+  homebase_shift_id: string | null;
+};
+
+type PreservedPublishState = {
+  publish_status: string;
+  published_at: string | null;
+  published_by: string | null;
+  ehr_posted_at: string | null;
+  ehr_posted_by: string | null;
+  homebase_shift_id: string | null;
+};
+
+type ShiftRecommendationWriteRow = Omit<ShiftRecommendationRow, 'publish_status'> & {
+  publish_status: string;
+  published_at?: string | null;
+  published_by?: string | null;
+  ehr_posted_at?: string | null;
+  ehr_posted_by?: string | null;
+  homebase_shift_id?: string | null;
+};
+
+const LOCKED_PUBLISH_STATUSES = new Set(['published_to_homebase', 'confirmed']);
+
+const isLockedPublishStatus = (status: string | null | undefined) =>
+  LOCKED_PUBLISH_STATUSES.has(status ?? '');
+
+const numeric = (value: number | string | null | undefined): number => {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const recommendationOverlapsPublishedLock = (
+  row: ShiftRecommendationRow,
+  lock: PublishedShiftLockRow,
+) => {
+  if (!row.provider_id || row.provider_id !== lock.provider_id) return false;
+  if (row.target_month !== String(lock.target_month ?? '').slice(0, 10)) return false;
+  if (row.shift_date !== String(lock.shift_date ?? '').slice(0, 10)) return false;
+  const lockStart = numeric(lock.start_min);
+  const lockEnd = numeric(lock.end_min);
+  return lockStart < row.end_min && row.start_min < lockEnd;
+};
+
 const hasManualOutsideOperatingHoursException = (
   parsedShifts: Submission['parsed_shifts'],
 ) => {
@@ -300,12 +361,30 @@ Deno.serve(async (req: Request) => {
           (decided.decision_notes ?? '').includes('mental_health_bypass');
 
         const ids = groupSubs.map(s => s.id);
-        const { count: deletedCount, error: dErr } = await supabase
+        const { data: priorRows, error: priorErr } = await supabase
           .from('shift_recommendations')
-          .delete({ count: 'exact' })
+          .select(
+            'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, homebase_shift_id',
+          )
           .in('submission_id', ids);
-        if (dErr) throw new Error(`delete prior: ${dErr.message}`);
-        counters.rows_deleted += deletedCount ?? 0;
+        if (priorErr) throw new Error(`read prior: ${priorErr.message}`);
+
+        const priorByKey = new Map<string, typeof priorRows[number]>();
+        for (const prior of priorRows ?? []) priorByKey.set(shiftKey(prior), prior);
+        const lockedPriorRows = ((priorRows ?? []) as PublishedShiftLockRow[])
+          .filter(row => row.recommendation === 'publish' && isLockedPublishStatus(row.publish_status));
+        const unlockedPriorIds = (priorRows ?? [])
+          .filter(row => !isLockedPublishStatus(row.publish_status))
+          .map(row => row.id)
+          .filter(Boolean);
+        if (unlockedPriorIds.length > 0) {
+          const { count: deletedCount, error: dErr } = await supabase
+            .from('shift_recommendations')
+            .delete({ count: 'exact' })
+            .in('id', unlockedPriorIds);
+          if (dErr) throw new Error(`delete prior: ${dErr.message}`);
+          counters.rows_deleted += deletedCount ?? 0;
+        }
 
         // Build the canonical timeline using the same shared pipeline that
         // the evaluator used. Inputs (submissions, identity, target_month)
@@ -364,10 +443,31 @@ Deno.serve(async (req: Request) => {
           decisionRunId: decided.decision_run_id ?? crypto.randomUUID(),
         });
         assertUniqueShiftRecommendationRows(rows);
+        const mergedRows: ShiftRecommendationWriteRow[] = [];
+        for (const row of rows) {
+          const overlappingLock = lockedPriorRows.find(lock =>
+            recommendationOverlapsPublishedLock(row, lock),
+          );
+          if (overlappingLock) continue;
+          const prior = priorByKey.get(shiftKey(row));
+          if (!prior) {
+            mergedRows.push(row);
+            continue;
+          }
+          const carry: PreservedPublishState = {
+            publish_status: prior.publish_status,
+            published_at: prior.published_at,
+            published_by: prior.published_by,
+            ehr_posted_at: prior.ehr_posted_at,
+            ehr_posted_by: prior.ehr_posted_by,
+            homebase_shift_id: prior.homebase_shift_id,
+          };
+          mergedRows.push({ ...row, ...carry });
+        }
 
         const CHUNK = 500;
-        for (let i = 0; i < rows.length; i += CHUNK) {
-          const chunk = rows.slice(i, i + CHUNK);
+        for (let i = 0; i < mergedRows.length; i += CHUNK) {
+          const chunk = mergedRows.slice(i, i + CHUNK);
           const { error: iErr } = await supabase.from('shift_recommendations').insert(chunk);
           if (iErr) throw new Error(`insert: ${iErr.message}`);
           counters.rows_inserted += chunk.length;

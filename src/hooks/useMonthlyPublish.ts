@@ -79,6 +79,10 @@ export type SubmissionRow = {
   raw_requested_hours: number | null;
   normalized_requested_hours: number | null;
   effective_hours_used_for_forecast: number | null;
+  human_review_state: 'pending' | 'approved' | 'parked' | null;
+  human_review_resolved_at: string | null;
+  human_review_resolved_label: string | null;
+  human_review_notes: string | null;
 };
 
 export type ProviderRow = {
@@ -207,7 +211,15 @@ export type AvailabilitySubmissionRow = {
   normalized_requested_hours: number | null;
   effective_hours_used_for_forecast: number | null;
   human_review_state: 'pending' | 'approved' | 'parked' | null;
+  human_review_resolved_at: string | null;
+  human_review_resolved_label: string | null;
+  human_review_notes: string | null;
 };
+
+type AvailabilitySubmissionRecord = Omit<
+  AvailabilitySubmissionRow,
+  'provider_email' | 'provider_profession'
+>;
 
 const monthIso = (m: string) => (m.length === 7 ? `${m}-01` : m);
 
@@ -310,7 +322,7 @@ export function useMonthlyPublishView(month: string) {
         clinopsSupabase
         .from('schedule_submissions')
         .select(
-            'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, parsed_shifts, submitted_at, decided_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast',
+            'id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, parsed_shifts, submitted_at, decided_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast, human_review_state, human_review_resolved_at, human_review_resolved_label, human_review_notes',
         )
           .eq('target_month', monthStart)
           .order('submitted_at', { ascending: false }),
@@ -663,7 +675,7 @@ export function useMonthlyAvailabilitySubmissions(month: string) {
         clinopsSupabase
         .from('schedule_submissions')
         .select(
-            'id, jotform_submission_id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, parsed_shifts, raw_answers, submitted_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast, human_review_state',
+            'id, jotform_submission_id, provider_id, provider_name, target_month, decision_status, accepted_hours, declined_hours, decision_notes, decision_run_id, parsed_shifts, raw_answers, submitted_at, validation_status, validation_warnings, raw_requested_hours, normalized_requested_hours, effective_hours_used_for_forecast, human_review_state, human_review_resolved_at, human_review_resolved_label, human_review_notes',
         )
           .eq('target_month', monthStart)
           .order('submitted_at', { ascending: false })
@@ -683,7 +695,7 @@ export function useMonthlyAvailabilitySubmissions(month: string) {
         ]),
       );
 
-      return ((submissionsRes.data ?? []) as any[]).map((s: any) => {
+      return ((submissionsRes.data ?? []) as AvailabilitySubmissionRecord[]).map(s => {
         const provider = s.provider_id ? providerById.get(s.provider_id) : null;
         const parsed = (s.parsed_shifts ?? null) as Record<string, unknown> | null;
         const parsedEmail =
@@ -1547,9 +1559,9 @@ export function useResubmissionInbox(anchorMonth: string) {
 
 /**
  * Group submissions into (provider, target_month) buckets sorted by
- * submitted_at ascending. Returns only buckets with ≥2 non-parked
- * submissions. The caller filters by hasChanges (from diffParsedShifts) to
- * surface actionable rows.
+ * submitted_at ascending. Parked and approved rows stay in the groups so the
+ * inbox can show the recorded review decision instead of hiding the handoff.
+ * The caller filters by hasChanges (from diffParsedShifts) to surface rows.
  *
  * Same provider with submissions for May AND June produces TWO groups —
  * each month is reviewed independently.
@@ -1560,7 +1572,6 @@ export function groupSubmissionsForInbox(
   const byKey = new Map<string, SubmissionForInbox[]>();
   for (const r of rows) {
     if (!r.provider_id) continue;
-    if (r.human_review_state === 'parked') continue;
     const key = `${r.provider_id}|${r.target_month}`;
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key)!.push(r);

@@ -222,6 +222,7 @@ Deno.serve(async (req: Request) => {
             last_minute_ok: parsed.lastMinuteOk,
             travel_miles: parsed.travelMiles,
             comments: parsed.comments,
+            submission_intent: parsed.submissionIntent,
             feedback: parsed.feedback,
             nps: parsed.nps,
             attestations: parsed.attestations,
@@ -364,6 +365,7 @@ type ParsedSubmission = {
   lastMinuteOk: boolean | null;
   travelMiles: number | null;
   comments: string | null;
+  submissionIntent: string | null;
   feedback: string | null;
   nps: number | null;
   attestations: string[];
@@ -389,6 +391,7 @@ function parseSubmission(sub: JotformSubmission, submittedAt: Date): ParsedSubmi
     lastMinuteOk: null,
     travelMiles: null,
     comments: null,
+    submissionIntent: null,
     feedback: null,
     nps: null,
     attestations: [],
@@ -398,6 +401,9 @@ function parseSubmission(sub: JotformSubmission, submittedAt: Date): ParsedSubmi
     const name = (ans.name ?? '').trim();
     const raw = ans.answer;
     if (raw === undefined || raw === null || raw === '') continue;
+
+    const intent = parseSubmissionIntent(name, ans.text, raw);
+    if (intent && !out.submissionIntent) out.submissionIntent = intent;
 
     switch (name) {
       case 'fullName':
@@ -471,6 +477,36 @@ function composeNameAnswer(raw: unknown): string | null {
     if (parts.length) return parts.join(' ');
   }
   return String(raw);
+}
+
+function parseSubmissionIntent(
+  fieldName: string,
+  fieldText: string | undefined,
+  rawAnswer: unknown,
+): string | null {
+  const field = `${fieldName} ${fieldText ?? ''}`.toLowerCase();
+  const answer = toArray(rawAnswer).join(' ').toLowerCase();
+  const haystack = `${field} ${answer}`
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const looksLikeIntentQuestion =
+    /resubmission|submission type|availability type|what.*(submit|change)|modify|modification|additional availability/.test(field);
+  if (!looksLikeIntentQuestion && !/full resubmission|additional availability|modification/.test(answer)) {
+    return null;
+  }
+
+  if (/additional|add only|new availability|extra availability|few specific dates/.test(haystack)) {
+    return 'additional_availability';
+  }
+  if (/modify|modification|change existing|replace some|correction|update existing/.test(haystack)) {
+    return 'modification';
+  }
+  if (/full|complete|entire|all availability|replace all|resubmission/.test(haystack)) {
+    return 'full_resubmission';
+  }
+  return null;
 }
 
 const MONTH_NAMES = [
