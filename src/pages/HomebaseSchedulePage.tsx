@@ -12,6 +12,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import type { ClinOpsTables } from '@/integrations/supabase/clinopsTypes';
+import { IssueActions } from '@/components/scheduling/IssueActions';
+import {
+  useReconciliationOverrides,
+  type ReconciliationOverrideRow,
+} from '@/hooks/useReconciliationOverrides';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   dedupeShiftRecommendationRows,
   filterRowsToLatestAcceptedSubmissions,
@@ -496,7 +503,7 @@ const buildReconciliation = (
         const severity: ReconciliationIssue['severity'] =
           exact.status === 'unscheduled' ? 'red' : 'yellow';
         pushIssue({
-          id: `${type}-${approved.id}-${exact.shift.id}`,
+          id: `${type}-${approved.id}-${exact.shift.homebase_id}`,
           type,
           severity,
           dateKey,
@@ -526,7 +533,7 @@ const buildReconciliation = (
     if (nearest) {
       usedHomebaseIds.add(nearest.shift.id);
       pushIssue({
-        id: `time-mismatch-${approved.id}-${nearest.shift.id}`,
+        id: `time-mismatch-${approved.id}-${nearest.shift.homebase_id}`,
         type: 'time_mismatch',
         severity: 'red',
         dateKey,
@@ -557,7 +564,7 @@ const buildReconciliation = (
     if (usedHomebaseIds.has(homebase.shift.id)) continue;
     if (!homebase.providerId) {
       pushIssue({
-        id: `unmatched-homebase-${homebase.shift.id}`,
+        id: `unmatched-homebase-${homebase.shift.homebase_id}`,
         type: 'unmatched_homebase_employee',
         severity: 'red',
         dateKey: homebase.dateKey,
@@ -571,7 +578,7 @@ const buildReconciliation = (
     }
 
     pushIssue({
-      id: `extra-homebase-${homebase.shift.id}`,
+      id: `extra-homebase-${homebase.shift.homebase_id}`,
       type: 'extra_homebase',
       severity: 'red',
       dateKey: homebase.dateKey,
@@ -618,6 +625,12 @@ export const HomebaseScheduleContent = () => {
   const invalidRange = !isIsoDate(startDate) || !isIsoDate(endDate) || startDate > endDate;
   const scheduleQ = useHomebaseSchedule(startDate, endDate, !invalidRange);
   const approvedQ = useApprovedSchedule(startDate, endDate, !invalidRange);
+  const overridesQ = useReconciliationOverrides(startDate, endDate, !invalidRange);
+  const overrides = useMemo(
+    () => overridesQ.data ?? new Map<string, ReconciliationOverrideRow>(),
+    [overridesQ.data],
+  );
+  const [showResolved, setShowResolved] = useState(false);
   const rows = useMemo(() => scheduleQ.data ?? [], [scheduleQ.data]);
   const approvedSourceRows = useMemo(() => approvedQ.data ?? [], [approvedQ.data]);
   const approvedRows = useMemo(
@@ -628,20 +641,34 @@ export const HomebaseScheduleContent = () => {
     () => buildReconciliation(approvedRows, rows, startDate, endDate),
     [approvedRows, rows, startDate, endDate],
   );
+  const effectiveDays = useMemo<DayReconciliation[]>(() => {
+    if (overrides.size === 0) return reconciliationDays;
+    return reconciliationDays.map(day => {
+      const openIssues = day.issues.filter(issue => !overrides.has(issue.id));
+      const worst = [...openIssues].sort((a, b) => issueSeverityRank(b) - issueSeverityRank(a))[0];
+      const hasAnySchedule = day.approvedCount > 0 || day.homebaseCount > 0;
+      const severity: ReconciliationSeverity = worst
+        ? worst.severity
+        : hasAnySchedule
+          ? 'green'
+          : 'empty';
+      return { ...day, issues: day.issues, severity, _openCount: openIssues.length } as DayReconciliation & { _openCount: number };
+    });
+  }, [reconciliationDays, overrides]);
   const selectedDay = useMemo(
-    () => reconciliationDays.find(day => day.dateKey === selectedDate) ?? reconciliationDays[0] ?? null,
-    [reconciliationDays, selectedDate],
+    () => effectiveDays.find(day => day.dateKey === selectedDate) ?? effectiveDays[0] ?? null,
+    [effectiveDays, selectedDate],
   );
 
   const preferredSelectedDate = useMemo(() => {
-    if (reconciliationDays.length === 0) return startDate;
+    if (effectiveDays.length === 0) return startDate;
     return (
-      reconciliationDays.find(day => day.severity === 'red') ??
-      reconciliationDays.find(day => day.severity === 'yellow') ??
-      reconciliationDays.find(day => day.severity === 'green') ??
-      reconciliationDays[0]
+      effectiveDays.find(day => day.severity === 'red') ??
+      effectiveDays.find(day => day.severity === 'yellow') ??
+      effectiveDays.find(day => day.severity === 'green') ??
+      effectiveDays[0]
     ).dateKey;
-  }, [reconciliationDays, startDate]);
+  }, [effectiveDays, startDate]);
 
   useEffect(() => {
     if (!selectedDate || selectedDate < startDate || selectedDate > endDate) {
@@ -723,13 +750,17 @@ export const HomebaseScheduleContent = () => {
   }, [rows]);
 
   const reconciliationTotals = useMemo(() => {
-    const issueDays = reconciliationDays.filter(day => day.severity === 'red').length;
-    const publishDays = reconciliationDays.filter(day => day.severity === 'yellow').length;
-    const cleanDays = reconciliationDays.filter(day => day.severity === 'green').length;
-    const issues = reconciliationDays.flatMap(day => day.issues);
-    const redIssues = issues.filter(issue => issue.severity === 'red').length;
-    const yellowIssues = issues.filter(issue => issue.severity === 'yellow').length;
-    const matchedCount = reconciliationDays.reduce((sum, day) => sum + day.matchedCount, 0);
+    const issueDays = effectiveDays.filter(day => day.severity === 'red').length;
+    const publishDays = effectiveDays.filter(day => day.severity === 'yellow').length;
+    const cleanDays = effectiveDays.filter(day => day.severity === 'green').length;
+    const openIssues = effectiveDays.flatMap(day => day.issues.filter(i => !overrides.has(i.id)));
+    const redIssues = openIssues.filter(issue => issue.severity === 'red').length;
+    const yellowIssues = openIssues.filter(issue => issue.severity === 'yellow').length;
+    const matchedCount = effectiveDays.reduce((sum, day) => sum + day.matchedCount, 0);
+    const resolvedCount = effectiveDays.reduce(
+      (sum, day) => sum + day.issues.filter(i => overrides.has(i.id)).length,
+      0,
+    );
     return {
       issueDays,
       publishDays,
@@ -737,9 +768,10 @@ export const HomebaseScheduleContent = () => {
       redIssues,
       yellowIssues,
       matchedCount,
-      issueCount: issues.length,
+      issueCount: openIssues.length,
+      resolvedCount,
     };
-  }, [reconciliationDays]);
+  }, [effectiveDays, overrides]);
 
   const setNextThirtyDays = () => {
     setStartDate(today);
@@ -922,11 +954,20 @@ export const HomebaseScheduleContent = () => {
           ) : (
             <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
               <ReconciliationCalendar
-                days={reconciliationDays}
+                days={effectiveDays}
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
+                overrides={overrides}
               />
-              <ReconciliationDayDetails day={selectedDay} />
+              <ReconciliationDayDetails
+                day={selectedDay}
+                overrides={overrides}
+                showResolved={showResolved}
+                onShowResolvedChange={setShowResolved}
+                resolvedCount={reconciliationTotals.resolvedCount}
+                onResync={() => syncMutation.mutate()}
+                isResyncing={syncMutation.isPending}
+              />
             </div>
           )}
         </TabsContent>
@@ -1009,10 +1050,12 @@ const ReconciliationCalendar = ({
   days,
   selectedDate,
   onSelectDate,
+  overrides,
 }: {
   days: DayReconciliation[];
   selectedDate: string;
   onSelectDate: (dateKey: string) => void;
+  overrides: Map<string, ReconciliationOverrideRow>;
 }) => {
   const firstDayOffset = days[0] ? utcDayOfWeek(days[0].dateKey) : 0;
   const cells: Array<DayReconciliation | null> = [
@@ -1067,13 +1110,27 @@ const ReconciliationCalendar = ({
                     <div className="mt-3 space-y-1 text-[11px] leading-tight">
                       <div>{day.approvedCount} approved</div>
                       <div>{day.homebaseCount} Homebase</div>
-                      {day.issues.length > 0 ? (
-                        <div className="font-medium">{day.issues.length} issue{day.issues.length === 1 ? '' : 's'}</div>
-                      ) : day.severity === 'green' ? (
-                        <div className="font-medium">matched</div>
-                      ) : (
-                        <div className="text-muted-foreground">no shifts</div>
-                      )}
+                      {(() => {
+                        const open = day.issues.filter(i => !overrides.has(i.id)).length;
+                        const resolved = day.issues.length - open;
+                        if (open > 0) {
+                          return (
+                            <div className="font-medium">
+                              {open} issue{open === 1 ? '' : 's'}
+                              {resolved > 0 && (
+                                <span className="ml-1 font-normal text-muted-foreground">· {resolved} resolved</span>
+                              )}
+                            </div>
+                          );
+                        }
+                        if (resolved > 0) {
+                          return <div className="font-medium text-emerald-700">resolved</div>;
+                        }
+                        if (day.severity === 'green') {
+                          return <div className="font-medium">matched</div>;
+                        }
+                        return <div className="text-muted-foreground">no shifts</div>;
+                      })()}
                     </div>
                   </button>
                 );
@@ -1086,7 +1143,23 @@ const ReconciliationCalendar = ({
   );
 };
 
-const ReconciliationDayDetails = ({ day }: { day: DayReconciliation | null }) => {
+const ReconciliationDayDetails = ({
+  day,
+  overrides,
+  showResolved,
+  onShowResolvedChange,
+  resolvedCount,
+  onResync,
+  isResyncing,
+}: {
+  day: DayReconciliation | null;
+  overrides: Map<string, ReconciliationOverrideRow>;
+  showResolved: boolean;
+  onShowResolvedChange: (value: boolean) => void;
+  resolvedCount: number;
+  onResync: () => void;
+  isResyncing: boolean;
+}) => {
   if (!day) {
     return (
       <Card>
@@ -1096,6 +1169,10 @@ const ReconciliationDayDetails = ({ day }: { day: DayReconciliation | null }) =>
       </Card>
     );
   }
+
+  const visibleIssues = showResolved
+    ? day.issues
+    : day.issues.filter(issue => !overrides.has(issue.id));
 
   return (
     <Card className="min-w-0">
@@ -1110,40 +1187,74 @@ const ReconciliationDayDetails = ({ day }: { day: DayReconciliation | null }) =>
           <DayStatusBadge day={day} />
         </div>
 
-        {day.issues.length === 0 ? (
+        {resolvedCount > 0 && (
+          <div className="flex items-center justify-end gap-2">
+            <Switch
+              id="show-resolved"
+              checked={showResolved}
+              onCheckedChange={onShowResolvedChange}
+            />
+            <Label htmlFor="show-resolved" className="text-xs text-muted-foreground">
+              Show resolved ({resolvedCount})
+            </Label>
+          </div>
+        )}
+
+        {visibleIssues.length === 0 ? (
           <div className="rounded-md border bg-muted/20 p-4 text-sm">
-            {day.severity === 'green'
-              ? 'Approved Lovable shifts match published Homebase shifts for this day.'
-              : 'No approved or Homebase shifts for this day.'}
+            {day.issues.length > 0
+              ? 'All issues resolved for this day. Toggle "Show resolved" to review them.'
+              : day.severity === 'green'
+                ? 'Approved Lovable shifts match published Homebase shifts for this day.'
+                : 'No approved or Homebase shifts for this day.'}
           </div>
         ) : (
           <div className="space-y-3">
-            {day.issues.map(issue => (
-              <div
-                key={issue.id}
-                className={cn(
-                  'rounded-md border p-3',
-                  issue.severity === 'red' ? 'border-red-200 bg-red-50/80' : 'border-amber-200 bg-amber-50/80',
-                )}
-              >
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {issue.severity === 'red' ? (
-                        <XCircle className="h-4 w-4 text-red-600" />
-                      ) : (
-                        <AlertTriangle className="h-4 w-4 text-amber-600" />
-                      )}
-                      <span className="font-medium">{issue.title}</span>
-                      <Badge variant="outline" className="bg-white/70">{issue.providerName}</Badge>
+            {visibleIssues.map(issue => {
+              const override = overrides.get(issue.id) ?? null;
+              return (
+                <div
+                  key={issue.id}
+                  className={cn(
+                    'rounded-md border p-3',
+                    override
+                      ? 'border-emerald-200 bg-emerald-50/40 opacity-90'
+                      : issue.severity === 'red'
+                        ? 'border-red-200 bg-red-50/80'
+                        : 'border-amber-200 bg-amber-50/80',
+                  )}
+                >
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {issue.severity === 'red' ? (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4 text-amber-600" />
+                        )}
+                        <span className="font-medium">{issue.title}</span>
+                        <Badge variant="outline" className="bg-white/70">{issue.providerName}</Badge>
+                      </div>
+                      <p className="mt-2 text-sm">{issue.detail}</p>
+                      <p className="mt-2 text-xs font-medium text-muted-foreground">{issue.fix}</p>
                     </div>
-                    <p className="mt-2 text-sm">{issue.detail}</p>
-                    <p className="mt-2 text-xs font-medium text-muted-foreground">{issue.fix}</p>
+                    <IssueTypeBadge issue={issue} />
                   </div>
-                  <IssueTypeBadge issue={issue} />
+                  <IssueActions
+                    issueKey={issue.id}
+                    issueType={issue.type}
+                    dateKey={issue.dateKey}
+                    providerId={issue.approved?.provider_id ?? issue.homebase?.providerId ?? null}
+                    providerName={issue.providerName}
+                    approvedShiftId={issue.approved?.id ?? null}
+                    homebaseShiftId={issue.homebase?.shift.homebase_id != null ? String(issue.homebase.shift.homebase_id) : null}
+                    override={override}
+                    onResync={onResync}
+                    isResyncing={isResyncing}
+                  />
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>
