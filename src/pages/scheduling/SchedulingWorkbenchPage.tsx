@@ -2157,6 +2157,11 @@ export default function SchedulingWorkbenchPage({
             onJumpToCoverage={() => jumpToCoveragePlan('coverage')}
           />
           <PublishInstructionsCard />
+          <PostHomebaseChangePlan
+            month={month}
+            rows={scopedPublishRows}
+            shiftsByProvider={shiftsByProvider}
+          />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard
               label="Shifts to publish"
@@ -8565,6 +8570,135 @@ function PublishInstructionsCard() {
               <div className="mt-1 text-blue-800">{step}</div>
             </div>
           ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const JULY_POST_HOMEBASE_CHANGE_MONTH = '2026-07-01';
+
+const JULY_REDUCTION_REQUESTS = [
+  {
+    provider: 'Dr. Sara Hammond',
+    request: 'Reduce 4 hrs/week in July',
+    status: 'Pending Sarabjeet confirmation',
+    redistribution: 'Consider Brittney first if this is confirmed.',
+  },
+  {
+    provider: 'Rachel McLeod',
+    request: 'Reduce 8 hrs on July 30',
+    status: 'Confirmed by Sarabjeet',
+    redistribution: 'Backfill candidates: Dr. Omari, Dr. Adamu, Brittney, Jarrod.',
+  },
+];
+
+const JULY_REALLOCATION_TARGETS = [
+  { label: 'Brittney', match: 'brittney', targetHours: 60 },
+  { label: 'Jarrod', match: 'jarrod', targetHours: 45 },
+  { label: 'Dr. Omari', match: 'omari', targetHours: 75 },
+];
+
+function acceptedHoursForProvider(
+  row: ProviderPublishView,
+  shiftsByProvider: Map<string, ShiftRow[]>,
+): number {
+  const shifts = shiftsByProvider.get(row.provider_id) ?? [];
+  const shiftHours = shifts.reduce((sum, shift) => sum + Number(shift.hours ?? 0), 0);
+  if (shiftHours > 0) return shiftHours;
+  return Number(row.submission?.accepted_hours ?? 0);
+}
+
+function PostHomebaseChangePlan({
+  month,
+  rows,
+  shiftsByProvider,
+}: {
+  month: string;
+  rows: ProviderPublishView[];
+  shiftsByProvider: Map<string, ShiftRow[]>;
+}) {
+  if (month !== JULY_POST_HOMEBASE_CHANGE_MONTH) return null;
+
+  const targetRows = JULY_REALLOCATION_TARGETS.map(target => {
+    const row = rows.find(candidate => normName(candidate.provider_name ?? '').includes(target.match));
+    const currentHours = row ? acceptedHoursForProvider(row, shiftsByProvider) : null;
+    const gapHours =
+      currentHours == null ? null : Math.max(0, target.targetHours - currentHours);
+    return {
+      ...target,
+      providerName: row?.provider_name ?? target.label,
+      currentHours,
+      gapHours,
+    };
+  });
+
+  return (
+    <Card className="border-amber-200 bg-amber-50/60">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-amber-700" />
+          Post-Homebase change plan
+        </CardTitle>
+        <p className="text-xs text-amber-900">
+          After July shifts are published in Homebase, honor confirmed reduction requests first.
+          Reallocate freed hours to providers who were cut significantly. Do not add extra July hours
+          for new requests unless a true coverage need appears.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          {JULY_REDUCTION_REQUESTS.map(request => (
+            <div key={request.provider} className="rounded-md border border-amber-200 bg-white px-3 py-2">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium text-amber-950">{request.provider}</div>
+                  <div className="mt-1 text-xs text-amber-900">{request.request}</div>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    'bg-white text-[11px]',
+                    request.status.includes('Confirmed')
+                      ? 'border-emerald-200 text-emerald-800'
+                      : 'border-amber-300 text-amber-800',
+                  )}
+                >
+                  {request.status}
+                </Badge>
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">{request.redistribution}</div>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div className="text-xs font-medium uppercase tracking-wide text-amber-900">
+            Reallocation targets
+          </div>
+          <div className="mt-2 grid gap-2 md:grid-cols-3">
+            {targetRows.map(target => (
+              <div key={target.label} className="rounded-md border border-amber-200 bg-white px-3 py-2">
+                <div className="text-sm font-medium">{target.providerName}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Target: {formatHours(target.targetHours)}
+                </div>
+                <div className="mt-2 text-xs">
+                  {target.currentHours == null ? (
+                    <span className="text-muted-foreground">No current July row found.</span>
+                  ) : target.gapHours && target.gapHours > 0 ? (
+                    <span className="text-amber-800">
+                      Current {formatHours(target.currentHours)}; {formatHours(target.gapHours)} under target.
+                    </span>
+                  ) : (
+                    <span className="text-emerald-700">
+                      Current {formatHours(target.currentHours)}; at or above target.
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </CardContent>
     </Card>
