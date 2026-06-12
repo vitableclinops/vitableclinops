@@ -641,20 +641,34 @@ export const HomebaseScheduleContent = () => {
     () => buildReconciliation(approvedRows, rows, startDate, endDate),
     [approvedRows, rows, startDate, endDate],
   );
+  const effectiveDays = useMemo<DayReconciliation[]>(() => {
+    if (overrides.size === 0) return reconciliationDays;
+    return reconciliationDays.map(day => {
+      const openIssues = day.issues.filter(issue => !overrides.has(issue.id));
+      const worst = [...openIssues].sort((a, b) => issueSeverityRank(b) - issueSeverityRank(a))[0];
+      const hasAnySchedule = day.approvedCount > 0 || day.homebaseCount > 0;
+      const severity: ReconciliationSeverity = worst
+        ? worst.severity
+        : hasAnySchedule
+          ? 'green'
+          : 'empty';
+      return { ...day, issues: day.issues, severity, _openCount: openIssues.length } as DayReconciliation & { _openCount: number };
+    });
+  }, [reconciliationDays, overrides]);
   const selectedDay = useMemo(
-    () => reconciliationDays.find(day => day.dateKey === selectedDate) ?? reconciliationDays[0] ?? null,
-    [reconciliationDays, selectedDate],
+    () => effectiveDays.find(day => day.dateKey === selectedDate) ?? effectiveDays[0] ?? null,
+    [effectiveDays, selectedDate],
   );
 
   const preferredSelectedDate = useMemo(() => {
-    if (reconciliationDays.length === 0) return startDate;
+    if (effectiveDays.length === 0) return startDate;
     return (
-      reconciliationDays.find(day => day.severity === 'red') ??
-      reconciliationDays.find(day => day.severity === 'yellow') ??
-      reconciliationDays.find(day => day.severity === 'green') ??
-      reconciliationDays[0]
+      effectiveDays.find(day => day.severity === 'red') ??
+      effectiveDays.find(day => day.severity === 'yellow') ??
+      effectiveDays.find(day => day.severity === 'green') ??
+      effectiveDays[0]
     ).dateKey;
-  }, [reconciliationDays, startDate]);
+  }, [effectiveDays, startDate]);
 
   useEffect(() => {
     if (!selectedDate || selectedDate < startDate || selectedDate > endDate) {
@@ -736,13 +750,17 @@ export const HomebaseScheduleContent = () => {
   }, [rows]);
 
   const reconciliationTotals = useMemo(() => {
-    const issueDays = reconciliationDays.filter(day => day.severity === 'red').length;
-    const publishDays = reconciliationDays.filter(day => day.severity === 'yellow').length;
-    const cleanDays = reconciliationDays.filter(day => day.severity === 'green').length;
-    const issues = reconciliationDays.flatMap(day => day.issues);
-    const redIssues = issues.filter(issue => issue.severity === 'red').length;
-    const yellowIssues = issues.filter(issue => issue.severity === 'yellow').length;
-    const matchedCount = reconciliationDays.reduce((sum, day) => sum + day.matchedCount, 0);
+    const issueDays = effectiveDays.filter(day => day.severity === 'red').length;
+    const publishDays = effectiveDays.filter(day => day.severity === 'yellow').length;
+    const cleanDays = effectiveDays.filter(day => day.severity === 'green').length;
+    const openIssues = effectiveDays.flatMap(day => day.issues.filter(i => !overrides.has(i.id)));
+    const redIssues = openIssues.filter(issue => issue.severity === 'red').length;
+    const yellowIssues = openIssues.filter(issue => issue.severity === 'yellow').length;
+    const matchedCount = effectiveDays.reduce((sum, day) => sum + day.matchedCount, 0);
+    const resolvedCount = effectiveDays.reduce(
+      (sum, day) => sum + day.issues.filter(i => overrides.has(i.id)).length,
+      0,
+    );
     return {
       issueDays,
       publishDays,
@@ -750,9 +768,10 @@ export const HomebaseScheduleContent = () => {
       redIssues,
       yellowIssues,
       matchedCount,
-      issueCount: issues.length,
+      issueCount: openIssues.length,
+      resolvedCount,
     };
-  }, [reconciliationDays]);
+  }, [effectiveDays, overrides]);
 
   const setNextThirtyDays = () => {
     setStartDate(today);
