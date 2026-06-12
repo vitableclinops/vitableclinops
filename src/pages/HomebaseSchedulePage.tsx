@@ -1050,10 +1050,12 @@ const ReconciliationCalendar = ({
   days,
   selectedDate,
   onSelectDate,
+  overrides,
 }: {
   days: DayReconciliation[];
   selectedDate: string;
   onSelectDate: (dateKey: string) => void;
+  overrides: Map<string, ReconciliationOverrideRow>;
 }) => {
   const firstDayOffset = days[0] ? utcDayOfWeek(days[0].dateKey) : 0;
   const cells: Array<DayReconciliation | null> = [
@@ -1108,13 +1110,27 @@ const ReconciliationCalendar = ({
                     <div className="mt-3 space-y-1 text-[11px] leading-tight">
                       <div>{day.approvedCount} approved</div>
                       <div>{day.homebaseCount} Homebase</div>
-                      {day.issues.length > 0 ? (
-                        <div className="font-medium">{day.issues.length} issue{day.issues.length === 1 ? '' : 's'}</div>
-                      ) : day.severity === 'green' ? (
-                        <div className="font-medium">matched</div>
-                      ) : (
-                        <div className="text-muted-foreground">no shifts</div>
-                      )}
+                      {(() => {
+                        const open = day.issues.filter(i => !overrides.has(i.id)).length;
+                        const resolved = day.issues.length - open;
+                        if (open > 0) {
+                          return (
+                            <div className="font-medium">
+                              {open} issue{open === 1 ? '' : 's'}
+                              {resolved > 0 && (
+                                <span className="ml-1 font-normal text-muted-foreground">· {resolved} resolved</span>
+                              )}
+                            </div>
+                          );
+                        }
+                        if (resolved > 0) {
+                          return <div className="font-medium text-emerald-700">resolved</div>;
+                        }
+                        if (day.severity === 'green') {
+                          return <div className="font-medium">matched</div>;
+                        }
+                        return <div className="text-muted-foreground">no shifts</div>;
+                      })()}
                     </div>
                   </button>
                 );
@@ -1127,7 +1143,23 @@ const ReconciliationCalendar = ({
   );
 };
 
-const ReconciliationDayDetails = ({ day }: { day: DayReconciliation | null }) => {
+const ReconciliationDayDetails = ({
+  day,
+  overrides,
+  showResolved,
+  onShowResolvedChange,
+  resolvedCount,
+  onResync,
+  isResyncing,
+}: {
+  day: DayReconciliation | null;
+  overrides: Map<string, ReconciliationOverrideRow>;
+  showResolved: boolean;
+  onShowResolvedChange: (value: boolean) => void;
+  resolvedCount: number;
+  onResync: () => void;
+  isResyncing: boolean;
+}) => {
   if (!day) {
     return (
       <Card>
@@ -1137,6 +1169,10 @@ const ReconciliationDayDetails = ({ day }: { day: DayReconciliation | null }) =>
       </Card>
     );
   }
+
+  const visibleIssues = showResolved
+    ? day.issues
+    : day.issues.filter(issue => !overrides.has(issue.id));
 
   return (
     <Card className="min-w-0">
@@ -1151,40 +1187,74 @@ const ReconciliationDayDetails = ({ day }: { day: DayReconciliation | null }) =>
           <DayStatusBadge day={day} />
         </div>
 
-        {day.issues.length === 0 ? (
+        {resolvedCount > 0 && (
+          <div className="flex items-center justify-end gap-2">
+            <Switch
+              id="show-resolved"
+              checked={showResolved}
+              onCheckedChange={onShowResolvedChange}
+            />
+            <Label htmlFor="show-resolved" className="text-xs text-muted-foreground">
+              Show resolved ({resolvedCount})
+            </Label>
+          </div>
+        )}
+
+        {visibleIssues.length === 0 ? (
           <div className="rounded-md border bg-muted/20 p-4 text-sm">
-            {day.severity === 'green'
-              ? 'Approved Lovable shifts match published Homebase shifts for this day.'
-              : 'No approved or Homebase shifts for this day.'}
+            {day.issues.length > 0
+              ? 'All issues resolved for this day. Toggle "Show resolved" to review them.'
+              : day.severity === 'green'
+                ? 'Approved Lovable shifts match published Homebase shifts for this day.'
+                : 'No approved or Homebase shifts for this day.'}
           </div>
         ) : (
           <div className="space-y-3">
-            {day.issues.map(issue => (
-              <div
-                key={issue.id}
-                className={cn(
-                  'rounded-md border p-3',
-                  issue.severity === 'red' ? 'border-red-200 bg-red-50/80' : 'border-amber-200 bg-amber-50/80',
-                )}
-              >
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {issue.severity === 'red' ? (
-                        <XCircle className="h-4 w-4 text-red-600" />
-                      ) : (
-                        <AlertTriangle className="h-4 w-4 text-amber-600" />
-                      )}
-                      <span className="font-medium">{issue.title}</span>
-                      <Badge variant="outline" className="bg-white/70">{issue.providerName}</Badge>
+            {visibleIssues.map(issue => {
+              const override = overrides.get(issue.id) ?? null;
+              return (
+                <div
+                  key={issue.id}
+                  className={cn(
+                    'rounded-md border p-3',
+                    override
+                      ? 'border-emerald-200 bg-emerald-50/40 opacity-90'
+                      : issue.severity === 'red'
+                        ? 'border-red-200 bg-red-50/80'
+                        : 'border-amber-200 bg-amber-50/80',
+                  )}
+                >
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {issue.severity === 'red' ? (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4 text-amber-600" />
+                        )}
+                        <span className="font-medium">{issue.title}</span>
+                        <Badge variant="outline" className="bg-white/70">{issue.providerName}</Badge>
+                      </div>
+                      <p className="mt-2 text-sm">{issue.detail}</p>
+                      <p className="mt-2 text-xs font-medium text-muted-foreground">{issue.fix}</p>
                     </div>
-                    <p className="mt-2 text-sm">{issue.detail}</p>
-                    <p className="mt-2 text-xs font-medium text-muted-foreground">{issue.fix}</p>
+                    <IssueTypeBadge issue={issue} />
                   </div>
-                  <IssueTypeBadge issue={issue} />
+                  <IssueActions
+                    issueKey={issue.id}
+                    issueType={issue.type}
+                    dateKey={issue.dateKey}
+                    providerId={issue.approved?.provider_id ?? issue.homebase?.providerId ?? null}
+                    providerName={issue.providerName}
+                    approvedShiftId={issue.approved?.id ?? null}
+                    homebaseShiftId={issue.homebase?.shift.homebase_id ?? null}
+                    override={override}
+                    onResync={onResync}
+                    isResyncing={isResyncing}
+                  />
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>
