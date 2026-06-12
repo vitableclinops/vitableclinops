@@ -402,6 +402,7 @@ const OUT_OF_HOURS_REASON =
 const POLICY_CUT_REASON = 'Cut — below minimum shift length policy';
 
 const FRIDAY_SCARCE_START_MIN = 12 * 60;
+const OPERATIONAL_BLOCK_MINUTES = 30;
 
 export function scarceCoverageWindowForSlot(slot: Pick<ExpandedSlot, 'date' | 'endMin'>): string | null {
   const day = dayOfWeekUtc(slot.date);
@@ -415,6 +416,25 @@ export function isScarceCoverageSlot(slot: Pick<ExpandedSlot, 'date' | 'endMin'>
   return scarceCoverageWindowForSlot(slot) !== null;
 }
 
+function roundCutMinutesToOperationalBlock(cutMinutes: number, slotMinutes: number): number {
+  if (cutMinutes <= 0) return 0;
+  if (cutMinutes >= slotMinutes) return slotMinutes;
+  const rounded = Math.round(cutMinutes / OPERATIONAL_BLOCK_MINUTES) * OPERATIONAL_BLOCK_MINUTES;
+  if (rounded <= 0) return Math.min(OPERATIONAL_BLOCK_MINUTES, slotMinutes);
+  if (rounded >= slotMinutes) return slotMinutes;
+  return rounded;
+}
+
+function snapToOperationalWindow(
+  startMin: number,
+  endMin: number,
+): { startMin: number; endMin: number } | null {
+  const snappedStart = Math.ceil(startMin / OPERATIONAL_BLOCK_MINUTES) * OPERATIONAL_BLOCK_MINUTES;
+  const snappedEnd = Math.floor(endMin / OPERATIONAL_BLOCK_MINUTES) * OPERATIONAL_BLOCK_MINUTES;
+  if (snappedEnd <= snappedStart) return null;
+  return { startMin: snappedStart, endMin: snappedEnd };
+}
+
 function dayOfWeekUtc(dateIso: string): number {
   const [y, m, d] = dateIso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
@@ -424,13 +444,12 @@ function dayOfWeekUtc(dateIso: string): number {
  * Cut/publish row generator shared by evaluator and emitter.
  *
  * Forecast slots (recurring_virtual / virtual_oneoff) participate in the
- * cut budget: latest-first, cut until `declinedHours` is satisfied. Partial
- * cut budgets split a block into publish/cut fragments instead of rounding up
- * to the whole block. Protected forecast slots are skipped by monthly
- * oversupply trims, which lets the evaluator preserve scarce coverage windows
- * before cutting less useful hours. In-home/clinic slots are not in the
- * forecast scope, so they are always `publish` and don't consume the cut
- * budget.
+ * cut budget: latest-first, cut until `declinedHours` is approximately
+ * satisfied using 30-minute operational boundaries. Protected forecast slots
+ * are skipped by monthly oversupply trims, which lets the evaluator preserve
+ * scarce coverage windows before cutting less useful hours. In-home/clinic
+ * slots are not in the forecast scope, so they are always `publish` and don't
+ * consume the cut budget.
  *
  * Out-of-hours fragments (passed via `outOfHoursTimeline`) are emitted as
  * their own `cut` rows so the workbench surfaces hours declined for being
@@ -460,7 +479,10 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
   for (const slot of sortedDesc) {
     if (remainingCutMinutes <= 0) break;
     const slotMinutes = Math.max(0, slot.endMin - slot.startMin);
-    const cutMinutes = Math.min(slotMinutes, remainingCutMinutes);
+    const cutMinutes = roundCutMinutesToOperationalBlock(
+      Math.min(slotMinutes, remainingCutMinutes),
+      slotMinutes,
+    );
     if (cutMinutes > 0) {
       cutTailMinutes.set(slot, cutMinutes);
       remainingCutMinutes -= cutMinutes;
@@ -494,6 +516,20 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     publish_status: 'pending',
   });
 
+  const makePublishRows = (
+    slot: ExpandedSlot,
+    startMin: number,
+    endMin: number,
+    assignedState: string | null,
+    reason: string,
+  ): ShiftRecommendationRow[] => {
+    const window = snapToOperationalWindow(startMin, endMin);
+    if (!window) return [];
+    return [
+      makeRow(slot, window.startMin, window.endMin, 'publish', assignedState, reason),
+    ];
+  };
+
   const bestBucket = () => {
     let bestState: string | null = null;
     let bestRemaining = 0;
@@ -512,49 +548,31 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     endMin: number,
     isProtected: boolean,
   ): ShiftRecommendationRow[] => {
-    const rows: ShiftRecommendationRow[] = [];
-    let cursor = startMin;
-    while (cursor < endMin) {
-      const segmentMinutes = endMin - cursor;
-      const { state, remaining } = bestBucket();
-      if (!state || remaining <= 0.001) {
-        if (args.allocations.length === 0 && args.unallocatedForecastPublishReason) {
-          rows.push(makeRow(slot, cursor, endMin, 'publish', null, args.unallocatedForecastPublishReason));
-          break;
-        }
-        const reason = isProtected
-          ? (args.unallocatedForecastPublishReason ?? 'Publish (scarce coverage window; no state allocation, review manually)')
-          : 'Split block and trimmed as state-specific surplus — no remaining state allocation';
-        rows.push(makeRow(slot, cursor, endMin, isProtected ? 'publish' : 'cut', isProtected ? null : null, reason));
-        break;
+    const { state, remaining } = bestBucket();
+    if (!state || remaining <= 0.001) {
+      if (args.allocations.length === 0 && args.unallocatedForecastPublishReason) {
+        return makePublishRows(slot, startMin, endMin, null, args.unallocatedForecastPublishReason);
       }
-
-      const remainingMinutes = Math.max(0, Math.round(remaining * 60));
-      const publishMinutes = Math.min(segmentMinutes, remainingMinutes);
-      if (publishMinutes <= 0) {
-        rows.push(makeRow(
-          slot,
-          cursor,
-          endMin,
-          isProtected ? 'publish' : 'cut',
-          isProtected ? state : null,
-          isProtected
-            ? `Publish to ${state} (scarce coverage window protected before monthly demand trim)`
-            : 'Split block and trimmed as state-specific surplus — no remaining state allocation',
-        ));
-        break;
-      }
-
-      const next = cursor + publishMinutes;
-      const splitSuffix = next < endMin ? '; split block to avoid state surplus' : '';
       const reason = isProtected
-        ? `Publish to ${state} (scarce coverage window protected before monthly demand trim${splitSuffix})`
-        : `Publish to ${state} (largest remaining state gap at time of allocation${splitSuffix})`;
-      rows.push(makeRow(slot, cursor, next, 'publish', state, reason));
-      buckets.set(state, roundSubmission2(remaining - publishMinutes / 60));
-      cursor = next;
+        ? (args.unallocatedForecastPublishReason ?? 'Publish (scarce coverage window; no state allocation, review manually)')
+        : 'Cut as state-specific surplus — no remaining state allocation';
+      return isProtected
+        ? makePublishRows(slot, startMin, endMin, null, reason)
+        : [makeRow(slot, startMin, endMin, 'cut', null, reason)];
     }
-    return rows;
+
+    const window = snapToOperationalWindow(startMin, endMin);
+    if (!window) return [];
+    const segmentHours = roundSubmission2((window.endMin - window.startMin) / 60);
+    const overAllocatedHours = roundSubmission2(Math.max(0, segmentHours - remaining));
+    const intactSuffix = overAllocatedHours > 0
+      ? `; whole shift kept intact although it exceeds remaining ${state} allocation by ${overAllocatedHours}h`
+      : '';
+    const reason = isProtected
+      ? `Publish to ${state} (scarce coverage window protected before monthly demand trim${intactSuffix})`
+      : `Publish to ${state} (largest remaining state gap at time of allocation; state allocation is planning math only${intactSuffix})`;
+    buckets.set(state, roundSubmission2(remaining - segmentHours));
+    return makePublishRows(slot, window.startMin, window.endMin, state, reason);
   };
 
   const timelineRows = args.timeline.flatMap(slot => {
@@ -562,16 +580,13 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     const isProtected = isForecastSlot && protectedForecastSlots.has(slot);
 
     if (!isForecastSlot) {
-      return [
-        makeRow(
-          slot,
-          slot.startMin,
-          slot.endMin,
-          'publish',
-          null,
-          'Publish (in-home/clinic — not part of telehealth forecast scope)',
-        ),
-      ];
+      return makePublishRows(
+        slot,
+        slot.startMin,
+        slot.endMin,
+        null,
+        'Publish (in-home/clinic — not part of telehealth forecast scope)',
+      );
     }
 
     const cutMinutes = cutTailMinutes.get(slot) ?? 0;

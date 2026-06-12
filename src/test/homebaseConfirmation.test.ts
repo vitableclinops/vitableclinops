@@ -72,6 +72,33 @@ describe('attachHomebaseConfirmations', () => {
     expect(row.homebase_confirmation.status).toBe('published');
   });
 
+  it('treats a scheduled Homebase shift as found even when it contains an older Lovable fragment', () => {
+    const [row] = attachHomebaseConfirmations(
+      [{
+        ...publishRow,
+        id: 'rec-fragment',
+        start_min: 9 * 60,
+        end_min: 12 * 60 + 48,
+      }],
+      [{
+        homebase_id: 126,
+        homebase_employee_id: employee.id,
+        published: false,
+        scheduled: true,
+        start_at: '2026-06-10T13:00:00.000Z',
+        end_at: '2026-06-10T23:00:00.000Z',
+        synced_at: '2026-06-08T12:00:00.000Z',
+      }],
+      [employee],
+    );
+
+    expect(row.homebase_confirmation).toMatchObject({
+      status: 'unpublished',
+      homebase_shift_id: '126',
+      scheduled: true,
+    });
+  });
+
   it('does not ask Homebase to confirm cut rows', () => {
     const [row] = attachHomebaseConfirmations(
       [{ ...publishRow, id: 'rec-2', recommendation: 'cut' }],

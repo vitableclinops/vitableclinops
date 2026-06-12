@@ -197,7 +197,7 @@ describe('buildShiftRecommendationRows', () => {
     expect(rows[1].recommendation_reason).toContain('Trimmed as oversupply');
   });
 
-  it('splits a published block across state allocations instead of overfilling one state', () => {
+  it('keeps a published operational shift whole even when state allocations are fragmented', () => {
     const submission = oneOffSubmission('sub-split-state', '06-04-2026', '9:00 AM', '5:00 PM');
     const validation = buildSubmissionTimeline(
       [submission],
@@ -223,20 +223,82 @@ describe('buildShiftRecommendationRows', () => {
     expect(rows).toEqual([
       expect.objectContaining({
         start_min: 9 * 60,
-        end_min: 15 * 60,
-        hours: 6,
+        end_min: 17 * 60,
+        hours: 8,
         recommendation: 'publish',
         assigned_state: 'NJ',
       }),
+    ]);
+    expect(rows[0].recommendation_reason).toContain('state allocation is planning math only');
+    expect(rows[0].start_min % 30).toBe(0);
+    expect(rows[0].end_min % 30).toBe(0);
+  });
+
+  it('rounds partial cut boundaries to 30-minute operational blocks', () => {
+    const submission = oneOffSubmission('sub-fractional-cut', '06-04-2026', '9:00 AM', '7:00 PM');
+    const validation = buildSubmissionTimeline(
+      [submission],
+      { name: 'Fractional Cut Provider' },
+      FIXTURE_TARGET_MONTH,
+    );
+
+    const rows = buildShiftRecommendationRows({
+      providerId: 'p-fractional-cut',
+      providerName: 'Fractional Cut Provider',
+      targetMonth: FIXTURE_TARGET_MONTH,
+      timeline: validation.timeline,
+      forecastTimeline: validation.forecastTimeline,
+      declinedHours: 6.2,
+      declineAll: false,
+      allocations: [{ state: 'PA', hours: 3.8 }],
+      decisionRunId: 'run-fractional-cut',
+    });
+
+    expect(rows).toEqual([
       expect.objectContaining({
-        start_min: 15 * 60,
-        end_min: 17 * 60,
-        hours: 2,
+        start_min: 9 * 60,
+        end_min: 13 * 60,
+        hours: 4,
         recommendation: 'publish',
-        assigned_state: 'PA',
+      }),
+      expect.objectContaining({
+        start_min: 13 * 60,
+        end_min: 19 * 60,
+        hours: 6,
+        recommendation: 'cut',
       }),
     ]);
-    expect(rows[0].recommendation_reason).toContain('split block to avoid state surplus');
+    expect(rows.every(row => row.start_min % 30 === 0 && row.end_min % 30 === 0)).toBe(true);
+  });
+
+  it('snaps published rows inward to 30-minute operational boundaries', () => {
+    const submission = oneOffSubmission('sub-snap-publish', '06-04-2026', '4:10 PM', '7:20 PM');
+    const validation = buildSubmissionTimeline(
+      [submission],
+      { name: 'Snap Publish Provider' },
+      FIXTURE_TARGET_MONTH,
+    );
+
+    const rows = buildShiftRecommendationRows({
+      providerId: 'p-snap-publish',
+      providerName: 'Snap Publish Provider',
+      targetMonth: FIXTURE_TARGET_MONTH,
+      timeline: validation.timeline,
+      forecastTimeline: validation.forecastTimeline,
+      declinedHours: 0,
+      declineAll: false,
+      allocations: [{ state: 'PA', hours: 3 }],
+      decisionRunId: 'run-snap-publish',
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        start_min: 16 * 60 + 30,
+        end_min: 19 * 60,
+        hours: 2.5,
+        recommendation: 'publish',
+      }),
+    ]);
   });
 
   it('protects scarce coverage windows from monthly oversupply cuts', () => {

@@ -37,7 +37,7 @@ export function useStateCoverage(month: string) {
           .eq('month', monthStart),
         clinopsSupabase
           .from('shift_recommendations')
-          .select('submission_id, target_month, shift_date, start_min, end_min, assigned_state, hours, shift_type, provider_name')
+          .select('id, submission_id, provider_id, target_month, shift_date, start_min, end_min, assigned_state, hours, shift_type, provider_name, publish_status, updated_at, created_at')
           .eq('target_month', monthStart)
           .eq('recommendation', 'publish')
           .range(0, 9999),

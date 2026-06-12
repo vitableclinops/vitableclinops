@@ -135,11 +135,22 @@ export function attachHomebaseConfirmations<T extends ShiftRecommendationLike>(
         Math.abs(candidate.end_min - row.end_min) <= MATCH_TOLERANCE_MINUTES,
       ),
     );
+    if (nearMatch) {
+      return { ...row, homebase_confirmation: confirmationForShift(nearMatch) };
+    }
+
+    const containingMatch = pickBestHomebaseShift(
+      candidates.filter(candidate =>
+        candidate.scheduled !== false &&
+        candidate.start_min <= row.start_min &&
+        candidate.end_min >= row.end_min,
+      ),
+    );
 
     return {
       ...row,
-      homebase_confirmation: nearMatch
-        ? confirmationForShift(nearMatch)
+      homebase_confirmation: containingMatch
+        ? confirmationForShift(containingMatch)
         : noConfirmation('not_found'),
     };
   });

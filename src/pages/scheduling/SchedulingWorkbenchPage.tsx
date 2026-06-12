@@ -4089,7 +4089,7 @@ function RecalculationChangeReport({
     ? 'Loading the same state-coverage source used by Readiness.'
     : coverageQ.isError
       ? 'Open Coverage Plan if this stays blank after refresh.'
-      : `${formatHours(coverageTotals.demandHours)} hrs needed; ${formatHours(coverageTotals.stateGapHours)} hrs still short by state.`;
+      : `${formatHours(coverageTotals.demandHours)} telehealth demand hrs; ${formatHours(coverageTotals.stateGapHours)} hrs still short by state.`;
   const activeRunLabel = selectedRun
     ? `Run ${shortRunId(selectedRun.decision_run_id)} · ${formatRelativeTime(selectedRun.created_at)}`
     : showLocalFallback && lastRun
@@ -6952,14 +6952,14 @@ function DeclinedHoursPanel({
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <SummaryCard
-          label="Providers with declined hrs"
+          label="Providers with any cut"
           value={declinedRows.length.toString()}
-          sub={formatMonthLabel(month)}
+          sub="Provider count, not demand share"
         />
         <SummaryCard
-          label="Declined hours"
+          label="Cut / declined hours"
           value={`${declinedHours.toFixed(1)} hrs`}
-          sub="Submission-level total"
+          sub="Submitted availability removed"
         />
         <SummaryCard
           label="Cut shift rows"
@@ -6980,7 +6980,7 @@ function DeclinedHoursPanel({
             Declined hours · {formatMonthLabel(month)}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Declined or trimmed hours with the provider's eligible states and cut-row reasons.
+            Submitted availability that was declined or trimmed; this is separate from demand fill percentage.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -8089,9 +8089,9 @@ function ReadinessPanel({
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard
-          label="Hours needed"
+          label="Telehealth demand"
           value={demandHours ? `${demandHours.toFixed(0)} hrs` : '—'}
-          sub={`${formatMonthLabel(month)} state targets incl. access buffer`}
+          sub={`${formatMonthLabel(month)} state targets; excludes MH`}
         />
         <SummaryCard
           label="Expanded submitted"
@@ -8099,9 +8099,9 @@ function ReadinessPanel({
           sub="Recurring expanded minus off dates"
         />
         <SummaryCard
-          label="Accepted usable (telehealth)"
+          label="Approved telehealth state hrs"
           value={acceptedHours ? `${acceptedHours.toFixed(0)} hrs` : '—'}
-          sub={acceptedPct !== null ? `${acceptedPct}% total · ${formatSignedCoverageHours(netCoverageHours)} net` : undefined}
+          sub={acceptedPct !== null ? `${acceptedPct}% of demand · ${formatSignedCoverageHours(netCoverageHours)} net` : undefined}
         />
         <SummaryCard
           label={stateGapHours > 0 ? 'State-specific shortage' : 'State coverage surplus'}
@@ -8124,10 +8124,10 @@ function ReadinessPanel({
                   Total accepted can be over target while specific states are still short.
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {formatMonthLabel(month)} is {acceptedPct}% accepted overall, but {stateGapHours.toFixed(0)} hrs are still short in
-                  specific states. The {stateSurplusHours.toFixed(0)} extra hrs in over-covered states do not cover those gaps because
-                  hours only count where the shift is assigned and the provider is eligible. Non-protected surplus blocks are split or cut;
-                  remaining extra should come from Friday PM/weekend coverage protected before monthly trimming or explicit out-of-forecast scope.
+                  {formatMonthLabel(month)} telehealth state coverage is {acceptedPct}% of demand, but {stateGapHours.toFixed(0)} hrs are still short in
+                  specific states. Mental health uses service-line demand and is excluded here. The {stateSurplusHours.toFixed(0)} extra hrs in
+                  over-covered states do not cover those gaps because hours only count where the shift is assigned and the provider is eligible.
+                  State allocation is planning math; Homebase shifts stay whole. Non-protected surplus hours can still be cut on 30-minute operational boundaries.
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div>
@@ -9432,8 +9432,8 @@ function CoverageGapsPanel({
           State coverage guidance · {formatMonthLabel(month)}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          This tells the scheduling team whether publishing can continue. Midpoint demand targets are treated as the final monthly need.
-          Non-protected surplus blocks are split or cut before publish; any remaining extra should be protected Friday/weekend coverage or explicit out-of-forecast scope.
+          This telehealth-only view tells the scheduling team whether publishing can continue against state_demand_targets.
+          Mental health demand is tracked separately by service line. State allocation is planning math; Homebase shifts stay whole.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -9441,7 +9441,7 @@ function CoverageGapsPanel({
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             <CoverageStat label="Stop states" value={String(criticalRows.length)} tone={criticalRows.length > 0 ? 'bad' : 'good'} />
             <CoverageStat label="Watch states" value={String(watchRows.length)} tone={watchRows.length > 0 ? 'warn' : 'good'} />
-            <CoverageStat label="Hours still needed" value={`${totalGap.toFixed(0)} hrs`} tone={totalGap > 0 ? 'warn' : 'good'} />
+            <CoverageStat label="TH hrs still needed" value={`${totalGap.toFixed(0)} hrs`} tone={totalGap > 0 ? 'warn' : 'good'} />
             <CoverageStat label="Accepted providers" value={String(acceptedRows.length)} tone="neutral" />
             <CoverageStat label="Missing availability" value={String(missingRows.length)} tone={missingRows.length > 0 ? 'warn' : 'good'} />
           </div>
@@ -9461,8 +9461,8 @@ function CoverageGapsPanel({
           <TableHeader>
             <TableRow>
               <TableHead>State</TableHead>
-              <TableHead className="text-right">Hours needed</TableHead>
-              <TableHead className="text-right">Accepted hrs</TableHead>
+              <TableHead className="text-right">TH demand hrs</TableHead>
+              <TableHead className="text-right">Approved TH hrs</TableHead>
               <TableHead className="text-right">Short / extra</TableHead>
               <TableHead className="text-right">Coverage</TableHead>
               <TableHead className="text-right">Licensed providers</TableHead>

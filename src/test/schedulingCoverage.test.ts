@@ -9,7 +9,13 @@ describe('computeStateCoverage', () => {
   it('uses accepted shift rows for filled hours and active licenses for eligible/missing counts', () => {
     const result = computeStateCoverage({
       targets: [{ state: 'PA', monthly_hours_target: 100 }],
-      shifts: [{ assigned_state: 'PA', hours: 40, shift_type: 'virtual_oneoff', provider_name: 'Ready Provider' }],
+      shifts: [{
+        provider_id: 'p1',
+        assigned_state: 'PA',
+        hours: 40,
+        shift_type: 'virtual_oneoff',
+        provider_name: 'Ready Provider',
+      }],
       providers: [
         { id: 'p1', name: 'Ready Provider', profession: 'NP', active: true },
         { id: 'p2', name: 'Missing Provider', profession: 'NP', active: true },
@@ -38,7 +44,13 @@ describe('computeStateCoverage', () => {
   it('can apply an access growth buffer to demand targets', () => {
     const result = computeStateCoverage({
       targets: [{ state: 'PA', monthly_hours_target: 100 }],
-      shifts: [{ assigned_state: 'PA', hours: 100, shift_type: 'virtual_oneoff', provider_name: 'Ready Provider' }],
+      shifts: [{
+        provider_id: 'p1',
+        assigned_state: 'PA',
+        hours: 100,
+        shift_type: 'virtual_oneoff',
+        provider_name: 'Ready Provider',
+      }],
       providers: [{ id: 'p1', name: 'Ready Provider', profession: 'NP', active: true }],
       licenses: [{ provider_id: 'p1', state: 'PA', status: 'active' }],
       submissions: [{ provider_id: 'p1', decision_status: 'accepted' }],
@@ -72,6 +84,47 @@ describe('computeStateCoverage', () => {
 
     expect(result.rows[0].eligible_providers).toBe(1);
     expect(result.rows[0].missing_providers).toBe(1);
+  });
+
+  it('excludes mental health shifts from telehealth state coverage', () => {
+    const result = computeStateCoverage({
+      targets: [{ state: 'PA', monthly_hours_target: 100 }],
+      shifts: [
+        {
+          provider_id: 'mh1',
+          assigned_state: 'PA',
+          hours: 25,
+          shift_type: 'virtual_recurring',
+          provider_name: 'Michelle Diederich',
+        },
+        {
+          provider_id: 'np1',
+          assigned_state: 'PA',
+          hours: 40,
+          shift_type: 'virtual_recurring',
+          provider_name: 'Telehealth NP',
+        },
+      ],
+      providers: [
+        { id: 'mh1', name: 'Michelle Diederich', profession: 'mental_health_coach', active: true },
+        { id: 'np1', name: 'Telehealth NP', profession: 'NP', active: true },
+      ],
+      licenses: [
+        { provider_id: 'mh1', state: 'PA', status: 'active' },
+        { provider_id: 'np1', state: 'PA', status: 'active' },
+      ],
+      submissions: [
+        { provider_id: 'mh1', decision_status: 'accepted' },
+        { provider_id: 'np1', decision_status: 'accepted' },
+      ],
+    });
+
+    expect(result.rows[0]).toMatchObject({
+      state: 'PA',
+      filled: 40,
+      eligible_providers: 1,
+    });
+    expect(result.otherUnassignedHours).toBe(0);
   });
 
   it('reserves physician providers for MD-only states', () => {

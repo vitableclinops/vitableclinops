@@ -33,6 +33,14 @@ import {
 type HomebaseShift = ClinOpsTables<'homebase_shifts'>;
 type HomebaseEmployee = ClinOpsTables<'homebase_employees'>;
 type ApprovedShift = ClinOpsTables<'shift_recommendations'>;
+type ApprovedScheduleBlock = Pick<
+  ApprovedShift,
+  'provider_id' | 'provider_name' | 'shift_date' | 'start_min' | 'end_min' | 'shift_type'
+> & {
+  id: string;
+  hours: number;
+  sourceRowIds: string[];
+};
 type ScheduleStatus = 'published' | 'unpublished' | 'unscheduled';
 type StatusFilter = ScheduleStatus | 'all';
 type ReconciliationSeverity = 'empty' | 'green' | 'yellow' | 'red';
@@ -59,6 +67,7 @@ interface HomebaseSyncResult {
 const DEFAULT_RANGE_DAYS = 29;
 const JULY_2026_START = '2026-07-01';
 const JULY_2026_END = '2026-07-31';
+const OPERATIONAL_BLOCK_MINUTES = 30;
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface ComparableHomebaseShift extends HomebaseScheduleRow {
@@ -78,7 +87,7 @@ interface ReconciliationIssue {
   title: string;
   detail: string;
   fix: string;
-  approved?: ApprovedShift;
+  approved?: ApprovedScheduleBlock;
   homebase?: ComparableHomebaseShift;
 }
 
@@ -199,7 +208,7 @@ const formatDateKey = (dateKey: string) => {
   });
 };
 
-const formatApprovedTimeRange = (row: ApprovedShift) =>
+const formatApprovedTimeRange = (row: Pick<ApprovedShift, 'start_min' | 'end_min'>) =>
   `${formatClockMinutes(row.start_min)}-${formatClockMinutes(row.end_min)}`;
 
 const formatClockMinutes = (minutes: number) => {
@@ -257,6 +266,64 @@ const pickBestHomebaseCandidate = (rows: ComparableHomebaseShift[]) =>
     if (rankDelta !== 0) return rankDelta;
     return (b.shift.synced_at ?? '').localeCompare(a.shift.synced_at ?? '');
   })[0] ?? null;
+
+const approvedBlockKey = (row: Pick<ApprovedShift, 'provider_id' | 'provider_name' | 'shift_date' | 'shift_type'>) =>
+  `${row.provider_id ?? row.provider_name}|${row.shift_date}|${row.shift_type}`;
+
+const coalesceApprovedScheduleBlocks = (rows: ApprovedShift[]): ApprovedScheduleBlock[] => {
+  const sorted = [...rows].sort((a, b) =>
+    approvedBlockKey(a).localeCompare(approvedBlockKey(b)) ||
+    a.start_min - b.start_min ||
+    a.end_min - b.end_min ||
+    a.id.localeCompare(b.id),
+  );
+  const blocks: ApprovedScheduleBlock[] = [];
+
+  for (const row of sorted) {
+    const previous = blocks[blocks.length - 1];
+    if (
+      previous &&
+      approvedBlockKey(previous) === approvedBlockKey(row) &&
+      previous.end_min === row.start_min
+    ) {
+      previous.end_min = row.end_min;
+      previous.hours = roundHours((previous.end_min - previous.start_min) / 60);
+      previous.sourceRowIds.push(row.id);
+      previous.id = previous.sourceRowIds.join('+');
+      continue;
+    }
+
+    blocks.push({
+      id: row.id,
+      provider_id: row.provider_id,
+      provider_name: row.provider_name,
+      shift_date: row.shift_date,
+      start_min: row.start_min,
+      end_min: row.end_min,
+      hours: roundHours((row.end_min - row.start_min) / 60),
+      shift_type: row.shift_type,
+      sourceRowIds: [row.id],
+    });
+  }
+
+  return blocks
+    .map(snapApprovedBlockToOperationalWindow)
+    .filter((block): block is ApprovedScheduleBlock => Boolean(block));
+};
+
+const roundHours = (value: number) => Math.round(value * 100) / 100;
+
+const snapApprovedBlockToOperationalWindow = (block: ApprovedScheduleBlock): ApprovedScheduleBlock | null => {
+  const startMin = Math.ceil(block.start_min / OPERATIONAL_BLOCK_MINUTES) * OPERATIONAL_BLOCK_MINUTES;
+  const endMin = Math.floor(block.end_min / OPERATIONAL_BLOCK_MINUTES) * OPERATIONAL_BLOCK_MINUTES;
+  if (endMin <= startMin) return null;
+  return {
+    ...block,
+    start_min: startMin,
+    end_min: endMin,
+    hours: roundHours((endMin - startMin) / 60),
+  };
+};
 
 const useHomebaseSchedule = (startDate: string, endDate: string, enabled: boolean) =>
   useQuery({
@@ -362,7 +429,7 @@ const toComparableHomebaseShift = (row: HomebaseScheduleRow): ComparableHomebase
 };
 
 const buildReconciliation = (
-  approvedRows: ApprovedShift[],
+  approvedRows: ApprovedScheduleBlock[],
   homebaseRows: HomebaseScheduleRow[],
   startDate: string,
   endDate: string,
@@ -426,10 +493,12 @@ const buildReconciliation = (
       if (exact.status !== 'published') {
         const type: ReconciliationIssueType =
           exact.status === 'unscheduled' ? 'homebase_unscheduled' : 'homebase_unpublished';
+        const severity: ReconciliationIssue['severity'] =
+          exact.status === 'unscheduled' ? 'red' : 'yellow';
         pushIssue({
           id: `${type}-${approved.id}-${exact.shift.id}`,
           type,
-          severity: 'yellow',
+          severity,
           dateKey,
           providerName,
           title: exact.status === 'unscheduled' ? 'Homebase shift is unscheduled' : 'Homebase shift is not published',
@@ -550,7 +619,11 @@ export const HomebaseScheduleContent = () => {
   const scheduleQ = useHomebaseSchedule(startDate, endDate, !invalidRange);
   const approvedQ = useApprovedSchedule(startDate, endDate, !invalidRange);
   const rows = useMemo(() => scheduleQ.data ?? [], [scheduleQ.data]);
-  const approvedRows = useMemo(() => approvedQ.data ?? [], [approvedQ.data]);
+  const approvedSourceRows = useMemo(() => approvedQ.data ?? [], [approvedQ.data]);
+  const approvedRows = useMemo(
+    () => coalesceApprovedScheduleBlocks(approvedSourceRows),
+    [approvedSourceRows],
+  );
   const reconciliationDays = useMemo(
     () => buildReconciliation(approvedRows, rows, startDate, endDate),
     [approvedRows, rows, startDate, endDate],
@@ -719,6 +792,7 @@ export const HomebaseScheduleContent = () => {
         homebase_status: issue.homebase?.status ?? '',
         fix: issue.fix,
         approved_shift_id: issue.approved?.id ?? '',
+        approved_source_row_ids: issue.approved?.sourceRowIds.join(',') ?? '',
         homebase_shift_id: issue.homebase?.shift.homebase_id ?? '',
       })),
       `homebase_reconciliation_${startDate}_to_${endDate}.csv`,
@@ -825,7 +899,11 @@ export const HomebaseScheduleContent = () => {
             <KpiCard label="Mismatch days" value={`${reconciliationTotals.issueDays}`} sub={`${reconciliationTotals.redIssues} blocking issues`} accent={reconciliationTotals.issueDays > 0 ? 'bad' : 'good'} />
             <KpiCard label="Needs publish" value={`${reconciliationTotals.publishDays}`} sub={`${reconciliationTotals.yellowIssues} yellow shifts`} accent={reconciliationTotals.publishDays > 0 ? 'warn' : 'good'} />
             <KpiCard label="Clean days" value={`${reconciliationTotals.cleanDays}`} sub="approved matches Homebase" accent="good" />
-            <KpiCard label="Approved shifts" value={`${approvedRows.length}`} sub={`${reconciliationTotals.matchedCount} matched`} />
+            <KpiCard
+              label="Approved shifts"
+              value={`${approvedRows.length}`}
+              sub={`${reconciliationTotals.matchedCount} matched${approvedSourceRows.length !== approvedRows.length ? ` · ${approvedSourceRows.length} source rows` : ''}`}
+            />
             <KpiCard label="Last sync" value={formatSyncedAt(totals.latestSync)} sub={`${rows.length} Homebase rows`} />
           </div>
 

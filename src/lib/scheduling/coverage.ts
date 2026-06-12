@@ -1,3 +1,8 @@
+import {
+  isMentalHealthProvider,
+  mentalHealthServiceLineForProfession,
+} from '@/lib/scheduling/mentalHealth';
+
 export type CoverageStatus = 'Covered' | 'Watch' | 'Gap' | 'Critical';
 
 export type CoverageDemandInput = {
@@ -6,6 +11,7 @@ export type CoverageDemandInput = {
 };
 
 export type CoverageShiftInput = {
+  provider_id?: string | null;
   submission_id?: string | null;
   assigned_state: string | null;
   hours: number | string | null;
@@ -74,14 +80,6 @@ const PHYSICIAN_PROFESSIONS = new Set([
   'MEDICAL_DOCTOR',
   'DOCTOR_OF_OSTEOPATHY',
 ]);
-const MH_PROFESSIONS = new Set([
-  'MENTAL_HEALTH_COACH',
-  'MH_COACH',
-  'LPC',
-  'THERAPIST',
-  'HEALTH_COACH',
-]);
-
 const normProfession = (profession: string | null | undefined) =>
   (profession ?? '')
     .trim()
@@ -90,7 +88,7 @@ const normProfession = (profession: string | null | undefined) =>
     .replace(/^_+|_+$/g, '');
 
 export const isMentalHealthProfession = (profession: string | null | undefined) =>
-  MH_PROFESSIONS.has(normProfession(profession));
+  mentalHealthServiceLineForProfession(profession) !== null;
 
 export const isPhysicianProfession = (profession: string | null | undefined) => {
   const norm = normProfession(profession);
@@ -156,6 +154,8 @@ export function computeStateCoverage(input: {
   for (const s of input.shifts) {
     const hrs = Number(s.hours ?? 0);
     if (!Number.isFinite(hrs) || hrs <= 0) continue;
+    const provider = s.provider_id ? providersById.get(s.provider_id) : null;
+    if (isMentalHealthProvider(provider?.profession ?? null, s.provider_name)) continue;
     const state = String(s.assigned_state ?? '').trim().toUpperCase();
     const isInHome = s.shift_type === 'in_home_clinic';
 
@@ -184,7 +184,7 @@ export function computeStateCoverage(input: {
     if (license.status && !VALID_LICENSE_STATUSES.has(license.status)) continue;
     const provider = providersById.get(providerId);
     if (!provider || provider.active !== true) continue;
-    if (isMentalHealthProfession(provider.profession)) continue;
+    if (isMentalHealthProvider(provider.profession, provider.name)) continue;
     if (!isEligibleForState(provider, state)) continue;
 
     if (!eligibleByState.has(state)) eligibleByState.set(state, new Set());
