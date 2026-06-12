@@ -169,6 +169,10 @@ import {
   buildSchedulingCostModel,
   type SchedulingCostProviderRow,
 } from '@/lib/scheduling/costPerVisit';
+import {
+  derivePublishDisplayValues,
+  type PublishDisplayValues,
+} from '@/lib/scheduling/publishDisplay';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 const monthParamToIso = (value: string | null): string | null => {
@@ -685,6 +689,40 @@ const StatusBadge = ({ status }: { status: DecisionStatus | null | undefined }) 
   const s = STATUS_STYLE[status];
   return <Badge className={s.className}>{s.label}</Badge>;
 };
+
+function PublishDisplayStatusBadge({ display }: { display: PublishDisplayValues }) {
+  if (display.status === 'published') {
+    return (
+      <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+        {display.statusLabel}
+      </Badge>
+    );
+  }
+  if (display.status === 'mixed_published') {
+    return (
+      <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+        {display.statusLabel}
+      </Badge>
+    );
+  }
+  return <StatusBadge status={display.status} />;
+}
+
+const publishDisplaySplit = (display: PublishDisplayValues) =>
+  `${formatHours(display.publishedHours)} published / ${formatHours(display.openAcceptedHours)} open`;
+
+function PublishDisplayHours({ display }: { display: PublishDisplayValues }) {
+  return (
+    <div>
+      <div>{formatHours(display.displayAcceptedHours)}</div>
+      {display.hasPublishedRows && (
+        <div className="text-[11px] leading-tight text-muted-foreground">
+          {publishDisplaySplit(display)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const SHIFT_TYPE_LABEL: Record<string, string> = {
   virtual_recurring: 'Recurring virtual',
@@ -2255,8 +2293,11 @@ export default function SchedulingWorkbenchPage({
                       const ehrDone = flats.filter(isEhrDone).length;
                       const isOpen = !!expanded[row.provider_id];
                       const totalShifts = flats.length;
-                      const totalShiftHours = flats.reduce((sum, shift) => sum + Number(shift.hours ?? 0), 0);
-                      const hasLockedPublished = flats.some(shift => isHomebaseDone(shift) || isEhrDone(shift));
+                      const display = derivePublishDisplayValues({
+                        shifts: flats,
+                        acceptedHours: sub?.accepted_hours,
+                        decisionStatus: sub?.decision_status,
+                      });
                       const ehrBulkBlocked = totalShifts > 0 && ehrDone === 0 && hbDone < totalShifts;
                       return (
                         <Fragment key={row.provider_id}>
@@ -2284,23 +2325,10 @@ export default function SchedulingWorkbenchPage({
                               </div>
                             </TableCell>
                             <TableCell>
-                              {sub ? (
-                                <StatusBadge status={sub.decision_status} />
-                              ) : hasLockedPublished ? (
-                                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
-                                  Published lock
-                                </Badge>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">—</span>
-                              )}
-                              {sub && hasLockedPublished && !isAcceptedSubmission(row) && (
-                                <Badge variant="outline" className="ml-1 border-emerald-200 bg-emerald-50 text-emerald-800">
-                                  Published lock
-                                </Badge>
-                              )}
+                              <PublishDisplayStatusBadge display={display} />
                             </TableCell>
                             <TableCell className="text-right tabular-nums">
-                              {formatHours(sub?.accepted_hours ?? totalShiftHours)}
+                              <PublishDisplayHours display={display} />
                             </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
                               <ShiftProgress done={hbDone} total={totalShifts} tone="homebase" />
@@ -2779,11 +2807,16 @@ function ProviderStatusSearchPanel({
     : null;
   const shifts = selectedRow ? shiftsByProvider.get(selectedRow.provider_id) ?? [] : [];
   const cutShifts = selectedRow ? cutRowsByProvider.get(selectedRow.provider_id) ?? [] : [];
+  const selectedDisplay = derivePublishDisplayValues({
+    shifts,
+    acceptedHours: selectedRow?.submission?.accepted_hours,
+    decisionStatus: selectedRow?.submission?.decision_status,
+  });
   const submittedHours =
     expandedSubmittedHours(latestAvailability) ??
     expandedSubmittedHours(selectedRow?.submission) ??
     null;
-  const acceptedHours = selectedRow?.submission?.accepted_hours ?? null;
+  const acceptedHours = selectedRow ? selectedDisplay.displayAcceptedHours : null;
   const declinedHours = Number(selectedRow?.submission?.declined_hours ?? 0);
   const cutShiftHours = cutShifts.reduce((sum, shift) => sum + Number(shift.hours ?? 0), 0);
   const homebaseDone = shifts.length
@@ -2801,9 +2834,7 @@ function ProviderStatusSearchPanel({
   const reviewLabel =
     selectedRow?.submission?.decision_status === 'needs_review'
       ? 'Needs decision'
-      : selectedRow?.submission?.decision_status
-        ? STATUS_STYLE[selectedRow.submission.decision_status as DecisionStatus]?.label ?? selectedRow.submission.decision_status
-        : 'No submission';
+      : selectedDisplay.statusLabel;
   const selectedCorrectionSummary =
     manualTimeCorrectionSummary(selectedRow?.submission?.parsed_shifts) ??
     manualTimeCorrectionSummary(latestAvailability?.parsed_shifts);
@@ -2838,20 +2869,29 @@ function ProviderStatusSearchPanel({
             {normalizedQuery.length >= 2 && matches.length > 1 && (
               <div className="max-h-40 overflow-y-auto rounded-md border bg-background">
                 {matches.map(row => (
-                  <button
-                    key={row.provider_id}
-                    type="button"
-                    className="flex w-full items-start justify-between gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
-                    onClick={() => handleSelect(row.provider_id)}
-                  >
-                    <span>
-                      <span className="block font-medium">{row.provider_name}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {row.provider_email ?? 'No email'} · {row.profession ?? '—'}
-                      </span>
-                    </span>
-                    <StatusBadge status={row.submission?.decision_status as DecisionStatus | null | undefined} />
-                  </button>
+                  (() => {
+                    const rowDisplay = derivePublishDisplayValues({
+                      shifts: shiftsByProvider.get(row.provider_id) ?? [],
+                      acceptedHours: row.submission?.accepted_hours,
+                      decisionStatus: row.submission?.decision_status,
+                    });
+                    return (
+                      <button
+                        key={row.provider_id}
+                        type="button"
+                        className="flex w-full items-start justify-between gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
+                        onClick={() => handleSelect(row.provider_id)}
+                      >
+                        <span>
+                          <span className="block font-medium">{row.provider_name}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {row.provider_email ?? 'No email'} · {row.profession ?? '—'}
+                          </span>
+                        </span>
+                        <PublishDisplayStatusBadge display={rowDisplay} />
+                      </button>
+                    );
+                  })()
                 ))}
               </div>
             )}
@@ -2880,7 +2920,11 @@ function ProviderStatusSearchPanel({
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
                 <ProviderStatusMetric label="Submitted" value={formatHours(submittedHours)} />
-                <ProviderStatusMetric label="Accepted" value={formatHours(acceptedHours)} />
+                <ProviderStatusMetric
+                  label="Accepted"
+                  value={formatHours(acceptedHours)}
+                  sub={selectedDisplay.hasPublishedRows ? publishDisplaySplit(selectedDisplay) : undefined}
+                />
                 <ProviderStatusMetric
                   label="Review"
                   value={selectedHasTimeCorrection ? 'Updated times' : reviewLabel}
@@ -2915,11 +2959,20 @@ function ProviderStatusSearchPanel({
   );
 }
 
-function ProviderStatusMetric({ label, value }: { label: string; value: string }) {
+function ProviderStatusMetric({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
   return (
     <div className="rounded-md border bg-white px-2 py-2">
       <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
       <div className="mt-1 min-h-8 text-sm font-semibold leading-tight">{value}</div>
+      {sub && <div className="text-[11px] leading-tight text-muted-foreground">{sub}</div>}
     </div>
   );
 }
@@ -5850,6 +5903,11 @@ function MentalHealthPanel({
               const hbAggregate = !!r.publish?.homebase_posted_at;
               const ehrAggregate = !!r.publish?.ehr_posted_at;
               const serviceLine = mentalHealthServiceLineForProvider(r.profession, r.provider_name);
+              const display = derivePublishDisplayValues({
+                shifts: flats,
+                acceptedHours: sub?.accepted_hours,
+                decisionStatus: sub?.decision_status,
+              });
               return (
                 <Fragment key={r.provider_id}>
                   <TableRow>
@@ -5861,10 +5919,10 @@ function MentalHealthPanel({
                       {serviceLine ? SERVICE_LINE_LABEL[serviceLine] : '—'}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={sub?.decision_status} />
+                      <PublishDisplayStatusBadge display={display} />
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatHours(sub?.accepted_hours)}
+                      <PublishDisplayHours display={display} />
                     </TableCell>
                     <TableCell>
                       {flats.length > 0 ? (
@@ -8599,16 +8657,6 @@ const JULY_REALLOCATION_TARGETS = [
   { label: 'Dr. Omari', match: 'omari', targetHours: 75 },
 ];
 
-function acceptedHoursForProvider(
-  row: ProviderPublishView,
-  shiftsByProvider: Map<string, ShiftRow[]>,
-): number {
-  const shifts = shiftsByProvider.get(row.provider_id) ?? [];
-  const shiftHours = shifts.reduce((sum, shift) => sum + Number(shift.hours ?? 0), 0);
-  if (shiftHours > 0) return shiftHours;
-  return Number(row.submission?.accepted_hours ?? 0);
-}
-
 function PostHomebaseChangePlan({
   month,
   rows,
@@ -8622,7 +8670,14 @@ function PostHomebaseChangePlan({
 
   const targetRows = JULY_REALLOCATION_TARGETS.map(target => {
     const row = rows.find(candidate => normName(candidate.provider_name ?? '').includes(target.match));
-    const currentHours = row ? acceptedHoursForProvider(row, shiftsByProvider) : null;
+    const display = row
+      ? derivePublishDisplayValues({
+          shifts: shiftsByProvider.get(row.provider_id) ?? [],
+          acceptedHours: row.submission?.accepted_hours,
+          decisionStatus: row.submission?.decision_status,
+        })
+      : null;
+    const currentHours = display?.displayAcceptedHours ?? null;
     const gapHours =
       currentHours == null ? null : Math.max(0, target.targetHours - currentHours);
     return {
@@ -8630,6 +8685,7 @@ function PostHomebaseChangePlan({
       providerName: row?.provider_name ?? target.label,
       currentHours,
       gapHours,
+      display,
     };
   });
 
@@ -8694,6 +8750,11 @@ function PostHomebaseChangePlan({
                     <span className="text-emerald-700">
                       Current {formatHours(target.currentHours)}; at or above target.
                     </span>
+                  )}
+                  {target.display?.hasPublishedRows && (
+                    <div className="mt-1 text-[11px] leading-tight text-muted-foreground">
+                      {publishDisplaySplit(target.display)}
+                    </div>
                   )}
                 </div>
               </div>
@@ -9837,6 +9898,7 @@ type MatchingProviderRow = {
   declined: number;
   totalHours: number;
   status: string | null;
+  display: PublishDisplayValues;
   priority: ProviderPriority;
   rate: number | null;
   searchText: string;
@@ -9874,7 +9936,12 @@ function buildMatchingProviderRow(
   const eligibleStates = eligibility ? Array.from(eligibility.states).sort() : [];
   const assignedStateList = Array.from(assignedStates).sort();
   const sourceLabels = formatLicenseSources(eligibility?.sources);
-  const accepted = Number(row.submission?.accepted_hours ?? 0);
+  const display = derivePublishDisplayValues({
+    shifts,
+    acceptedHours: row.submission?.accepted_hours,
+    decisionStatus: row.submission?.decision_status,
+  });
+  const accepted = display.displayAcceptedHours;
   const declined = Number(row.submission?.declined_hours ?? 0);
   const priority = providerPriorityForRow(row);
   const rate = providerRateFromNotes(row.submission?.decision_notes);
@@ -9885,6 +9952,7 @@ function buildMatchingProviderRow(
     row.employment_type,
     row.provider_source,
     status,
+    display.statusLabel,
     priority.label,
     `P${priority.rank + 1}`,
     assignedStateList.join(' '),
@@ -9905,6 +9973,7 @@ function buildMatchingProviderRow(
     declined,
     totalHours: accepted + declined,
     status,
+    display,
     priority,
     rate,
     searchText,
@@ -10455,9 +10524,8 @@ function MatchingPanel({
               assignedStateList,
               eligibleStates,
               sourceLabels,
-              accepted,
               declined,
-              status,
+              display,
               priority,
             }) => {
               return (
@@ -10500,7 +10568,9 @@ function MatchingPanel({
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{shifts.length || '—'}</TableCell>
-                  <TableCell className="text-right tabular-nums">{accepted.toFixed(1)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    <PublishDisplayHours display={display} />
+                  </TableCell>
                   <TableCell className={`text-right tabular-nums ${declined > 0 ? 'text-red-700' : ''}`}>
                     {declined.toFixed(1)}
                   </TableCell>
@@ -10508,7 +10578,7 @@ function MatchingPanel({
                     <DecisionReasonSummaryTiles row={r} />
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={status as DecisionStatus | null | undefined} />
+                    <PublishDisplayStatusBadge display={display} />
                   </TableCell>
                 </TableRow>
               );
