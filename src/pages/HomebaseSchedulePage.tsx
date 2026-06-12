@@ -503,7 +503,7 @@ const buildReconciliation = (
         const severity: ReconciliationIssue['severity'] =
           exact.status === 'unscheduled' ? 'red' : 'yellow';
         pushIssue({
-          id: `${type}-${approved.id}-${exact.shift.id}`,
+          id: `${type}-${approved.id}-${exact.shift.homebase_id}`,
           type,
           severity,
           dateKey,
@@ -533,7 +533,7 @@ const buildReconciliation = (
     if (nearest) {
       usedHomebaseIds.add(nearest.shift.id);
       pushIssue({
-        id: `time-mismatch-${approved.id}-${nearest.shift.id}`,
+        id: `time-mismatch-${approved.id}-${nearest.shift.homebase_id}`,
         type: 'time_mismatch',
         severity: 'red',
         dateKey,
@@ -564,7 +564,7 @@ const buildReconciliation = (
     if (usedHomebaseIds.has(homebase.shift.id)) continue;
     if (!homebase.providerId) {
       pushIssue({
-        id: `unmatched-homebase-${homebase.shift.id}`,
+        id: `unmatched-homebase-${homebase.shift.homebase_id}`,
         type: 'unmatched_homebase_employee',
         severity: 'red',
         dateKey: homebase.dateKey,
@@ -578,7 +578,7 @@ const buildReconciliation = (
     }
 
     pushIssue({
-      id: `extra-homebase-${homebase.shift.id}`,
+      id: `extra-homebase-${homebase.shift.homebase_id}`,
       type: 'extra_homebase',
       severity: 'red',
       dateKey: homebase.dateKey,
