@@ -3931,6 +3931,94 @@ export type Database = {
           },
         ]
       }
+      schedule_reconciliation_overrides: {
+        Row: {
+          approved_shift_id: string | null
+          created_at: string
+          created_by: string | null
+          date_key: string
+          homebase_shift_id: string | null
+          id: string
+          issue_key: string
+          issue_type: string
+          note: string | null
+          provider_id: string | null
+          resolution: string
+          updated_at: string
+        }
+        Insert: {
+          approved_shift_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          date_key: string
+          homebase_shift_id?: string | null
+          id?: string
+          issue_key: string
+          issue_type: string
+          note?: string | null
+          provider_id?: string | null
+          resolution: string
+          updated_at?: string
+        }
+        Update: {
+          approved_shift_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          date_key?: string
+          homebase_shift_id?: string | null
+          id?: string
+          issue_key?: string
+          issue_type?: string
+          note?: string | null
+          provider_id?: string | null
+          resolution?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_reconciliation_overrides_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_reconciliation_overrides_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_reconciliation_overrides_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_reconciliation_overrides_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_reconciliation_overrides_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_reconciliation_overrides_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sensitive_data_log: {
         Row: {
           action: string
