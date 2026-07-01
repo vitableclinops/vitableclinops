@@ -235,12 +235,6 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const username = Deno.env.get('METABASE_USERNAME');
-  const password = Deno.env.get('METABASE_PASSWORD');
-  if (!username || !password) {
-    return json({ error: 'METABASE_USERNAME and METABASE_PASSWORD secrets are required' }, 500);
-  }
-
   const url = new URL(req.url);
   const dryRun = url.searchParams.get('dry_run') === '1';
   const inspect = url.searchParams.get('inspect') === '1';
@@ -251,44 +245,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const token = await getMetabaseToken(username, password);
-
-    // Pull the three forecast cards in parallel.
-    const [teleCsv, coachCsv, therapyCsv, pcpCoverageCsv] = await Promise.all([
-      downloadCardCsv(token, TELEHEALTH_CARD),
-      downloadCardCsvSafe(token, COACHING_CARD),
-      downloadCardCsvSafe(token, THERAPY_CARD),
-      downloadCardCsvSafe(token, PCP_STATE_COVERAGE_CARD),
-    ]);
-
-    if (inspect) {
-      return json({
-        ok: true,
-        mode: 'inspect',
-        cards: {
-          telehealth: cardSnapshot(TELEHEALTH_CARD, teleCsv),
-          coaching:   cardSnapshot(COACHING_CARD, coachCsv),
-          therapy:    cardSnapshot(THERAPY_CARD, therapyCsv),
-          pcp_state_coverage: cardSnapshot(PCP_STATE_COVERAGE_CARD, pcpCoverageCsv),
-        },
-      });
-    }
-
-    const issues: Record<string, Record<string, number>> = {
-      telehealth: {}, coaching: {}, therapy: {}, pcp_state_coverage: {},
-    };
-
-    // Parse each card. Card values are weekly hours of provider availability.
-    const teleByState   = parseTelehealthRows(teleCsv, issues.telehealth);
-    const coachByState  = parseStateHours(coachCsv,   issues.coaching);
-    const therapyByState= parseStateHours(therapyCsv, issues.therapy);
-
-    if (teleByState.size === 0) {
-      return json({ error: `Telehealth card ${TELEHEALTH_CARD} returned no rows` }, 422);
-    }
-
-    const monthWeeks = weeksInMonth(targetMonth);
-    const monthDays = listMonthDays(targetMonth);
     const julyMidpointTargets =
       targetMonth === '2026-07-01' ? JULY_2026_MIDPOINT_TARGETS : null;
     const augustTargets =
@@ -299,6 +255,72 @@ Deno.serve(async (req: Request) => {
         : julyMidpointTargets
           ? JULY_2026_MIDPOINT_METHODOLOGY_VERSION
           : METHODOLOGY_VERSION;
+
+    let teleCsv = '';
+    let coachCsv = '';
+    let therapyCsv = '';
+    let pcpCoverageCsv = '';
+
+    if (!augustTargets) {
+      const username = Deno.env.get('METABASE_USERNAME');
+      const password = Deno.env.get('METABASE_PASSWORD');
+      if (!username || !password) {
+        return json({ error: 'METABASE_USERNAME and METABASE_PASSWORD secrets are required' }, 500);
+      }
+      const token = await getMetabaseToken(username, password);
+
+      // Pull the forecast cards in parallel for months that still source from Metabase.
+      [teleCsv, coachCsv, therapyCsv, pcpCoverageCsv] = await Promise.all([
+        downloadCardCsv(token, TELEHEALTH_CARD),
+        downloadCardCsvSafe(token, COACHING_CARD),
+        downloadCardCsvSafe(token, THERAPY_CARD),
+        downloadCardCsvSafe(token, PCP_STATE_COVERAGE_CARD),
+      ]);
+    }
+
+    if (inspect) {
+      return json({
+        ok: true,
+        mode: 'inspect',
+        target_scenario: augustTargets ? 'august_2026_baseline_max_state_targets' : 'metabase_cards',
+        cards: {
+          telehealth: augustTargets
+            ? { skipped: true, reason: 'august_2026_uses_seeded_state_targets' }
+            : cardSnapshot(TELEHEALTH_CARD, teleCsv),
+          coaching: augustTargets
+            ? { skipped: true, reason: 'august_2026_telehealth_only_forecast' }
+            : cardSnapshot(COACHING_CARD, coachCsv),
+          therapy: augustTargets
+            ? { skipped: true, reason: 'august_2026_telehealth_only_forecast' }
+            : cardSnapshot(THERAPY_CARD, therapyCsv),
+          pcp_state_coverage: augustTargets
+            ? { skipped: true, reason: 'august_2026_does_not_refresh_pcp_overlay' }
+            : cardSnapshot(PCP_STATE_COVERAGE_CARD, pcpCoverageCsv),
+        },
+      });
+    }
+
+    const issues: Record<string, Record<string, number>> = {
+      telehealth: {}, coaching: {}, therapy: {}, pcp_state_coverage: {},
+    };
+
+    // Parse each card. Card values are weekly hours of provider availability.
+    const teleByState = augustTargets
+      ? new Map<string, { weeklyDemand: number; activeMembers: number | null }>()
+      : parseTelehealthRows(teleCsv, issues.telehealth);
+    const coachByState = augustTargets
+      ? new Map<string, number>()
+      : parseStateHours(coachCsv, issues.coaching);
+    const therapyByState = augustTargets
+      ? new Map<string, number>()
+      : parseStateHours(therapyCsv, issues.therapy);
+
+    if (!augustTargets && teleByState.size === 0) {
+      return json({ error: `Telehealth card ${TELEHEALTH_CARD} returned no rows` }, 422);
+    }
+
+    const monthWeeks = weeksInMonth(targetMonth);
+    const monthDays = listMonthDays(targetMonth);
 
     // ── Telehealth: apply summer trough per state ────────────────────
     type TelehealthRow = {
@@ -479,7 +501,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const serviceLineTargets = [
+    const serviceLineTargets = augustTargets ? [] : [
       {
         service_line: 'mh_coaching',
         label: 'MH Coaching',
@@ -510,15 +532,20 @@ Deno.serve(async (req: Request) => {
     }));
 
     // ── Live provider-state active overlay from Metabase card 2940 ────
-    const providerLookup = await loadProviderLookup(supabase);
-    const pcpStateCoverage = parsePcpStateCoverageRows(
-      pcpCoverageCsv,
-      providerLookup,
-      PCP_STATE_COVERAGE_CARD,
-      computedAt.slice(0, 10),
-      computedAt,
-      issues.pcp_state_coverage,
-    );
+    const pcpStateCoverage = augustTargets
+      ? {
+        rawRows: 0,
+        auditRows: [] as PcpCoverageAuditRow[],
+        activeRows: [] as ProviderStateActiveRow[],
+      }
+      : parsePcpStateCoverageRows(
+        pcpCoverageCsv,
+        await loadProviderLookup(supabase),
+        PCP_STATE_COVERAGE_CARD,
+        computedAt.slice(0, 10),
+        computedAt,
+        issues.pcp_state_coverage,
+      );
 
     // ── Write to Supabase ─────────────────────────────────────────────
     let demoted = 0;
