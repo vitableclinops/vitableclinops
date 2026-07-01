@@ -75,7 +75,8 @@ jobs:
       - name: Mark non-ClinOps local migrations as applied
         run: |
           supabase migration repair --status applied \
-            20260602130013 || true
+            20260602130013 \
+            20260612212424 || true
 
       - name: Push forecast schema
         run: supabase db push --linked --include-all
