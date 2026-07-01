@@ -27,7 +27,14 @@ import {
   useMonthlyForecastSummary,
   useMonthlyServiceLineDemand,
 } from '@/hooks/useMonthlySchedulingForecast';
+import { useStateCoverage } from '@/hooks/useStateCoverage';
 import { downloadCSV } from '@/lib/utils';
+import {
+  AUGUST_2026_BUFFER_PCT,
+  AUGUST_2026_STATE_TARGETS,
+  AUGUST_2026_STATE_TARGET_BY_STATE,
+  isAugust2026Month,
+} from '@/lib/scheduling/august2026';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 
@@ -69,14 +76,42 @@ export default function SchedulingForecastPage() {
   const demandQ = useMonthlyDemand(month);
   const serviceLineQ = useMonthlyServiceLineDemand(month);
   const decisionsQ = useMonthlyDecisions(month);
+  const coverageQ = useStateCoverage(month);
   const { summary, loading } = useMonthlyForecastSummary(month);
+  const isAugust = isAugust2026Month(month);
 
   const demandRows = demandQ.data;
   const decisionRows = decisionsQ.data;
+  const acceptedByState = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of coverageQ.data?.rows ?? []) map.set(row.state, row.filled);
+    return map;
+  }, [coverageQ.data?.rows]);
 
   const sortedDemand = useMemo(
-    () => [...(demandRows ?? [])].sort((a, b) => b.monthly_visits_target - a.monthly_visits_target),
-    [demandRows],
+    () => {
+      if (isAugust) {
+        return AUGUST_2026_STATE_TARGETS.map(target => {
+          const dbRow = (demandRows ?? []).find(row => row.state === target.state);
+          return {
+            ...(dbRow ?? {}),
+            state: target.state,
+            baseline_hours_target: dbRow?.baseline_hours_target ?? target.baselineHours,
+            max_hours_target: dbRow?.max_hours_target ?? target.maxHours,
+            monthly_hours_target: dbRow?.monthly_hours_target ?? target.maxHours,
+            monthly_visits_target: dbRow?.monthly_visits_target ?? target.maxHours,
+            inactive: dbRow?.inactive ?? target.inactive ?? false,
+          };
+        }).sort((a, b) => {
+          const acceptedDiff = (acceptedByState.get(b.state) ?? 0) - (acceptedByState.get(a.state) ?? 0);
+          if (acceptedDiff !== 0) return acceptedDiff;
+          return Number(b.max_hours_target ?? b.monthly_hours_target ?? 0) -
+            Number(a.max_hours_target ?? a.monthly_hours_target ?? 0);
+        });
+      }
+      return [...(demandRows ?? [])].sort((a, b) => b.monthly_visits_target - a.monthly_visits_target);
+    },
+    [acceptedByState, demandRows, isAugust],
   );
 
   const sortedDecisions = useMemo(() => {
@@ -91,7 +126,19 @@ export default function SchedulingForecastPage() {
 
   const downloadDemand = () => {
     downloadCSV(
-      sortedDemand.map(r => ({
+      sortedDemand.map(r => isAugust ? ({
+        state: r.state,
+        baseline_hours_month: Number(r.baseline_hours_target ?? 0).toFixed(1),
+        max_hours_month: Number(r.max_hours_target ?? r.monthly_hours_target ?? 0).toFixed(1),
+        accepted_hours: Number(acceptedByState.get(r.state) ?? 0).toFixed(1),
+        status: augustDemandStatus({
+          baseline: Number(r.baseline_hours_target ?? 0),
+          max: Number(r.max_hours_target ?? r.monthly_hours_target ?? 0),
+          accepted: Number(acceptedByState.get(r.state) ?? 0),
+          inactive: Boolean(r.inactive),
+        }).label,
+        methodology: r.methodology_version ?? 'august_2026_trailing_actuals_state_max_v1',
+      }) : ({
         state: r.state,
         active_members: r.active_members ?? '',
         metabase_raw_weekly: Number(r.raw_weekly_hours ?? 0).toFixed(1),
@@ -147,9 +194,9 @@ export default function SchedulingForecastPage() {
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription className="text-xs">
-          Demand values come from Metabase card 2974. July uses raw weekly demand × 0.95,
-          then exact days in month / 7. Jotform submissions are the source of truth for
-          provider-requested hours and schedule recommendations.
+          {isAugust
+            ? `August uses per-state baseline/max demand from trailing April, May, and projected June actuals with a ${AUGUST_2026_BUFFER_PCT}% flat buffer. June 2026 remains estimated until actuals close.`
+            : 'Demand values come from Metabase card 2974. July uses raw weekly demand × 0.95, then exact days in month / 7. Jotform submissions are the source of truth for provider-requested hours and schedule recommendations.'}
         </AlertDescription>
       </Alert>
 
@@ -214,35 +261,73 @@ export default function SchedulingForecastPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>State</TableHead>
-                      <TableHead className="text-right">Active members</TableHead>
-                      <TableHead className="text-right">Metabase raw/wk</TableHead>
-                      <TableHead className="text-right">Adjusted/wk</TableHead>
-                      <TableHead className="text-right">Monthly hours</TableHead>
-                      <TableHead className="text-right">Daily target</TableHead>
+                      {isAugust ? (
+                        <>
+                          <TableHead className="text-right" title="June 2026 estimated. Update when actuals close.">
+                            Baseline hrs/mo*
+                          </TableHead>
+                          <TableHead className="text-right" title="Baseline plus flat August buffer. Scheduling engine targets this cap.">
+                            Max hrs/mo*
+                          </TableHead>
+                          <TableHead className="text-right">Accepted hrs</TableHead>
+                          <TableHead>Status</TableHead>
+                        </>
+                      ) : (
+                        <>
+                          <TableHead className="text-right">Active members</TableHead>
+                          <TableHead className="text-right">Metabase raw/wk</TableHead>
+                          <TableHead className="text-right">Adjusted/wk</TableHead>
+                          <TableHead className="text-right">Monthly hours</TableHead>
+                          <TableHead className="text-right">Daily target</TableHead>
+                        </>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedDemand.map(r => (
-                      <TableRow key={r.state}>
-                        <TableCell className="font-medium">{r.state}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {r.active_members ?? '—'}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {Number(r.raw_weekly_hours ?? 0).toFixed(1)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {Number(r.adjusted_weekly_hours ?? Number(r.monthly_hours_target) / weeksInMonth(month)).toFixed(1)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {Number(r.monthly_hours_target).toFixed(0)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {Number(r.daily_target_hours ?? 0).toFixed(1)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {(serviceLineQ.data ?? []).map(row => (
+                    {sortedDemand.map(r => {
+                      if (isAugust) {
+                        const baseline = Number(r.baseline_hours_target ?? AUGUST_2026_STATE_TARGET_BY_STATE.get(r.state)?.baselineHours ?? 0);
+                        const max = Number(r.max_hours_target ?? AUGUST_2026_STATE_TARGET_BY_STATE.get(r.state)?.maxHours ?? r.monthly_hours_target ?? 0);
+                        const accepted = Number(acceptedByState.get(r.state) ?? 0);
+                        const status = augustDemandStatus({ baseline, max, accepted, inactive: Boolean(r.inactive) });
+                        return (
+                          <TableRow key={r.state} className={r.inactive ? 'bg-muted/40 text-muted-foreground' : undefined}>
+                            <TableCell className="font-medium">
+                              {r.state}
+                              {r.inactive && <span className="ml-2 text-[11px] uppercase">inactive</span>}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">{baseline.toFixed(0)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{max.toFixed(0)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{accepted.toFixed(1)}</TableCell>
+                            <TableCell>
+                              <Badge className={status.className}>{status.label}</Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+
+                      return (
+                        <TableRow key={r.state}>
+                          <TableCell className="font-medium">{r.state}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {r.active_members ?? '—'}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {Number(r.raw_weekly_hours ?? 0).toFixed(1)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {Number(r.adjusted_weekly_hours ?? Number(r.monthly_hours_target) / weeksInMonth(month)).toFixed(1)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {Number(r.monthly_hours_target).toFixed(0)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {Number(r.daily_target_hours ?? 0).toFixed(1)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {!isAugust && (serviceLineQ.data ?? []).map(row => (
                       <TableRow key={row.service_line} className="bg-muted/30">
                         <TableCell className="font-medium">{row.label}</TableCell>
                         <TableCell className="text-right text-xs text-muted-foreground">{row.scope}</TableCell>
@@ -349,4 +434,39 @@ function Kpi({
       </CardContent>
     </Card>
   );
+}
+
+function augustDemandStatus({
+  baseline,
+  max,
+  accepted,
+  inactive,
+}: {
+  baseline: number;
+  max: number;
+  accepted: number;
+  inactive: boolean;
+}) {
+  if (inactive || max <= 0) {
+    return {
+      label: 'Inactive',
+      className: 'bg-slate-100 text-slate-600 hover:bg-slate-100',
+    };
+  }
+  if (accepted < baseline) {
+    return {
+      label: 'Below baseline',
+      className: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+    };
+  }
+  if (accepted < max) {
+    return {
+      label: 'Baseline to max',
+      className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+    };
+  }
+  return {
+    label: 'At/above max',
+    className: 'bg-red-100 text-red-700 hover:bg-red-100',
+  };
 }

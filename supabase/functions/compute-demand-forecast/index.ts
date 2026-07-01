@@ -63,6 +63,7 @@ const PCP_STATE_COVERAGE_CARD = Number(
 const SEASONAL_MULTIPLIER = 0.95;
 const METHODOLOGY_VERSION = 'july_2026_summer_trough_v1';
 const JULY_2026_MIDPOINT_METHODOLOGY_VERSION = 'july_2026_midpoint_targets_v1';
+const AUGUST_2026_METHODOLOGY_VERSION = 'august_2026_trailing_actuals_state_max_v1';
 
 const JULY_2026_MIDPOINT_TARGETS: Array<{
   state: string;
@@ -116,6 +117,59 @@ const JULY_2026_MIDPOINT_TARGETS: Array<{
   { state: 'WI', cohort: '021', adjustedMonthlyHours: 4.9, enhancedMonthlyHours: 6.2 },
   { state: 'WV', cohort: '021', adjustedMonthlyHours: 2.4, enhancedMonthlyHours: 3.1 },
   { state: 'WY', cohort: '021', adjustedMonthlyHours: 2.4, enhancedMonthlyHours: 3.1 },
+];
+
+const AUGUST_2026_STATE_TARGETS: Array<{
+  state: string;
+  baselineHours: number;
+  maxHours: number;
+  inactive?: boolean;
+}> = [
+  { state: 'PA', baselineHours: 429, maxHours: 504 },
+  { state: 'NJ', baselineHours: 110, maxHours: 130 },
+  { state: 'TX', baselineHours: 87, maxHours: 102 },
+  { state: 'FL', baselineHours: 88, maxHours: 103 },
+  { state: 'DE', baselineHours: 79, maxHours: 93 },
+  { state: 'OH', baselineHours: 49, maxHours: 58 },
+  { state: 'VA', baselineHours: 36, maxHours: 42 },
+  { state: 'WA', baselineHours: 35, maxHours: 41 },
+  { state: 'IN', baselineHours: 34, maxHours: 40 },
+  { state: 'MD', baselineHours: 29, maxHours: 34 },
+  { state: 'IL', baselineHours: 21, maxHours: 25 },
+  { state: 'GA', baselineHours: 19, maxHours: 23 },
+  { state: 'CO', baselineHours: 19, maxHours: 23 },
+  { state: 'NC', baselineHours: 17, maxHours: 20 },
+  { state: 'MI', baselineHours: 17, maxHours: 20 },
+  { state: 'CA', baselineHours: 15, maxHours: 18 },
+  { state: 'AZ', baselineHours: 11, maxHours: 13 },
+  { state: 'MN', baselineHours: 10, maxHours: 12 },
+  { state: 'CT', baselineHours: 9, maxHours: 11 },
+  { state: 'MA', baselineHours: 8, maxHours: 10 },
+  { state: 'AL', baselineHours: 7, maxHours: 8 },
+  { state: 'NH', baselineHours: 6, maxHours: 7 },
+  { state: 'KY', baselineHours: 6, maxHours: 7 },
+  { state: 'OR', baselineHours: 6, maxHours: 7 },
+  { state: 'MO', baselineHours: 4, maxHours: 5 },
+  { state: 'SC', baselineHours: 4, maxHours: 5 },
+  { state: 'TN', baselineHours: 4, maxHours: 5 },
+  { state: 'UT', baselineHours: 4, maxHours: 5 },
+  { state: 'LA', baselineHours: 3, maxHours: 4 },
+  { state: 'NM', baselineHours: 3, maxHours: 4 },
+  { state: 'RI', baselineHours: 3, maxHours: 4 },
+  { state: 'KS', baselineHours: 3, maxHours: 4 },
+  { state: 'NY', baselineHours: 3, maxHours: 3 },
+  { state: 'ME', baselineHours: 2, maxHours: 3 },
+  { state: 'AK', baselineHours: 2, maxHours: 2 },
+  { state: 'AR', baselineHours: 2, maxHours: 2 },
+  { state: 'WV', baselineHours: 1, maxHours: 1 },
+  { state: 'DC', baselineHours: 1, maxHours: 1 },
+  { state: 'MS', baselineHours: 0, maxHours: 1 },
+  { state: 'NV', baselineHours: 0, maxHours: 1 },
+  { state: 'WI', baselineHours: 0, maxHours: 1 },
+  { state: 'ID', baselineHours: 0, maxHours: 1 },
+  { state: 'WY', baselineHours: 0, maxHours: 0, inactive: true },
+  { state: 'OK', baselineHours: 0, maxHours: 0, inactive: true },
+  { state: 'NE', baselineHours: 0, maxHours: 0, inactive: true },
 ];
 
 const corsHeaders = {
@@ -237,8 +291,14 @@ Deno.serve(async (req: Request) => {
     const monthDays = listMonthDays(targetMonth);
     const julyMidpointTargets =
       targetMonth === '2026-07-01' ? JULY_2026_MIDPOINT_TARGETS : null;
+    const augustTargets =
+      targetMonth === '2026-08-01' ? AUGUST_2026_STATE_TARGETS : null;
     const methodologyVersion =
-      julyMidpointTargets ? JULY_2026_MIDPOINT_METHODOLOGY_VERSION : METHODOLOGY_VERSION;
+      augustTargets
+        ? AUGUST_2026_METHODOLOGY_VERSION
+        : julyMidpointTargets
+          ? JULY_2026_MIDPOINT_METHODOLOGY_VERSION
+          : METHODOLOGY_VERSION;
 
     // ── Telehealth: apply summer trough per state ────────────────────
     type TelehealthRow = {
@@ -273,6 +333,19 @@ Deno.serve(async (req: Request) => {
           adjusted: midpointWeekly,
           monthly: midpointMonthly,
           dailyTarget: midpointWeekly / 6,
+          activeMembers: teleByState.get(target.state)?.activeMembers ?? null,
+        });
+      }
+    }
+
+    if (augustTargets) {
+      teleAdjusted.clear();
+      for (const target of augustTargets) {
+        teleAdjusted.set(target.state, {
+          raw: target.baselineHours / monthWeeks,
+          adjusted: target.maxHours / monthWeeks,
+          monthly: target.maxHours,
+          dailyTarget: target.maxHours / monthWeeks / 6,
           activeMembers: teleByState.get(target.state)?.activeMembers ?? null,
         });
       }
@@ -370,10 +443,16 @@ Deno.serve(async (req: Request) => {
       growth_multiplier: number;
       forecast_run_id: string;
       computed_at: string;
+      baseline_hours_target?: number | null;
+      max_hours_target?: number | null;
+      inactive?: boolean;
+      demand_source_note?: string | null;
     };
     const targets: Target[] = [];
+    const augustTargetByState = new Map((augustTargets ?? []).map(target => [target.state, target]));
     for (const state of states) {
       const t = teleAdjusted.get(state)!;
+      const augustTarget = augustTargetByState.get(state);
       const monthlyHours = round2(t.monthly);
       const dailyTargetHours = round2(t.dailyTarget);
       targets.push({
@@ -387,10 +466,16 @@ Deno.serve(async (req: Request) => {
         daily_target_hours: dailyTargetHours,
         active_members: t.activeMembers,
         methodology_version: methodologyVersion,
-        seasonal_multiplier: SEASONAL_MULTIPLIER,
-        growth_multiplier: julyMidpointTargets ? 1 : SEASONAL_MULTIPLIER,
+        seasonal_multiplier: augustTargets ? 1 : SEASONAL_MULTIPLIER,
+        growth_multiplier: augustTargets ? 1.175 : julyMidpointTargets ? 1 : SEASONAL_MULTIPLIER,
         forecast_run_id: forecastRunId,
         computed_at: computedAt,
+        baseline_hours_target: augustTarget?.baselineHours ?? null,
+        max_hours_target: augustTarget?.maxHours ?? null,
+        inactive: augustTarget?.inactive ?? false,
+        demand_source_note: augustTarget
+          ? 'Trailing Apr + May + projected Jun appointments with 17.5% flat buffer. June 2026 estimated; update when actuals close.'
+          : null,
       });
     }
 
@@ -489,7 +574,11 @@ Deno.serve(async (req: Request) => {
     return json({
       ok: true,
       methodology_version: methodologyVersion,
-      target_scenario: julyMidpointTargets ? 'adjusted_enhanced_midpoint' : 'adjusted',
+      target_scenario: augustTargets
+        ? 'august_2026_baseline_max_state_targets'
+        : julyMidpointTargets
+          ? 'adjusted_enhanced_midpoint'
+          : 'adjusted',
       forecast_run_id: forecastRunId,
       target_month: targetMonth,
       month_days: monthDays.length,
