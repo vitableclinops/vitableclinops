@@ -1,6 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { clinopsSupabase } from '@/integrations/supabase/clinopsClient';
 import type { ClinOpsTables } from '@/integrations/supabase/clinopsTypes';
+import {
+  AUGUST_2026_STATE_TARGETS,
+  isAugust2026Month,
+} from '@/lib/scheduling/august2026';
 
 // NOTE on units: state_demand_targets.monthly_visits_target and
 // monthly_hours_target both store the SAME number — monthly hours of
@@ -222,7 +226,9 @@ export function useMonthlyForecastSummary(month: string): {
 
   // Both columns hold the same value (hours of provider availability); we
   // use monthly_hours_target as the canonical figure.
-  const totalDemandHours = demand.data.reduce((s, r) => s + Number(r.monthly_hours_target ?? 0), 0);
+  const totalDemandHours = isAugust2026Month(month)
+    ? AUGUST_2026_STATE_TARGETS.reduce((s, r) => s + r.targetHours, 0)
+    : demand.data.reduce((s, r) => s + Number(r.monthly_hours_target ?? 0), 0);
   const totalDemandVisits = totalDemandHours;
 
   let totalAcceptedHours = 0;
