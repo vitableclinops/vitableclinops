@@ -63,7 +63,7 @@ const PCP_STATE_COVERAGE_CARD = Number(
 const SEASONAL_MULTIPLIER = 0.95;
 const METHODOLOGY_VERSION = 'july_2026_summer_trough_v1';
 const JULY_2026_MIDPOINT_METHODOLOGY_VERSION = 'july_2026_midpoint_targets_v1';
-const AUGUST_2026_METHODOLOGY_VERSION = 'august_2026_trailing_actuals_state_max_v1';
+const AUGUST_2026_METHODOLOGY_VERSION = 'august_2026_2250_state_targets_v2';
 
 const JULY_2026_MIDPOINT_TARGETS: Array<{
   state: string;
@@ -121,55 +121,57 @@ const JULY_2026_MIDPOINT_TARGETS: Array<{
 
 const AUGUST_2026_STATE_TARGETS: Array<{
   state: string;
+  targetHours: number;
+  targetSlots: number;
   baselineHours: number;
   maxHours: number;
   inactive?: boolean;
 }> = [
-  { state: 'PA', baselineHours: 429, maxHours: 504 },
-  { state: 'NJ', baselineHours: 110, maxHours: 130 },
-  { state: 'TX', baselineHours: 87, maxHours: 102 },
-  { state: 'FL', baselineHours: 88, maxHours: 103 },
-  { state: 'DE', baselineHours: 79, maxHours: 93 },
-  { state: 'OH', baselineHours: 49, maxHours: 58 },
-  { state: 'VA', baselineHours: 36, maxHours: 42 },
-  { state: 'WA', baselineHours: 35, maxHours: 41 },
-  { state: 'IN', baselineHours: 34, maxHours: 40 },
-  { state: 'MD', baselineHours: 29, maxHours: 34 },
-  { state: 'IL', baselineHours: 21, maxHours: 25 },
-  { state: 'GA', baselineHours: 19, maxHours: 23 },
-  { state: 'CO', baselineHours: 19, maxHours: 23 },
-  { state: 'NC', baselineHours: 17, maxHours: 20 },
-  { state: 'MI', baselineHours: 17, maxHours: 20 },
-  { state: 'CA', baselineHours: 15, maxHours: 18 },
-  { state: 'AZ', baselineHours: 11, maxHours: 13 },
-  { state: 'MN', baselineHours: 10, maxHours: 12 },
-  { state: 'CT', baselineHours: 9, maxHours: 11 },
-  { state: 'MA', baselineHours: 8, maxHours: 10 },
-  { state: 'AL', baselineHours: 7, maxHours: 8 },
-  { state: 'NH', baselineHours: 6, maxHours: 7 },
-  { state: 'KY', baselineHours: 6, maxHours: 7 },
-  { state: 'OR', baselineHours: 6, maxHours: 7 },
-  { state: 'MO', baselineHours: 4, maxHours: 5 },
-  { state: 'SC', baselineHours: 4, maxHours: 5 },
-  { state: 'TN', baselineHours: 4, maxHours: 5 },
-  { state: 'UT', baselineHours: 4, maxHours: 5 },
-  { state: 'LA', baselineHours: 3, maxHours: 4 },
-  { state: 'NM', baselineHours: 3, maxHours: 4 },
-  { state: 'RI', baselineHours: 3, maxHours: 4 },
-  { state: 'KS', baselineHours: 3, maxHours: 4 },
-  { state: 'NY', baselineHours: 3, maxHours: 3 },
-  { state: 'ME', baselineHours: 2, maxHours: 3 },
-  { state: 'AK', baselineHours: 2, maxHours: 2 },
-  { state: 'AR', baselineHours: 2, maxHours: 2 },
-  { state: 'WV', baselineHours: 1, maxHours: 1 },
-  { state: 'DC', baselineHours: 1, maxHours: 1 },
-  { state: 'MS', baselineHours: 0, maxHours: 1 },
-  { state: 'NV', baselineHours: 0, maxHours: 1 },
-  { state: 'WI', baselineHours: 0, maxHours: 1 },
-  { state: 'ID', baselineHours: 0, maxHours: 1 },
-  { state: 'WY', baselineHours: 0, maxHours: 0, inactive: true },
-  { state: 'OK', baselineHours: 0, maxHours: 0, inactive: true },
-  { state: 'NE', baselineHours: 0, maxHours: 0, inactive: true },
+  { state: 'PA', targetHours: 810, targetSlots: 1620, baselineHours: 810, maxHours: 810 },
+  { state: 'NJ', targetHours: 208, targetSlots: 416, baselineHours: 208, maxHours: 208 },
+  { state: 'TX', targetHours: 165, targetSlots: 330, baselineHours: 165, maxHours: 165 },
+  { state: 'FL', targetHours: 165, targetSlots: 330, baselineHours: 165, maxHours: 165 },
+  { state: 'DE', targetHours: 150, targetSlots: 300, baselineHours: 150, maxHours: 150 },
+  { state: 'OH', targetHours: 93, targetSlots: 186, baselineHours: 93, maxHours: 93 },
+  { state: 'VA', targetHours: 68, targetSlots: 136, baselineHours: 68, maxHours: 68 },
+  { state: 'WA', targetHours: 66, targetSlots: 132, baselineHours: 66, maxHours: 66 },
+  { state: 'IN', targetHours: 64, targetSlots: 128, baselineHours: 64, maxHours: 64 },
+  { state: 'MD', targetHours: 54, targetSlots: 108, baselineHours: 54, maxHours: 54 },
+  { state: 'IL', targetHours: 40, targetSlots: 80, baselineHours: 40, maxHours: 40 },
+  { state: 'GA', targetHours: 36, targetSlots: 72, baselineHours: 36, maxHours: 36 },
+  { state: 'CO', targetHours: 36, targetSlots: 72, baselineHours: 36, maxHours: 36 },
+  { state: 'NC', targetHours: 32, targetSlots: 64, baselineHours: 32, maxHours: 32 },
+  { state: 'MI', targetHours: 32, targetSlots: 64, baselineHours: 32, maxHours: 32 },
+  { state: 'CA', targetHours: 29, targetSlots: 58, baselineHours: 29, maxHours: 29 },
+  { state: 'AZ', targetHours: 21, targetSlots: 42, baselineHours: 21, maxHours: 21 },
+  { state: 'MN', targetHours: 20, targetSlots: 40, baselineHours: 20, maxHours: 20 },
+  { state: 'CT', targetHours: 17, targetSlots: 34, baselineHours: 17, maxHours: 17 },
+  { state: 'MA', targetHours: 15, targetSlots: 30, baselineHours: 15, maxHours: 15 },
+  { state: 'AL', targetHours: 13, targetSlots: 26, baselineHours: 13, maxHours: 13 },
+  { state: 'NH', targetHours: 11, targetSlots: 22, baselineHours: 11, maxHours: 11 },
+  { state: 'KY', targetHours: 11, targetSlots: 22, baselineHours: 11, maxHours: 11 },
+  { state: 'OR', targetHours: 11, targetSlots: 22, baselineHours: 11, maxHours: 11 },
+  { state: 'MO', targetHours: 8, targetSlots: 16, baselineHours: 8, maxHours: 8 },
+  { state: 'SC', targetHours: 8, targetSlots: 16, baselineHours: 8, maxHours: 8 },
+  { state: 'TN', targetHours: 8, targetSlots: 16, baselineHours: 8, maxHours: 8 },
+  { state: 'UT', targetHours: 8, targetSlots: 16, baselineHours: 8, maxHours: 8 },
+  { state: 'LA', targetHours: 6, targetSlots: 12, baselineHours: 6, maxHours: 6 },
+  { state: 'NM', targetHours: 6, targetSlots: 12, baselineHours: 6, maxHours: 6 },
+  { state: 'RI', targetHours: 6, targetSlots: 12, baselineHours: 6, maxHours: 6 },
+  { state: 'KS', targetHours: 6, targetSlots: 12, baselineHours: 6, maxHours: 6 },
+  { state: 'NY', targetHours: 5, targetSlots: 10, baselineHours: 5, maxHours: 5 },
+  { state: 'ME', targetHours: 5, targetSlots: 10, baselineHours: 5, maxHours: 5 },
+  { state: 'AK', targetHours: 4, targetSlots: 8, baselineHours: 4, maxHours: 4 },
+  { state: 'AR', targetHours: 3, targetSlots: 6, baselineHours: 3, maxHours: 3 },
+  { state: 'WV', targetHours: 2, targetSlots: 4, baselineHours: 2, maxHours: 2 },
+  { state: 'DC', targetHours: 2, targetSlots: 4, baselineHours: 2, maxHours: 2 },
+  { state: 'MS', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
+  { state: 'NV', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
+  { state: 'WI', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
+  { state: 'ID', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
+  { state: 'WY', targetHours: 0, targetSlots: 0, baselineHours: 0, maxHours: 0, inactive: true },
+  { state: 'OK', targetHours: 0, targetSlots: 0, baselineHours: 0, maxHours: 0, inactive: true },
+  { state: 'NE', targetHours: 0, targetSlots: 0, baselineHours: 0, maxHours: 0, inactive: true },
 ];
 
 const corsHeaders = {
@@ -282,7 +284,7 @@ Deno.serve(async (req: Request) => {
       return json({
         ok: true,
         mode: 'inspect',
-        target_scenario: augustTargets ? 'august_2026_baseline_max_state_targets' : 'metabase_cards',
+        target_scenario: augustTargets ? 'august_2026_2250_state_targets' : 'metabase_cards',
         cards: {
           telehealth: augustTargets
             ? { skipped: true, reason: 'august_2026_uses_seeded_state_targets' }
@@ -364,10 +366,10 @@ Deno.serve(async (req: Request) => {
       teleAdjusted.clear();
       for (const target of augustTargets) {
         teleAdjusted.set(target.state, {
-          raw: target.baselineHours / monthWeeks,
-          adjusted: target.maxHours / monthWeeks,
-          monthly: target.maxHours,
-          dailyTarget: target.maxHours / monthWeeks / 6,
+          raw: target.targetHours / monthWeeks,
+          adjusted: target.targetHours / monthWeeks,
+          monthly: target.targetHours,
+          dailyTarget: target.targetHours / monthWeeks / 6,
           activeMembers: teleByState.get(target.state)?.activeMembers ?? null,
         });
       }
@@ -482,21 +484,23 @@ Deno.serve(async (req: Request) => {
         month: targetMonth,
         monthly_visits_target: Math.round(monthlyHours),
         monthly_hours_target: monthlyHours,
-        daily_target_slots: Math.max(5, Math.round(dailyTargetHours)),
+        daily_target_slots: augustTargets
+          ? Math.max(0, Math.round(dailyTargetHours))
+          : Math.max(5, Math.round(dailyTargetHours)),
         raw_weekly_hours: round2(t.raw),
         adjusted_weekly_hours: round2(t.adjusted),
         daily_target_hours: dailyTargetHours,
         active_members: t.activeMembers,
         methodology_version: methodologyVersion,
         seasonal_multiplier: augustTargets ? 1 : SEASONAL_MULTIPLIER,
-        growth_multiplier: augustTargets ? 1.175 : julyMidpointTargets ? 1 : SEASONAL_MULTIPLIER,
+        growth_multiplier: augustTargets ? 1 : julyMidpointTargets ? 1 : SEASONAL_MULTIPLIER,
         forecast_run_id: forecastRunId,
         computed_at: computedAt,
         baseline_hours_target: augustTarget?.baselineHours ?? null,
         max_hours_target: augustTarget?.maxHours ?? null,
         inactive: augustTarget?.inactive ?? false,
         demand_source_note: augustTarget
-          ? 'Trailing Apr + May + projected Jun appointments with 17.5% flat buffer. June 2026 estimated; update when actuals close.'
+          ? 'Trailing Apr + May + projected Jun appointments allocated to a 2,250 provider-hour / 4,500-slot August target. June 2026 estimated; update when actuals close.'
           : null,
       });
     }
@@ -552,10 +556,13 @@ Deno.serve(async (req: Request) => {
     let pcpCoverageRows = 0;
     let providerStateActiveRows = 0;
     if (!dryRun) {
+      const targetMonthEnd = nextMonthStart(targetMonth);
       const { data: demoteData, error: demoteErr } = await supabase
         .from('demand_forecast')
         .update({ is_baseline: false })
         .eq('is_baseline', true)
+        .gte('date', targetMonth)
+        .lt('date', targetMonthEnd)
         .select('forecast_run_id');
       if (demoteErr) throw new Error(`Demote failed: ${demoteErr.message}`);
       demoted = demoteData?.length ?? 0;
@@ -602,7 +609,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       methodology_version: methodologyVersion,
       target_scenario: augustTargets
-        ? 'august_2026_baseline_max_state_targets'
+        ? 'august_2026_2250_state_targets'
         : julyMidpointTargets
           ? 'adjusted_enhanced_midpoint'
           : 'adjusted',
@@ -1001,6 +1008,12 @@ function listMonthDays(monthISO: string): string[] {
     out.push(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
   }
   return out;
+}
+
+function nextMonthStart(monthISO: string): string {
+  const [y, m] = monthISO.split('-').map(Number);
+  const next = new Date(Date.UTC(y, m, 1));
+  return next.toISOString().slice(0, 10);
 }
 
 function weeksInMonth(monthISO: string): number {

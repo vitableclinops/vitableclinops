@@ -174,14 +174,15 @@ import {
   type PublishDisplayValues,
 } from '@/lib/scheduling/publishDisplay';
 import {
-  AUGUST_2026_BUFFER_PCT,
   AUGUST_2026_DIRECTSHIFTS_NP_NAMES,
   AUGUST_2026_DS_NP_MIN_HOURS,
   AUGUST_2026_DS_NP_TARGET_HOURS,
   AUGUST_2026_FAIRNESS_TOLERANCE_PCT,
   AUGUST_2026_JOTFORM_DEADLINE_LABEL,
   AUGUST_2026_STATE_TARGETS,
-  AUGUST_2026_STATE_TARGET_BY_STATE,
+  AUGUST_2026_TARGET_METHODOLOGY_VERSION,
+  AUGUST_2026_TOTAL_TARGET_HOURS,
+  AUGUST_2026_TOTAL_TARGET_SLOTS,
   august2026DsNpStatus,
   isAugust2026DirectShiftsNp,
   isAugust2026Month,
@@ -9784,25 +9785,24 @@ function ForecastPanel({ month }: { month: string }) {
     if (isAugust) {
       return AUGUST_2026_STATE_TARGETS.map(target => {
         const r = rows.find(row => row.state === target.state);
-        const baseline = Number(r?.baseline_hours_target ?? target.baselineHours);
-        const max = Number(r?.max_hours_target ?? target.maxHours);
+        const monthlyTarget = target.targetHours;
         return {
           state: target.state,
           activeMembers: r?.active_members ?? null,
-          rawWeekly: Number(r?.raw_weekly_hours ?? baseline / monthWeeks),
-          weekly: Number(r?.adjusted_weekly_hours ?? max / monthWeeks),
-          monthly: max,
-          baseline,
-          max,
+          rawWeekly: monthlyTarget / monthWeeks,
+          weekly: monthlyTarget / monthWeeks,
+          monthly: monthlyTarget,
+          baseline: monthlyTarget,
+          max: monthlyTarget,
           accepted: acceptedByState.get(target.state) ?? 0,
           inactive: Boolean(r?.inactive ?? target.inactive),
-          dailyTarget: Number(r?.daily_target_hours ?? max / monthWeeks / 6),
-          methodology: r?.methodology_version ?? 'august_2026_trailing_actuals_state_max_v1',
+          dailyTarget: monthlyTarget / monthWeeks / 6,
+          methodology: AUGUST_2026_TARGET_METHODOLOGY_VERSION,
         };
       }).sort((a, b) => {
         const acceptedDiff = b.accepted - a.accepted;
         if (acceptedDiff !== 0) return acceptedDiff;
-        return b.max - a.max;
+        return b.monthly - a.monthly;
       });
     }
     return rows
@@ -9847,7 +9847,7 @@ function ForecastPanel({ month }: { month: string }) {
           <CardTitle className="text-sm">Demand by state · {formatMonthLabel(month)}</CardTitle>
           <p className="text-xs text-muted-foreground">
             {isAugust
-              ? `August uses per-state baseline/max targets with a ${AUGUST_2026_BUFFER_PCT}% flat buffer. June 2026 is estimated until actuals close.`
+              ? `August uses flat per-state targets totaling ${formatWholeNumber(AUGUST_2026_TOTAL_TARGET_HOURS)} provider hours / ${formatWholeNumber(AUGUST_2026_TOTAL_TARGET_SLOTS)} appointment slots, allocated from trailing April, May, and projected June demand. June 2026 is estimated until actuals close.`
               : 'Source: Metabase card 2974 via state_demand_targets. Demand is reported per state: raw weekly demand × 0.95, then exact days in month / 7 for monthly hours.'}
           </p>
         </CardHeader>
@@ -9858,8 +9858,8 @@ function ForecastPanel({ month }: { month: string }) {
                 <TableHead>State</TableHead>
                 {isAugust ? (
                   <>
-                    <TableHead className="text-right" title="June 2026 estimated. Update when actuals close.">Baseline hrs/mo*</TableHead>
-                    <TableHead className="text-right" title="Scheduling engine targets this August cap.">Max hrs/mo*</TableHead>
+                    <TableHead className="text-right" title="Monthly state target from the August 2,250-hour plan.">Target hrs/mo</TableHead>
+                    <TableHead className="text-right" title="Monthly target divided by August weeks.">Target hrs/wk</TableHead>
                     <TableHead className="text-right">Accepted hrs</TableHead>
                     <TableHead>Status</TableHead>
                   </>
@@ -9880,8 +9880,7 @@ function ForecastPanel({ month }: { month: string }) {
                 const risk = slaByState.get(r.state);
                 if (isAugust) {
                   const status = augustDemandStatus({
-                    baseline: r.baseline,
-                    max: r.max,
+                    target: r.monthly,
                     accepted: r.accepted,
                     inactive: r.inactive,
                   });
@@ -9891,8 +9890,8 @@ function ForecastPanel({ month }: { month: string }) {
                         {r.state}
                         {r.inactive && <span className="ml-2 text-[11px] uppercase">inactive</span>}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{r.baseline.toFixed(0)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.max.toFixed(0)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.monthly.toFixed(0)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.weekly.toFixed(1)}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.accepted.toFixed(1)}</TableCell>
                       <TableCell>
                         <Badge className={status.className}>{status.label}</Badge>
@@ -9971,36 +9970,34 @@ function ForecastPanel({ month }: { month: string }) {
 }
 
 function augustDemandStatus({
-  baseline,
-  max,
+  target,
   accepted,
   inactive,
 }: {
-  baseline: number;
-  max: number;
+  target: number;
   accepted: number;
   inactive: boolean;
 }) {
-  if (inactive || max <= 0) {
+  if (inactive || target <= 0) {
     return {
       label: 'Inactive',
       className: 'bg-slate-100 text-slate-600 hover:bg-slate-100',
     };
   }
-  if (accepted < baseline) {
+  if (accepted < target - 0.01) {
     return {
-      label: 'Below baseline',
+      label: 'Below target',
       className: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
     };
   }
-  if (accepted < max) {
+  if (accepted <= target + 0.01) {
     return {
-      label: 'Baseline to max',
+      label: 'At target',
       className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
     };
   }
   return {
-    label: 'At/above max',
+    label: 'Above target',
     className: 'bg-red-100 text-red-700 hover:bg-red-100',
   };
 }
