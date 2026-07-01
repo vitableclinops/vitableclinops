@@ -876,12 +876,16 @@ export type ClinOpsDatabase = {
         Row: {
           active_members: number | null
           adjusted_weekly_hours: number | null
+          baseline_hours_target: number | null
           computed_at: string
           daily_target_hours: number | null
           daily_target_slots: number
+          demand_source_note: string | null
           forecast_run_id: string | null
           growth_multiplier: number
+          inactive: boolean
           methodology_version: string | null
+          max_hours_target: number | null
           month: string
           monthly_hours_target: number
           monthly_visits_target: number
@@ -892,12 +896,16 @@ export type ClinOpsDatabase = {
         Insert: {
           active_members?: number | null
           adjusted_weekly_hours?: number | null
+          baseline_hours_target?: number | null
           computed_at?: string
           daily_target_hours?: number | null
           daily_target_slots: number
+          demand_source_note?: string | null
           forecast_run_id?: string | null
           growth_multiplier?: number
+          inactive?: boolean
           methodology_version?: string | null
+          max_hours_target?: number | null
           month: string
           monthly_hours_target: number
           monthly_visits_target: number
@@ -908,12 +916,16 @@ export type ClinOpsDatabase = {
         Update: {
           active_members?: number | null
           adjusted_weekly_hours?: number | null
+          baseline_hours_target?: number | null
           computed_at?: string
           daily_target_hours?: number | null
           daily_target_slots?: number
+          demand_source_note?: string | null
           forecast_run_id?: string | null
           growth_multiplier?: number
+          inactive?: boolean
           methodology_version?: string | null
+          max_hours_target?: number | null
           month?: string
           monthly_hours_target?: number
           monthly_visits_target?: number

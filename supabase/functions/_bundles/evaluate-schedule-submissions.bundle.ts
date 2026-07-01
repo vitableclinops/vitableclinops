@@ -2366,11 +2366,17 @@ export function compareProviderAllocationPriority(
 }
 // === supabase/functions/_shared/equityAllocation.ts ===
 export const FAIRNESS_POLICY_VERSION = '2026-06-09';
+export const AUGUST_2026_FAIRNESS_POLICY_VERSION = '2026-08-01';
 export const DIRECTSHIFTS_ACCESS_TARGET_SHARE = 0.15;
 export const PROVIDER_SOFT_CAP_SHARE = 0.75;
 export const SAME_RATE_DIRECTSHIFTS_TOLERANCE_PCT = 10;
+export const AUGUST_2026_FAIRNESS_TOLERANCE_PCT = 25;
+export const AUGUST_2026_DIRECTSHIFTS_NP_MIN_HOURS = 60;
+export const AUGUST_2026_DIRECTSHIFTS_NP_TARGET_HOURS = 80;
 
 const BULK_ALLOCATION_QUANTUM_HOURS = 0.5;
+
+export type SchedulingEquityPolicy = 'legacy_2026_07' | 'august_2026';
 
 export type SchedulingEquityCohort =
   | 'clinical_lead'
@@ -2390,9 +2396,12 @@ export type SchedulingEquityCandidate = {
   cohort: SchedulingEquityCohort;
   priorityRank: number;
   hourlyRate: number | null;
+  utilizationPct?: number | null;
   effectiveHours: number;
   scarceHours: number;
   floorHours: number;
+  directShiftsNp?: boolean;
+  submittedOnTime?: boolean;
   eligibleStates: SchedulingEquityState[];
 };
 
@@ -2413,6 +2422,11 @@ export type SchedulingEquityAllocation = {
   directshiftsTargetShare: number;
   directshiftsShareAfter: number;
   scarceOverflowHours: number;
+  overflowHours?: number;
+  directShiftsFloorHours?: number;
+  directShiftsTargetHours?: number;
+  fairnessTolerancePct?: number;
+  manualReviewReason?: string | null;
   fairnessPolicyVersion: string;
 };
 
@@ -2426,12 +2440,24 @@ export function allocateSchedulingEquity({
   stateGaps,
   directshiftsTargetShare = DIRECTSHIFTS_ACCESS_TARGET_SHARE,
   softCapShare = PROVIDER_SOFT_CAP_SHARE,
+  policy = 'legacy_2026_07',
+  fairnessTolerancePct = AUGUST_2026_FAIRNESS_TOLERANCE_PCT,
 }: {
   candidates: SchedulingEquityCandidate[];
   stateGaps: SchedulingEquityStateGap[];
   directshiftsTargetShare?: number;
   softCapShare?: number;
+  policy?: SchedulingEquityPolicy;
+  fairnessTolerancePct?: number;
 }): SchedulingEquityAllocation[] {
+  if (policy === 'august_2026') {
+    return allocateAugust2026SchedulingEquity({
+      candidates,
+      stateGaps,
+      fairnessTolerancePct,
+    });
+  }
+
   const normalizedCandidates = candidates
     .map(candidate => ({
       ...candidate,
@@ -2632,6 +2658,359 @@ export function allocateSchedulingEquity({
     .filter(Boolean);
 }
 
+function allocateAugust2026SchedulingEquity({
+  candidates,
+  stateGaps,
+  fairnessTolerancePct,
+}: {
+  candidates: SchedulingEquityCandidate[];
+  stateGaps: SchedulingEquityStateGap[];
+  fairnessTolerancePct: number;
+}): SchedulingEquityAllocation[] {
+  const normalizedCandidates = candidates
+    .map(candidate => ({
+      ...candidate,
+      effectiveHours: equityRound2(Math.max(0, candidate.effectiveHours)),
+      scarceHours: equityRound2(Math.max(0, candidate.scarceHours)),
+      floorHours: equityRound2(Math.max(0, candidate.floorHours)),
+      directShiftsNp: Boolean(candidate.directShiftsNp),
+      submittedOnTime: candidate.submittedOnTime !== false,
+      eligibleStates: candidate.eligibleStates
+        .map(state => ({
+          state: normalizeState(state.state),
+          gapHours: equityRound2(Math.max(0, state.gapHours)),
+          demandHours: equityRound2(Math.max(0, state.demandHours)),
+        }))
+        .filter(state => /^[A-Z]{2}$/.test(state.state)),
+    }))
+    .filter(candidate => candidate.effectiveHours > 0);
+
+  const stateRemaining = new Map<string, number>();
+  const stateDemand = new Map<string, number>();
+  for (const gap of stateGaps) {
+    const state = normalizeState(gap.state);
+    if (!/^[A-Z]{2}$/.test(state)) continue;
+    stateRemaining.set(state, equityRound2(Math.max(stateRemaining.get(state) ?? 0, Number(gap.gapHours ?? 0))));
+    stateDemand.set(state, equityRound2(Math.max(stateDemand.get(state) ?? 0, Number(gap.demandHours ?? 0))));
+  }
+
+  const allocations = new Map<string, MutableAllocation>();
+  for (const candidate of normalizedCandidates) {
+    const dsFloor = augustDirectShiftsFloorHours(candidate);
+    const dsTarget = augustDirectShiftsTargetHours(candidate);
+    allocations.set(candidate.id, {
+      id: candidate.id,
+      acceptedHours: 0,
+      allocations: [],
+      providerAcceptancePct: 0,
+      equityFloor: dsFloor > 0 || candidate.floorHours > 0 ? 'unmet_no_gap' : 'unmet_no_valid_shift',
+      softCapHours: dsTarget ?? candidate.effectiveHours,
+      softCapExceeded: false,
+      directshiftsTargetShare: 0,
+      directshiftsShareAfter: 0,
+      scarceOverflowHours: 0,
+      overflowHours: Math.max(0, candidate.effectiveHours - (dsTarget ?? candidate.effectiveHours)),
+      directShiftsFloorHours: dsFloor,
+      directShiftsTargetHours: dsTarget ?? undefined,
+      fairnessTolerancePct,
+      manualReviewReason: null,
+      fairnessPolicyVersion: AUGUST_2026_FAIRNESS_POLICY_VERSION,
+    });
+  }
+
+  const allocateToCandidate = (
+    candidate: SchedulingEquityCandidate,
+    requestedHours: number,
+    allowOverflow: boolean,
+  ) => {
+    const allocation = allocations.get(candidate.id);
+    if (!allocation) return { accepted: 0, overflow: 0 };
+    const candidateCap = augustCandidateCap(candidate);
+    let remaining = equityRound2(Math.min(
+      requestedHours,
+      Math.max(0, candidateCap - allocation.acceptedHours),
+    ));
+    if (remaining <= 0) return { accepted: 0, overflow: 0 };
+
+    let accepted = 0;
+    let overflow = 0;
+    const sortedStates = statesByNeed(candidate, stateRemaining, stateDemand);
+    for (const state of sortedStates) {
+      if (remaining <= 0) break;
+      const available = Math.max(0, stateRemaining.get(state) ?? 0);
+      if (available <= 0) continue;
+      const take = equityRound2(Math.min(available, remaining));
+      addAllocation(allocation, state, take);
+      stateRemaining.set(state, equityRound2(available - take));
+      remaining = equityRound2(remaining - take);
+      accepted = equityRound2(accepted + take);
+    }
+
+    if (allowOverflow && remaining > 0) {
+      const fallbackState = fallbackStateFor(candidate, stateDemand);
+      if (fallbackState) {
+        addAllocation(allocation, fallbackState, remaining);
+        accepted = equityRound2(accepted + remaining);
+        overflow = remaining;
+        remaining = 0;
+      }
+    }
+
+    allocation.acceptedHours = equityRound2(allocation.acceptedHours + accepted);
+    allocation.scarceOverflowHours = equityRound2((allocation.scarceOverflowHours ?? 0) + overflow);
+    if (allocation.acceptedHours > 0) allocation.equityFloor = 'met';
+    return { accepted, overflow };
+  };
+
+  const candidatesByPriority = [...normalizedCandidates].sort(compareBaseCandidatePriority);
+
+  for (const candidate of candidatesByPriority) {
+    if (!isClinicalLeadCandidate(candidate)) continue;
+    allocateToCandidate(candidate, candidate.effectiveHours, false);
+  }
+
+  for (const candidate of candidatesByPriority) {
+    const floor = augustDirectShiftsFloorHours(candidate);
+    if (floor <= 0) continue;
+    allocateToCandidate(candidate, floor, true);
+  }
+
+  for (const candidate of candidatesByPriority) {
+    if (isClinicalLeadCandidate(candidate)) continue;
+    const remaining = augustCandidateCap(candidate) - (allocations.get(candidate.id)?.acceptedHours ?? 0);
+    if (remaining <= 0) continue;
+    allocateToCandidate(candidate, remaining, false);
+  }
+
+  applyAugustFairnessGuard({
+    candidates: normalizedCandidates,
+    allocations,
+    stateRemaining,
+    stateDemand,
+    tolerancePct: fairnessTolerancePct,
+  });
+
+  for (const candidate of normalizedCandidates) {
+    const allocation = allocations.get(candidate.id);
+    if (!allocation) continue;
+    const compatibleGapRemaining = eligibleGapHours(candidate, stateRemaining);
+    if (allocation.acceptedHours <= 0 && augustDirectShiftsFloorHours(candidate) > 0) {
+      allocation.manualReviewReason = 'directshifts_np_floor_unmet';
+      allocation.equityFloor = 'unmet_no_gap';
+    } else if (allocation.acceptedHours <= 0 && compatibleGapRemaining > 0.001) {
+      allocation.manualReviewReason = 'zero_hours_with_compatible_state_gap';
+      allocation.equityFloor = 'unmet_no_valid_shift';
+    } else if (allocation.acceptedHours <= 0 && allocation.equityFloor !== 'unmet_no_valid_shift') {
+      allocation.equityFloor = 'unmet_no_gap';
+    }
+    allocation.providerAcceptancePct = candidate.effectiveHours > 0
+      ? equityRound2((allocation.acceptedHours / candidate.effectiveHours) * 100)
+      : 0;
+    allocation.softCapExceeded = false;
+    allocation.directshiftsShareAfter = 0;
+    allocation.acceptedHours = equityRound2(allocation.acceptedHours);
+    allocation.overflowHours = equityRound2(Math.max(0, candidate.effectiveHours - allocation.acceptedHours));
+    allocation.allocations = allocation.allocations
+      .filter(item => item.hours > 0)
+      .sort((a, b) => a.state.localeCompare(b.state));
+  }
+
+  return normalizedCandidates
+    .map(candidate => allocations.get(candidate.id)!)
+    .filter(Boolean);
+}
+
+function applyAugustFairnessGuard({
+  candidates,
+  allocations,
+  stateRemaining,
+  stateDemand,
+  tolerancePct,
+}: {
+  candidates: SchedulingEquityCandidate[];
+  allocations: Map<string, MutableAllocation>;
+  stateRemaining: Map<string, number>;
+  stateDemand: Map<string, number>;
+  tolerancePct: number;
+}) {
+  const rankTwo = candidates.filter(candidate => !isClinicalLeadCandidate(candidate));
+  const totalSubmitted = candidates.reduce((sum, candidate) => sum + candidate.effectiveHours, 0);
+  if (totalSubmitted <= 0 || rankTwo.length === 0) return;
+
+  const tolerance = tolerancePct / 100;
+  let guard = 0;
+  while (guard < 200) {
+    guard += 1;
+    const totalAccepted = candidates.reduce((sum, candidate) => (
+      sum + (allocations.get(candidate.id)?.acceptedHours ?? 0)
+    ), 0);
+    const fillRate = totalAccepted / totalSubmitted;
+    const hasUnderAllocatedProvider = rankTwo.some(candidate => {
+      const allocation = allocations.get(candidate.id);
+      if (!allocation || candidate.effectiveHours <= 0) return false;
+      const acceptedRate = allocation.acceptedHours / candidate.effectiveHours;
+      return acceptedRate < fillRate - tolerance - 0.001 &&
+        candidateRemainingForAugust(candidate, allocations) > 0.001;
+    });
+    const over = rankTwo
+      .filter(candidate => {
+        const allocation = allocations.get(candidate.id);
+        if (!allocation || candidate.effectiveHours <= 0) return false;
+        const acceptedRate = allocation.acceptedHours / candidate.effectiveHours;
+        const floorRate = augustDirectShiftsFloorHours(candidate) / candidate.effectiveHours;
+        const triggerRate = hasUnderAllocatedProvider ? fillRate : fillRate + tolerance;
+        return acceptedRate > triggerRate + 0.001 &&
+          acceptedRate > floorRate + 0.001;
+      })
+      .sort((a, b) => (
+        ((allocations.get(b.id)?.acceptedHours ?? 0) / b.effectiveHours) -
+        ((allocations.get(a.id)?.acceptedHours ?? 0) / a.effectiveHours)
+      ))[0];
+    if (!over) break;
+
+    const overAllocation = allocations.get(over.id);
+    if (!overAllocation) break;
+    const floor = augustDirectShiftsFloorHours(over);
+    const capRate = hasUnderAllocatedProvider ? fillRate : fillRate + tolerance;
+    const cap = equityRound2(Math.max(floor, over.effectiveHours * capRate));
+    const reducible = equityRound2(overAllocation.acceptedHours - cap);
+    if (reducible <= 0.001) break;
+    const freed = reduceAllocation(overAllocation, reducible, stateRemaining);
+    if (freed <= 0.001) break;
+
+    let freedRemaining = freed;
+    const under = rankTwo
+      .filter(candidate => {
+        const allocation = allocations.get(candidate.id);
+        if (!allocation || candidate.effectiveHours <= 0) return false;
+        const acceptedRate = allocation.acceptedHours / candidate.effectiveHours;
+        return acceptedRate < fillRate - 0.001 &&
+          candidateRemainingForAugust(candidate, allocations) > 0.001;
+      })
+      .sort(compareBaseCandidatePriority);
+    for (const candidate of under) {
+      if (freedRemaining <= 0.001) break;
+      const accepted = allocateFreedAugustHours(
+        candidate,
+        freedRemaining,
+        allocations,
+        stateRemaining,
+        stateDemand,
+      );
+      freedRemaining = equityRound2(freedRemaining - accepted);
+    }
+
+    if (freedRemaining > 0.001) {
+      const overNow = allocations.get(over.id);
+      if (overNow) restoreAllocationToOriginalStates(overNow, over, freedRemaining, stateRemaining, stateDemand);
+      break;
+    }
+  }
+}
+
+function allocateFreedAugustHours(
+  candidate: SchedulingEquityCandidate,
+  requestedHours: number,
+  allocations: Map<string, MutableAllocation>,
+  stateRemaining: Map<string, number>,
+  stateDemand: Map<string, number>,
+) {
+  const allocation = allocations.get(candidate.id);
+  if (!allocation) return 0;
+  let remaining = equityRound2(Math.min(requestedHours, candidateRemainingForAugust(candidate, allocations)));
+  if (remaining <= 0) return 0;
+  let accepted = 0;
+  for (const state of statesByNeed(candidate, stateRemaining, stateDemand)) {
+    if (remaining <= 0) break;
+    const available = Math.max(0, stateRemaining.get(state) ?? 0);
+    if (available <= 0) continue;
+    const take = equityRound2(Math.min(available, remaining));
+    addAllocation(allocation, state, take);
+    stateRemaining.set(state, equityRound2(available - take));
+    allocation.acceptedHours = equityRound2(allocation.acceptedHours + take);
+    remaining = equityRound2(remaining - take);
+    accepted = equityRound2(accepted + take);
+  }
+  if (allocation.acceptedHours > 0) allocation.equityFloor = 'met';
+  return accepted;
+}
+
+function reduceAllocation(
+  allocation: MutableAllocation,
+  requestedReduction: number,
+  stateRemaining: Map<string, number>,
+) {
+  let remaining = equityRound2(requestedReduction);
+  let reduced = 0;
+  const ordered = [...allocation.allocations].sort((a, b) =>
+    a.state.localeCompare(b.state),
+  );
+  for (let index = ordered.length - 1; index >= 0; index -= 1) {
+    if (remaining <= 0) break;
+    const item = ordered[index];
+    const take = equityRound2(Math.min(item.hours, remaining));
+    if (take <= 0) continue;
+    item.hours = equityRound2(item.hours - take);
+    stateRemaining.set(item.state, equityRound2((stateRemaining.get(item.state) ?? 0) + take));
+    remaining = equityRound2(remaining - take);
+    reduced = equityRound2(reduced + take);
+  }
+  allocation.allocations = ordered.filter(item => item.hours > 0);
+  allocation.acceptedHours = equityRound2(Math.max(0, allocation.acceptedHours - reduced));
+  return reduced;
+}
+
+function restoreAllocationToOriginalStates(
+  allocation: MutableAllocation,
+  candidate: SchedulingEquityCandidate,
+  hours: number,
+  stateRemaining: Map<string, number>,
+  stateDemand: Map<string, number>,
+) {
+  let remaining = equityRound2(Math.min(hours, candidateRemainingForAugust(candidate, new Map([[candidate.id, allocation]]))));
+  for (const state of statesByNeed(candidate, stateRemaining, stateDemand)) {
+    if (remaining <= 0) break;
+    const available = Math.max(0, stateRemaining.get(state) ?? 0);
+    if (available <= 0) continue;
+    const take = equityRound2(Math.min(available, remaining));
+    addAllocation(allocation, state, take);
+    stateRemaining.set(state, equityRound2(available - take));
+    allocation.acceptedHours = equityRound2(allocation.acceptedHours + take);
+    remaining = equityRound2(remaining - take);
+  }
+}
+
+function augustCandidateCap(candidate: SchedulingEquityCandidate) {
+  const target = augustDirectShiftsTargetHours(candidate);
+  return target ?? candidate.effectiveHours;
+}
+
+function augustDirectShiftsFloorHours(candidate: SchedulingEquityCandidate) {
+  if (!candidate.directShiftsNp || candidate.submittedOnTime === false) return 0;
+  if (candidate.effectiveHours < AUGUST_2026_DIRECTSHIFTS_NP_MIN_HOURS) {
+    return candidate.effectiveHours;
+  }
+  return AUGUST_2026_DIRECTSHIFTS_NP_MIN_HOURS;
+}
+
+function augustDirectShiftsTargetHours(candidate: SchedulingEquityCandidate) {
+  if (!candidate.directShiftsNp || candidate.submittedOnTime === false) return null;
+  if (candidate.effectiveHours <= AUGUST_2026_DIRECTSHIFTS_NP_TARGET_HOURS) {
+    return candidate.effectiveHours;
+  }
+  return AUGUST_2026_DIRECTSHIFTS_NP_TARGET_HOURS;
+}
+
+function candidateRemainingForAugust(
+  candidate: SchedulingEquityCandidate,
+  allocations: Map<string, MutableAllocation>,
+) {
+  return equityRound2(Math.max(
+    0,
+    augustCandidateCap(candidate) - (allocations.get(candidate.id)?.acceptedHours ?? 0),
+  ));
+}
+
 function compareBaseCandidatePriority(
   a: SchedulingEquityCandidate,
   b: SchedulingEquityCandidate,
@@ -2640,6 +3019,13 @@ function compareBaseCandidatePriority(
   const rateA = a.hourlyRate ?? Number.POSITIVE_INFINITY;
   const rateB = b.hourlyRate ?? Number.POSITIVE_INFINITY;
   if (rateA !== rateB) return rateA - rateB;
+  const utilizationA = a.utilizationPct ?? null;
+  const utilizationB = b.utilizationPct ?? null;
+  if (utilizationA != null || utilizationB != null) {
+    const utilSortA = utilizationA ?? Number.NEGATIVE_INFINITY;
+    const utilSortB = utilizationB ?? Number.NEGATIVE_INFINITY;
+    if (utilSortA !== utilSortB) return utilSortB - utilSortA;
+  }
   const countA = a.eligibleStates.length;
   const countB = b.eligibleStates.length;
   if (countA !== countB) return countA - countB;
@@ -3022,6 +3408,42 @@ const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
 const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1;
 const ACCESS_GROWTH_BUFFER_POLICY = 'midpoint_targets_no_extra_buffer';
+const AUGUST_2026_MONTH = '2026-08-01';
+const AUGUST_2026_JOTFORM_DEADLINE_UTC_MS = Date.parse('2026-07-08T04:59:59.999Z');
+const AUGUST_2026_DIRECTSHIFTS_NP_NAMES = new Set([
+  'abby grant',
+  'akosua norgbey',
+  'brittney afram',
+  'cassondra hawkins',
+  'jarrod nero',
+  'nycole cox',
+  'stacy lynn',
+  'stephanie lumsden',
+]);
+
+const isAugust2026TargetMonth = (targetMonth: string | null | undefined) =>
+  (targetMonth ?? '').slice(0, 10) === AUGUST_2026_MONTH;
+
+const normalizedDecisionName = (name: string | null | undefined) =>
+  (name ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isAugust2026DirectShiftsNp = (
+  providerProfile: ProviderProfile | null | undefined,
+  submissionName: string | null | undefined,
+) =>
+  AUGUST_2026_DIRECTSHIFTS_NP_NAMES.has(normalizedDecisionName(providerProfile?.name)) ||
+  AUGUST_2026_DIRECTSHIFTS_NP_NAMES.has(normalizedDecisionName(submissionName));
+
+const isSubmittedByAugust2026Deadline = (submittedAt: string | null | undefined) => {
+  if (!submittedAt) return false;
+  const parsed = Date.parse(submittedAt);
+  return Number.isFinite(parsed) && parsed <= AUGUST_2026_JOTFORM_DEADLINE_UTC_MS;
+};
 
 type TelehealthAllocationCandidate = {
   key: string;
@@ -3032,6 +3454,9 @@ type TelehealthAllocationCandidate = {
   targetMonth: string;
   providerProfile: ProviderProfile | undefined;
   providerPriority: ProviderPriority;
+  allocationPolicy: SchedulingEquityPolicy;
+  isAugustDirectShiftsNp: boolean;
+  submittedOnTimeForAugust: boolean;
   isPhysician: boolean;
   validation: BuildTimelineResult;
   fullTimeline: BuildTimelineResult['timeline'];
@@ -3360,9 +3785,14 @@ function pushProviderPriorityNotes(
   priority: ProviderPriority,
   providerProfile?: ProviderProfile | null,
   useUtilizationTieBreak = false,
+  policy: SchedulingEquityPolicy = 'legacy_2026_07',
 ) {
   noteParts.push(`provider_priority=${priority.key}`);
-  noteParts.push('provider_rate_policy=clinical_leads_then_hourly_rate_then_directshifts_share');
+  noteParts.push(
+    policy === 'august_2026'
+      ? 'provider_rate_policy=august_2026_clinical_leads_then_lowest_hourly_rate'
+      : 'provider_rate_policy=clinical_leads_then_hourly_rate_then_directshifts_share',
+  );
   const hourlyRate = providerHourlyRate(providerProfile);
   if (hourlyRate == null) {
     noteParts.push('provider_hourly_rate=missing');
@@ -3370,7 +3800,9 @@ function pushProviderPriorityNotes(
     noteParts.push(`provider_hourly_rate=${hourlyRate}`);
   }
   noteParts.push(
-    useUtilizationTieBreak
+    policy === 'august_2026'
+      ? 'provider_utilization_policy=higher_recent_utilization_tiebreak_after_rate'
+      : useUtilizationTieBreak
       ? 'provider_utilization_policy=lower_utilization_secondary_after_rate'
       : 'provider_utilization_policy=not_used_for_scheduling',
   );
@@ -3399,10 +3831,16 @@ function pushProviderPriorityNotes(
     }
   }
   if (priority.key === 'directshifts_brittany_priority') {
-    noteParts.push(
-      'provider_priority_reason=Brittney Afram keeps the DirectShifts compatibility key; lowest hourly rate still decides before this tie-break.',
-      'directshifts_priority_tiebreak=1',
-    );
+    if (policy === 'august_2026') {
+      noteParts.push(
+        'provider_priority_reason=Brittney Afram is a DirectShifts NP in scope; August still ranks by clinical lead flag then hourly rate.',
+      );
+    } else {
+      noteParts.push(
+        'provider_priority_reason=Brittney Afram keeps the DirectShifts compatibility key; lowest hourly rate still decides before this tie-break.',
+        'directshifts_priority_tiebreak=1',
+      );
+    }
   } else if (priority.key === 'clinical_supervisor' && isNamedClinicalLeadAdminProvider(providerProfile)) {
     noteParts.push('provider_priority_reason=named_clinical_lead_admin_override');
   }
@@ -3430,8 +3868,31 @@ function pushEquityAllocationNotes(
   noteParts: string[],
   allocation: SchedulingEquityAllocation,
   cohort: SchedulingEquityCohort,
+  policy: SchedulingEquityPolicy = 'legacy_2026_07',
 ) {
   noteParts.push(`cohort=${cohort}`);
+  if (policy === 'august_2026') {
+    noteParts.push(`fairness_policy_version=${AUGUST_2026_FAIRNESS_POLICY_VERSION}`);
+    noteParts.push(`proportional_fairness_tolerance_pct=${allocation.fairnessTolerancePct ?? AUGUST_2026_FAIRNESS_TOLERANCE_PCT}`);
+    noteParts.push('directshifts_share_policy=removed_for_august_2026');
+    noteParts.push(`provider_acceptance_pct=${allocation.providerAcceptancePct}`);
+    if (allocation.directShiftsFloorHours && allocation.directShiftsFloorHours > 0) {
+      noteParts.push(`directshifts_np_minimum_hours=${AUGUST_2026_DIRECTSHIFTS_NP_MIN_HOURS}`);
+      noteParts.push(`directshifts_np_floor_applied_hours=${allocation.directShiftsFloorHours}`);
+      noteParts.push(`directshifts_np_target_hours=${allocation.directShiftsTargetHours ?? AUGUST_2026_DIRECTSHIFTS_NP_TARGET_HOURS}`);
+    }
+    if (allocation.overflowHours && allocation.overflowHours > 0) {
+      noteParts.push(`overflow_hours=${allocation.overflowHours}h`);
+    }
+    if (allocation.manualReviewReason) {
+      noteParts.push(`manual_review_reason=${allocation.manualReviewReason}`);
+    }
+    if (cohort === 'clinical_lead') {
+      noteParts.push('clinical_lead_full_accept=1');
+    }
+    return;
+  }
+
   noteParts.push(`fairness_policy_version=${FAIRNESS_POLICY_VERSION}`);
   noteParts.push(`directshifts_target_share=${Math.round(DIRECTSHIFTS_ACCESS_TARGET_SHARE * 100)}`);
   noteParts.push(`directshifts_actual_share=${allocation.directshiftsShareAfter}`);
@@ -4063,6 +4524,9 @@ Deno.serve(async (req: Request) => {
       try {
         counters.groups++;
         const [providerId, targetMonth] = key.split('|');
+        const allocationPolicy: SchedulingEquityPolicy = isAugust2026TargetMonth(targetMonth)
+          ? 'august_2026'
+          : 'legacy_2026_07';
 
         // Parked/user-rejected and already-superseded submissions should not
         // participate in the "latest wins" computation. Keeping superseded
@@ -4229,7 +4693,7 @@ Deno.serve(async (req: Request) => {
             `forecastable_hours=${effectiveHours}h`,
             `reasons=${reviewReasons.join(' | ') || '(see validation_report)'}`,
           ];
-          pushProviderPriorityNotes(reviewNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
+          pushProviderPriorityNotes(reviewNoteParts, providerPriority, providerProfile, useUtilizationTieBreak, allocationPolicy);
           pushPublishedLockNoteParts(reviewNoteParts, publishedLocks);
           reviewNoteParts.push(...schedulingAdjustmentNoteParts(validation));
           await writeDecision(supabase, latest.id, {
@@ -4258,7 +4722,7 @@ Deno.serve(async (req: Request) => {
           // Mark older as superseded; latest becomes 'declined' with note
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; group has 0 effective hours`);
           const noHoursNoteParts = ['No effective hours in any submission for this provider+month'];
-          pushProviderPriorityNotes(noHoursNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
+          pushProviderPriorityNotes(noHoursNoteParts, providerPriority, providerProfile, useUtilizationTieBreak, allocationPolicy);
           pushPublishedLockNoteParts(noHoursNoteParts, publishedLocks);
           if (isMentalHealth) {
             noHoursNoteParts.push(
@@ -4365,7 +4829,7 @@ Deno.serve(async (req: Request) => {
             `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
             'note=MH uses service-line forecast; bypasses telehealth state allocator',
           ];
-          pushProviderPriorityNotes(mhNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
+          pushProviderPriorityNotes(mhNoteParts, providerPriority, providerProfile, useUtilizationTieBreak, allocationPolicy);
           pushPublishedLockNoteParts(mhNoteParts, publishedLocks);
           if (targetHours == null) {
             mhNoteParts.push('service_line_forecast=missing');
@@ -4439,7 +4903,7 @@ Deno.serve(async (req: Request) => {
           counters.skipped_no_licensed_states++;
           await markSuperseded(supabase, olderIds, decisionRunId, `Superseded by ${latest.id}; provider has no active licenses`);
           const noLicNoteParts = ['Provider has no allocation-eligible states on file'];
-          pushProviderPriorityNotes(noLicNoteParts, providerPriority, providerProfile, useUtilizationTieBreak);
+          pushProviderPriorityNotes(noLicNoteParts, providerPriority, providerProfile, useUtilizationTieBreak, allocationPolicy);
           pushPublishedLockNoteParts(noLicNoteParts, publishedLocks);
           if (isPhysician) {
             noLicNoteParts.push('state_policy=physician_reserved_for_md_only');
@@ -4544,6 +5008,11 @@ Deno.serve(async (req: Request) => {
           targetMonth,
           providerProfile,
           providerPriority,
+          allocationPolicy,
+          isAugustDirectShiftsNp: allocationPolicy === 'august_2026' &&
+            isAugust2026DirectShiftsNp(providerProfile, latest.provider_name),
+          submittedOnTimeForAugust: allocationPolicy === 'august_2026' &&
+            isSubmittedByAugust2026Deadline(latest.submitted_at),
           isPhysician,
           validation,
           fullTimeline,
@@ -4604,9 +5073,14 @@ Deno.serve(async (req: Request) => {
         cohort: candidate.equityCohort,
         priorityRank: candidate.providerPriority.rank,
         hourlyRate: providerHourlyRate(candidate.providerProfile),
+        utilizationPct: candidate.allocationPolicy === 'august_2026'
+          ? providerUtilizationPct(candidate.providerProfile)
+          : null,
         effectiveHours: candidate.effectiveHours,
-        scarceHours: candidate.scarceCoverageHours,
-        floorHours: candidate.equityFloorHours,
+        scarceHours: candidate.allocationPolicy === 'august_2026' ? 0 : candidate.scarceCoverageHours,
+        floorHours: candidate.allocationPolicy === 'august_2026' ? 0 : candidate.equityFloorHours,
+        directShiftsNp: candidate.isAugustDirectShiftsNp,
+        submittedOnTime: candidate.submittedOnTimeForAugust,
         eligibleStates: candidate.gapByState
           .filter(gap => !gap.missingDemand)
           .map(gap => ({
@@ -4619,6 +5093,8 @@ Deno.serve(async (req: Request) => {
         allocateSchedulingEquity({
           candidates: equityInput,
           stateGaps: Array.from(stateGapMap.values()),
+          policy: isAugust2026TargetMonth(targetMonth) ? 'august_2026' : 'legacy_2026_07',
+          fairnessTolerancePct: AUGUST_2026_FAIRNESS_TOLERANCE_PCT,
         }).map(allocation => [allocation.id, allocation]),
       );
 
@@ -4631,8 +5107,9 @@ Deno.serve(async (req: Request) => {
           const accepted = roundEval2(allocation.acceptedHours);
           const forecastDeclined = roundEval2(Math.max(0, candidate.effectiveHours - accepted));
           const declined = roundEval2(forecastDeclined + candidate.oohDeclined + candidate.policyDeclined);
-          const status: 'accepted' | 'partial' | 'declined' =
-            accepted <= 0 ? 'declined' : forecastDeclined <= 0 ? 'accepted' : 'partial';
+          const needsManualReview = Boolean(allocation.manualReviewReason);
+          const status: 'accepted' | 'partial' | 'declined' | 'needs_review' =
+            needsManualReview ? 'needs_review' : accepted <= 0 ? 'declined' : forecastDeclined <= 0 ? 'accepted' : 'partial';
           const accessBufferUsedHours = roundEval2(Math.max(0, accepted - candidate.baseTotalGap));
           const demandAcceptedHours = roundEval2(Math.max(
             0,
@@ -4647,9 +5124,16 @@ Deno.serve(async (req: Request) => {
             candidate.providerPriority,
             candidate.providerProfile,
             useUtilizationTieBreak,
+            candidate.allocationPolicy,
           );
           pushPublishedLockNoteParts(noteParts, candidate.publishedLocks);
-          pushEquityAllocationNotes(noteParts, allocation, candidate.equityCohort);
+          pushEquityAllocationNotes(noteParts, allocation, candidate.equityCohort, candidate.allocationPolicy);
+          if (candidate.isAugustDirectShiftsNp) {
+            noteParts.push(
+              `directshifts_np_in_scope=1`,
+              `directshifts_np_on_time=${candidate.submittedOnTimeForAugust ? 1 : 0}`,
+            );
+          }
           if (candidate.isPhysician) {
             noteParts.push('state_policy=physician_reserved_for_md_only');
           }
@@ -4727,31 +5211,34 @@ Deno.serve(async (req: Request) => {
 
           await writeDecision(supabase, candidate.latest.id, {
             status,
-            accepted_hours: accepted,
-            declined_hours: declined,
+            accepted_hours: needsManualReview ? 0 : accepted,
+            declined_hours: needsManualReview ? 0 : declined,
             notes: noteParts.join('; '),
             decision_run_id: decisionRunId,
             validation: candidate.validation,
           });
 
-          const recRows = buildShiftRecommendationRows({
-            providerId: candidate.providerId,
-            providerName: candidate.latest.provider_name,
-            targetMonth,
-            timeline: candidate.fullTimeline,
-            forecastTimeline: candidate.forecastTimeline,
-            outOfHoursTimeline: candidate.forecastOutOfHoursTimeline,
-            policyCutTimeline: candidate.forecastPolicyCutTimeline,
-            protectedForecastTimeline: candidate.scarceCoverageTimeline,
-            declinedHours: forecastDeclined,
-            declineAll: status === 'declined',
-            allocations: allocation.allocations,
-            decisionRunId,
-          });
-          await writeShiftRecommendations(supabase, candidate.groupSubs.map(s => s.id), recRows);
+          if (!needsManualReview) {
+            const recRows = buildShiftRecommendationRows({
+              providerId: candidate.providerId,
+              providerName: candidate.latest.provider_name,
+              targetMonth,
+              timeline: candidate.fullTimeline,
+              forecastTimeline: candidate.forecastTimeline,
+              outOfHoursTimeline: candidate.forecastOutOfHoursTimeline,
+              policyCutTimeline: candidate.forecastPolicyCutTimeline,
+              protectedForecastTimeline: candidate.allocationPolicy === 'august_2026' ? [] : candidate.scarceCoverageTimeline,
+              declinedHours: forecastDeclined,
+              declineAll: status === 'declined',
+              allocations: allocation.allocations,
+              decisionRunId,
+            });
+            await writeShiftRecommendations(supabase, candidate.groupSubs.map(s => s.id), recRows);
+          }
 
           if (status === 'accepted') counters.accepted++;
           else if (status === 'partial') counters.partial++;
+          else if (status === 'needs_review') counters.needs_review++;
           else counters.declined++;
 
           decisions.push({
@@ -4777,6 +5264,11 @@ Deno.serve(async (req: Request) => {
             directshifts_target_share: allocation.directshiftsTargetShare,
             directshifts_actual_share: allocation.directshiftsShareAfter,
             provider_acceptance_pct: allocation.providerAcceptancePct,
+            proportional_fairness_tolerance_pct: allocation.fairnessTolerancePct ?? null,
+            directshifts_np_in_scope: candidate.isAugustDirectShiftsNp,
+            directshifts_np_on_time: candidate.submittedOnTimeForAugust,
+            overflow_hours: allocation.overflowHours ?? null,
+            manual_review_reason: allocation.manualReviewReason ?? null,
             equity_floor: allocation.equityFloor,
             soft_cap_exceeded: allocation.softCapExceeded,
             fairness_policy_version: FAIRNESS_POLICY_VERSION,

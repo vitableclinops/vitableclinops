@@ -213,6 +213,89 @@ describe('allocateSchedulingEquity', () => {
     expect(allocations.find(a => a.id === 'higher-provider')!.acceptedHours).toBeGreaterThan(0);
     expect(allocations.every(a => a.equityFloor === 'met')).toBe(true);
   });
+
+  it('uses August proportional fairness to pull an under-filled provider toward the fill rate', () => {
+    const allocations = allocateSchedulingEquity({
+      policy: 'august_2026',
+      stateGaps: [{ state: 'PA', gapHours: 120, demandHours: 120 }],
+      candidates: [
+        candidate({
+          id: 'low-rate-large',
+          providerName: 'Low Rate Large',
+          hourlyRate: 50,
+          effectiveHours: 100,
+          floorHours: 0,
+          eligibleStates: [{ state: 'PA', gapHours: 120, demandHours: 120 }],
+        }),
+        candidate({
+          id: 'higher-rate-small',
+          providerName: 'Higher Rate Small',
+          hourlyRate: 90,
+          effectiveHours: 50,
+          floorHours: 0,
+          eligibleStates: [{ state: 'PA', gapHours: 120, demandHours: 120 }],
+        }),
+      ],
+    });
+
+    expect(allocations.find(a => a.id === 'low-rate-large')!.acceptedHours).toBeCloseTo(80, 1);
+    expect(allocations.find(a => a.id === 'higher-rate-small')!.acceptedHours).toBeCloseTo(40, 1);
+    expect(allocations.every(a => Math.abs(a.providerAcceptancePct - 80) <= 0.1)).toBe(true);
+  });
+
+  it('caps on-time August DirectShifts NPs at 80 hours and tracks overflow', () => {
+    const allocations = allocateSchedulingEquity({
+      policy: 'august_2026',
+      stateGaps: [{ state: 'PA', gapHours: 120, demandHours: 120 }],
+      candidates: [
+        candidate({
+          id: 'ds-np',
+          providerName: 'Stacy Lynn',
+          cohort: 'directshifts_access',
+          hourlyRate: 70,
+          effectiveHours: 100,
+          floorHours: 0,
+          directShiftsNp: true,
+          submittedOnTime: true,
+          eligibleStates: [{ state: 'PA', gapHours: 120, demandHours: 120 }],
+        }),
+      ],
+    });
+
+    const ds = allocations.find(a => a.id === 'ds-np')!;
+    expect(ds.acceptedHours).toBe(80);
+    expect(ds.directShiftsFloorHours).toBe(60);
+    expect(ds.directShiftsTargetHours).toBe(80);
+    expect(ds.overflowHours).toBe(20);
+  });
+
+  it('does not cap August clinical lead accepted hours through proportional fairness', () => {
+    const allocations = allocateSchedulingEquity({
+      policy: 'august_2026',
+      stateGaps: [{ state: 'PA', gapHours: 100, demandHours: 100 }],
+      candidates: [
+        candidate({
+          id: 'clinical-lead',
+          providerName: 'Clinical Lead',
+          cohort: 'clinical_lead',
+          priorityRank: 0,
+          hourlyRate: 150,
+          effectiveHours: 100,
+          floorHours: 0,
+        }),
+        candidate({
+          id: 'standard',
+          providerName: 'Standard',
+          hourlyRate: 80,
+          effectiveHours: 100,
+          floorHours: 0,
+        }),
+      ],
+    });
+
+    expect(allocations.find(a => a.id === 'clinical-lead')!.acceptedHours).toBe(100);
+    expect(allocations.find(a => a.id === 'standard')!.acceptedHours).toBe(0);
+  });
 });
 
 function sumAccepted(allocations: Array<{ acceptedHours: number }>) {

@@ -173,6 +173,19 @@ import {
   derivePublishDisplayValues,
   type PublishDisplayValues,
 } from '@/lib/scheduling/publishDisplay';
+import {
+  AUGUST_2026_BUFFER_PCT,
+  AUGUST_2026_DIRECTSHIFTS_NP_NAMES,
+  AUGUST_2026_DS_NP_MIN_HOURS,
+  AUGUST_2026_DS_NP_TARGET_HOURS,
+  AUGUST_2026_FAIRNESS_TOLERANCE_PCT,
+  AUGUST_2026_JOTFORM_DEADLINE_LABEL,
+  AUGUST_2026_STATE_TARGETS,
+  AUGUST_2026_STATE_TARGET_BY_STATE,
+  august2026DsNpStatus,
+  isAugust2026DirectShiftsNp,
+  isAugust2026Month,
+} from '@/lib/scheduling/august2026';
 
 const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
 const monthParamToIso = (value: string | null): string | null => {
@@ -758,7 +771,7 @@ export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
 type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
 type PublishTabKey = 'provider' | 'queue' | 'day' | 'history';
 type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate';
-type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'cost' | 'forecast';
+type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'overflow' | 'cost' | 'forecast';
 type ProviderTimeOffEntry = {
   row: ProviderPublishView;
   ranges: ReturnType<typeof extractUnavailableRanges>;
@@ -810,7 +823,7 @@ const coveragePlanTabFromView = (view: string | null, tab: string | null): Cover
   const candidate = view ?? tab;
   if (candidate === 'coverage-plan') return 'coverage';
   if (candidate === 'declined') return 'declined';
-  if (candidate === 'forecast' || candidate === 'matching' || candidate === 'coverage' || candidate === 'cost') {
+  if (candidate === 'forecast' || candidate === 'matching' || candidate === 'coverage' || candidate === 'overflow' || candidate === 'cost') {
     return candidate;
   }
   return 'coverage';
@@ -917,7 +930,7 @@ export default function SchedulingWorkbenchPage({
     const legacyView =
       tabParam === 'availability'
         ? viewParam || 'submissions'
-        : tabParam === 'forecast' || tabParam === 'matching' || tabParam === 'coverage' || tabParam === 'declined' || tabParam === 'cost'
+        : tabParam === 'forecast' || tabParam === 'matching' || tabParam === 'coverage' || tabParam === 'declined' || tabParam === 'overflow' || tabParam === 'cost'
           ? tabParam
         : tabParam === 'publish'
             ? viewParam === 'review' || viewParam === 'needs-review'
@@ -2135,6 +2148,12 @@ export default function SchedulingWorkbenchPage({
                   </Badge>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="overflow">
+                <Plus className="h-3.5 w-3.5 mr-1" />Overflow
+                {isAugust2026Month(month) && scopedCutRows.length > 0 && (
+                  <Badge className="ml-1 bg-blue-100 text-blue-800">{scopedCutRows.length}</Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="cost"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost / Visit</TabsTrigger>
               <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
             </TabsList>
@@ -2159,6 +2178,16 @@ export default function SchedulingWorkbenchPage({
                 month={month}
                 declinedRows={isMh ? scopedDeclined : allDeclinedRows}
                 cutRowsByProvider={cutRowsByProvider}
+                eligibilityByProvider={eligibilityByProvider}
+                isLoading={isLoading || cutsLoading}
+              />
+            </TabsContent>
+
+            <TabsContent value="overflow" className="mt-4 space-y-4">
+              <OverflowPanel
+                month={month}
+                rows={scopedRows}
+                cutRows={scopedCutRows}
                 eligibilityByProvider={eligibilityByProvider}
                 isLoading={isLoading || cutsLoading}
               />
@@ -3068,6 +3097,8 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   }
   if (providerRatePolicy === 'clinical_leads_then_hourly_rate_then_directshifts_share') {
     add('Order of operations: accept validated clinical lead hours in full first, then current hourly rate, then the DirectShifts/access share target.');
+  } else if (providerRatePolicy === 'august_2026_clinical_leads_then_lowest_hourly_rate') {
+    add('August order of operations: accept clinical lead hours first, then rank all other providers by lowest current hourly rate regardless of internal or DirectShifts source.');
   } else if (providerRatePolicy === 'clinical_leads_then_lowest_hourly_rate') {
     add('After clinical leads, providers are ranked by lowest current hourly rate regardless of internal or DirectShifts source.');
   }
@@ -3079,6 +3110,8 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   }
   if (providerUtilizationPolicy === 'lower_utilization_secondary_after_rate') {
     add('For providers with the same rate tier, lower recent utilization is used as the fairness tie-break.');
+  } else if (providerUtilizationPolicy === 'higher_recent_utilization_tiebreak_after_rate') {
+    add('For providers with the same rate tier, higher recent utilization is used as the August tie-break.');
   } else if (providerUtilizationPolicy === 'not_used_for_scheduling') {
     add('Recent utilization was measured for visibility only and was not used to rank this schedule.');
   }
@@ -3096,6 +3129,23 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   }
   if (directshiftsActualShare) {
     add(`DirectShifts/access result after allocation: ${directshiftsActualShare}%.`);
+  }
+  const dsRemoved = valueFromDecisionNote(raw, 'directshifts_share_policy');
+  if (dsRemoved === 'removed_for_august_2026') {
+    add('August removed the old DirectShifts percentage-share target. DirectShifts NPs use the per-provider floor/target rule instead.');
+  }
+  const dsFloor = valueFromDecisionNote(raw, 'directshifts_np_floor_applied_hours');
+  const dsTarget = valueFromDecisionNote(raw, 'directshifts_np_target_hours');
+  if (dsFloor) {
+    add(`DirectShifts NP floor applied: ${dsFloor} hours${dsTarget ? `; target ${dsTarget} hours` : ''}.`);
+  }
+  const overflowHours = valueFromDecisionNote(raw, 'overflow_hours');
+  if (overflowHours) {
+    add(`${overflowHours.replace(/h$/, '')} hours were held in overflow for backup coverage.`);
+  }
+  const fairnessTolerance = valueFromDecisionNote(raw, 'proportional_fairness_tolerance_pct');
+  if (fairnessTolerance) {
+    add(`Proportional fairness guard used a ${fairnessTolerance}-point tolerance.`);
   }
   if (providerAcceptancePct) {
     add(`This provider received ${providerAcceptancePct}% of forecastable submitted hours.`);
@@ -7166,6 +7216,297 @@ function DeclinedHoursPanel({
   );
 }
 
+type OverflowEntry = {
+  providerId: string;
+  providerName: string;
+  providerType: 'internal' | 'DS';
+  contact: string;
+  state: string;
+  hours: number;
+  status: 'Available' | 'Expired';
+  reasonClass: string;
+  reasonText: string;
+  cutCount: number;
+};
+
+function OverflowPanel({
+  month,
+  rows,
+  cutRows,
+  eligibilityByProvider,
+  isLoading,
+}: {
+  month: string;
+  rows: ProviderPublishView[];
+  cutRows: ShiftRow[];
+  eligibilityByProvider: Map<string, ProviderEligibilitySummary>;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent>
+          <LoadingRow label="Loading overflow" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!isAugust2026Month(month)) {
+    return (
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertDescription>
+          Overflow tracking starts with August 2026. June and July keep their original declined/cut views.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  const rowByProvider = new Map(rows.map(row => [row.provider_id, row]));
+  const today = new Date().toISOString().slice(0, 10);
+  const entriesByKey = new Map<string, OverflowEntry & { dates: string[] }>();
+
+  for (const cut of cutRows) {
+    if (!cut.provider_id) continue;
+    const row = rowByProvider.get(cut.provider_id);
+    const eligibility = eligibilityByProvider.get(cut.provider_id);
+    const eligibleStates = eligibility ? Array.from(eligibility.states).sort() : [];
+    const state =
+      cut.assigned_state ||
+      (eligibleStates.length === 1 ? eligibleStates[0] : eligibleStates.length > 1 ? 'Multi-state' : 'Unassigned');
+    const note = [cut.recommendation_reason, row?.submission?.decision_notes].filter(Boolean).join(' ');
+    const providerType = providerLooksDirectShifts(row, cut.provider_name) ? 'DS' : 'internal';
+    const reasonClass = classifyOverflowReason(note, row);
+    const key = `${cut.provider_id}|${state}|${reasonClass}`;
+    const current = entriesByKey.get(key) ?? {
+      providerId: cut.provider_id,
+      providerName: row?.provider_name ?? cut.provider_name,
+      providerType,
+      contact: row?.provider_email ?? '—',
+      state,
+      hours: 0,
+      status: 'Expired' as const,
+      reasonClass,
+      reasonText: formatDecisionNoteForStaff(row?.submission?.decision_notes) || cut.recommendation_reason || 'Held from core schedule',
+      cutCount: 0,
+      dates: [],
+    };
+    current.hours = Math.round((current.hours + Number(cut.hours ?? 0)) * 100) / 100;
+    current.cutCount += 1;
+    current.dates.push(cut.shift_date);
+    if (cut.shift_date >= today) current.status = 'Available';
+    entriesByKey.set(key, current);
+  }
+
+  const entries = Array.from(entriesByKey.values())
+    .map(({ dates: _dates, ...entry }) => entry)
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'Available' ? -1 : 1;
+      if (a.state !== b.state) return a.state.localeCompare(b.state);
+      return b.hours - a.hours || a.providerName.localeCompare(b.providerName);
+    });
+  const availableHours = entries
+    .filter(entry => entry.status === 'Available')
+    .reduce((sum, entry) => sum + entry.hours, 0);
+  const dsNpRows = AUGUST_2026_DIRECTSHIFTS_NP_NAMES.map(name => {
+    const targetName = normalizeOverflowName(name);
+    const row = rows.find(candidate => {
+      const candidateName = normalizeOverflowName(candidate.provider_name);
+      if (!candidateName) return false;
+      return candidateName === targetName ||
+        candidateName.includes(targetName) ||
+        targetName.includes(candidateName);
+    });
+    const submitted = expandedSubmittedHours(row?.submission) ?? 0;
+    const accepted = Number(row?.submission?.accepted_hours ?? 0);
+    return {
+      name,
+      submitted,
+      accepted,
+      status: row?.submission ? august2026DsNpStatus(submitted, accepted) : 'Not submitted',
+    };
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <SummaryCard
+          label="Available overflow"
+          value={`${availableHours.toFixed(1)} hrs`}
+          sub="Held backup hours"
+        />
+        <SummaryCard
+          label="Overflow entries"
+          value={entries.length.toString()}
+          sub="Grouped by provider/state"
+        />
+        <SummaryCard
+          label="DS NP floor"
+          value={`${AUGUST_2026_DS_NP_MIN_HOURS} hrs`}
+          sub={`Target ${AUGUST_2026_DS_NP_TARGET_HOURS} hrs`}
+        />
+        <SummaryCard
+          label="Fairness guard"
+          value={`${AUGUST_2026_FAIRNESS_TOLERANCE_PCT} pts`}
+          sub={`Deadline ${AUGUST_2026_JOTFORM_DEADLINE_LABEL}`}
+        />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">DirectShifts NP target status</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            August DirectShifts NPs submit through Jotform. The allocator applies the monthly floor and target when the submission is on time.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead className="text-right">Submitted</TableHead>
+                <TableHead className="text-right">Accepted</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {dsNpRows.map(row => (
+                <TableRow key={row.name}>
+                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.submitted.toFixed(1)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.accepted.toFixed(1)}</TableCell>
+                  <TableCell>
+                    <Badge
+                      className={
+                        row.status === 'At target' || row.status === 'Above target (held)'
+                          ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+                          : row.status === 'At minimum'
+                            ? 'bg-blue-100 text-blue-800 hover:bg-blue-100'
+                            : row.status === 'Not submitted'
+                              ? 'bg-slate-100 text-slate-600 hover:bg-slate-100'
+                              : 'bg-amber-100 text-amber-800 hover:bg-amber-100'
+                      }
+                    >
+                      {row.status}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Overflow list · {formatMonthLabel(month)}</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Submitted availability held outside the core schedule because a state max or DirectShifts target was reached.
+            These hours are backup coverage, not discarded availability.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>State</TableHead>
+                <TableHead>Provider</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead className="text-right">Hours available</TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Why held</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {entries.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                    No overflow hours have been generated yet. Recalculate after August submissions are in.
+                  </TableCell>
+                </TableRow>
+              )}
+              {entries.map(entry => (
+                <TableRow key={`${entry.providerId}-${entry.state}-${entry.reasonClass}`}>
+                  <TableCell className="font-medium">{entry.state}</TableCell>
+                  <TableCell>
+                    <div className="font-medium">{entry.providerName}</div>
+                    <div className="text-xs text-muted-foreground">{entry.cutCount} cut row{entry.cutCount === 1 ? '' : 's'}</div>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{entry.providerType}</TableCell>
+                  <TableCell className="text-right tabular-nums">{entry.hours.toFixed(1)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{entry.contact}</TableCell>
+                  <TableCell>
+                    <Badge
+                      className={
+                        entry.status === 'Available'
+                          ? 'bg-blue-100 text-blue-800 hover:bg-blue-100'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-100'
+                      }
+                    >
+                      {entry.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-[360px] text-xs text-muted-foreground">
+                    <ReasonSummary text={entry.reasonText} maxTags={3} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function providerLooksDirectShifts(
+  row: ProviderPublishView | undefined,
+  fallbackName: string | null | undefined,
+) {
+  const haystack = [
+    row?.provider_name,
+    fallbackName,
+    row?.employment_type,
+    row?.provider_source,
+    ...(row?.shift_types ?? []),
+  ].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes('directshifts') ||
+    haystack.includes('direct shifts') ||
+    haystack.includes('agency') ||
+    isAugust2026DirectShiftsNp(row?.provider_name ?? fallbackName);
+}
+
+function normalizeOverflowName(name: string | null | undefined) {
+  return (name ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function classifyOverflowReason(
+  note: string,
+  row: ProviderPublishView | undefined,
+) {
+  const lower = note.toLowerCase();
+  if (
+    lower.includes('directshifts_np') ||
+    (row && isAugust2026DirectShiftsNp(row.provider_name) && Number(row.submission?.accepted_hours ?? 0) >= AUGUST_2026_DS_NP_TARGET_HOURS)
+  ) {
+    return 'DS target';
+  }
+  if (lower.includes('state') || lower.includes('oversupply') || lower.includes('surplus')) {
+    return 'State max';
+  }
+  if (lower.includes('fairness') || lower.includes('provider_acceptance_pct')) {
+    return 'Fairness guard';
+  }
+  return 'Held availability';
+}
+
 type TimeOffPanelEntry = {
   row: ProviderPublishView;
   ranges: ReturnType<typeof extractUnavailableRanges>;
@@ -9421,11 +9762,18 @@ function ForecastPanel({ month }: { month: string }) {
   const forecastDemandQ = useMonthlyDemand(month);
   const serviceLineQ = useMonthlyServiceLineDemand(month);
   const slaQ = useMonthlySlaRisk(month);
+  const coverageQ = useStateCoverage(month);
   const demandRows = forecastDemandQ.data;
   const serviceLineRows = serviceLineQ.data ?? [];
   const slaRows = slaQ.data;
   const rows = useMemo(() => demandRows ?? [], [demandRows]);
   const monthWeeks = weeksInMonth(month);
+  const isAugust = isAugust2026Month(month);
+  const acceptedByState = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of coverageQ.data?.rows ?? []) map.set(row.state, row.filled);
+    return map;
+  }, [coverageQ.data?.rows]);
   const slaByState = useMemo(() => {
     const map = new Map<string, NonNullable<typeof slaRows>[number]>();
     for (const row of slaRows ?? []) map.set(row.state, row);
@@ -9433,6 +9781,30 @@ function ForecastPanel({ month }: { month: string }) {
   }, [slaRows]);
 
   const enriched = useMemo(() => {
+    if (isAugust) {
+      return AUGUST_2026_STATE_TARGETS.map(target => {
+        const r = rows.find(row => row.state === target.state);
+        const baseline = Number(r?.baseline_hours_target ?? target.baselineHours);
+        const max = Number(r?.max_hours_target ?? target.maxHours);
+        return {
+          state: target.state,
+          activeMembers: r?.active_members ?? null,
+          rawWeekly: Number(r?.raw_weekly_hours ?? baseline / monthWeeks),
+          weekly: Number(r?.adjusted_weekly_hours ?? max / monthWeeks),
+          monthly: max,
+          baseline,
+          max,
+          accepted: acceptedByState.get(target.state) ?? 0,
+          inactive: Boolean(r?.inactive ?? target.inactive),
+          dailyTarget: Number(r?.daily_target_hours ?? max / monthWeeks / 6),
+          methodology: r?.methodology_version ?? 'august_2026_trailing_actuals_state_max_v1',
+        };
+      }).sort((a, b) => {
+        const acceptedDiff = b.accepted - a.accepted;
+        if (acceptedDiff !== 0) return acceptedDiff;
+        return b.max - a.max;
+      });
+    }
     return rows
       .map(r => {
         const monthly = Number(r.monthly_hours_target ?? 0);
@@ -9444,18 +9816,22 @@ function ForecastPanel({ month }: { month: string }) {
           rawWeekly,
           weekly,
           monthly,
+          baseline: monthly,
+          max: monthly,
+          accepted: acceptedByState.get(r.state) ?? 0,
+          inactive: Boolean(r.inactive),
           dailyTarget: Number(r.daily_target_hours ?? weekly / 6),
           methodology: r.methodology_version ?? 'legacy',
         };
       })
       .sort((a, b) => b.monthly - a.monthly);
-  }, [monthWeeks, rows]);
+  }, [acceptedByState, isAugust, monthWeeks, rows]);
 
   if (forecastDemandQ.isLoading) {
     return <LoadingRow label="Loading forecast" />;
   }
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && !isAugust) {
     return (
       <EmptyState
         title={`No forecast loaded for ${formatMonthLabel(month)} yet`}
@@ -9470,8 +9846,9 @@ function ForecastPanel({ month }: { month: string }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Demand by state · {formatMonthLabel(month)}</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Source: Metabase card 2974 via state_demand_targets. Demand is reported per state:
-            raw weekly demand × 0.95, then exact days in month / 7 for monthly hours.
+            {isAugust
+              ? `August uses per-state baseline/max targets with a ${AUGUST_2026_BUFFER_PCT}% flat buffer. June 2026 is estimated until actuals close.`
+              : 'Source: Metabase card 2974 via state_demand_targets. Demand is reported per state: raw weekly demand × 0.95, then exact days in month / 7 for monthly hours.'}
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -9479,17 +9856,50 @@ function ForecastPanel({ month }: { month: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>State</TableHead>
-                <TableHead className="text-right">Active members</TableHead>
-                <TableHead className="text-right">Raw/wk</TableHead>
-                <TableHead className="text-right">Adjusted/wk</TableHead>
-                <TableHead className="text-right">Monthly hrs</TableHead>
-                <TableHead className="text-right">Daily target</TableHead>
-                <TableHead>SLA / access risk</TableHead>
+                {isAugust ? (
+                  <>
+                    <TableHead className="text-right" title="June 2026 estimated. Update when actuals close.">Baseline hrs/mo*</TableHead>
+                    <TableHead className="text-right" title="Scheduling engine targets this August cap.">Max hrs/mo*</TableHead>
+                    <TableHead className="text-right">Accepted hrs</TableHead>
+                    <TableHead>Status</TableHead>
+                  </>
+                ) : (
+                  <>
+                    <TableHead className="text-right">Active members</TableHead>
+                    <TableHead className="text-right">Raw/wk</TableHead>
+                    <TableHead className="text-right">Adjusted/wk</TableHead>
+                    <TableHead className="text-right">Monthly hrs</TableHead>
+                    <TableHead className="text-right">Daily target</TableHead>
+                    <TableHead>SLA / access risk</TableHead>
+                  </>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
               {enriched.map(r => {
                 const risk = slaByState.get(r.state);
+                if (isAugust) {
+                  const status = augustDemandStatus({
+                    baseline: r.baseline,
+                    max: r.max,
+                    accepted: r.accepted,
+                    inactive: r.inactive,
+                  });
+                  return (
+                    <TableRow key={r.state} className={r.inactive ? 'bg-muted/40 text-muted-foreground' : undefined}>
+                      <TableCell className="font-medium">
+                        {r.state}
+                        {r.inactive && <span className="ml-2 text-[11px] uppercase">inactive</span>}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{r.baseline.toFixed(0)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.max.toFixed(0)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.accepted.toFixed(1)}</TableCell>
+                      <TableCell>
+                        <Badge className={status.className}>{status.label}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                }
                 return (
                   <TableRow key={r.state}>
                     <TableCell className="font-medium">{r.state}</TableCell>
@@ -9513,7 +9923,7 @@ function ForecastPanel({ month }: { month: string }) {
         </CardContent>
       </Card>
 
-      <Card>
+      {!isAugust && <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Specialty lines</CardTitle>
           <p className="text-xs text-muted-foreground">
@@ -9555,9 +9965,44 @@ function ForecastPanel({ month }: { month: string }) {
             </TableBody>
           </Table>
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
+}
+
+function augustDemandStatus({
+  baseline,
+  max,
+  accepted,
+  inactive,
+}: {
+  baseline: number;
+  max: number;
+  accepted: number;
+  inactive: boolean;
+}) {
+  if (inactive || max <= 0) {
+    return {
+      label: 'Inactive',
+      className: 'bg-slate-100 text-slate-600 hover:bg-slate-100',
+    };
+  }
+  if (accepted < baseline) {
+    return {
+      label: 'Below baseline',
+      className: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+    };
+  }
+  if (accepted < max) {
+    return {
+      label: 'Baseline to max',
+      className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+    };
+  }
+  return {
+    label: 'At/above max',
+    className: 'bg-red-100 text-red-700 hover:bg-red-100',
+  };
 }
 
 function CoverageGapsPanel({
@@ -10268,7 +10713,8 @@ function inferDeclineReason(row: ProviderPublishView): string {
   return '';
 }
 
-function ProviderPriorityPolicyCard() {
+function ProviderPriorityPolicyCard({ month }: { month: string }) {
+  const isAugust = isAugust2026Month(month);
   return (
     <Card className="border-emerald-200 bg-emerald-50/40">
       <CardHeader className="pb-2">
@@ -10277,7 +10723,9 @@ function ProviderPriorityPolicyCard() {
           Priority policy
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Order of operations: validated clinical lead hours are accepted in full first, current hourly rate routes remaining hours second, then the DirectShifts/access share target applies. DirectShifts/access now targets roughly 15% of accepted telehealth hours.
+          {isAugust
+            ? `August order of operations: clinical lead/admin providers first, then all other providers by current hourly rate. DirectShifts percentage share is removed; DS NPs use a ${AUGUST_2026_DS_NP_MIN_HOURS}h floor and ${AUGUST_2026_DS_NP_TARGET_HOURS}h target when submitted by ${AUGUST_2026_JOTFORM_DEADLINE_LABEL}.`
+            : 'Order of operations: validated clinical lead hours are accepted in full first, current hourly rate routes remaining hours second, then the DirectShifts/access share target applies. DirectShifts/access now targets roughly 15% of accepted telehealth hours.'}
         </p>
       </CardHeader>
       <CardContent className="pt-0">
@@ -10291,12 +10739,20 @@ function ProviderPriorityPolicyCard() {
             <div className="text-muted-foreground">Known current hourly rate is the main cost rule across provider sources.</div>
           </div>
           <div>
-            <div className="font-medium">3. DirectShifts rate</div>
-            <div className="text-muted-foreground">DirectShifts/access targets 15%; same-rate DirectShifts providers stay close by accepted share.</div>
+            <div className="font-medium">{isAugust ? '3. DS NP floor' : '3. DirectShifts rate'}</div>
+            <div className="text-muted-foreground">
+              {isAugust
+                ? 'DirectShifts NPs receive the August floor/target rule; DS MDs submit through Jotform without that NP floor.'
+                : 'DirectShifts/access targets 15%; same-rate DirectShifts providers stay close by accepted share.'}
+            </div>
           </div>
           <div>
-            <div className="font-medium">4. Soft cap</div>
-            <div className="text-muted-foreground">A 75% soft cap redistributes first, then relaxes only when demand would otherwise remain uncovered.</div>
+            <div className="font-medium">{isAugust ? '4. Fairness guard' : '4. Soft cap'}</div>
+            <div className="text-muted-foreground">
+              {isAugust
+                ? `${AUGUST_2026_FAIRNESS_TOLERANCE_PCT}-point proportional guard keeps accepted share close across rank-2 providers.`
+                : 'A 75% soft cap redistributes first, then relaxes only when demand would otherwise remain uncovered.'}
+            </div>
           </div>
         </div>
       </CardContent>
@@ -10366,7 +10822,7 @@ function MatchingPanel({
   if (all.length === 0) {
     return (
       <>
-        <ProviderPriorityPolicyCard />
+        <ProviderPriorityPolicyCard month={month} />
         <EmptyState
           title={`No matching decisions yet for ${formatMonthLabel(month)}`}
           body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one schedule recalculation after Jotform submissions. Next: open Availability to confirm submissions are in, then click 'Recalculate schedule' in the page header."
@@ -10377,7 +10833,7 @@ function MatchingPanel({
 
   return (
     <>
-      <ProviderPriorityPolicyCard />
+      <ProviderPriorityPolicyCard month={month} />
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Provider recommendations · {formatMonthLabel(month)}</CardTitle>
@@ -10608,6 +11064,10 @@ function classifyReason(text: string): string {
   if (!t) return 'No reason recorded';
   if (t.includes('equity_floor') || t.includes('soft_cap') || t.includes('provider_acceptance_pct'))
     return 'Equity redistribution';
+  if (t.includes('proportional_fairness_tolerance'))
+    return 'Fairness guard';
+  if (t.includes('directshifts_np'))
+    return 'DirectShifts NP floor/target';
   if (t.includes('directshifts_target_share') || t.includes('cohort=directshifts_access'))
     return 'DirectShifts/access share';
   if (t.includes('provider_meeting_blackout') || t.includes('provider meeting blackout'))
