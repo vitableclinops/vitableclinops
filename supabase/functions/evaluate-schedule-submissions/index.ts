@@ -263,13 +263,10 @@ const ACCESS_GROWTH_BUFFER_POLICY = 'midpoint_targets_no_extra_buffer';
 const AUGUST_2026_MONTH = '2026-08-01';
 const AUGUST_2026_JOTFORM_DEADLINE_UTC_MS = Date.parse('2026-07-08T04:59:59.999Z');
 const AUGUST_2026_DIRECTSHIFTS_NP_NAMES = new Set([
-  'abby grant',
   'akosua norgbey',
   'brittney afram',
   'cassondra hawkins',
   'jarrod nero',
-  'nycole cox',
-  'stacy lynn',
   'stephanie lumsden',
 ]);
 

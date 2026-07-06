@@ -3,7 +3,7 @@ export const AUGUST_2026_JOTFORM_DEADLINE_LABEL = 'July 7, 2026';
 export const AUGUST_2026_FAIRNESS_TOLERANCE_PCT = 25;
 export const AUGUST_2026_TOTAL_TARGET_HOURS = 2250;
 export const AUGUST_2026_TOTAL_TARGET_SLOTS = 4500;
-export const AUGUST_2026_TARGET_METHODOLOGY_VERSION = 'august_2026_2250_state_targets_v2';
+export const AUGUST_2026_TARGET_METHODOLOGY_VERSION = 'august_2026_2250_state_targets_v3';
 export const AUGUST_2026_DS_NP_MIN_HOURS = 60;
 export const AUGUST_2026_DS_NP_TARGET_HOURS = 80;
 
@@ -17,7 +17,7 @@ export type August2026StateTarget = {
 };
 
 export const AUGUST_2026_STATE_TARGETS: August2026StateTarget[] = [
-  { state: 'PA', targetHours: 810, targetSlots: 1620, baselineHours: 810, maxHours: 810 },
+  { state: 'PA', targetHours: 809, targetSlots: 1618, baselineHours: 809, maxHours: 809 },
   { state: 'NJ', targetHours: 208, targetSlots: 416, baselineHours: 208, maxHours: 208 },
   { state: 'TX', targetHours: 165, targetSlots: 330, baselineHours: 165, maxHours: 165 },
   { state: 'FL', targetHours: 165, targetSlots: 330, baselineHours: 165, maxHours: 165 },
@@ -59,9 +59,9 @@ export const AUGUST_2026_STATE_TARGETS: August2026StateTarget[] = [
   { state: 'NV', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
   { state: 'WI', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
   { state: 'ID', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
-  { state: 'WY', targetHours: 0, targetSlots: 0, baselineHours: 0, maxHours: 0, inactive: true },
-  { state: 'OK', targetHours: 0, targetSlots: 0, baselineHours: 0, maxHours: 0, inactive: true },
-  { state: 'NE', targetHours: 0, targetSlots: 0, baselineHours: 0, maxHours: 0, inactive: true },
+  { state: 'WY', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
+  { state: 'OK', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
+  { state: 'NE', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
 ];
 
 export const AUGUST_2026_STATE_TARGET_BY_STATE = new Map(
@@ -69,13 +69,10 @@ export const AUGUST_2026_STATE_TARGET_BY_STATE = new Map(
 );
 
 export const AUGUST_2026_DIRECTSHIFTS_NP_NAMES = [
-  'Abby Grant',
   'Akosua Norgbey',
   'Brittney Afram',
   'Cassondra Hawkins',
   'Jarrod Nero',
-  'Nycole Cox',
-  'Stacy Lynn',
   'Stephanie Lumsden',
 ] as const;
 
