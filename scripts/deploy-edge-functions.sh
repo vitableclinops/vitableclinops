@@ -86,7 +86,21 @@ for fn in "${FUNCTIONS[@]}"; do
     jwt_flag=(--no-verify-jwt)
     echo "    (verify_jwt=false per supabase/config.toml)"
   fi
-  supabase functions deploy "$fn" --project-ref "$PROJECT_REF" "${jwt_flag[@]}"
+  deployed=0
+  for attempt in 1 2 3; do
+    if supabase functions deploy "$fn" --project-ref "$PROJECT_REF" "${jwt_flag[@]}"; then
+      deployed=1
+      break
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      echo "    WARN: deploy failed for $fn on attempt $attempt; retrying after a short pause." >&2
+      sleep $((attempt * 20))
+    fi
+  done
+  if [[ "$deployed" -ne 1 ]]; then
+    echo "ERROR: failed to deploy $fn after 3 attempts." >&2
+    exit 1
+  fi
 done
 
 echo ""
