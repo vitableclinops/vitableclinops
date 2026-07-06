@@ -21,6 +21,7 @@ on:
     paths:
       - 'supabase/functions/**'
       - 'supabase/config.toml'
+      - 'scripts/deploy-edge-functions.sh'
       - '.github/workflows/clinops-deploy-edge-functions.yml'
   workflow_dispatch:
     inputs:
