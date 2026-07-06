@@ -105,6 +105,8 @@ Three sub-questions, written to `recommendations_daily`:
 - `projected_cost_per_visit` — per state and network-level, given the proposed schedule
 - `equity_audit` — DirectShifts/access share, same-rate spread, provider acceptance percentage, soft-cap state, and no-zero floor outcome.
 
+**August 2026 exception:** August uses a documented 2,250-hour / 4,500-slot flat per-state target, removes the DirectShifts percentage-share target, and applies the DirectShifts NP 60-hour floor / 80-hour target rule. See `docs/august-2026-forecast-rationale.md`.
+
 ### M2. Licensure investment plan (quarterly)
 
 Which `(provider, state)` license additions would have produced the largest historical SLA improvement (per Q5 history)? Output ranked list to guide credentialing investment.

@@ -845,7 +845,7 @@ export default function SchedulingWorkbenchPage({
   const viewParam = searchParams.get('view');
   const scopeParam = searchParams.get('scope');
   const monthParam = searchParams.get('month');
-  const [month, setMonth] = useState(() => monthParamToIso(monthParam) ?? '2026-07-01');
+  const [month, setMonth] = useState(() => monthParamToIso(monthParam) ?? '2026-08-01');
   const [activeScope, setActiveScope] = useState<SchedulingWorkbenchScope>(() =>
     scopeParam ? scopeFromParam(scopeParam) : scope,
   );
@@ -9795,7 +9795,7 @@ function ForecastPanel({ month }: { month: string }) {
           baseline: monthlyTarget,
           max: monthlyTarget,
           accepted: acceptedByState.get(target.state) ?? 0,
-          inactive: Boolean(r?.inactive ?? target.inactive),
+          inactive: Boolean(target.inactive),
           dailyTarget: monthlyTarget / monthWeeks / 6,
           methodology: AUGUST_2026_TARGET_METHODOLOGY_VERSION,
         };

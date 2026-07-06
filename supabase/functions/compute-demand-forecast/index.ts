@@ -63,7 +63,7 @@ const PCP_STATE_COVERAGE_CARD = Number(
 const SEASONAL_MULTIPLIER = 0.95;
 const METHODOLOGY_VERSION = 'july_2026_summer_trough_v1';
 const JULY_2026_MIDPOINT_METHODOLOGY_VERSION = 'july_2026_midpoint_targets_v1';
-const AUGUST_2026_METHODOLOGY_VERSION = 'august_2026_2250_state_targets_v2';
+const AUGUST_2026_METHODOLOGY_VERSION = 'august_2026_2250_state_targets_v3';
 
 const JULY_2026_MIDPOINT_TARGETS: Array<{
   state: string;
@@ -127,7 +127,7 @@ const AUGUST_2026_STATE_TARGETS: Array<{
   maxHours: number;
   inactive?: boolean;
 }> = [
-  { state: 'PA', targetHours: 810, targetSlots: 1620, baselineHours: 810, maxHours: 810 },
+  { state: 'PA', targetHours: 809, targetSlots: 1618, baselineHours: 809, maxHours: 809 },
   { state: 'NJ', targetHours: 208, targetSlots: 416, baselineHours: 208, maxHours: 208 },
   { state: 'TX', targetHours: 165, targetSlots: 330, baselineHours: 165, maxHours: 165 },
   { state: 'FL', targetHours: 165, targetSlots: 330, baselineHours: 165, maxHours: 165 },
@@ -169,9 +169,9 @@ const AUGUST_2026_STATE_TARGETS: Array<{
   { state: 'NV', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
   { state: 'WI', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
   { state: 'ID', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
-  { state: 'WY', targetHours: 0, targetSlots: 0, baselineHours: 0, maxHours: 0, inactive: true },
-  { state: 'OK', targetHours: 0, targetSlots: 0, baselineHours: 0, maxHours: 0, inactive: true },
-  { state: 'NE', targetHours: 0, targetSlots: 0, baselineHours: 0, maxHours: 0, inactive: true },
+  { state: 'WY', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
+  { state: 'OK', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
+  { state: 'NE', targetHours: 1, targetSlots: 2, baselineHours: 1, maxHours: 1 },
 ];
 
 const corsHeaders = {
@@ -500,7 +500,7 @@ Deno.serve(async (req: Request) => {
         max_hours_target: augustTarget?.maxHours ?? null,
         inactive: augustTarget?.inactive ?? false,
         demand_source_note: augustTarget
-          ? 'Trailing Apr + May + projected Jun appointments allocated to a 2,250 provider-hour / 4,500-slot August target. June 2026 estimated; update when actuals close.'
+          ? 'Trailing Apr + May + projected Jun appointments allocated to a 2,250 provider-hour / 4,500-slot August target. WY, OK, and NE carry 1-hour token coverage; PA carries the rounding offset. June 2026 estimated; update when actuals close.'
           : null,
       });
     }

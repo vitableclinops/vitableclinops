@@ -73,7 +73,7 @@ const decisionVariant = (
 };
 
 export default function SchedulingForecastPage() {
-  const [month, setMonth] = useState('2026-07-01');
+  const [month, setMonth] = useState('2026-08-01');
 
   const demandQ = useMonthlyDemand(month);
   const serviceLineQ = useMonthlyServiceLineDemand(month);
@@ -103,7 +103,7 @@ export default function SchedulingForecastPage() {
             monthly_hours_target: target.targetHours,
             monthly_visits_target: target.targetHours,
             methodology_version: AUGUST_2026_TARGET_METHODOLOGY_VERSION,
-            inactive: dbRow?.inactive ?? target.inactive ?? false,
+            inactive: target.inactive ?? false,
           };
         }).sort((a, b) => {
           const acceptedDiff = (acceptedByState.get(b.state) ?? 0) - (acceptedByState.get(a.state) ?? 0);
