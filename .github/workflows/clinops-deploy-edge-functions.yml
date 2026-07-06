@@ -61,7 +61,9 @@ jobs:
       - name: Configure edge function secrets
         run: |
           if [ -n "$SYNC_SECRET" ]; then
-            supabase secrets set --project-ref "$PROJECT_REF" "SYNC_SECRET=$SYNC_SECRET"
+            if ! timeout 60s supabase secrets set --project-ref "$PROJECT_REF" "SYNC_SECRET=$SYNC_SECRET"; then
+              echo "::warning::Could not refresh SYNC_SECRET because the Supabase secrets API failed or timed out. Continuing with the existing deployed secret."
+            fi
           else
             echo "::warning::SYNC_SECRET repo secret is missing; sync-metabase may reject scheduled calls."
           fi

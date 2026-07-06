@@ -74,7 +74,16 @@ jobs:
           echo "Resolved forecast target month: $TARGET_MONTH"
 
       - name: Link ClinOps project
-        run: supabase link --project-ref "$PROJECT_REF"
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 120s supabase link --project-ref "$PROJECT_REF"; then
+              exit 0
+            fi
+            echo "::warning::supabase link failed on attempt ${attempt}; retrying after a short pause."
+            sleep $((attempt * 15))
+          done
+          echo "::error::supabase link failed after 3 attempts."
+          exit 1
 
       - name: Repair legacy remote-only migration versions
         run: |
