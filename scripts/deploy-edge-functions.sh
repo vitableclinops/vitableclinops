@@ -88,7 +88,7 @@ for fn in "${FUNCTIONS[@]}"; do
   fi
   deployed=0
   for attempt in 1 2 3; do
-    if supabase functions deploy "$fn" --project-ref "$PROJECT_REF" "${jwt_flag[@]}"; then
+    if timeout 180s supabase functions deploy "$fn" --project-ref "$PROJECT_REF" "${jwt_flag[@]}"; then
       deployed=1
       break
     fi
