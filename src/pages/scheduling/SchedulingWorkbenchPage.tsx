@@ -76,6 +76,7 @@ import {
   Trash2,
   Save,
   DollarSign,
+  Info,
 } from 'lucide-react';
 import {
   useMonthlyPublishView,
