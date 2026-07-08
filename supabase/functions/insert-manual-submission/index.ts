@@ -12,6 +12,13 @@ Deno.serve(async (req) => {
     const url = Deno.env.get('CLINOPS_SUPABASE_URL')!;
     const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY')!;
     const sb = createClient(url, key);
+    if (body.lookup_provider) {
+      const { data, error } = await sb.from('providers').select('id, name, email').ilike('name', `%${body.lookup_provider}%`);
+      if (error) throw error;
+      return new Response(JSON.stringify({ ok: true, providers: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     const { data, error } = await sb
       .from('schedule_submissions')
       .upsert(body, { onConflict: 'jotform_submission_id' })
