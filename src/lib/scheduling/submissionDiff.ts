@@ -328,24 +328,24 @@ export function diffParsedShifts(
     raw: { added: CanonicalDated[]; removed: CanonicalDated[]; modified: Array<{ before: CanonicalDated; after: CanonicalDated }> },
   ) => {
     const added: CanonicalDated[] = [];
-    const removed: CanonicalDated[] = [];
     const modified: Array<{ before: CanonicalDated; after: CanonicalDated }> = [];
     for (const r of raw.added) {
       if (isOutOfTargetMonth(r.date)) continue;
       if (isPast(r.date)) filteredPastCount++;
       else added.push(r);
     }
-    for (const r of raw.removed) {
-      if (isOutOfTargetMonth(r.date)) continue;
-      if (isPast(r.date)) filteredPastCount++;
-      else removed.push(r);
-    }
+    // Resubmissions are additive: providers list only what they want to
+    // add or change. A one-off / in-home shift that appears in the prior
+    // submission but not in the new one is NOT a removal — the provider
+    // simply didn't relist it. Only explicit unavailable_dates entries
+    // remove existing shifts. `raw.removed` is intentionally discarded so
+    // the inbox doesn't surface phantom removals.
     for (const r of raw.modified) {
       if (isOutOfTargetMonth(r.before.date) && isOutOfTargetMonth(r.after.date)) continue;
       if (isPast(r.before.date) && isPast(r.after.date)) filteredPastCount++;
       else modified.push(r);
     }
-    return { added, removed, modified };
+    return { added, removed: [] as CanonicalDated[], modified };
   };
 
   const recurring = rawRecurring;
