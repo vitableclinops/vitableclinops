@@ -205,6 +205,110 @@ Deno.serve(async (req) => {
 
     // mode === 'patch_shift_times' → manually adjust start/end time on specific publish rows.
     // body: { mode, provider_name, target_month, dates: ['YYYY-MM-DD', ...], start_min, end_min, note? }
+    // (patch_shift_times handler is defined below.)
+
+    // mode === 'promote_cut_to_hours' → promote 'cut' shift_recommendations for a
+    // provider back to 'publish' until the provider's accepted hours reach
+    // target_hours. Prefers cuts in states that are UNDER their monthly demand
+    // target first, then any remaining cuts by date ascending. Updates the
+    // parent schedule_submissions accepted/declined totals.
+    // body: { mode, provider_name, target_month, target_hours, note? }
+    if (mode === 'promote_cut_to_hours') {
+      const targetHours = body.target_hours as number | undefined;
+      if (!provider_name || !target_month || targetHours == null) {
+        return new Response(JSON.stringify({ error: 'provider_name, target_month, target_hours required' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const sb5 = createClient(url, key);
+      const [{ data: allShifts, error: e1 }, { data: stTargets, error: e2 }, { data: myShifts, error: e3 }] = await Promise.all([
+        sb5.from('shift_recommendations').select('assigned_state,hours,recommendation').eq('target_month', target_month).range(0, 9999),
+        sb5.from('state_demand_targets').select('state,monthly_hours_target').eq('month', target_month),
+        sb5.from('shift_recommendations').select('id, submission_id, shift_date, assigned_state, hours, recommendation').eq('target_month', target_month).ilike('provider_name', `%${provider_name}%`),
+      ]);
+      if (e1) throw e1; if (e2) throw e2; if (e3) throw e3;
+
+      const stateAccepted = new Map<string, number>();
+      for (const r of (allShifts || []) as any[]) {
+        if (r.recommendation !== 'publish') continue;
+        const s = r.assigned_state || 'UNK';
+        stateAccepted.set(s, (stateAccepted.get(s) || 0) + Number(r.hours || 0));
+      }
+      const stateTargetMap = new Map<string, number>();
+      for (const r of (stTargets || []) as any[]) stateTargetMap.set(r.state, Number(r.monthly_hours_target || 0));
+      const stateRemaining = (s: string) => (stateTargetMap.get(s) || 0) - (stateAccepted.get(s) || 0);
+
+      const rows = (myShifts || []) as any[];
+      const publishTotal = rows.filter(r => r.recommendation === 'publish').reduce((s, r) => s + Number(r.hours || 0), 0);
+      if (publishTotal >= targetHours) {
+        return new Response(JSON.stringify({ ok: true, no_op: true, current: publishTotal, target: targetHours }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const cuts = rows.filter(r => r.recommendation === 'cut');
+      cuts.sort((a, b) => String(a.shift_date).localeCompare(String(b.shift_date)));
+      // Fallback state pool: this provider's currently-published states, ranked by
+      // most-remaining state demand first. Used for cut rows with null state.
+      const publishStates = Array.from(new Set(rows.filter(r => r.recommendation === 'publish' && r.assigned_state).map(r => r.assigned_state as string)));
+      publishStates.sort((a, b) => stateRemaining(b) - stateRemaining(a));
+      let rrIdx = 0;
+      const toPromote: { id: string; state: string }[] = [];
+      let running = publishTotal;
+      for (const r of cuts) {
+        if (running >= targetHours) break;
+          let st = r.assigned_state as string | null;
+          if (!st) {
+            if (!publishStates.length) break;
+            st = publishStates[rrIdx % publishStates.length];
+            rrIdx += 1;
+          }
+          toPromote.push({ id: r.id, state: st });
+        running += Number(r.hours || 0);
+      }
+      const nowIso = new Date().toISOString();
+      const noteText = body.note || `ClinOps manual promote-to-${targetHours}h floor at ${nowIso}`;
+        for (const p of toPromote) {
+          const { error: updErr } = await sb5.from('shift_recommendations').update({
+            recommendation: 'publish',
+            assigned_state: p.state,
+            notes: noteText,
+            updated_at: nowIso,
+          }).eq('id', p.id);
+          if (updErr) throw updErr;
+        }
+
+      // Recompute parent submissions accepted/declined
+      const submissionIds = Array.from(new Set(rows.map(r => r.submission_id).filter(Boolean)));
+      const { data: postRows } = await sb5
+        .from('shift_recommendations')
+        .select('submission_id, hours, recommendation')
+        .in('submission_id', submissionIds);
+      const acceptedBySub = new Map<string, number>();
+      for (const r of (postRows || []) as any[]) {
+        if (r.recommendation !== 'publish') continue;
+        acceptedBySub.set(r.submission_id, (acceptedBySub.get(r.submission_id) || 0) + Number(r.hours || 0));
+      }
+      const subUpdates: unknown[] = [];
+      for (const sid of submissionIds) {
+        const { data: sub } = await sb5.from('schedule_submissions').select('decision_notes, effective_hours_used_for_forecast, normalized_requested_hours').eq('id', sid).maybeSingle();
+        const accepted = Number((acceptedBySub.get(sid) || 0).toFixed(2));
+        const eff = Number((sub as any)?.effective_hours_used_for_forecast || (sub as any)?.normalized_requested_hours || 0);
+        const declined = Math.max(0, Number((eff - accepted).toFixed(2)));
+        const notes = (sub as any)?.decision_notes ? `${(sub as any).decision_notes}\n${noteText}` : noteText;
+        const { data: u } = await sb5.from('schedule_submissions').update({
+          accepted_hours: accepted,
+          declined_hours: declined,
+          decision_status: accepted > 0 && declined > 0 ? 'partial' : (accepted > 0 ? 'accepted' : 'declined'),
+          decision_notes: notes,
+        }).eq('id', sid).select('id, accepted_hours, declined_hours, decision_status').maybeSingle();
+        subUpdates.push(u);
+      }
+
+      return new Response(JSON.stringify({ ok: true, promoted_rows: toPromote.length, new_total: running, target: targetHours, submissions: subUpdates }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (mode === 'patch_shift_times') {
       const dates = body.dates as string[] | undefined;
       const start_min = body.start_min as number | undefined;
