@@ -92,10 +92,15 @@ const isMentalHealthProvider = (
   return MH_COACHING_PROFESSIONS.has(norm) || THERAPY_PROFESSIONS.has(norm);
 };
 
-const MH_MIN_SHIFT_HOURS = 2.5;
+// Policy (Jul 2026): MH providers no longer have a hard 2.5h minimum shift,
+// and weekend after-hours shifts are approvable (weekend window extended to
+// full day). Weekday operating-hours window remains 9a–9p ET.
+const MH_MIN_SHIFT_HOURS = 0;
 const MENTAL_HEALTH_VALIDATION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
   min_single_shift_hours: MH_MIN_SHIFT_HOURS,
+  weekend_window_start_min: 0,
+  weekend_window_end_min: 24 * 60,
 };
 const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
@@ -109,7 +114,7 @@ const MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const MH_POLICY_CUT_REASON =
-  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
+  'Cut — mental health shift policy violation';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
 
