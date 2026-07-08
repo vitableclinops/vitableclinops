@@ -205,9 +205,7 @@ Deno.serve(async (req) => {
 
     // mode === 'patch_shift_times' → manually adjust start/end time on specific publish rows.
     // body: { mode, provider_name, target_month, dates: ['YYYY-MM-DD', ...], start_min, end_min, note? }
-    if (mode === 'patch_shift_times') {
-      // handled below
-    }
+    // (patch_shift_times handler is defined below.)
 
     // mode === 'promote_cut_to_hours' → promote 'cut' shift_recommendations for a
     // provider back to 'publish' until the provider's accepted hours reach
@@ -303,7 +301,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (mode === '__unused_marker__') {
+    if (mode === 'patch_shift_times') {
       const dates = body.dates as string[] | undefined;
       const start_min = body.start_min as number | undefined;
       const end_min = body.end_min as number | undefined;
