@@ -301,8 +301,10 @@ Deno.serve(async (req: Request) => {
       groups.get(k)!.push(s);
     }
 
-    // Load superseded peers only so stale recommendation rows can be deleted.
-    // They are intentionally excluded from the rebuilt timeline below.
+    // Load superseded peers so their stale recommendation rows can be deleted
+    // AND so they participate in the merged timeline — the evaluator uses the
+    // full resubmission chain (prior + latest) via buildSubmissionTimeline,
+    // and emit must match to produce the same slots.
     const providerMonths = Array.from(groups.keys());
     if (providerMonths.length > 0) {
       const providerIds = Array.from(new Set(providerMonths.map(k => k.split('|')[0])));
@@ -390,8 +392,10 @@ Deno.serve(async (req: Request) => {
         // the evaluator used. Inputs (submissions, identity, target_month)
         // produce identical timelines on both sides.
         const validationSelection = validationOptionsForSubmission(decided, isMentalHealth);
+        // Include superseded peers in the timeline so the evaluator's merged
+        // resubmission timeline is reproduced exactly here.
         const validation = buildSubmissionTimeline(
-          activeGroupSubs.map(s => ({
+          groupSubs.map(s => ({
             id: s.id,
             submitted_at: s.submitted_at,
             parsed_shifts: s.parsed_shifts ?? null,
