@@ -245,29 +245,37 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      const cuts = rows.filter(r => r.recommendation === 'cut' && r.assigned_state);
-      // Sort: states most under demand first (most negative remaining -> largest positive stateRemaining), then earliest date
-      cuts.sort((a, b) => {
-        const ra = stateRemaining(a.assigned_state);
-        const rb = stateRemaining(b.assigned_state);
-        if (rb !== ra) return rb - ra;
-        return String(a.shift_date).localeCompare(String(b.shift_date));
-      });
-      const toPromote: string[] = [];
+      const cuts = rows.filter(r => r.recommendation === 'cut');
+      cuts.sort((a, b) => String(a.shift_date).localeCompare(String(b.shift_date)));
+      // Fallback state pool: this provider's currently-published states, ranked by
+      // most-remaining state demand first. Used for cut rows with null state.
+      const publishStates = Array.from(new Set(rows.filter(r => r.recommendation === 'publish' && r.assigned_state).map(r => r.assigned_state as string)));
+      publishStates.sort((a, b) => stateRemaining(b) - stateRemaining(a));
+      let rrIdx = 0;
+      const toPromote: { id: string; state: string }[] = [];
       let running = publishTotal;
       for (const r of cuts) {
         if (running >= targetHours) break;
-        toPromote.push(r.id);
+          let st = r.assigned_state as string | null;
+          if (!st) {
+            if (!publishStates.length) break;
+            st = publishStates[rrIdx % publishStates.length];
+            rrIdx += 1;
+          }
+          toPromote.push({ id: r.id, state: st });
         running += Number(r.hours || 0);
       }
       const nowIso = new Date().toISOString();
       const noteText = body.note || `ClinOps manual promote-to-${targetHours}h floor at ${nowIso}`;
-      const { error: updErr } = await sb5.from('shift_recommendations').update({
-        recommendation: 'publish',
-        notes: noteText,
-        updated_at: nowIso,
-      }).in('id', toPromote);
-      if (updErr) throw updErr;
+        for (const p of toPromote) {
+          const { error: updErr } = await sb5.from('shift_recommendations').update({
+            recommendation: 'publish',
+            assigned_state: p.state,
+            notes: noteText,
+            updated_at: nowIso,
+          }).eq('id', p.id);
+          if (updErr) throw updErr;
+        }
 
       // Recompute parent submissions accepted/declined
       const submissionIds = Array.from(new Set(rows.map(r => r.submission_id).filter(Boolean)));
