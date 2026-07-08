@@ -2995,10 +2995,9 @@ function augustDirectShiftsFloorHours(candidate: SchedulingEquityCandidate) {
 
 function augustDirectShiftsTargetHours(candidate: SchedulingEquityCandidate) {
   if (!candidate.directShiftsNp || candidate.submittedOnTime === false) return null;
-  if (candidate.effectiveHours <= AUGUST_2026_DIRECTSHIFTS_NP_TARGET_HOURS) {
-    return candidate.effectiveHours;
-  }
-  return AUGUST_2026_DIRECTSHIFTS_NP_TARGET_HOURS;
+  // August 2026: cap removed — DirectShifts NPs receive all requested hours,
+  // subject only to state demand fill. Floor of 60 remains.
+  return candidate.effectiveHours;
 }
 
 function candidateRemainingForAugust(
