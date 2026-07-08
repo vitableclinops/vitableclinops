@@ -243,7 +243,7 @@ describe('allocateSchedulingEquity', () => {
     expect(allocations.every(a => Math.abs(a.providerAcceptancePct - 80) <= 0.1)).toBe(true);
   });
 
-  it('caps on-time August DirectShifts NPs at 80 hours and tracks overflow', () => {
+  it('gives on-time August DirectShifts NPs all requested hours up to state demand', () => {
     const allocations = allocateSchedulingEquity({
       policy: 'august_2026',
       stateGaps: [{ state: 'PA', gapHours: 120, demandHours: 120 }],
@@ -263,10 +263,10 @@ describe('allocateSchedulingEquity', () => {
     });
 
     const ds = allocations.find(a => a.id === 'ds-np')!;
-    expect(ds.acceptedHours).toBe(80);
+    expect(ds.acceptedHours).toBe(100);
     expect(ds.directShiftsFloorHours).toBe(60);
-    expect(ds.directShiftsTargetHours).toBe(80);
-    expect(ds.overflowHours).toBe(20);
+    expect(ds.directShiftsTargetHours).toBe(100);
+    expect(ds.overflowHours).toBe(0);
   });
 
   it('does not cap August clinical lead accepted hours through proportional fairness', () => {
