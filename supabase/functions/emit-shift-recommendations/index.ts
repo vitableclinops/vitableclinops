@@ -157,6 +157,13 @@ type Submission = {
   decision_run_id: string | null;
 };
 
+// Human-review states that indicate the submission has been manually
+// pinned by ops. When ops sets a submission to 'pending' (via the Inbox)
+// or 'parked', the current shift_recommendations rows are the source of
+// truth and MUST NOT be deleted/rebuilt from parsed_shifts. Same lock
+// applies inside evaluate-schedule-submissions (see lines ~1424).
+const HUMAN_LOCK_STATES = new Set(['pending', 'parked']);
+
 type ProviderProfile = {
   id: string;
   name: string | null;
@@ -283,7 +290,7 @@ Deno.serve(async (req: Request) => {
   try {
     let q = supabase
       .from('schedule_submissions')
-      .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, accepted_hours, declined_hours, decision_notes, submitted_at, decision_run_id');
+      .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, accepted_hours, declined_hours, decision_notes, submitted_at, decision_run_id, human_review_state');
 
     if (monthFilter) q = q.eq('target_month', monthFilter);
     if (providerFilter) q = q.eq('provider_id', providerFilter);
@@ -316,7 +323,7 @@ Deno.serve(async (req: Request) => {
       const months = Array.from(new Set(providerMonths.map(k => k.split('|')[1])));
       const { data: peers, error: pErr } = await supabase
         .from('schedule_submissions')
-        .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, accepted_hours, declined_hours, decision_notes, submitted_at, decision_run_id')
+        .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, accepted_hours, declined_hours, decision_notes, submitted_at, decision_run_id, human_review_state')
         .in('provider_id', providerIds)
         .in('target_month', months)
         .eq('decision_status', 'superseded')
@@ -355,6 +362,14 @@ Deno.serve(async (req: Request) => {
           continue;
         }
         if (decided.decision_status === 'needs_review') {
+          counters.skipped_needs_review++;
+          continue;
+        }
+        // Ops manual lock — leave shift_recommendations rows untouched.
+        // Setting human_review_state to 'pending' or 'parked' is how ops
+        // pins a manually-corrected submission so subsequent emit/eval
+        // runs don't reset the fix.
+        if (HUMAN_LOCK_STATES.has(decided.human_review_state ?? '')) {
           counters.skipped_needs_review++;
           continue;
         }
