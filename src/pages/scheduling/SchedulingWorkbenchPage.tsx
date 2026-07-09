@@ -713,14 +713,14 @@ function PublishDisplayStatusBadge({ display }: { display: PublishDisplayValues 
       </Badge>
     );
   }
-  if (display.status === 'mixed_published') {
+  if (display.status === 'mixed_published' || display.status === 'manually_edited') {
     return (
       <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
         {display.statusLabel}
       </Badge>
     );
   }
-  return <StatusBadge status={display.status} />;
+  return <StatusBadge status={display.status as DecisionStatus} />;
 }
 
 const publishDisplaySplit = (display: PublishDisplayValues) =>
