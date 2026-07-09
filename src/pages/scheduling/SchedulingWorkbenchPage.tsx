@@ -2328,6 +2328,7 @@ export default function SchedulingWorkbenchPage({
                         shifts: flats,
                         acceptedHours: sub?.accepted_hours,
                         decisionStatus: sub?.decision_status,
+                        humanReviewState: sub?.human_review_state,
                       });
                       const ehrBulkBlocked = totalShifts > 0 && ehrDone === 0 && hbDone < totalShifts;
                       return (
@@ -2842,6 +2843,7 @@ function ProviderStatusSearchPanel({
     shifts,
     acceptedHours: selectedRow?.submission?.accepted_hours,
     decisionStatus: selectedRow?.submission?.decision_status,
+    humanReviewState: selectedRow?.submission?.human_review_state,
   });
   const submittedHours =
     expandedSubmittedHours(latestAvailability) ??
@@ -2905,6 +2907,7 @@ function ProviderStatusSearchPanel({
                       shifts: shiftsByProvider.get(row.provider_id) ?? [],
                       acceptedHours: row.submission?.accepted_hours,
                       decisionStatus: row.submission?.decision_status,
+                      humanReviewState: row.submission?.human_review_state,
                     });
                     return (
                       <button
@@ -5959,6 +5962,7 @@ function MentalHealthPanel({
                 shifts: flats,
                 acceptedHours: sub?.accepted_hours,
                 decisionStatus: sub?.decision_status,
+                humanReviewState: sub?.human_review_state,
               });
               return (
                 <Fragment key={r.provider_id}>
@@ -9018,6 +9022,7 @@ function PostHomebaseChangePlan({
           shifts: shiftsByProvider.get(row.provider_id) ?? [],
           acceptedHours: row.submission?.accepted_hours,
           decisionStatus: row.submission?.decision_status,
+          humanReviewState: row.submission?.human_review_state,
         })
       : null;
     const currentHours = display?.displayAcceptedHours ?? null;
@@ -10383,6 +10388,7 @@ function buildMatchingProviderRow(
     shifts,
     acceptedHours: row.submission?.accepted_hours,
     decisionStatus: row.submission?.decision_status,
+    humanReviewState: row.submission?.human_review_state,
   });
   const accepted = display.displayAcceptedHours;
   const declined = Number(row.submission?.declined_hours ?? 0);
