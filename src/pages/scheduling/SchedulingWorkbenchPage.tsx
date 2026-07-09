@@ -683,11 +683,21 @@ const formatProviderShiftTime = (shift: ShiftRow) =>
 
 // Flag rows that were modified after creation (manual admin overrides).
 // System writes leave created_at === updated_at; PATCH updates bump updated_at.
+// Only flag rows edited today (local date), so historical system-side updates
+// (backfills, re-syncs) don't get styled as "manually edited".
 const isShiftManuallyEdited = (shift: ShiftRow): boolean => {
   if (!shift.updated_at || !shift.created_at) return false;
   const created = new Date(shift.created_at).getTime();
   const updated = new Date(shift.updated_at).getTime();
-  return Number.isFinite(created) && Number.isFinite(updated) && updated - created > 1000;
+  if (!Number.isFinite(created) || !Number.isFinite(updated)) return false;
+  if (updated - created <= 1000) return false;
+  const updatedDate = new Date(updated);
+  const now = new Date();
+  return (
+    updatedDate.getFullYear() === now.getFullYear() &&
+    updatedDate.getMonth() === now.getMonth() &&
+    updatedDate.getDate() === now.getDate()
+  );
 };
 
 const STATUS_STYLE: Record<DecisionStatus, { label: string; className: string }> = {
