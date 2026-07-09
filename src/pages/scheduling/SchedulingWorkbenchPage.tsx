@@ -681,6 +681,15 @@ const formatProviderShiftTime = (shift: ShiftRow) =>
     shift.provider_time_zone,
   );
 
+// Flag rows that were modified after creation (manual admin overrides).
+// System writes leave created_at === updated_at; PATCH updates bump updated_at.
+const isShiftManuallyEdited = (shift: ShiftRow): boolean => {
+  if (!shift.updated_at || !shift.created_at) return false;
+  const created = new Date(shift.created_at).getTime();
+  const updated = new Date(shift.updated_at).getTime();
+  return Number.isFinite(created) && Number.isFinite(updated) && updated - created > 1000;
+};
+
 const STATUS_STYLE: Record<DecisionStatus, { label: string; className: string }> = {
   accepted: { label: 'Accepted', className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100' },
   partial: { label: 'Partial', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
