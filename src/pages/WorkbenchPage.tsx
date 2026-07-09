@@ -122,6 +122,23 @@ const copyShiftsToClipboard = (shifts: CopyShift[]) => {
 const formatHours = (n: number | null | undefined) =>
   n === null || n === undefined ? '—' : Number(n).toFixed(1);
 
+const isToday = (iso: string | null | undefined) => {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+};
+
+const wasUpdatedToday = (sub: ProviderPublishView['submission']) => {
+  if (!sub) return false;
+  if (sub.human_review_state === 'pending') return true;
+  return isToday(sub.decided_at) || isToday(sub.human_review_resolved_at);
+};
+
 const STATUS_STYLE: Record<DecisionStatus, { label: string; className: string }> = {
   accepted: { label: 'Accepted', className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100' },
   partial: { label: 'Partial', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
@@ -462,8 +479,12 @@ const WorkbenchPage = () => {
                         sub?.decision_status === 'partial';
                       const homebaseDone = !!row.publish?.homebase_posted_at;
                       const ehrDone = !!row.publish?.ehr_posted_at;
+                      const recentlyUpdated = wasUpdatedToday(sub);
                       return (
-                        <TableRow key={row.provider_id}>
+                        <TableRow
+                          key={row.provider_id}
+                          className={recentlyUpdated ? 'bg-amber-50 hover:bg-amber-100/70' : undefined}
+                        >
                           <TableCell>
                             <div className="font-medium">{row.provider_name}</div>
                             <div className="text-xs text-muted-foreground">
@@ -472,7 +493,18 @@ const WorkbenchPage = () => {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <StatusBadge status={sub?.decision_status} />
+                            <div className="flex flex-col gap-1 items-start">
+                              <StatusBadge status={sub?.decision_status} />
+                              {recentlyUpdated && (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-amber-100 text-amber-800 border-amber-300 text-[10px]"
+                                  title="Hours updated today — pending transfer to Homebase/EHR"
+                                >
+                                  Updated today
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {formatHours(sub?.accepted_hours)}
