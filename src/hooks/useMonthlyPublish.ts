@@ -887,6 +887,8 @@ export type ShiftRow = {
   published_by: string | null;
   ehr_posted_at: string | null;
   ehr_posted_by: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type ShiftPublishStep = 'homebase' | 'ehr';
@@ -949,7 +951,7 @@ export function useShiftRecommendationsInboxWindow(anchorMonth: string) {
         clinopsDb
           .from('shift_recommendations')
           .select(
-            'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
+            'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, created_at, updated_at',
           )
           .gte('target_month', fromMonth)
           .lte('target_month', toMonth)
@@ -987,7 +989,7 @@ export function useShiftRecommendationsForMonth(
       let query = clinopsDb
         .from('shift_recommendations')
         .select(
-          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by',
+          'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, created_at, updated_at',
         )
         .eq('target_month', monthStart);
       if (recommendation !== 'all') query = query.eq('recommendation', recommendation);
