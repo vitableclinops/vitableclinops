@@ -19,7 +19,7 @@ export type PublishDisplayValues = {
   displayAcceptedHours: number;
   publishedShiftCount: number;
   totalShiftCount: number;
-  status: PublishDisplayDecisionStatus | 'published' | 'mixed_published';
+  status: PublishDisplayDecisionStatus | 'published' | 'mixed_published' | 'manually_edited';
   statusLabel: string;
   hasShiftRows: boolean;
   hasPublishedRows: boolean;
@@ -48,6 +48,7 @@ export function derivePublishDisplayValues(args: {
   shifts?: PublishDisplayShift[] | null;
   acceptedHours?: number | string | null;
   decisionStatus?: PublishDisplayDecisionStatus;
+  humanReviewState?: string | null;
 }): PublishDisplayValues {
   const shifts = args.shifts ?? [];
   const publishedShifts = shifts.filter(shift => isLockedPublishStatus(shift.publish_status));
@@ -60,7 +61,23 @@ export function derivePublishDisplayValues(args: {
     ? publishedHours + openAcceptedHours
     : numericHours(args.acceptedHours);
 
+  const isManuallyEdited =
+    args.humanReviewState === 'pending' && args.decisionStatus === 'partial';
+
   if (hasShiftRows && publishedShifts.length === shifts.length) {
+    if (isManuallyEdited) {
+      return {
+        publishedHours,
+        openAcceptedHours,
+        displayAcceptedHours,
+        publishedShiftCount: publishedShifts.length,
+        totalShiftCount: shifts.length,
+        status: 'manually_edited',
+        statusLabel: 'Manually edited',
+        hasShiftRows,
+        hasPublishedRows,
+      };
+    }
     return {
       publishedHours,
       openAcceptedHours,
