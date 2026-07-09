@@ -155,6 +155,7 @@ type Submission = {
   decision_notes: string | null;
   submitted_at: string;
   decision_run_id: string | null;
+  human_review_state?: string | null;
 };
 
 // Human-review states that indicate the submission has been manually
