@@ -2682,8 +2682,9 @@ function ShiftListInline({
           const ehrDone = isEhrDone(s);
           const audit = auditByShift?.get(s.id);
           const schedulingNote = formatSchedulingShiftNote(s.recommendation_reason);
+          const edited = isShiftManuallyEdited(s);
           return (
-            <TableRow key={s.id}>
+            <TableRow key={s.id} className={cn(edited && 'bg-amber-50 hover:bg-amber-100/70')}>
               <TableCell className="text-xs">{formatProviderShiftDate(s)}</TableCell>
               <TableCell className="text-xs tabular-nums">
                 {formatProviderShiftTime(s)}
@@ -2693,6 +2694,11 @@ function ShiftListInline({
               </TableCell>
               <TableCell className="text-xs">
                 <div>{labelShiftType(s.shift_type)}</div>
+                {edited && (
+                  <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                    Manually edited
+                  </Badge>
+                )}
                 {schedulingNote && (
                   <div className="mt-1 max-w-[260px] text-[11px] leading-snug text-muted-foreground">
                     {schedulingNote}
@@ -4740,8 +4746,9 @@ function PublishingQueue({
               const ehrDone = isEhrDone(s);
               const audit = auditByShift?.get(s.id);
               const schedulingNote = formatSchedulingShiftNote(s.recommendation_reason);
+              const edited = isShiftManuallyEdited(s);
               return (
-                <TableRow key={s.id}>
+                <TableRow key={s.id} className={cn(edited && 'bg-amber-50 hover:bg-amber-100/70')}>
                   <TableCell className="text-xs">{formatProviderShiftDate(s)}</TableCell>
                   <TableCell className="font-medium">{s.provider_name}</TableCell>
                   <TableCell className="text-xs tabular-nums">
@@ -4752,6 +4759,11 @@ function PublishingQueue({
                   </TableCell>
                   <TableCell className="text-xs">
                     <div>{labelShiftType(s.shift_type)}</div>
+                    {edited && (
+                      <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                        Manually edited
+                      </Badge>
+                    )}
                     {schedulingNote && (
                       <div className="mt-1 max-w-[280px] text-[11px] leading-snug text-muted-foreground">
                         {schedulingNote}
@@ -4885,13 +4897,21 @@ function ByDayPanel({
                     const hbDone = isHomebaseDone(s);
                     const ehrDone = isEhrDone(s);
                     const audit = auditByShift?.get(s.id);
+                    const edited = isShiftManuallyEdited(s);
                     return (
-                      <TableRow key={s.id}>
+                      <TableRow key={s.id} className={cn(edited && 'bg-amber-50 hover:bg-amber-100/70')}>
                         <TableCell className="font-medium">{s.provider_name}</TableCell>
                         <TableCell className="text-xs">
                           {formatProviderShiftTime(s)}
                         </TableCell>
-                        <TableCell className="text-xs">{labelShiftType(s.shift_type)}</TableCell>
+                        <TableCell className="text-xs">
+                          <div>{labelShiftType(s.shift_type)}</div>
+                          {edited && (
+                            <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                              Manually edited
+                            </Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right text-xs tabular-nums">
                           {formatHours(s.hours)}
                         </TableCell>
