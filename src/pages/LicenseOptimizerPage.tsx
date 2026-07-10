@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { cn, downloadCSV, formatDisplayDate } from '@/lib/utils';
 import { InfoTooltip } from '@/components/InfoTooltip';
+import { ConfirmActionDialog } from '@/components/ConfirmActionDialog';
 import {
   RefreshCw,
   TrendingUp,
@@ -289,6 +290,7 @@ export default function LicenseOptimizerPage() {
   const [filterState, setFilterState] = useState('');
   const [filterProvider, setFilterProvider] = useState('');
   const [showGuide, setShowGuide] = useState(false);
+  const [recomputeConfirmOpen, setRecomputeConfirmOpen] = useState(false);
 
   const { data: snapshots = [], isLoading, refetch, isRefetching } = useSnapshots(view);
   const { data: lastSync } = useSyncRuns();
@@ -691,7 +693,7 @@ export default function LicenseOptimizerPage() {
       return data;
     },
     onSuccess: (result) => {
-      toast({ title: `Optimization computed`, description: `${result.snapshots_written} snapshots written` });
+      toast({ title: `Heatmap rebuilt`, description: `${result.snapshots_written} state/day coverage rows updated` });
       queryClient.invalidateQueries({ queryKey: ['license_optimizer_snapshots'] });
     },
     onError: (err: Error) => {
@@ -906,14 +908,23 @@ export default function LicenseOptimizerPage() {
               </Button>
               <Button
                 size="sm"
-                onClick={() => computeMutation.mutate()}
+                onClick={() => setRecomputeConfirmOpen(true)}
                 disabled={computeMutation.isPending}
+                title="Rebuilds the heatmap from the latest uploaded data. Run this only after uploading this month's CSV files."
               >
                 {computeMutation.isPending
                   ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   : <Zap className="h-4 w-4 mr-2" />}
                 Recompute
               </Button>
+              <ConfirmActionDialog
+                open={recomputeConfirmOpen}
+                onOpenChange={setRecomputeConfirmOpen}
+                title="Rebuild the coverage heatmap?"
+                description="This replaces the current heatmap and coverage snapshots with a fresh calculation from the latest uploaded data. Run this only after uploading this month's CSV files — recomputing over stale or partial uploads will overwrite good data. This cannot be undone."
+                confirmLabel="Recompute"
+                onConfirm={() => computeMutation.mutate()}
+              />
               <Button
                 variant="ghost" size="sm"
                 onClick={() => refetch()}

@@ -31,6 +31,7 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  Info,
   Loader2,
   RefreshCw,
   Search,
@@ -616,9 +617,12 @@ export const HomebaseScheduleContent = () => {
   const queryClient = useQueryClient();
 
   const today = useMemo(() => formatLocalDate(new Date()), []);
-  const [startDate, setStartDate] = useState(JULY_2026_START);
-  const [endDate, setEndDate] = useState(JULY_2026_END);
-  const [selectedDate, setSelectedDate] = useState(JULY_2026_START);
+  // Default to the current month so the page never opens on a stale, hard-coded
+  // window. Presets (incl. "July 2026") remain available below.
+  const initialMonthStart = useMemo(() => getMonthStartIso(), []);
+  const [startDate, setStartDate] = useState(initialMonthStart);
+  const [endDate, setEndDate] = useState(() => getMonthEndIso(initialMonthStart));
+  const [selectedDate, setSelectedDate] = useState(initialMonthStart);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
@@ -1281,6 +1285,13 @@ const RawHomebaseScheduleTable = ({
 }) => (
   <Card>
     <CardContent className="p-4 space-y-4">
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertDescription className="text-xs">
+          Read-only mirror of Homebase. To change a shift, edit it in Homebase, then click
+          "Sync Homebase" above — rows here are not editable.
+        </AlertDescription>
+      </Alert>
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="relative max-w-md flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

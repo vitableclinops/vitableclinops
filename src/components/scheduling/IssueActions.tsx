@@ -340,7 +340,21 @@ export const IssueActions = (props: IssueActionContext) => {
       break;
     case 'homebase_unpublished':
     case 'homebase_unscheduled':
-      buttons.push(homebaseLink);
+      // Publishing actually happens in Homebase, so make that the primary
+      // action; "Snooze" only hides the flag until the next sync.
+      buttons.push(
+        <Button
+          key="open-homebase-primary"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          asChild
+        >
+          <a href={HOMEBASE_SCHEDULER_URL} target="_blank" rel="noreferrer">
+            <ExternalLink className="mr-1 h-3 w-3" />
+            Open Homebase
+          </a>
+        </Button>,
+      );
       buttons.push(
         <Button
           key="ack"
@@ -350,12 +364,13 @@ export const IssueActions = (props: IssueActionContext) => {
           onClick={() =>
             setConfirm({
               resolution: 'acknowledged',
-              title: 'Acknowledge?',
-              description: 'Snoozes this issue until the next sync.',
+              title: 'Snooze until next sync?',
+              description:
+                'This only hides the flag until the next Homebase sync — it does not publish the shift. To publish, use "Open Homebase" and publish it there.',
             })
           }
         >
-          Acknowledge
+          Snooze until next sync
         </Button>,
       );
       break;
