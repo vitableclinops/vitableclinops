@@ -693,25 +693,6 @@ const formatProviderShiftTime = (shift: ShiftRow) =>
     shift.provider_time_zone,
   );
 
-// Flag rows that were modified after creation (manual admin overrides).
-// System writes leave created_at === updated_at; PATCH updates bump updated_at.
-// Only flag rows edited today (local date), so historical system-side updates
-// (backfills, re-syncs) don't get styled as "manually edited".
-const isShiftManuallyEdited = (shift: ShiftRow): boolean => {
-  if (!shift.updated_at || !shift.created_at) return false;
-  const created = new Date(shift.created_at).getTime();
-  const updated = new Date(shift.updated_at).getTime();
-  if (!Number.isFinite(created) || !Number.isFinite(updated)) return false;
-  if (updated - created <= 1000) return false;
-  const updatedDate = new Date(updated);
-  const now = new Date();
-  return (
-    updatedDate.getFullYear() === now.getFullYear() &&
-    updatedDate.getMonth() === now.getMonth() &&
-    updatedDate.getDate() === now.getDate()
-  );
-};
-
 const STATUS_STYLE: Record<DecisionStatus, { label: string; className: string }> = {
   accepted: { label: 'Accepted', className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100' },
   partial: { label: 'Partial', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
@@ -1691,8 +1672,11 @@ export default function SchedulingWorkbenchPage({
   };
 
   const [recalcConfirmOpen, setRecalcConfirmOpen] = useState(false);
-  const manuallyEditedShiftCount = useMemo(
-    () => scopedFlatAccepted.filter(isShiftManuallyEdited).length,
+  // Shifts already posted to Homebase/EHR are the real work at risk: recalc can
+  // change or drop them, and posted shifts that change need manual Homebase
+  // cleanup. publish_status is a reliable source for this, unlike updated_at.
+  const postedShiftCount = useMemo(
+    () => scopedFlatAccepted.filter(s => isHomebaseDone(s) || isEhrDone(s)).length,
     [scopedFlatAccepted],
   );
 
@@ -1705,10 +1689,10 @@ export default function SchedulingWorkbenchPage({
 
   const recalcConfirmDescription = [
     `This rebuilds every recommended shift for ${formatMonthLabel(month)} from the latest submissions.`,
-    manuallyEditedShiftCount > 0
-      ? `${manuallyEditedShiftCount} manually edited shift${manuallyEditedShiftCount === 1 ? '' : 's'} will be rebuilt — hand-entered time changes are lost unless they were saved as a correction.`
+    postedShiftCount > 0
+      ? `${postedShiftCount} shift${postedShiftCount === 1 ? '' : 's'} already marked posted to Homebase/EHR could change or drop — any that change will need to be fixed in Homebase manually.`
       : null,
-    'Already-published shifts keep their Homebase / EHR checkmarks; only shifts that change or disappear lose that progress. This cannot be undone.',
+    'Unchanged shifts keep their Homebase / EHR checkmarks. This cannot be undone.',
   ]
     .filter(Boolean)
     .join(' ');
@@ -2790,9 +2774,8 @@ function ShiftListInline({
           const ehrDone = isEhrDone(s);
           const audit = auditByShift?.get(s.id);
           const schedulingNote = formatSchedulingShiftNote(s.recommendation_reason);
-          const edited = isShiftManuallyEdited(s);
           return (
-            <TableRow key={s.id} className={cn(edited && 'bg-amber-50 hover:bg-amber-100/70')}>
+            <TableRow key={s.id}>
               <TableCell className="text-xs">{formatProviderShiftDate(s)}</TableCell>
               <TableCell className="text-xs tabular-nums">
                 {formatProviderShiftTime(s)}
@@ -2802,11 +2785,6 @@ function ShiftListInline({
               </TableCell>
               <TableCell className="text-xs">
                 <div>{labelShiftType(s.shift_type)}</div>
-                {edited && (
-                  <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
-                    Manually edited
-                  </Badge>
-                )}
                 {schedulingNote && (
                   <div className="mt-1 max-w-[260px] text-[11px] leading-snug text-muted-foreground">
                     {schedulingNote}
@@ -4877,9 +4855,8 @@ function PublishingQueue({
               const ehrDone = isEhrDone(s);
               const audit = auditByShift?.get(s.id);
               const schedulingNote = formatSchedulingShiftNote(s.recommendation_reason);
-              const edited = isShiftManuallyEdited(s);
               return (
-                <TableRow key={s.id} className={cn(edited && 'bg-amber-50 hover:bg-amber-100/70')}>
+                <TableRow key={s.id}>
                   <TableCell className="text-xs">{formatProviderShiftDate(s)}</TableCell>
                   <TableCell className="font-medium">{s.provider_name}</TableCell>
                   <TableCell className="text-xs tabular-nums">
@@ -4890,11 +4867,6 @@ function PublishingQueue({
                   </TableCell>
                   <TableCell className="text-xs">
                     <div>{labelShiftType(s.shift_type)}</div>
-                    {edited && (
-                      <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
-                        Manually edited
-                      </Badge>
-                    )}
                     {schedulingNote && (
                       <div className="mt-1 max-w-[280px] text-[11px] leading-snug text-muted-foreground">
                         {schedulingNote}
@@ -5028,20 +5000,14 @@ function ByDayPanel({
                     const hbDone = isHomebaseDone(s);
                     const ehrDone = isEhrDone(s);
                     const audit = auditByShift?.get(s.id);
-                    const edited = isShiftManuallyEdited(s);
                     return (
-                      <TableRow key={s.id} className={cn(edited && 'bg-amber-50 hover:bg-amber-100/70')}>
+                      <TableRow key={s.id}>
                         <TableCell className="font-medium">{s.provider_name}</TableCell>
                         <TableCell className="text-xs">
                           {formatProviderShiftTime(s)}
                         </TableCell>
                         <TableCell className="text-xs">
                           <div>{labelShiftType(s.shift_type)}</div>
-                          {edited && (
-                            <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
-                              Manually edited
-                            </Badge>
-                          )}
                         </TableCell>
                         <TableCell className="text-right text-xs tabular-nums">
                           {formatHours(s.hours)}
