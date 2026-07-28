@@ -41,6 +41,7 @@ const PHYSICIAN_ONLY_STATES = new Set(['IN', 'GA', 'AL', 'MS', 'MO', 'TN', 'SC',
 const PHYSICIAN_PROFESSIONS = new Set(['md', 'do', 'physician']);
 const SLACK_API_URL = 'https://slack.com/api/chat.postMessage';
 const SLACK_UPDATE_API_URL = 'https://slack.com/api/chat.update';
+const SLACK_HISTORY_API_URL = 'https://slack.com/api/conversations.history';
 const METABASE_MAX_ATTEMPTS = 3;
 const METABASE_RETRY_BASE_DELAY_MS = 2_000;
 const RETRYABLE_METABASE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
@@ -225,6 +226,15 @@ type SlackUpdateRequest = {
   channel_id?: string;
   parent_ts?: string;
   thread_ts?: string;
+  scheduled?: boolean;
+  source?: string;
+  force?: boolean;
+  fast?: boolean;
+  skip_provider_lookups?: boolean;
+};
+
+type BuildAlertOptions = {
+  fastPath: boolean;
 };
 
 type SlackOAuthCredentials = {
@@ -273,6 +283,13 @@ Deno.serve(async (req: Request) => {
     requireEnv('METABASE_PASSWORD');
     requireEnv('JOTFORM_API_KEY');
 
+    const isScheduledRun = requestBody.scheduled === true
+      || requestBody.source === 'pg_cron'
+      || requestBody.source === 'github_actions_schedule';
+    const fastPath = requestBody.fast === true
+      || requestBody.skip_provider_lookups === true
+      || isScheduledRun;
+
     if (requestBody.action === 'update_slack_messages') {
       const updateResult = await updatePostedSlackAlert(
         supabase,
@@ -285,51 +302,60 @@ Deno.serve(async (req: Request) => {
       return json(updateResult);
     }
 
-    const result = await buildAlertResult(supabaseUrl, serviceRoleKey, today, tomorrow);
-
-    const { data: inserted, error: insertError } = await supabase
-      .from('coverage_alerts')
-      .insert({
-        target_today: today,
-        target_tomorrow: tomorrow,
-        data_source: result.dataSource,
-        critical_states: result.criticalStates,
-        low_states: result.lowStates,
-        ok_states: result.okStates,
-        opt_in_providers: result.optInProviders,
-        outreach_email_subject: result.outreachEmailSubject,
-        outreach_email_body: result.outreachEmailBody,
-        error: result.warning,
-      })
-      .select('id')
-      .single();
-
-    if (insertError) {
-      result.warning = appendWarning(
-        result.warning,
-        `coverage_alerts insert failed: ${compactErrorMessage(insertError)}`,
-      );
-      console.warn('coverage_alerts insert failed; continuing to Slack post:', compactErrorMessage(insertError));
+    if (isScheduledRun && requestBody.force !== true) {
+      try {
+        const existing = await findExistingSlackAlert(supabase, today);
+        if (existing) {
+          return json({
+            ok: true,
+            skipped: true,
+            reason: 'already_posted',
+            slack_parent_ts: existing.ts,
+            slack_channel_id: existing.channelId,
+          });
+        }
+      } catch (err) {
+        console.warn('Slack duplicate check failed; continuing with post attempt:', compactErrorMessage(err));
+      }
     }
 
-    const rowId = (inserted?.id as string | undefined) ?? null;
+    const result = await buildAlertResult(supabaseUrl, serviceRoleKey, today, tomorrow, { fastPath });
 
+    let rowId: string | null = null;
     try {
       const slack = await postSlackAlert(supabase, result, today);
-      if (rowId) {
-        const { error: updateError } = await supabase
-          .from('coverage_alerts')
-          .update({
-            slack_posted: true,
-            slack_parent_ts: slack.parentTs,
-            slack_thread_ts: slack.threadTs,
-            slack_channel_id: slack.channelId,
-          })
-          .eq('id', rowId);
-        if (updateError) {
-          throw new Error(`Slack posted, but slack_posted update failed: ${compactErrorMessage(updateError)}`);
-        }
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('coverage_alerts')
+        .insert({
+          target_today: today,
+          target_tomorrow: tomorrow,
+          data_source: result.dataSource,
+          critical_states: result.criticalStates,
+          low_states: result.lowStates,
+          ok_states: result.okStates,
+          opt_in_providers: result.optInProviders,
+          outreach_email_subject: result.outreachEmailSubject,
+          outreach_email_body: result.outreachEmailBody,
+          error: result.warning,
+          slack_posted: true,
+          slack_parent_ts: slack.parentTs,
+          slack_thread_ts: slack.threadTs,
+          slack_channel_id: slack.channelId,
+        })
+        .select('id')
+        .single();
+
+      if (insertError) {
+        result.warning = appendWarning(
+          result.warning,
+          `coverage_alerts insert failed: ${compactErrorMessage(insertError)}`,
+        );
+        console.warn('coverage_alerts insert failed after Slack post:', compactErrorMessage(insertError));
+      } else {
+        rowId = (inserted?.id as string | undefined) ?? null;
       }
+
       return json({
         ok: true,
         row_id: rowId,
@@ -382,13 +408,20 @@ async function buildAlertResult(
   serviceRoleKey: string,
   today: string,
   tomorrow: string,
+  options: BuildAlertOptions = { fastPath: false },
 ): Promise<AlertResult> {
   const supabase = createClient(supabaseUrl, serviceRoleKey);
   const warnings: string[] = [];
   const [metabaseToken, activation, contactPreferences] = await Promise.all([
     getMetabaseToken(),
-    fetchActivationCandidates(supabaseUrl, serviceRoleKey),
-    fetchJotformContactPreferences(today),
+    options.fastPath
+      ? Promise.resolve({
+        dataSource: 'daily' as DataSource,
+        deficitStates: [],
+        warning: 'Activation candidate lookup skipped on scheduled fast path',
+      })
+      : fetchActivationCandidates(supabaseUrl, serviceRoleKey),
+    options.fastPath ? Promise.resolve([]) : fetchJotformContactPreferences(today),
   ]);
   const [slotRows, monthlyRows, slaRows, memberPopulationResult] = await Promise.all([
     fetchMetabaseCard(CARD_SLOTS, metabaseToken),
@@ -401,9 +434,12 @@ async function buildAlertResult(
   const monthlyVisits = buildMonthlyVisitMap(monthlyRows);
   const sla = buildSlaMap(slaRows);
   const memberPopulation = memberPopulationResult.members;
-  const providerProfessionResult = await loadProviderProfessionByName(supabase);
-  if (providerProfessionResult.warning) warnings.push(providerProfessionResult.warning);
-  const providerProfessionByName = providerProfessionResult.professions;
+  let providerProfessionByName = new Map<string, string | null>();
+  if (!options.fastPath) {
+    const providerProfessionResult = await loadProviderProfessionByName(supabase);
+    if (providerProfessionResult.warning) warnings.push(providerProfessionResult.warning);
+    providerProfessionByName = providerProfessionResult.professions;
+  }
   const activationByState = buildActivationMap(activation.deficitStates, providerProfessionByName);
   const optIns = contactPreferences
     .filter((preference) => preference.status === 'yes')
@@ -474,22 +510,31 @@ async function buildAlertResult(
   ]);
   let relevantOptIns: OptInProvider[] = [];
   let providerLookupWarning: string | null = null;
-  try {
-    relevantOptIns = await enrichOptInsWithLicensedStates(supabase, optIns, flaggedStates);
-  } catch (err) {
-    providerLookupWarning = `Opted-in provider lookup unavailable: ${compactErrorMessage(err)}`;
+  if (options.fastPath) {
+    providerLookupWarning = 'Provider email lookup skipped on scheduled fast path. Escalate to ClinOps before sending outreach.';
     warnings.push(providerLookupWarning);
+  } else {
+    try {
+      relevantOptIns = await enrichOptInsWithLicensedStates(supabase, optIns, flaggedStates);
+    } catch (err) {
+      providerLookupWarning = `Opted-in provider lookup unavailable: ${compactErrorMessage(err)}`;
+      warnings.push(providerLookupWarning);
+    }
   }
   const optInsByState = buildOptInsByState(relevantOptIns);
   let nonOptedInByState = new Map<string, NonOptedInProvider[]>();
-  try {
-    nonOptedInByState = await fetchNonOptedInEligibleProviders(
-      supabase,
-      contactPreferences,
-      flaggedStates,
-    );
-  } catch (err) {
-    warnings.push(`Confirm-only provider lookup unavailable: ${compactErrorMessage(err)}`);
+  if (options.fastPath) {
+    warnings.push('Confirm-only provider lookup skipped on scheduled fast path');
+  } else {
+    try {
+      nonOptedInByState = await fetchNonOptedInEligibleProviders(
+        supabase,
+        contactPreferences,
+        flaggedStates,
+      );
+    } catch (err) {
+      warnings.push(`Confirm-only provider lookup unavailable: ${compactErrorMessage(err)}`);
+    }
   }
 
   const expandedStates = states.map((state) => {
@@ -1554,6 +1599,32 @@ function formatConfirmOnlyLine(state: AlertState) {
     ? `; +${state.non_opted_in_providers.length - 5} more`
     : '';
   return `- *${escapeSlack(`${state.state}${physicianOnlyNote(state.state)}`)}* - ${providers.join('; ')}${suffix}`;
+}
+
+async function findExistingSlackAlert(
+  supabase: { rpc: (fn: string, args?: Record<string, unknown>) => any },
+  today: string,
+): Promise<{ ts: string; channelId: string } | null> {
+  const channelId = requireEnv('SLACK_CHANNEL_ID');
+  const token = await getSlackAccessToken(supabase);
+  const marker = `Same/Next-Day Coverage - ${formatHumanDate(today, false)}`;
+  const params = new URLSearchParams({
+    channel: channelId,
+    limit: '50',
+    oldest: String(Math.floor((Date.now() - 36 * 60 * 60 * 1000) / 1000)),
+  });
+
+  const res = await fetch(`${SLACK_HISTORY_API_URL}?${params.toString()}`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || body?.ok !== true) {
+    throw new Error(`Slack history error: ${res.status} ${JSON.stringify(body)}`);
+  }
+
+  const messages = Array.isArray(body.messages) ? body.messages as Array<Record<string, unknown>> : [];
+  const existing = messages.find((message) => String(message.text ?? '').includes(marker));
+  return existing?.ts ? { ts: String(existing.ts), channelId } : null;
 }
 
 async function postSlackMessage(
