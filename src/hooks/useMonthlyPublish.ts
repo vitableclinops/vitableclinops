@@ -868,7 +868,9 @@ export function useOverrideDecision() {
 
 export type ShiftRow = {
   id: string;
-  submission_id: string;
+  schedule_build_row_id?: string | null;
+  source_shift_recommendation_id?: string | null;
+  submission_id: string | null;
   provider_id: string | null;
   provider_name: string;
   provider_time_zone?: string | null;
@@ -946,6 +948,11 @@ export type ScheduleBuildRow = {
   source_publish_status: string | null;
   source_published_at: string | null;
   source_ehr_posted_at: string | null;
+  publish_status: string;
+  published_at: string | null;
+  published_by: string | null;
+  ehr_posted_at: string | null;
+  ehr_posted_by: string | null;
   created_at: string;
 };
 
@@ -1209,7 +1216,7 @@ export function useScheduleBuildRows(buildId: string | null | undefined) {
       const { data, error } = await clinopsDb
         .from('schedule_build_rows')
         .select(
-          'id, build_id, source_shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, source_publish_status, source_published_at, source_ehr_posted_at, created_at',
+          'id, build_id, source_shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, source_publish_status, source_published_at, source_ehr_posted_at, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, created_at',
         )
         .eq('build_id', buildId)
         .order('recommendation', { ascending: false })
@@ -1310,6 +1317,11 @@ export function useCreateScheduleDraft() {
         source_publish_status: shift.publish_status,
         source_published_at: shift.published_at,
         source_ehr_posted_at: shift.ehr_posted_at,
+        publish_status: shift.publish_status,
+        published_at: shift.published_at,
+        published_by: null,
+        ehr_posted_at: shift.ehr_posted_at,
+        ehr_posted_by: null,
       }));
 
       const CHUNK = 500;
@@ -1499,6 +1511,11 @@ export function useReplaceScheduleBuildRowsForSubmission() {
           source_publish_status: 'pending',
           source_published_at: null,
           source_ehr_posted_at: null,
+          publish_status: 'pending',
+          published_at: null,
+          published_by: null,
+          ehr_posted_at: null,
+          ehr_posted_by: null,
         }));
         const CHUNK = 500;
         for (let i = 0; i < rows.length; i += CHUNK) {
@@ -1587,6 +1604,8 @@ const ehrPatch = (done: boolean, actorId: string | null, nowIso: string) =>
 type AuditableShift = Pick<
   ShiftRow,
   | 'id'
+  | 'schedule_build_row_id'
+  | 'source_shift_recommendation_id'
   | 'submission_id'
   | 'provider_id'
   | 'provider_name'
@@ -1605,7 +1624,9 @@ const buildAuditEntries = (
   actorLabel: string | null,
 ): Record<string, unknown>[] =>
   shifts.map(s => ({
-    shift_recommendation_id: s.id,
+    schedule_build_row_id: s.schedule_build_row_id ?? null,
+    shift_recommendation_id:
+      s.source_shift_recommendation_id ?? (s.schedule_build_row_id ? null : s.id),
     submission_id: s.submission_id,
     provider_id: s.provider_id,
     provider_name: s.provider_name,
@@ -1655,16 +1676,23 @@ export function useTogglePublishShift() {
         args.step === 'homebase'
           ? homebasePatch(args.done, actorId, nowIso)
           : ehrPatch(args.done, actorId, nowIso);
-      const { error } = await clinopsDb
-        .from('shift_recommendations')
-        .update(patch)
-        .eq('id', args.shift.id);
+      const { error } = args.shift.schedule_build_row_id
+        ? await clinopsDb
+            .from('schedule_build_rows')
+            .update(patch)
+            .eq('id', args.shift.schedule_build_row_id)
+        : await clinopsDb
+            .from('shift_recommendations')
+            .update(patch)
+            .eq('id', args.shift.id);
       if (error) throw error;
       await writeAuditLog(
         buildAuditEntries([args.shift], args.step, args.done, actorId, actorLabel),
       );
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'schedule-build-rows'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-pipeline'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'publish-audit-log'] });
@@ -1688,16 +1716,33 @@ export function useBulkMarkPublishShifts() {
         args.step === 'homebase'
           ? homebasePatch(args.done, actorId, nowIso)
           : ehrPatch(args.done, actorId, nowIso);
-      const { error } = await clinopsDb
-        .from('shift_recommendations')
-        .update(patch)
-        .in('id', args.shifts.map(s => s.id));
-      if (error) throw error;
+      const buildRowIds = args.shifts
+        .map(s => s.schedule_build_row_id)
+        .filter((id): id is string => Boolean(id));
+      const recommendationIds = args.shifts
+        .filter(s => !s.schedule_build_row_id)
+        .map(s => s.id);
+      if (buildRowIds.length > 0) {
+        const { error } = await clinopsDb
+          .from('schedule_build_rows')
+          .update(patch)
+          .in('id', buildRowIds);
+        if (error) throw error;
+      }
+      if (recommendationIds.length > 0) {
+        const { error } = await clinopsDb
+          .from('shift_recommendations')
+          .update(patch)
+          .in('id', recommendationIds);
+        if (error) throw error;
+      }
       await writeAuditLog(
         buildAuditEntries(args.shifts, args.step, args.done, actorId, actorLabel),
       );
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'schedule-build-rows'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-pipeline'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'publish-audit-log'] });
@@ -1713,6 +1758,7 @@ export function useBulkMarkPublishShifts() {
 
 export type PublishAuditEntry = {
   id: string;
+  schedule_build_row_id: string | null;
   shift_recommendation_id: string | null;
   submission_id: string | null;
   provider_id: string | null;
@@ -1738,7 +1784,7 @@ export function usePublishAuditLog(month: string | null) {
       let q = clinopsDb
         .from('publish_audit_log')
         .select(
-          'id, shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, shift_type, step, action, actor_id, actor_label, notes, created_at',
+          'id, schedule_build_row_id, shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, shift_type, step, action, actor_id, actor_label, notes, created_at',
         )
         .order('created_at', { ascending: false })
         .range(0, 999);

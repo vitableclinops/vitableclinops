@@ -779,6 +779,31 @@ const formatProviderShiftTime = (shift: ShiftRow) =>
     shift.provider_time_zone,
   );
 
+const scheduleBuildRowToShiftRow = (row: ScheduleBuildRow): ShiftRow => ({
+  id: row.id,
+  schedule_build_row_id: row.id,
+  source_shift_recommendation_id: row.source_shift_recommendation_id,
+  submission_id: row.submission_id,
+  provider_id: row.provider_id,
+  provider_name: row.provider_name,
+  provider_time_zone: null,
+  target_month: row.target_month,
+  shift_date: row.shift_date,
+  start_min: row.start_min,
+  end_min: row.end_min,
+  hours: Number(row.hours ?? 0),
+  shift_type: row.shift_type,
+  assigned_state: row.assigned_state,
+  recommendation: row.recommendation,
+  recommendation_reason: row.recommendation_reason,
+  decision_run_id: row.decision_run_id,
+  publish_status: row.publish_status ?? row.source_publish_status ?? 'pending',
+  published_at: row.published_at ?? row.source_published_at ?? null,
+  published_by: row.published_by ?? null,
+  ehr_posted_at: row.ehr_posted_at ?? row.source_ehr_posted_at ?? null,
+  ehr_posted_by: row.ehr_posted_by ?? null,
+});
+
 const STATUS_STYLE: Record<DecisionStatus, { label: string; className: string }> = {
   accepted: { label: 'Accepted', className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100' },
   partial: { label: 'Partial', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
@@ -1156,6 +1181,26 @@ export default function SchedulingWorkbenchPage({
   const { data: activeBuildRowsData = [], isLoading: buildRowsLoading } =
     useScheduleBuildRows(activeScheduleBuild?.id ?? null);
   const activeBuildRows = safeArray<ScheduleBuildRow>(activeBuildRowsData);
+  const publishSourceIsDraft = Boolean(activeScheduleBuild);
+  const publishShiftRows = useMemo(
+    () =>
+      publishSourceIsDraft
+        ? activeBuildRows
+            .filter(row => row.recommendation === 'publish')
+            .map(scheduleBuildRowToShiftRow)
+        : shiftRows,
+    [activeBuildRows, publishSourceIsDraft, shiftRows],
+  );
+  const cutShiftRows = useMemo(
+    () =>
+      publishSourceIsDraft
+        ? activeBuildRows
+            .filter(row => row.recommendation === 'cut')
+            .map(scheduleBuildRowToShiftRow)
+        : cutRows,
+    [activeBuildRows, cutRows, publishSourceIsDraft],
+  );
+  const publishRowsLoading = publishSourceIsDraft ? buildRowsLoading : shiftsLoading;
   const setupIssuesCount = useMemo(
     () => readinessRows.filter(r => !r.readyForSubmissions).length,
     [readinessRows],
@@ -1165,11 +1210,12 @@ export default function SchedulingWorkbenchPage({
   const auditByShift = useMemo(() => {
     const map = new Map<string, { homebase?: PublishAuditEntry; ehr?: PublishAuditEntry }>();
     for (const entry of auditEntries) {
-      if (!entry.shift_recommendation_id) continue;
-      const slot = map.get(entry.shift_recommendation_id) ?? {};
+      const key = entry.schedule_build_row_id ?? entry.shift_recommendation_id;
+      if (!key) continue;
+      const slot = map.get(key) ?? {};
       if (entry.step === 'homebase' && !slot.homebase) slot.homebase = entry;
       if (entry.step === 'ehr' && !slot.ehr) slot.ehr = entry;
-      map.set(entry.shift_recommendation_id, slot);
+      map.set(key, slot);
     }
     return map;
   }, [auditEntries]);
@@ -1278,26 +1324,27 @@ export default function SchedulingWorkbenchPage({
     });
   }, [dbRows, override, month]);
 
-  // Group shift_recommendations rows by provider for the per-provider view.
+  // Group the current publish source by provider. Before Draft v1 exists this
+  // is shift_recommendations; once a draft exists it is the frozen build rows.
   const shiftsByProvider = useMemo(() => {
     const map = new Map<string, ShiftRow[]>();
-    for (const s of shiftRows) {
+    for (const s of publishShiftRows) {
       if (!s.provider_id) continue;
       if (!map.has(s.provider_id)) map.set(s.provider_id, []);
       map.get(s.provider_id)!.push(s);
     }
     return map;
-  }, [shiftRows]);
+  }, [publishShiftRows]);
 
   const cutRowsByProvider = useMemo(() => {
     const map = new Map<string, ShiftRow[]>();
-    for (const s of cutRows) {
+    for (const s of cutShiftRows) {
       if (!s.provider_id) continue;
       if (!map.has(s.provider_id)) map.set(s.provider_id, []);
       map.get(s.provider_id)!.push(s);
     }
     return map;
-  }, [cutRows]);
+  }, [cutShiftRows]);
 
   const eligibilityByProvider = useMemo(() => {
     const map = new Map<string, ProviderEligibilitySummary>();
@@ -1458,13 +1505,13 @@ export default function SchedulingWorkbenchPage({
   // Sarabjeet's actual workload, not just per-provider check-marks.
   const allFlatAccepted = useMemo(() => {
     const acceptedProviderIds = new Set(acceptedRows.map(r => r.provider_id));
-    return shiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
-  }, [acceptedRows, shiftRows]);
+    return publishShiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
+  }, [acceptedRows, publishShiftRows]);
 
   const mentalHealthFlatAccepted = useMemo(() => {
     const acceptedProviderIds = new Set(mentalHealthAcceptedRows.map(r => r.provider_id));
-    return shiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
-  }, [mentalHealthAcceptedRows, shiftRows]);
+    return publishShiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
+  }, [mentalHealthAcceptedRows, publishShiftRows]);
 
   const summary = useMemo(() => {
     const totalShifts = allFlatAccepted.length;
@@ -1541,28 +1588,38 @@ export default function SchedulingWorkbenchPage({
   );
   const scopedLockedPublishProviderIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const shift of shiftRows) {
+    for (const shift of publishShiftRows) {
       if (shift.provider_id && (isHomebaseDone(shift) || isEhrDone(shift))) {
         ids.add(shift.provider_id);
       }
     }
     return ids;
-  }, [shiftRows]);
+  }, [publishShiftRows]);
+  const scopedDraftPublishProviderIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!publishSourceIsDraft) return ids;
+    for (const shift of publishShiftRows) {
+      if (shift.provider_id) ids.add(shift.provider_id);
+    }
+    return ids;
+  }, [publishShiftRows, publishSourceIsDraft]);
   const scopedPublishRows = useMemo(
     () =>
       scopedRows.filter(row =>
-        isAcceptedSubmission(row) || scopedLockedPublishProviderIds.has(row.provider_id),
+        isAcceptedSubmission(row) ||
+        scopedLockedPublishProviderIds.has(row.provider_id) ||
+        scopedDraftPublishProviderIds.has(row.provider_id),
       ),
-    [scopedRows, scopedLockedPublishProviderIds],
+    [scopedRows, scopedDraftPublishProviderIds, scopedLockedPublishProviderIds],
   );
   const scopedFlatAccepted = useMemo(() => {
     const ids = new Set(scopedPublishRows.map(r => r.provider_id));
-    return shiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
-  }, [scopedPublishRows, shiftRows]);
+    return publishShiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
+  }, [publishShiftRows, scopedPublishRows]);
   const scopedCutRows = useMemo(() => {
     const ids = new Set(scopedRows.map(r => r.provider_id));
-    return cutRows.filter(s => s.provider_id && ids.has(s.provider_id));
-  }, [cutRows, scopedRows]);
+    return cutShiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
+  }, [cutShiftRows, scopedRows]);
   const scopedSummary = useMemo(() => {
     const totalShifts = scopedFlatAccepted.length;
     return {
@@ -2054,7 +2111,7 @@ export default function SchedulingWorkbenchPage({
         <TabsContent value="readiness" className="mt-4 space-y-4">
           <ReadinessPanel
             month={month}
-            isLoading={isLoading || shiftsLoading}
+            isLoading={isLoading || publishRowsLoading}
             summary={scopedSummary}
             missingCount={scopedSummary.missingCount}
             submittedHours={scopedSubmittedAvailabilityHours}
@@ -2080,13 +2137,13 @@ export default function SchedulingWorkbenchPage({
             }}
           />
           <SopCard />
-          {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
+          {!publishRowsLoading && publishShiftRows.length === 0 && acceptedRows.length > 0 && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                No per-shift recommendations have been generated for{' '}
-                {formatMonthLabel(month)}. Click "Recalculate schedule" above to turn the latest
-                Jotform submissions into individual shifts.
+                No publishable shift rows have been generated for{' '}
+                {formatMonthLabel(month)}. Create Draft v1 from the current allocation before
+                the publishing checklist starts.
               </AlertDescription>
             </Alert>
           )}
@@ -2102,7 +2159,9 @@ export default function SchedulingWorkbenchPage({
               <p className="text-xs text-muted-foreground mt-1">
                 {override
                   ? `Using uploaded file: ${override.fileName} · ${override.totalShifts} shift${override.totalShifts === 1 ? '' : 's'} matched to ${override.matchedProviders} provider${override.matchedProviders === 1 ? '' : 's'}`
-                  : `Showing ${shiftRows.length} system-built shift${shiftRows.length === 1 ? '' : 's'}. Upload a Jotform export only if you need to preview a not-yet-imported file.`}
+                  : publishSourceIsDraft && activeScheduleBuild
+                    ? `Showing Draft v${activeScheduleBuild.version_number}: ${publishShiftRows.length} publishable shift${publishShiftRows.length === 1 ? '' : 's'} and ${cutShiftRows.length} cut shift${cutShiftRows.length === 1 ? '' : 's'}.`
+                    : `Showing ${shiftRows.length} system-built shift${shiftRows.length === 1 ? '' : 's'}. Upload a Jotform export only if you need to preview a not-yet-imported file.`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -2517,6 +2576,14 @@ export default function SchedulingWorkbenchPage({
             rows={scopedPublishRows}
             shiftsByProvider={shiftsByProvider}
           />
+          <Alert className={publishSourceIsDraft ? 'border-emerald-200 bg-emerald-50/50' : ''}>
+            <FileCheck2 className="h-4 w-4" />
+            <AlertDescription className="text-xs">
+              {publishSourceIsDraft && activeScheduleBuild
+                ? `Publish is using Draft v${activeScheduleBuild.version_number}. Homebase and EHR checkmarks are saved on the frozen draft rows, including manually corrected Review hours.`
+                : 'Publish is using the current allocation rows because no monthly draft exists yet. Create Draft v1 before the final publishing pass.'}
+            </AlertDescription>
+          </Alert>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard
               label="Shifts to publish"
@@ -2742,7 +2809,7 @@ export default function SchedulingWorkbenchPage({
           <PublishingQueue
             month={month}
             shifts={scopedFlatAccepted}
-            isLoading={shiftsLoading}
+            isLoading={publishRowsLoading}
             onToggleShift={handleToggleShift}
             auditByShift={auditByShift}
             onBulkShifts={(shifts, step, done) =>
@@ -2766,7 +2833,7 @@ export default function SchedulingWorkbenchPage({
           <ByDayPanel
             month={month}
             shifts={scopedFlatAccepted}
-            isLoading={shiftsLoading}
+            isLoading={publishRowsLoading}
             onToggleShift={handleToggleShift}
             auditByShift={auditByShift}
           />
@@ -2793,7 +2860,7 @@ export default function SchedulingWorkbenchPage({
             availabilityRows={scopedAvailabilitySubs}
             unmatchedRows={scopedUnmatched}
             missingRows={scopedMissing}
-            shifts={isMh ? scopedFlatAccepted : shiftRows}
+            shifts={isMh ? scopedFlatAccepted : publishShiftRows}
           />
         </TabsContent>
       </Tabs>
@@ -5333,7 +5400,7 @@ function PublishingQueue({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No accepted shift list for {formatMonthLabel(month)}. Recalculate the schedule first.
+          No accepted shift list for {formatMonthLabel(month)}. Create Draft v1 before publishing.
         </AlertDescription>
       </Alert>
     );
