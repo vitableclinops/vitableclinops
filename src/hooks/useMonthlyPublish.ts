@@ -1385,6 +1385,41 @@ export function useAdvanceSchedulingPipeline() {
       if (args.stage === 'published') workflowPatch.published_at = nowIso;
       if (args.stage === 'amend') workflowPatch.amendment_started_at = nowIso;
 
+      if (args.stage === 'locked') {
+        if (!args.buildId) {
+          throw new Error('Create Draft v1 before locking the schedule.');
+        }
+        const [openAmendmentsRes, reviewRowsRes] = await Promise.all([
+          clinopsDb
+            .from('schedule_amendment_requests')
+            .select('id, status')
+            .eq('target_month', monthStart)
+            .in('status', ['requested', 'approved'])
+            .range(0, 9999),
+          clinopsDb
+            .from('schedule_submissions')
+            .select('id, provider_name, decision_status, human_review_state')
+            .eq('target_month', monthStart)
+            .range(0, 9999),
+        ]);
+        if (openAmendmentsRes.error) throw openAmendmentsRes.error;
+        if (reviewRowsRes.error) throw reviewRowsRes.error;
+        const openAmendmentCount = ((openAmendmentsRes.data ?? []) as unknown[]).length;
+        const openReviewRows = ((reviewRowsRes.data ?? []) as Array<{
+          decision_status: string | null;
+          human_review_state: string | null;
+        }>).filter(
+          row =>
+            row.decision_status !== 'superseded' &&
+            (row.decision_status === 'needs_review' || row.human_review_state === 'pending'),
+        );
+        if (openReviewRows.length > 0 || openAmendmentCount > 0) {
+          throw new Error(
+            `Clear review work before locking: ${openReviewRows.length} review row${openReviewRows.length === 1 ? '' : 's'} and ${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'} remain.`,
+          );
+        }
+      }
+
       if (args.stage === 'published') {
         if (!args.buildId) {
           throw new Error('Create and lock a schedule draft before marking it published.');
