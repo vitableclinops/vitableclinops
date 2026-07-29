@@ -2226,6 +2226,8 @@ export default function SchedulingWorkbenchPage({
             isReevaluating={reevaluate.isPending}
             recalculationLocked={recalculationLocked}
             activeBuild={activeScheduleBuild}
+            stage={pipelineStage}
+            openAmendmentCount={openAmendments.length}
             onJumpToCoverage={() => jumpToCoveragePlan('coverage')}
             onJumpToAvailability={jumpToAvailability}
             onJumpToReview={jumpToReview}
@@ -8901,6 +8903,8 @@ function ReadinessPanel({
   isReevaluating,
   recalculationLocked = false,
   activeBuild = null,
+  stage = 'intake',
+  openAmendmentCount = 0,
   onJumpToCoverage,
   onJumpToAvailability,
   onJumpToReview,
@@ -8934,6 +8938,8 @@ function ReadinessPanel({
   isReevaluating: boolean;
   recalculationLocked?: boolean;
   activeBuild?: ScheduleBuild | null;
+  stage?: SchedulingPipelineStage;
+  openAmendmentCount?: number;
   onJumpToCoverage: () => void;
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToReview: (tab?: ReviewTabKey) => void;
@@ -9056,6 +9062,9 @@ function ReadinessPanel({
     summary.totalShifts > 0 ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0;
   const reviewCount = summary.needsReviewCount + inboxNeedsReviewCount;
   const hasPublishRows = summary.totalShifts > 0;
+  const publishStageReady = Boolean(
+    activeBuild && ['locked', 'published', 'amend'].includes(stage),
+  );
   const checksLoading = isLoading || coverageQ.isLoading;
 
   type BlockerCategory = 'Scheduler can do this' | 'Escalate to ClinOps lead' | 'System/admin issue';
@@ -9114,6 +9123,36 @@ function ReadinessPanel({
         onClick: recalculationLocked ? () => onJumpToReview('amendments') : onReevaluate,
       });
     }
+    if (hasPublishRows && !activeBuild) {
+      out.push({
+        key: 'no_draft',
+        label: 'No frozen draft exists yet',
+        detail: 'Create Draft v1 from the current allocation before Homebase or EHR publishing starts.',
+        category: 'Scheduler can do this',
+        action: 'Open Allocation Runs',
+        onClick: () => onJumpToReview('recalculate'),
+      });
+    }
+    if (hasPublishRows && activeBuild && !publishStageReady) {
+      out.push({
+        key: 'draft_not_locked',
+        label: `Draft v${activeBuild.version_number} is not locked yet`,
+        detail: 'Finish Review and lock the draft before treating this month as ready to publish.',
+        category: 'Scheduler can do this',
+        action: 'Review lock blockers',
+        onClick: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+      });
+    }
+    if (openAmendmentCount > 0) {
+      out.push({
+        key: 'open_amendments',
+        label: `${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'}`,
+        detail: 'Apply, park, or reject open amendments before publishing so the team is posting one final schedule.',
+        category: 'Scheduler can do this',
+        action: 'Open Amendments',
+        onClick: () => onJumpToReview('amendments'),
+      });
+    }
     if (hasPublishRows && unmatchedCount > 0) {
       out.push({
         key: 'unmatched',
@@ -9163,6 +9202,8 @@ function ReadinessPanel({
     blockedIntakeCount,
     checksLoading,
     hasPublishRows,
+    publishStageReady,
+    openAmendmentCount,
     unmatchedCount,
     submittedHours,
     reviewCount,
@@ -9186,7 +9227,8 @@ function ReadinessPanel({
     () => hardBlockers.filter(b => blockerOverrides[b.key]),
     [hardBlockers, blockerOverrides],
   );
-  const workbenchReady = !checksLoading && activeBlockers.length === 0 && hasPublishRows;
+  const workflowReady = hasPublishRows && publishStageReady && openAmendmentCount === 0;
+  const workbenchReady = !checksLoading && activeBlockers.length === 0 && workflowReady;
   const publishingComplete = workbenchReady && homebasePct === 100 && ehrPct === 100;
 
   type Readiness = {
@@ -9226,6 +9268,30 @@ function ReadinessPanel({
         nextActionJump: recalculationLocked ? () => onJumpToReview('amendments') : onReevaluate,
         nextCategory: 'Scheduler can do this',
         nextDisabled: isReevaluating && !recalculationLocked,
+      };
+    }
+    if (!activeBuild && !blockerOverrides['no_draft']) {
+      return {
+        blocker: 'No frozen draft exists yet',
+        nextAction: 'Create Draft v1 from allocation',
+        nextActionJump: () => onJumpToReview('recalculate'),
+        nextCategory: 'Scheduler can do this',
+      };
+    }
+    if (activeBuild && !publishStageReady && !blockerOverrides['draft_not_locked']) {
+      return {
+        blocker: `Draft v${activeBuild.version_number} is not locked yet`,
+        nextAction: 'Lock reviewed draft',
+        nextActionJump: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+        nextCategory: 'Scheduler can do this',
+      };
+    }
+    if (openAmendmentCount > 0 && !blockerOverrides['open_amendments']) {
+      return {
+        blocker: `${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'}`,
+        nextAction: 'Apply, park, or reject amendments',
+        nextActionJump: () => onJumpToReview('amendments'),
+        nextCategory: 'Scheduler can do this',
       };
     }
     if (unmatchedCount > 0 && !blockerOverrides['unmatched']) {
@@ -9288,6 +9354,9 @@ function ReadinessPanel({
     month,
     blockedIntakeCount,
     hasPublishRows,
+    activeBuild,
+    publishStageReady,
+    openAmendmentCount,
     recalculationLocked,
     unmatchedCount,
     reviewCount,
@@ -9358,7 +9427,26 @@ function ReadinessPanel({
       onClick: summary.needsReviewCount > 0 ? () => onJumpToReview('decisions') : () => onJumpToReview('resubmits'),
     },
     {
-      label: '4. Check state coverage',
+      label: '4. Lock reviewed draft',
+      detail: activeBuild
+        ? publishStageReady
+          ? `Draft v${activeBuild.version_number} is locked for Publish.`
+          : openAmendmentCount > 0
+            ? `${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'} must be cleared before locking.`
+            : 'Draft exists, but it is still in Review. Lock it before Homebase or EHR posting.'
+        : 'Create Draft v1 before locking the schedule.',
+      status: publishStageReady
+        ? 'done'
+        : !activeBuild
+          ? 'waiting'
+          : reviewCount > 0 || openAmendmentCount > 0
+            ? 'blocked'
+            : 'current',
+      action: publishStageReady ? undefined : 'Review workflow',
+      onClick: publishStageReady ? undefined : () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+    },
+    {
+      label: '5. Check state coverage',
       detail: criticalGapStates.length > 0
         ? `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} are critically under-covered.`
         : watchGapStates.length > 0
@@ -9369,7 +9457,7 @@ function ReadinessPanel({
       onClick: onJumpToCoverage,
     },
     {
-      label: '5. Post accepted shifts to Homebase',
+      label: '6. Post accepted shifts to Homebase',
       detail: hasPublishRows
         ? `${summary.homebaseShifts}/${summary.totalShifts} shifts posted to Homebase.`
         : 'Homebase posting starts after the shift list is built.',
@@ -9378,7 +9466,7 @@ function ReadinessPanel({
       onClick: () => onJumpToPublish(),
     },
     {
-      label: '6. Transfer posted shifts to EHR',
+      label: '7. Transfer posted shifts to EHR',
       detail: hasPublishRows
         ? `${summary.ehrShifts}/${summary.totalShifts} shifts confirmed in EHR.`
         : 'EHR transfer starts after Homebase posting.',
@@ -9496,6 +9584,18 @@ function ReadinessPanel({
         tone: 'border-sky-200 bg-sky-50/70',
       });
     }
+    if (openAmendmentCount > 0) {
+      out.push({
+        key: 'open-amendments',
+        label: 'Open amendments',
+        value: openAmendmentCount.toString(),
+        detail: 'These post-draft changes must be applied, parked, or rejected before the final schedule is published.',
+        badge: 'Clear before publish',
+        action: 'Open Amendments',
+        onClick: () => onJumpToReview('amendments'),
+        tone: 'border-purple-200 bg-purple-50/70',
+      });
+    }
     if (unmatchedCount > 0) {
       out.push({
         key: 'unmatched',
@@ -9546,6 +9646,7 @@ function ReadinessPanel({
     onJumpToAvailability,
     onJumpToDeclined,
     onJumpToReview,
+    openAmendmentCount,
     pendingSubmissionCount,
     pendingSubmissionHours,
     summary.needsReviewCount,
