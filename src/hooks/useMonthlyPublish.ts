@@ -1239,12 +1239,18 @@ export function useCreateScheduleDraft() {
     mutationFn: async (args: { month: string; notes?: string }) => {
       const monthStart = monthIso(args.month);
       const nowIso = new Date().toISOString();
-      const [existingBuildsRes, shiftsRes, submissionsRes] = await Promise.all([
+      const [existingBuildsRes, activeBuildsRes, shiftsRes, submissionsRes] = await Promise.all([
         clinopsDb
           .from('schedule_builds')
           .select('version_number')
           .eq('target_month', monthStart)
           .order('version_number', { ascending: false })
+          .range(0, 0),
+        clinopsDb
+          .from('schedule_builds')
+          .select('id, version_number, status')
+          .eq('target_month', monthStart)
+          .in('status', ['locked', 'published'])
           .range(0, 0),
         clinopsDb
           .from('shift_recommendations')
@@ -1262,8 +1268,18 @@ export function useCreateScheduleDraft() {
           .range(0, 9999),
       ]);
       if (existingBuildsRes.error) throw existingBuildsRes.error;
+      if (activeBuildsRes.error) throw activeBuildsRes.error;
       if (shiftsRes.error) throw shiftsRes.error;
       if (submissionsRes.error) throw submissionsRes.error;
+      const activeLockedBuild = ((activeBuildsRes.data ?? []) as Array<{
+        version_number?: number | string;
+        status?: string | null;
+      }>)[0];
+      if (activeLockedBuild) {
+        throw new Error(
+          `Draft v${activeLockedBuild.version_number ?? ''} is already ${activeLockedBuild.status}. Use amendments for post-draft changes instead of creating a new draft.`,
+        );
+      }
 
       const rawShifts = (shiftsRes.data ?? []) as ShiftRecommendationSnapshotRow[];
       const submissions = (submissionsRes.data ?? []) as LatestSchedulingSubmission[];
