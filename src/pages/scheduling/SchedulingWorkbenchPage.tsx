@@ -3253,6 +3253,10 @@ function SchedulingPipelinePanel({
   ).size;
   const publishHours = publishRows.reduce((sum, row) => sum + Number(row.hours ?? 0), 0);
   const cutHours = cutRows.reduce((sum, row) => sum + Number(row.hours ?? 0), 0);
+  const homebaseDoneCount = publishRows.filter(isHomebaseDone).length;
+  const ehrDoneCount = publishRows.filter(isEhrDone).length;
+  const publishChecklistComplete =
+    publishRows.length > 0 && ehrDoneCount >= publishRows.length;
   const shiftDates = publishRows
     .map(row => row.shift_date)
     .filter(Boolean)
@@ -3283,6 +3287,7 @@ function SchedulingPipelinePanel({
       : null,
   ].filter(Boolean);
   const lockDisabled = isAdvancing || reviewBlockerCount > 0;
+  const markPublishedDisabled = isAdvancing || !publishChecklistComplete;
 
   return (
     <Card>
@@ -3310,6 +3315,17 @@ function SchedulingPipelinePanel({
               {stage === 'review' && reviewBlockerCount > 0 && (
                 <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
                   {reviewBlockerCount} before lock
+                </Badge>
+              )}
+              {stage === 'locked' && activeBuild && (
+                <Badge
+                  className={cn(
+                    publishChecklistComplete
+                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+                      : 'bg-blue-100 text-blue-800 hover:bg-blue-100',
+                  )}
+                >
+                  {ehrDoneCount}/{publishRows.length} EHR confirmed
                 </Badge>
               )}
             </div>
@@ -3386,6 +3402,23 @@ function SchedulingPipelinePanel({
                 <span>Open amendments: {reviewLockBlockers.amendments}</span>
               </div>
             )}
+            {activeBuild && stage === 'locked' && (
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs',
+                  publishChecklistComplete
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                    : 'border-blue-200 bg-blue-50 text-blue-900',
+                )}
+              >
+                <span className="font-medium">Before published</span>
+                <span>Homebase: {homebaseDoneCount}/{publishRows.length}</span>
+                <span>EHR: {ehrDoneCount}/{publishRows.length}</span>
+                {!publishChecklistComplete && (
+                  <span>Finish the Publish checklist before marking this schedule published.</span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!activeBuild && (
@@ -3440,19 +3473,32 @@ function SchedulingPipelinePanel({
               </Tooltip>
             )}
             {activeBuild && stage === 'locked' && (
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => onAdvance('published')}
-                disabled={isAdvancing}
-              >
-                {isAdvancing ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4 mr-1" />
-                )}
-                Mark published
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        if (publishChecklistComplete) onAdvance('published');
+                      }}
+                      disabled={markPublishedDisabled}
+                    >
+                      {isAdvancing ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4 mr-1" />
+                      )}
+                      Mark published
+                    </Button>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  {publishChecklistComplete
+                    ? 'Mark the locked draft as published after Homebase and EHR are complete.'
+                    : `Finish Homebase/EHR first: ${homebaseDoneCount}/${publishRows.length} Homebase, ${ehrDoneCount}/${publishRows.length} EHR.`}
+                </TooltipContent>
+              </Tooltip>
             )}
             {activeBuild && (stage === 'published' || stage === 'locked') && (
               <Button
