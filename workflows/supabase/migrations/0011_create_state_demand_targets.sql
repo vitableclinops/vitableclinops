@@ -2,13 +2,13 @@
 -- Used by the daily SLA bucketing job and by Lovable dashboards.
 --
 -- daily_target_slots follows the canonical formula:
---   max(5, monthly_visits_target / 20 * 1.5)
+--   monthly_visits_target / 20 * 1.5
 
 create table if not exists public.state_demand_targets (
   state                       text not null,
   month                       date not null,
   monthly_visits_target       integer not null check (monthly_visits_target >= 0),
-  daily_target_slots          integer not null check (daily_target_slots >= 5),
+  daily_target_slots          integer not null check (daily_target_slots >= 0),
   monthly_hours_target        numeric(8,2) not null check (monthly_hours_target >= 0),
   growth_multiplier           numeric(4,3) not null default 1.000
     check (growth_multiplier >= 0.5 and growth_multiplier <= 3.0),

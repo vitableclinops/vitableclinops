@@ -69,6 +69,8 @@ import {
   CheckCircle2,
   ClipboardList,
   CircleDot,
+  FileCheck2,
+  Lock,
   PlayCircle,
   Plus,
   Search,
@@ -101,6 +103,13 @@ import {
   useProviderSearch,
   useSchedulingExceptions,
   useSchedulingRecalculationHistory,
+  useSchedulingPipeline,
+  useScheduleBuildRows,
+  useCreateScheduleDraft,
+  useAdvanceSchedulingPipeline,
+  useCreateScheduleAmendmentRequest,
+  useReplaceScheduleBuildRowsForSubmission,
+  useUpdateScheduleAmendmentRequest,
   useUpdateProviderSchedulingException,
   useUpsertSchedulingException,
   useDeleteSchedulingException,
@@ -125,6 +134,12 @@ import {
   type ScheduleRecalculationResult,
   type SchedulingRecalculationChange,
   type SchedulingRecalculationRun,
+  type SchedulingPipelineStage,
+  type SchedulingPipelineState,
+  type ScheduleBuild,
+  type ScheduleBuildRow,
+  type ScheduleBuildRowInput,
+  type ScheduleAmendmentRequest,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -218,6 +233,25 @@ const formatMonthLabel = (iso: string) => {
     year: 'numeric',
     timeZone: 'UTC',
   });
+};
+
+const pipelineStageLabel = (stage: SchedulingPipelineStage) => {
+  switch (stage) {
+    case 'intake':
+      return 'Intake';
+    case 'allocated':
+      return 'Allocated';
+    case 'review':
+      return 'Review';
+    case 'locked':
+      return 'Locked';
+    case 'published':
+      return 'Published';
+    case 'amend':
+      return 'Amendments';
+    default:
+      return stage;
+  }
 };
 
 const normalizeMonthStart = (iso: string) => (iso.length === 7 ? `${iso}-01` : iso);
@@ -385,6 +419,21 @@ const weekdayCountInMonth = (weekday: string, month: string): number => {
   return count;
 };
 
+const datesForWeekdayInMonth = (weekday: string, month: string): string[] => {
+  const target = WEEKDAY_INDEX.get(weekday.toLowerCase());
+  if (target == null) return [];
+  const [year, monthNumber] = month.split('-').map(Number);
+  const days = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const dates: string[] = [];
+  for (let day = 1; day <= days; day += 1) {
+    const date = new Date(Date.UTC(year, monthNumber - 1, day));
+    if (date.getUTCDay() === target) {
+      dates.push(`${year}-${pad2(monthNumber)}-${pad2(day)}`);
+    }
+  }
+  return dates;
+};
+
 const draftShiftHours = (draft: ManualAvailabilityDraft, month: string): number => {
   const start = parseTimeToMinutes(draft.startTime);
   const end = parseTimeToMinutes(draft.endTime);
@@ -427,6 +476,71 @@ const warningStringsFromUnknown = (warnings: unknown): string[] => {
       .filter(Boolean);
   }
   return [];
+};
+
+type IntakeBranchKind = 'blocked' | 'flagged' | 'clean';
+
+type IntakeBranch = {
+  kind: IntakeBranchKind;
+  label: string;
+  detail: string;
+  owner: string;
+  issues: string[];
+};
+
+const intakeBranchStyles: Record<IntakeBranchKind, string> = {
+  blocked: 'border-red-200 bg-red-50 text-red-800',
+  flagged: 'border-amber-200 bg-amber-50 text-amber-800',
+  clean: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+};
+
+const blockingIntakeIssue = (warning: string) =>
+  /wrong month|outside target month|malformed|unparseable|parse|invalid time|end time.*before start|end time is at or before start|overnight|date .*outside/i
+    .test(warning);
+
+const nonBlockingIntakeFlag = (warning: string) =>
+  /high hours|unrealistic|too many|outside.*business|out-of-hours|operating hours|unavailable|off-day|single shift duration|exceeds max_single_shift/i
+    .test(warning);
+
+const intakeBranchForSubmission = (row: AvailabilitySubmissionRow): IntakeBranch => {
+  const warnings = warningStringsFromUnknown(row.validation_warnings);
+  const notes = row.decision_notes ? [row.decision_notes] : [];
+  const text = [...warnings, ...notes];
+  const blocking = text.filter(blockingIntakeIssue);
+  if (!row.provider_id) blocking.unshift('Provider is not linked to the directory');
+  if (blocking.length > 0) {
+    return {
+      kind: 'blocked',
+      label: 'Blocked logic error',
+      detail: 'Fix before allocation',
+      owner: 'Data quality',
+      issues: blocking,
+    };
+  }
+  const flags = text.filter(nonBlockingIntakeFlag);
+  const needsHumanReview = row.decision_status === 'needs_review' || row.human_review_state === 'pending';
+  if (flags.length > 0 || needsHumanReview) {
+    return {
+      kind: 'flagged',
+      label: 'Non-blocking flag',
+      detail: 'Flows to allocation; review in parallel if needed',
+      owner: 'Jotform intake routing',
+      issues: flags.length > 0 ? flags : ['Marked for human review'],
+    };
+  }
+  return {
+    kind: 'clean',
+    label: 'Clean intake',
+    detail: 'Ready for allocation',
+    owner: 'System',
+    issues: [],
+  };
+};
+
+const summarizeIntakeBranches = (rows: AvailabilitySubmissionRow[]) => {
+  const summary = { blocked: 0, flagged: 0, clean: 0 };
+  for (const row of rows) summary[intakeBranchForSubmission(row).kind] += 1;
+  return summary;
 };
 
 const manualDraftIssues = (draft: ManualAvailabilityDraft, month: string): string[] => {
@@ -568,6 +682,57 @@ const summarizeManualAvailability = (
   return `${labels.join('; ')}${more}; total=${formatHours(totalManualAvailabilityHours(drafts, month))}h`;
 };
 
+const manualDraftShiftType = (kind: ManualAvailabilityKind) => {
+  if (kind === 'recurring_virtual') return 'virtual_recurring';
+  if (kind === 'one_off_virtual') return 'virtual_oneoff';
+  return 'in_home_clinic';
+};
+
+const buildDraftRowsFromManualAvailability = (args: {
+  drafts: ManualAvailabilityDraft[];
+  month: string;
+  submissionId: string;
+  providerId: string | null;
+  providerName: string;
+  decisionRunId?: string | null;
+  reason: string;
+}): ScheduleBuildRowInput[] => {
+  const rows: ScheduleBuildRowInput[] = [];
+  for (const draft of args.drafts) {
+    const start = parseTimeToMinutes(draft.startTime);
+    const end = parseTimeToMinutes(draft.endTime);
+    if (start == null || end == null || end <= start) continue;
+    const dates =
+      draft.kind === 'recurring_virtual'
+        ? datesForWeekdayInMonth(draft.dayOfWeek, args.month)
+        : draft.date.startsWith(args.month.slice(0, 7))
+          ? [draft.date]
+          : [];
+    for (const shiftDate of dates) {
+      rows.push({
+        submission_id: args.submissionId,
+        provider_id: args.providerId,
+        provider_name: args.providerName,
+        target_month: normalizeMonthStart(args.month),
+        shift_date: shiftDate,
+        start_min: start,
+        end_min: end,
+        hours: Math.round(((end - start) / 60) * 100) / 100,
+        shift_type: manualDraftShiftType(draft.kind),
+        assigned_state: null,
+        recommendation: 'publish',
+        recommendation_reason: args.reason,
+        decision_run_id: args.decisionRunId ?? null,
+      });
+    }
+  }
+  return rows.sort((a, b) =>
+    a.shift_date.localeCompare(b.shift_date) ||
+    a.provider_name.localeCompare(b.provider_name) ||
+    a.start_min - b.start_min,
+  );
+};
+
 const buildCorrectedParsedShifts = (
   original: unknown,
   drafts: ManualAvailabilityDraft[],
@@ -642,7 +807,7 @@ const attributionLabel = (entry: PublishAuditEntry | undefined): string => {
   const who = entry.actor_label || (entry.actor_id ? 'someone' : 'system');
   const verb =
     entry.action === 'preserved'
-      ? 'preserved during schedule recalculation'
+      ? 'preserved during allocation'
       : entry.action === 'reverted'
         ? 'reverted'
         : 'marked';
@@ -699,6 +864,31 @@ const isShiftManuallyEdited = (shift: ShiftRow): boolean => {
     updatedDate.getDate() === now.getDate()
   );
 };
+
+const scheduleBuildRowToShiftRow = (row: ScheduleBuildRow): ShiftRow => ({
+  id: row.id,
+  schedule_build_row_id: row.id,
+  source_shift_recommendation_id: row.source_shift_recommendation_id,
+  submission_id: row.submission_id,
+  provider_id: row.provider_id,
+  provider_name: row.provider_name,
+  provider_time_zone: null,
+  target_month: row.target_month,
+  shift_date: row.shift_date,
+  start_min: row.start_min,
+  end_min: row.end_min,
+  hours: Number(row.hours ?? 0),
+  shift_type: row.shift_type,
+  assigned_state: row.assigned_state,
+  recommendation: row.recommendation,
+  recommendation_reason: row.recommendation_reason,
+  decision_run_id: row.decision_run_id,
+  publish_status: row.publish_status ?? row.source_publish_status ?? 'pending',
+  published_at: row.published_at ?? row.source_published_at ?? null,
+  published_by: row.published_by ?? null,
+  ehr_posted_at: row.ehr_posted_at ?? row.source_ehr_posted_at ?? null,
+  ehr_posted_by: row.ehr_posted_by ?? null,
+});
 
 const STATUS_STYLE: Record<DecisionStatus, { label: string; className: string }> = {
   accepted: { label: 'Accepted', className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100' },
@@ -765,7 +955,7 @@ const SHIFT_TYPE_LABEL: Record<string, string> = {
 };
 
 const MH_VISIT_CADENCE_MINUTES = 50;
-const MH_MIN_SHIFT_HOURS = 2.5;
+const MH_PREFERRED_SHIFT_HOURS = 2.5;
 
 const labelShiftType = (t: string | null | undefined) => {
   if (!t) return '—';
@@ -791,7 +981,7 @@ const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : [
 export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
 type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
 type PublishTabKey = 'provider' | 'queue' | 'day' | 'history';
-type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate';
+type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate' | 'amendments';
 type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'overflow' | 'cost' | 'forecast';
 type ProviderTimeOffEntry = {
   row: ProviderPublishView;
@@ -810,6 +1000,7 @@ const TOP_TAB_VALUES = [
 type TopTabKey = (typeof TOP_TAB_VALUES)[number];
 
 const topTabFromParam = (tab: string | null, section?: string | null): TopTabKey => {
+  if (section === 'allocate' || tab === 'allocate') return 'review';
   if (TOP_TAB_VALUES.includes(section as TopTabKey)) return section as TopTabKey;
   if (TOP_TAB_VALUES.includes(tab as TopTabKey)) return tab as TopTabKey;
   if (tab === 'availability') return 'intake';
@@ -836,9 +1027,19 @@ const publishTabFromView = (view: string | null): PublishTabKey =>
 const reviewTabFromView = (view: string | null): ReviewTabKey => {
   if (view === 'needs-review' || view === 'needs-decision' || view === 'decisions') return 'decisions';
   if (view === 'resubmits' || view === 'inbox') return 'resubmits';
-  if (view === 'pending-recalculation' || view === 'recalculate') return 'recalculate';
+  if (
+    view === 'pending-recalculation' ||
+    view === 'pending-allocation' ||
+    view === 'allocation-runs' ||
+    view === 'allocate' ||
+    view === 'recalculate'
+  ) return 'recalculate';
+  if (view === 'amendments' || view === 'history') return 'amendments';
   return 'decisions';
 };
+
+const reviewViewToParam = (view: ReviewTabKey) =>
+  view === 'recalculate' ? 'allocation-runs' : view;
 
 const coveragePlanTabFromView = (view: string | null, tab: string | null): CoveragePlanTabKey => {
   const candidate = view ?? tab;
@@ -951,6 +1152,8 @@ export default function SchedulingWorkbenchPage({
     const legacyView =
       tabParam === 'availability'
         ? viewParam || 'submissions'
+        : tabParam === 'allocate'
+          ? viewParam || 'allocation-runs'
         : tabParam === 'forecast' || tabParam === 'matching' || tabParam === 'coverage' || tabParam === 'declined' || tabParam === 'overflow' || tabParam === 'cost'
           ? tabParam
         : tabParam === 'publish'
@@ -978,7 +1181,7 @@ export default function SchedulingWorkbenchPage({
       nextTab === 'intake'
         ? availabilityTab
         : nextTab === 'review'
-          ? reviewTab
+          ? reviewViewToParam(reviewTab)
           : nextTab === 'coverage-plan'
             ? coveragePlanTab
             : nextTab === 'publish'
@@ -1002,7 +1205,7 @@ export default function SchedulingWorkbenchPage({
   const jumpToReview = (tab: ReviewTabKey = 'decisions') => {
     setReviewTab(tab);
     setTopTab('review');
-    updateWorkbenchParams({ section: 'review', view: tab, replace: true });
+    updateWorkbenchParams({ section: 'review', view: reviewViewToParam(tab), replace: true });
   };
   const jumpToCoveragePlan = (tab: CoveragePlanTabKey = 'coverage') => {
     setCoveragePlanTab(tab);
@@ -1036,6 +1239,7 @@ export default function SchedulingWorkbenchPage({
     useProviderPayRates(month);
   const { data: outreachLogsData = [] } = useProviderOutreachLog(month);
   const { data: readinessRowsData = [] } = useOnboardingReadiness(30);
+  const { data: pipelineStateData, isLoading: pipelineLoading } = useSchedulingPipeline(month);
 
   const dbRows = safeArray<ProviderPublishView>(dbRowsData);
   const shiftRows = safeArray<ShiftRow>(shiftRowsData);
@@ -1049,6 +1253,56 @@ export default function SchedulingWorkbenchPage({
   const outreachLogs = safeArray<ProviderOutreachLog>(outreachLogsData);
   const readinessRows = safeArray<{ readyForSubmissions: boolean }>(readinessRowsData);
   const selectedMonthStart = normalizeMonthStart(month);
+  const pipelineState: SchedulingPipelineState = pipelineStateData ?? {
+    workflow: null,
+    builds: [],
+    activeBuild: null,
+    amendments: [],
+  };
+  const activeScheduleBuild = pipelineState.activeBuild;
+  const pipelineStage: SchedulingPipelineStage =
+    pipelineState.workflow?.current_stage ??
+    (activeScheduleBuild?.status === 'published'
+      ? 'published'
+      : activeScheduleBuild?.status === 'locked'
+        ? 'locked'
+        : activeScheduleBuild
+          ? 'review'
+          : 'intake');
+  const recalculationLocked = Boolean(
+    activeScheduleBuild && ['review', 'locked', 'published', 'amend'].includes(pipelineStage),
+  );
+  const requestedAmendments = useMemo(
+    () => pipelineState.amendments.filter(a => a.status === 'requested'),
+    [pipelineState.amendments],
+  );
+  const openAmendments = useMemo(
+    () => pipelineState.amendments.filter(a => a.status === 'requested' || a.status === 'approved'),
+    [pipelineState.amendments],
+  );
+  const { data: activeBuildRowsData = [], isLoading: buildRowsLoading } =
+    useScheduleBuildRows(activeScheduleBuild?.id ?? null);
+  const activeBuildRows = safeArray<ScheduleBuildRow>(activeBuildRowsData);
+  const publishSourceIsDraft = Boolean(activeScheduleBuild);
+  const publishShiftRows = useMemo(
+    () =>
+      publishSourceIsDraft
+        ? activeBuildRows
+            .filter(row => row.recommendation === 'publish')
+            .map(scheduleBuildRowToShiftRow)
+        : shiftRows,
+    [activeBuildRows, publishSourceIsDraft, shiftRows],
+  );
+  const cutShiftRows = useMemo(
+    () =>
+      publishSourceIsDraft
+        ? activeBuildRows
+            .filter(row => row.recommendation === 'cut')
+            .map(scheduleBuildRowToShiftRow)
+        : cutRows,
+    [activeBuildRows, cutRows, publishSourceIsDraft],
+  );
+  const publishRowsLoading = publishSourceIsDraft ? buildRowsLoading : shiftsLoading;
   const setupIssuesCount = useMemo(
     () => readinessRows.filter(r => !r.readyForSubmissions).length,
     [readinessRows],
@@ -1058,11 +1312,12 @@ export default function SchedulingWorkbenchPage({
   const auditByShift = useMemo(() => {
     const map = new Map<string, { homebase?: PublishAuditEntry; ehr?: PublishAuditEntry }>();
     for (const entry of auditEntries) {
-      if (!entry.shift_recommendation_id) continue;
-      const slot = map.get(entry.shift_recommendation_id) ?? {};
+      const key = entry.schedule_build_row_id ?? entry.shift_recommendation_id;
+      if (!key) continue;
+      const slot = map.get(key) ?? {};
       if (entry.step === 'homebase' && !slot.homebase) slot.homebase = entry;
       if (entry.step === 'ehr' && !slot.ehr) slot.ehr = entry;
-      map.set(entry.shift_recommendation_id, slot);
+      map.set(key, slot);
     }
     return map;
   }, [auditEntries]);
@@ -1072,6 +1327,11 @@ export default function SchedulingWorkbenchPage({
   const resolveReview = useResolveNeedsReview();
   const markOutreachSent = useMarkProviderOutreachSent();
   const reevaluate = useReevaluateMonth();
+  const createScheduleDraft = useCreateScheduleDraft();
+  const advanceSchedulingPipeline = useAdvanceSchedulingPipeline();
+  const createAmendmentRequest = useCreateScheduleAmendmentRequest();
+  const replaceScheduleBuildRows = useReplaceScheduleBuildRowsForSubmission();
+  const updateScheduleAmendment = useUpdateScheduleAmendmentRequest();
   const [lastRecalculation, setLastRecalculation] = useState<{
     result: ScheduleRecalculationResult;
     before: RecalculationSnapshotRow[];
@@ -1166,26 +1426,27 @@ export default function SchedulingWorkbenchPage({
     });
   }, [dbRows, override, month]);
 
-  // Group shift_recommendations rows by provider for the per-provider view.
+  // Group the current publish source by provider. Before Draft v1 exists this
+  // is shift_recommendations; once a draft exists it is the frozen build rows.
   const shiftsByProvider = useMemo(() => {
     const map = new Map<string, ShiftRow[]>();
-    for (const s of shiftRows) {
+    for (const s of publishShiftRows) {
       if (!s.provider_id) continue;
       if (!map.has(s.provider_id)) map.set(s.provider_id, []);
       map.get(s.provider_id)!.push(s);
     }
     return map;
-  }, [shiftRows]);
+  }, [publishShiftRows]);
 
   const cutRowsByProvider = useMemo(() => {
     const map = new Map<string, ShiftRow[]>();
-    for (const s of cutRows) {
+    for (const s of cutShiftRows) {
       if (!s.provider_id) continue;
       if (!map.has(s.provider_id)) map.set(s.provider_id, []);
       map.get(s.provider_id)!.push(s);
     }
     return map;
-  }, [cutRows]);
+  }, [cutShiftRows]);
 
   const eligibilityByProvider = useMemo(() => {
     const map = new Map<string, ProviderEligibilitySummary>();
@@ -1346,13 +1607,13 @@ export default function SchedulingWorkbenchPage({
   // Sarabjeet's actual workload, not just per-provider check-marks.
   const allFlatAccepted = useMemo(() => {
     const acceptedProviderIds = new Set(acceptedRows.map(r => r.provider_id));
-    return shiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
-  }, [acceptedRows, shiftRows]);
+    return publishShiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
+  }, [acceptedRows, publishShiftRows]);
 
   const mentalHealthFlatAccepted = useMemo(() => {
     const acceptedProviderIds = new Set(mentalHealthAcceptedRows.map(r => r.provider_id));
-    return shiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
-  }, [mentalHealthAcceptedRows, shiftRows]);
+    return publishShiftRows.filter(s => s.provider_id && acceptedProviderIds.has(s.provider_id));
+  }, [mentalHealthAcceptedRows, publishShiftRows]);
 
   const summary = useMemo(() => {
     const totalShifts = allFlatAccepted.length;
@@ -1429,28 +1690,38 @@ export default function SchedulingWorkbenchPage({
   );
   const scopedLockedPublishProviderIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const shift of shiftRows) {
+    for (const shift of publishShiftRows) {
       if (shift.provider_id && (isHomebaseDone(shift) || isEhrDone(shift))) {
         ids.add(shift.provider_id);
       }
     }
     return ids;
-  }, [shiftRows]);
+  }, [publishShiftRows]);
+  const scopedDraftPublishProviderIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!publishSourceIsDraft) return ids;
+    for (const shift of publishShiftRows) {
+      if (shift.provider_id) ids.add(shift.provider_id);
+    }
+    return ids;
+  }, [publishShiftRows, publishSourceIsDraft]);
   const scopedPublishRows = useMemo(
     () =>
       scopedRows.filter(row =>
-        isAcceptedSubmission(row) || scopedLockedPublishProviderIds.has(row.provider_id),
+        isAcceptedSubmission(row) ||
+        scopedLockedPublishProviderIds.has(row.provider_id) ||
+        scopedDraftPublishProviderIds.has(row.provider_id),
       ),
-    [scopedRows, scopedLockedPublishProviderIds],
+    [scopedRows, scopedDraftPublishProviderIds, scopedLockedPublishProviderIds],
   );
   const scopedFlatAccepted = useMemo(() => {
     const ids = new Set(scopedPublishRows.map(r => r.provider_id));
-    return shiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
-  }, [scopedPublishRows, shiftRows]);
+    return publishShiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
+  }, [publishShiftRows, scopedPublishRows]);
   const scopedCutRows = useMemo(() => {
     const ids = new Set(scopedRows.map(r => r.provider_id));
-    return cutRows.filter(s => s.provider_id && ids.has(s.provider_id));
-  }, [cutRows, scopedRows]);
+    return cutShiftRows.filter(s => s.provider_id && ids.has(s.provider_id));
+  }, [cutShiftRows, scopedRows]);
   const scopedSummary = useMemo(() => {
     const totalShifts = scopedFlatAccepted.length;
     return {
@@ -1471,6 +1742,10 @@ export default function SchedulingWorkbenchPage({
         mhSlMatches(null, s.provider_name),
       ),
     [availabilitySubmissions, isMh, mhSlMatches],
+  );
+  const scopedIntakeBranchSummary = useMemo(
+    () => summarizeIntakeBranches(scopedAvailabilitySubs),
+    [scopedAvailabilitySubs],
   );
   const scopedInboxSubs = useMemo(
     () =>
@@ -1633,8 +1908,16 @@ export default function SchedulingWorkbenchPage({
 
   const runScheduleRecalculation = (
     before = buildRecalculationSnapshot(scopedRows, scopedFlatAccepted, scopedCutRows),
-    toastPrefix = `Recalculated ${formatMonthLabel(month)} schedule`,
+    toastPrefix = `Ran allocation for ${formatMonthLabel(month)}`,
   ) => {
+    if (recalculationLocked) {
+      toast.info(
+        activeScheduleBuild
+          ? `Draft v${activeScheduleBuild.version_number} is already in ${pipelineStageLabel(pipelineStage)}. Review changes as draft edits or amendments instead of rerunning the whole month.`
+          : 'Allocation is closed. Review changes as amendments instead.',
+      );
+      return;
+    }
     reevaluate.mutate(month, {
       onSuccess: result => {
         setLastRecalculation({
@@ -1656,7 +1939,7 @@ export default function SchedulingWorkbenchPage({
         refetchShifts();
         refetchCuts();
       },
-      onError: e => toast.error(`Schedule recalculation failed: ${(e as Error).message}`),
+      onError: e => toast.error(`Allocation run failed: ${(e as Error).message}`),
     });
   };
 
@@ -1666,28 +1949,70 @@ export default function SchedulingWorkbenchPage({
 
   const handleResolveNeedsReview = (args: ResolveArgs) => {
     const shouldRecalculateAfterApproval =
-      Boolean(args.correction_summary) && args.decision === 'accepted';
+      Boolean(args.correction_summary) && args.decision === 'accepted' && !recalculationLocked;
+    const shouldReplaceDraftRows =
+      Boolean(args.corrected_draft_rows?.length) &&
+      args.decision === 'accepted' &&
+      Boolean(activeScheduleBuild?.id) &&
+      pipelineStage === 'review';
     const beforeRecalculation = buildRecalculationSnapshot(
       scopedRows,
       scopedFlatAccepted,
       scopedCutRows,
     );
-    resolveReview.mutate(args, {
+    resolveReview.mutate({ ...args, skip_evaluate: recalculationLocked }, {
       onSuccess: () => {
+        if (recalculationLocked && args.decision === 'accepted') {
+          if (shouldReplaceDraftRows && activeScheduleBuild) {
+            replaceScheduleBuildRows.mutate(
+              {
+                buildId: activeScheduleBuild.id,
+                month: args.target_month,
+                submissionId: args.submission_id,
+                providerId: args.provider_id,
+                providerName: args.provider_name,
+                rows: args.corrected_draft_rows ?? [],
+              },
+              {
+                onSuccess: () =>
+                  toast.success(
+                    `Updated Draft v${activeScheduleBuild.version_number} rows for ${args.provider_name}`,
+                  ),
+                onError: error =>
+                  toast.error(`Approved, but draft rows were not updated: ${(error as Error).message}`),
+              },
+            );
+          }
+          createAmendmentRequest.mutate({
+            month: args.target_month,
+            buildId: activeScheduleBuild?.id ?? null,
+            submissionId: args.submission_id,
+            providerId: args.provider_id,
+            providerName: args.provider_name,
+            requestType: 'manual_review',
+            status: shouldReplaceDraftRows ? 'applied' : 'requested',
+            summary: args.correction_summary
+              ? `Approved corrected hours: ${args.correction_summary}`
+              : `Approved reviewed hours for ${args.provider_name}`,
+            notes: args.reason,
+          });
+        }
         if (shouldRecalculateAfterApproval) {
           toast.success(
-            `Approved corrected hours for ${args.provider_name}. Recalculating ${formatMonthLabel(month)} now.`,
+            `Approved corrected hours for ${args.provider_name}. Running allocation for ${formatMonthLabel(month)} now.`,
           );
           setReviewTab('recalculate');
-          updateWorkbenchParams({ section: 'review', view: 'recalculate', replace: true });
+          updateWorkbenchParams({ section: 'review', view: 'allocation-runs', replace: true });
           runScheduleRecalculation(
             beforeRecalculation,
-            `Approved corrected hours and recalculated ${formatMonthLabel(month)}`,
+            `Approved corrected hours and ran allocation for ${formatMonthLabel(month)}`,
           );
         } else {
           toast.success(
             args.decision === 'accepted'
-              ? `Approved hours for ${args.provider_name}`
+              ? recalculationLocked
+                ? `Approved hours for ${args.provider_name} · amendment logged`
+                : `Approved hours for ${args.provider_name}`
               : `Declined hours for ${args.provider_name}`,
           );
         }
@@ -1757,28 +2082,42 @@ export default function SchedulingWorkbenchPage({
               ))}
             </SelectContent>
           </Select>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={reevaluateNow}
-                disabled={reevaluate.isPending}
-              >
-                {reevaluate.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-1" />
-                )}
-                Recalculate schedule
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs">
-              Rebuilds the recommended {formatMonthLabel(month)} schedule from the latest Jotform submissions.
-              Already-published shifts keep their Homebase / EHR state — only
-              shifts that change or disappear lose their progress.
-            </TooltipContent>
-          </Tooltip>
+          {recalculationLocked ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+                  <Lock className="h-4 w-4 mr-1" />
+                  Allocation closed
+                </div>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                {activeScheduleBuild
+                  ? `Draft v${activeScheduleBuild.version_number} is in ${pipelineStageLabel(pipelineStage)}. Allocation is closed; save review changes to the draft or amendments instead.`
+                  : 'Allocation is closed for this month.'}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={reevaluateNow}
+                  disabled={reevaluate.isPending}
+                >
+                  {reevaluate.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                  )}
+                  Run allocation
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                Runs the monthly allocator for {formatMonthLabel(month)} from the latest Jotform submissions. Create Draft v1 after this looks ready.
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -1818,15 +2157,73 @@ export default function SchedulingWorkbenchPage({
         }
       />
 
+      <SchedulingPipelinePanel
+        month={month}
+        stage={pipelineStage}
+        state={pipelineState}
+        isLoading={pipelineLoading}
+        hasAllocationRows={shiftRows.length > 0 || cutRows.length > 0}
+        buildRows={activeBuildRows}
+        isLoadingBuildRows={buildRowsLoading}
+        openAmendments={openAmendments}
+        reviewLockBlockers={{
+          needsDecision: scopedSummary.needsReviewCount,
+          resubmits: scopedInboxActionable,
+          pendingAllocation: scopedPendingAvailability.length,
+          amendments: openAmendments.length,
+        }}
+        isCreatingDraft={createScheduleDraft.isPending}
+        isAdvancing={advanceSchedulingPipeline.isPending}
+        onCreateDraft={() =>
+          createScheduleDraft.mutate(
+            {
+              month,
+              notes: `Draft created from current ${formatMonthLabel(month)} allocation.`,
+            },
+            {
+              onSuccess: build =>
+                toast.success(`Created Draft v${build.version_number} for ${formatMonthLabel(month)}`),
+              onError: error => toast.error(`Could not create draft: ${(error as Error).message}`),
+            },
+          )
+        }
+        onAdvance={(stage) =>
+          advanceSchedulingPipeline.mutate(
+            {
+              month,
+              stage,
+              buildId: activeScheduleBuild?.id ?? null,
+              notes:
+                stage === 'locked'
+                  ? `Draft v${activeScheduleBuild?.version_number ?? ''} locked for publish.`
+                  : stage === 'published'
+                    ? `Draft v${activeScheduleBuild?.version_number ?? ''} marked published.`
+                    : 'Post-publish amendments opened.',
+            },
+            {
+              onSuccess: () => toast.success(`Scheduling workflow moved to ${pipelineStageLabel(stage)}`),
+              onError: error => toast.error(`Could not update workflow: ${(error as Error).message}`),
+            },
+          )
+        }
+      />
+
       <Tabs value={topTab} onValueChange={onTopTabChange}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="readiness"><ShieldCheck className="h-3.5 w-3.5 mr-1" />Readiness</TabsTrigger>
-          <TabsTrigger value="intake"><Inbox className="h-3.5 w-3.5 mr-1" />Intake</TabsTrigger>
+          <TabsTrigger value="intake">
+            <Inbox className="h-3.5 w-3.5 mr-1" />Intake
+            {scopedIntakeBranchSummary.blocked > 0 && (
+              <Badge className="ml-1 bg-red-100 text-red-700">
+                {scopedIntakeBranchSummary.blocked}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="review">
             <AlertCircle className="h-3.5 w-3.5 mr-1" />Review
-            {(scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length) > 0 && (
+            {(scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length + requestedAmendments.length) > 0 && (
               <Badge className="ml-1 bg-orange-100 text-orange-800">
-                {scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length}
+                {scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length + requestedAmendments.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -1845,7 +2242,7 @@ export default function SchedulingWorkbenchPage({
         <TabsContent value="readiness" className="mt-4 space-y-4">
           <ReadinessPanel
             month={month}
-            isLoading={isLoading || shiftsLoading}
+            isLoading={isLoading || publishRowsLoading}
             summary={scopedSummary}
             missingCount={scopedSummary.missingCount}
             submittedHours={scopedSubmittedAvailabilityHours}
@@ -1856,8 +2253,14 @@ export default function SchedulingWorkbenchPage({
             declinedHours={readinessDeclinedHours}
             inboxNeedsReviewCount={scopedInboxActionable}
             unmatchedCount={scopedUnmatched.length}
+            blockedIntakeCount={scopedIntakeBranchSummary.blocked}
+            flaggedIntakeCount={scopedIntakeBranchSummary.flagged}
             onReevaluate={reevaluateNow}
             isReevaluating={reevaluate.isPending}
+            recalculationLocked={recalculationLocked}
+            activeBuild={activeScheduleBuild}
+            stage={pipelineStage}
+            openAmendmentCount={openAmendments.length}
             onJumpToCoverage={() => jumpToCoveragePlan('coverage')}
             onJumpToAvailability={jumpToAvailability}
             onJumpToReview={jumpToReview}
@@ -1869,13 +2272,13 @@ export default function SchedulingWorkbenchPage({
             }}
           />
           <SopCard />
-          {!shiftsLoading && shiftRows.length === 0 && acceptedRows.length > 0 && (
+          {!publishRowsLoading && publishShiftRows.length === 0 && acceptedRows.length > 0 && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                No per-shift recommendations have been generated for{' '}
-                {formatMonthLabel(month)}. Click "Recalculate schedule" above to turn the latest
-                Jotform submissions into individual shifts.
+                No publishable shift rows have been generated for{' '}
+                {formatMonthLabel(month)}. Create Draft v1 from the current allocation before
+                the publishing checklist starts.
               </AlertDescription>
             </Alert>
           )}
@@ -1891,7 +2294,9 @@ export default function SchedulingWorkbenchPage({
               <p className="text-xs text-muted-foreground mt-1">
                 {override
                   ? `Using uploaded file: ${override.fileName} · ${override.totalShifts} shift${override.totalShifts === 1 ? '' : 's'} matched to ${override.matchedProviders} provider${override.matchedProviders === 1 ? '' : 's'}`
-                  : `Showing ${shiftRows.length} system-built shift${shiftRows.length === 1 ? '' : 's'}. Upload a Jotform export only if you need to preview a not-yet-imported file.`}
+                  : publishSourceIsDraft && activeScheduleBuild
+                    ? `Showing Draft v${activeScheduleBuild.version_number}: ${publishShiftRows.length} publishable shift${publishShiftRows.length === 1 ? '' : 's'} and ${cutShiftRows.length} cut shift${cutShiftRows.length === 1 ? '' : 's'}.`
+                    : `Showing ${shiftRows.length} system-built shift${shiftRows.length === 1 ? '' : 's'}. Upload a Jotform export only if you need to preview a not-yet-imported file.`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1908,7 +2313,17 @@ export default function SchedulingWorkbenchPage({
                       { body: {} },
                     );
                     if (syncErr) throw syncErr;
-                    toast.loading('Re-evaluating submissions…', { id: toastId });
+                    if (recalculationLocked) {
+                      toast.success(
+                        activeScheduleBuild
+                          ? `Jotform sync complete. Draft v${activeScheduleBuild.version_number} is in ${pipelineStageLabel(pipelineStage)}, so allocation stayed closed.`
+                          : 'Jotform sync complete. Allocation is currently closed.',
+                        { id: toastId },
+                      );
+                      refetch();
+                      return;
+                    }
+                    toast.loading('Running allocation...', { id: toastId });
                     const { error: evalErr } = await clinopsSupabase.functions.invoke(
                       `evaluate-schedule-submissions?target_month=${encodeURIComponent(month)}`,
                       { body: {} },
@@ -1964,7 +2379,7 @@ export default function SchedulingWorkbenchPage({
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
             No submissions found for {formatMonthLabel(month)}. Pick a different month or run the
-            direct Jotform sync, then click "Recalculate schedule".
+            direct Jotform sync, then run allocation before Draft v1.
           </AlertDescription>
         </Alert>
       )}
@@ -2030,6 +2445,7 @@ export default function SchedulingWorkbenchPage({
             isLoading={availabilityLoading}
             onResolve={handleResolveNeedsReview}
             isResolvePending={resolveReview.isPending}
+            recalculationLocked={recalculationLocked}
           />
         </TabsContent>
 
@@ -2038,6 +2454,8 @@ export default function SchedulingWorkbenchPage({
             anchorMonth={month}
             submissions={scopedInboxSubs}
             isLoading={inboxLoading}
+            disableAutoRecalculate={recalculationLocked}
+            activeBuildId={activeScheduleBuild?.id ?? null}
           />
         </TabsContent>
 
@@ -2087,7 +2505,7 @@ export default function SchedulingWorkbenchPage({
           <Tabs value={reviewTab} onValueChange={(v) => {
             const next = v as ReviewTabKey;
             setReviewTab(next);
-            updateWorkbenchParams({ section: 'review', view: next, replace: true });
+            updateWorkbenchParams({ section: 'review', view: reviewViewToParam(next), replace: true });
           }}>
             <TabsList className="flex-wrap h-auto">
               <TabsTrigger value="decisions">
@@ -2107,10 +2525,18 @@ export default function SchedulingWorkbenchPage({
                 )}
               </TabsTrigger>
               <TabsTrigger value="recalculate">
-                Pending recalculation
+                Allocation runs
                 {scopedPendingAvailability.length > 0 && (
                   <Badge className="ml-1 bg-slate-200 text-slate-700">
                     {scopedPendingAvailability.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="amendments">
+                Amendments
+                {requestedAmendments.length > 0 && (
+                  <Badge className="ml-1 bg-purple-100 text-purple-800">
+                    {requestedAmendments.length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -2123,6 +2549,7 @@ export default function SchedulingWorkbenchPage({
                 isLoading={isLoading}
                 onResolve={handleResolveNeedsReview}
                 isPending={resolveReview.isPending}
+                recalculationLocked={recalculationLocked}
               />
             </TabsContent>
 
@@ -2131,6 +2558,8 @@ export default function SchedulingWorkbenchPage({
                 anchorMonth={month}
                 submissions={scopedInboxSubs}
                 isLoading={inboxLoading}
+                disableAutoRecalculate={recalculationLocked}
+                activeBuildId={activeScheduleBuild?.id ?? null}
               />
             </TabsContent>
 
@@ -2146,6 +2575,34 @@ export default function SchedulingWorkbenchPage({
                 isLoading={availabilityLoading}
                 isReevaluating={reevaluate.isPending}
                 onReevaluate={reevaluateNow}
+                recalculationLocked={recalculationLocked}
+                activeBuild={activeScheduleBuild}
+                stage={pipelineStage}
+              />
+            </TabsContent>
+
+            <TabsContent value="amendments" className="mt-4 space-y-4">
+              <AmendmentRequestsPanel
+                month={month}
+                amendments={pipelineState.amendments}
+                isUpdating={updateScheduleAmendment.isPending}
+                onUpdateStatus={(amendment, status) =>
+                  updateScheduleAmendment.mutate(
+                    {
+                      month,
+                      amendmentId: amendment.id,
+                      status,
+                    },
+                    {
+                      onSuccess: () =>
+                        toast.success(
+                          `${amendment.provider_name} amendment marked ${status.replaceAll('_', ' ')}`,
+                        ),
+                      onError: error =>
+                        toast.error(`Could not update amendment: ${(error as Error).message}`),
+                    },
+                  )
+                }
               />
             </TabsContent>
           </Tabs>
@@ -2175,7 +2632,7 @@ export default function SchedulingWorkbenchPage({
                   <Badge className="ml-1 bg-blue-100 text-blue-800">{scopedCutRows.length}</Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="cost"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost / Visit</TabsTrigger>
+              <TabsTrigger value="cost"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost audit</TabsTrigger>
               <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
             </TabsList>
 
@@ -2222,6 +2679,9 @@ export default function SchedulingWorkbenchPage({
                 isLoading={isLoading || providerPayRatesLoading}
                 onRecalculate={reevaluateNow}
                 isReevaluating={reevaluate.isPending}
+                recalculationLocked={recalculationLocked}
+                activeBuild={activeScheduleBuild}
+                stage={pipelineStage}
               />
             </TabsContent>
 
@@ -2240,6 +2700,10 @@ export default function SchedulingWorkbenchPage({
             inboxNeedsReviewCount={scopedInboxActionable}
             unmatchedCount={scopedUnmatched.length}
             missingCount={scopedSummary.missingCount}
+            blockedIntakeCount={scopedIntakeBranchSummary.blocked}
+            activeBuild={activeScheduleBuild}
+            stage={pipelineStage}
+            openAmendmentCount={openAmendments.length}
             onJumpToAvailability={jumpToAvailability}
             onJumpToReview={jumpToReview}
             onJumpToCoverage={() => jumpToCoveragePlan('coverage')}
@@ -2250,6 +2714,14 @@ export default function SchedulingWorkbenchPage({
             rows={scopedPublishRows}
             shiftsByProvider={shiftsByProvider}
           />
+          <Alert className={publishSourceIsDraft ? 'border-emerald-200 bg-emerald-50/50' : ''}>
+            <FileCheck2 className="h-4 w-4" />
+            <AlertDescription className="text-xs">
+              {publishSourceIsDraft && activeScheduleBuild
+                ? `Publish is using Draft v${activeScheduleBuild.version_number}. Homebase and EHR checkmarks are saved on the frozen draft rows, including manually corrected Review hours.`
+                : 'Publish is using the current allocation rows because no monthly draft exists yet. Create Draft v1 before the final publishing pass.'}
+            </AlertDescription>
+          </Alert>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard
               label="Shifts to publish"
@@ -2443,7 +2915,7 @@ export default function SchedulingWorkbenchPage({
                                 {flats.length === 0 ? (
                                   <div className="text-xs text-muted-foreground italic">
                                     No per-shift data — submission hasn't been expanded yet.
-                                    Click "Recalculate schedule" above to generate the shift list.
+                                    Run allocation before Draft v1 to generate the shift list.
                                   </div>
                                 ) : (
                                   <ShiftListInline
@@ -2476,7 +2948,7 @@ export default function SchedulingWorkbenchPage({
           <PublishingQueue
             month={month}
             shifts={scopedFlatAccepted}
-            isLoading={shiftsLoading}
+            isLoading={publishRowsLoading}
             onToggleShift={handleToggleShift}
             auditByShift={auditByShift}
             onBulkShifts={(shifts, step, done) =>
@@ -2500,7 +2972,7 @@ export default function SchedulingWorkbenchPage({
           <ByDayPanel
             month={month}
             shifts={scopedFlatAccepted}
-            isLoading={shiftsLoading}
+            isLoading={publishRowsLoading}
             onToggleShift={handleToggleShift}
             auditByShift={auditByShift}
           />
@@ -2527,7 +2999,7 @@ export default function SchedulingWorkbenchPage({
             availabilityRows={scopedAvailabilitySubs}
             unmatchedRows={scopedUnmatched}
             missingRows={scopedMissing}
-            shifts={isMh ? scopedFlatAccepted : shiftRows}
+            shifts={isMh ? scopedFlatAccepted : publishShiftRows}
           />
         </TabsContent>
       </Tabs>
@@ -2767,6 +3239,587 @@ function LoadingRow({ label }: { label: string }) {
       <Loader2 className="h-5 w-5 animate-spin mr-2" />
       {label}
     </div>
+  );
+}
+
+function SchedulingPipelinePanel({
+  month,
+  stage,
+  state,
+  isLoading,
+  hasAllocationRows,
+  buildRows,
+  isLoadingBuildRows,
+  openAmendments,
+  reviewLockBlockers,
+  isCreatingDraft,
+  isAdvancing,
+  onCreateDraft,
+  onAdvance,
+}: {
+  month: string;
+  stage: SchedulingPipelineStage;
+  state: SchedulingPipelineState;
+  isLoading: boolean;
+  hasAllocationRows: boolean;
+  buildRows: ScheduleBuildRow[];
+  isLoadingBuildRows: boolean;
+  openAmendments: ScheduleAmendmentRequest[];
+  reviewLockBlockers: {
+    needsDecision: number;
+    resubmits: number;
+    pendingAllocation: number;
+    amendments: number;
+  };
+  isCreatingDraft: boolean;
+  isAdvancing: boolean;
+  onCreateDraft: () => void;
+  onAdvance: (stage: SchedulingPipelineStage) => void;
+}) {
+  const activeBuild = state.activeBuild;
+  const stages: SchedulingPipelineStage[] = ['intake', 'allocated', 'review', 'locked', 'published', 'amend'];
+  const activeIndex = stages.indexOf(stage);
+  const title = activeBuild
+    ? `Draft v${activeBuild.version_number} · ${pipelineStageLabel(stage)}`
+    : hasAllocationRows
+      ? 'Allocation ready for Draft v1'
+      : 'Intake / allocation not drafted';
+  const lockedFromRecalc = Boolean(
+    activeBuild && ['review', 'locked', 'published', 'amend'].includes(stage),
+  );
+  const publishRows = buildRows.filter(row => row.recommendation === 'publish');
+  const cutRows = buildRows.filter(row => row.recommendation === 'cut');
+  const publishProviderCount = new Set(
+    publishRows.map(row => row.provider_id ?? row.provider_name).filter(Boolean),
+  ).size;
+  const publishHours = publishRows.reduce((sum, row) => sum + Number(row.hours ?? 0), 0);
+  const cutHours = cutRows.reduce((sum, row) => sum + Number(row.hours ?? 0), 0);
+  const homebaseDoneCount = publishRows.filter(isHomebaseDone).length;
+  const ehrDoneCount = publishRows.filter(isEhrDone).length;
+  const publishChecklistComplete =
+    publishRows.length > 0 && ehrDoneCount >= publishRows.length;
+  const shiftDates = publishRows
+    .map(row => row.shift_date)
+    .filter(Boolean)
+    .sort();
+  const dateSpan =
+    shiftDates.length === 0
+      ? 'No publish rows'
+      : shiftDates[0] === shiftDates[shiftDates.length - 1]
+        ? formatDateLabel(shiftDates[0])
+        : `${formatDateLabel(shiftDates[0])} – ${formatDateLabel(shiftDates[shiftDates.length - 1])}`;
+  const reviewBlockerCount =
+    reviewLockBlockers.needsDecision +
+    reviewLockBlockers.resubmits +
+    reviewLockBlockers.pendingAllocation +
+    reviewLockBlockers.amendments;
+  const reviewBlockerLabels = [
+    reviewLockBlockers.needsDecision > 0
+      ? `${reviewLockBlockers.needsDecision} need decision`
+      : null,
+    reviewLockBlockers.resubmits > 0
+      ? `${reviewLockBlockers.resubmits} resubmit${reviewLockBlockers.resubmits === 1 ? '' : 's'}`
+      : null,
+    reviewLockBlockers.pendingAllocation > 0
+      ? `${reviewLockBlockers.pendingAllocation} pending allocation`
+      : null,
+    reviewLockBlockers.amendments > 0
+      ? `${reviewLockBlockers.amendments} open amendment${reviewLockBlockers.amendments === 1 ? '' : 's'}`
+      : null,
+  ].filter(Boolean);
+  const lockDisabled = isAdvancing || reviewBlockerCount > 0;
+  const markPublishedDisabled = isAdvancing || !publishChecklistComplete;
+
+  return (
+    <Card>
+      <CardContent className="py-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="bg-slate-50">
+                {formatMonthLabel(month)}
+              </Badge>
+              <div className="font-medium flex items-center gap-2">
+                <FileCheck2 className="h-4 w-4 text-emerald-700" />
+                {isLoading ? 'Loading scheduling workflow' : title}
+              </div>
+              {lockedFromRecalc && (
+                <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
+                  Allocation closed
+                </Badge>
+              )}
+              {openAmendments.length > 0 && (
+                <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">
+                  {openAmendments.length} open amendment{openAmendments.length === 1 ? '' : 's'}
+                </Badge>
+              )}
+              {stage === 'review' && reviewBlockerCount > 0 && (
+                <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                  {reviewBlockerCount} before lock
+                </Badge>
+              )}
+              {stage === 'locked' && activeBuild && (
+                <Badge
+                  className={cn(
+                    publishChecklistComplete
+                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+                      : 'bg-blue-100 text-blue-800 hover:bg-blue-100',
+                  )}
+                >
+                  {ehrDoneCount}/{publishRows.length} EHR confirmed
+                </Badge>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {stages.map((s, index) => {
+                const isCurrent = s === stage;
+                const isDone = activeIndex >= 0 && index < activeIndex;
+                return (
+                  <Badge
+                    key={s}
+                    variant="outline"
+                    className={cn(
+                      'h-7 rounded-md px-2',
+                      isCurrent && 'border-emerald-300 bg-emerald-50 text-emerald-900',
+                      isDone && 'border-slate-200 bg-slate-50 text-slate-600',
+                    )}
+                  >
+                    {isDone && <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                    {pipelineStageLabel(s)}
+                  </Badge>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground max-w-3xl">
+              {lockedFromRecalc
+                ? 'The monthly allocator should not run again from this point. Save corrected hours and resubmits into Amendments so the team can review only what changed.'
+                : 'Run allocation until the schedule looks right, then create Draft v1. After that, changes move through Review and Amendments instead of full-month allocation.'}
+            </p>
+            {activeBuild && (
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                <div className="rounded-md border bg-slate-50 px-3 py-2">
+                  <div className="text-[11px] text-muted-foreground">Draft rows</div>
+                  <div className="text-sm font-semibold">
+                    {isLoadingBuildRows ? 'Loading' : buildRows.length.toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-md border bg-emerald-50 px-3 py-2">
+                  <div className="text-[11px] text-muted-foreground">Accepted</div>
+                  <div className="text-sm font-semibold">
+                    {isLoadingBuildRows ? 'Loading' : `${formatHours(publishHours)}h`}
+                  </div>
+                </div>
+                <div className="rounded-md border bg-red-50 px-3 py-2">
+                  <div className="text-[11px] text-muted-foreground">Cut</div>
+                  <div className="text-sm font-semibold">
+                    {isLoadingBuildRows ? 'Loading' : `${formatHours(cutHours)}h`}
+                  </div>
+                </div>
+                <div className="rounded-md border bg-white px-3 py-2">
+                  <div className="text-[11px] text-muted-foreground">Providers</div>
+                  <div className="text-sm font-semibold">
+                    {isLoadingBuildRows ? 'Loading' : publishProviderCount.toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-md border bg-white px-3 py-2">
+                  <div className="text-[11px] text-muted-foreground">Frozen dates</div>
+                  <div className="text-sm font-semibold">{isLoadingBuildRows ? 'Loading' : dateSpan}</div>
+                </div>
+              </div>
+            )}
+            {activeBuild && stage === 'review' && (
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs',
+                  reviewBlockerCount > 0
+                    ? 'border-red-200 bg-red-50 text-red-900'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-900',
+                )}
+              >
+                <span className="font-medium">Before lock</span>
+                <span>Needs decision: {reviewLockBlockers.needsDecision}</span>
+                <span>Resubmits: {reviewLockBlockers.resubmits}</span>
+                <span>Pending allocation: {reviewLockBlockers.pendingAllocation}</span>
+                <span>Open amendments: {reviewLockBlockers.amendments}</span>
+              </div>
+            )}
+            {activeBuild && stage === 'locked' && (
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs',
+                  publishChecklistComplete
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                    : 'border-blue-200 bg-blue-50 text-blue-900',
+                )}
+              >
+                <span className="font-medium">Before published</span>
+                <span>Homebase: {homebaseDoneCount}/{publishRows.length}</span>
+                <span>EHR: {ehrDoneCount}/{publishRows.length}</span>
+                {!publishChecklistComplete && (
+                  <span>Finish the Publish checklist before marking this schedule published.</span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!activeBuild && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={onCreateDraft}
+                    disabled={isCreatingDraft || !hasAllocationRows}
+                  >
+                    {isCreatingDraft ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <FileCheck2 className="h-4 w-4 mr-1" />
+                    )}
+                    Create Draft v1
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  Snapshot the current accepted and cut allocation rows as the first reviewable draft.
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {activeBuild && stage === 'review' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (reviewBlockerCount === 0) onAdvance('locked');
+                      }}
+                      disabled={lockDisabled}
+                    >
+                      {isAdvancing ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Lock className="h-4 w-4 mr-1" />
+                      )}
+                      Lock draft
+                    </Button>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  {reviewBlockerCount > 0
+                    ? `Clear before locking: ${reviewBlockerLabels.join(', ')}.`
+                    : 'Lock the reviewed draft so Publish only handles Homebase and EHR posting.'}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {activeBuild && stage === 'locked' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        if (publishChecklistComplete) onAdvance('published');
+                      }}
+                      disabled={markPublishedDisabled}
+                    >
+                      {isAdvancing ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4 mr-1" />
+                      )}
+                      Mark published
+                    </Button>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  {publishChecklistComplete
+                    ? 'Mark the locked draft as published after Homebase and EHR are complete.'
+                    : `Finish Homebase/EHR first: ${homebaseDoneCount}/${publishRows.length} Homebase, ${ehrDoneCount}/${publishRows.length} EHR.`}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {activeBuild && (stage === 'published' || stage === 'locked') && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onAdvance('amend')}
+                disabled={isAdvancing}
+              >
+                <History className="h-4 w-4 mr-1" />
+                Open amendments
+              </Button>
+            )}
+          </div>
+        </div>
+        {activeBuild && (
+          <div className="mt-3 text-[11px] text-muted-foreground">
+            Created {formatRelativeTime(activeBuild.created_at)}
+            {activeBuild.created_by_label ? ` by ${activeBuild.created_by_label}` : ''}
+            {activeBuild.locked_at ? ` · locked ${formatRelativeTime(activeBuild.locked_at)}` : ''}
+            {activeBuild.published_at ? ` · published ${formatRelativeTime(activeBuild.published_at)}` : ''}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AmendmentRequestsPanel({
+  month,
+  amendments,
+  isUpdating,
+  onUpdateStatus,
+}: {
+  month: string;
+  amendments: ScheduleAmendmentRequest[];
+  isUpdating: boolean;
+  onUpdateStatus: (
+    amendment: ScheduleAmendmentRequest,
+    status: ScheduleAmendmentRequest['status'],
+  ) => void;
+}) {
+  type AmendmentFilter = 'open' | 'all' | ScheduleAmendmentRequest['status'];
+  const [filter, setFilter] = useState<AmendmentFilter>('open');
+  const counts = useMemo(() => ({
+    requested: amendments.filter(row => row.status === 'requested').length,
+    approved: amendments.filter(row => row.status === 'approved').length,
+    applied: amendments.filter(row => row.status === 'applied').length,
+    parked: amendments.filter(row => row.status === 'parked').length,
+    rejected: amendments.filter(row => row.status === 'rejected').length,
+  }), [amendments]);
+  const openCount = counts.requested + counts.approved;
+  const sortedRows = [...amendments].sort((a, b) => {
+    const rank = (status: ScheduleAmendmentRequest['status']) =>
+      status === 'requested'
+        ? 0
+        : status === 'approved'
+          ? 1
+          : status === 'parked'
+            ? 2
+            : status === 'applied'
+              ? 3
+              : 4;
+    const byStatus = rank(a.status) - rank(b.status);
+    if (byStatus !== 0) return byStatus;
+    return b.created_at.localeCompare(a.created_at);
+  });
+  const rows = sortedRows.filter(row => {
+    if (filter === 'all') return true;
+    if (filter === 'open') return row.status === 'requested' || row.status === 'approved';
+    return row.status === filter;
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="h-4 w-4 text-purple-700" />
+              Amendment queue · {formatMonthLabel(month)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Change history only. Requested changes need approval; approved changes should be marked applied after the schedule rows are updated.
+            </p>
+          </div>
+          <Select value={filter} onValueChange={value => setFilter(value as AmendmentFilter)}>
+            <SelectTrigger className="w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open work ({openCount})</SelectItem>
+              <SelectItem value="requested">Requested ({counts.requested})</SelectItem>
+              <SelectItem value="approved">Approved ({counts.approved})</SelectItem>
+              <SelectItem value="applied">Applied ({counts.applied})</SelectItem>
+              <SelectItem value="parked">Parked ({counts.parked})</SelectItem>
+              <SelectItem value="rejected">Rejected ({counts.rejected})</SelectItem>
+              <SelectItem value="all">All changes ({amendments.length})</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-5">
+          <div className="rounded-md border border-purple-200 bg-purple-50 px-3 py-2">
+            <div className="text-[11px] text-purple-900">Requested</div>
+            <div className="text-lg font-semibold text-purple-900">{counts.requested}</div>
+          </div>
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+            <div className="text-[11px] text-blue-900">Approved</div>
+            <div className="text-lg font-semibold text-blue-900">{counts.approved}</div>
+          </div>
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <div className="text-[11px] text-emerald-900">Applied</div>
+            <div className="text-lg font-semibold text-emerald-900">{counts.applied}</div>
+          </div>
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+            <div className="text-[11px] text-amber-900">Parked</div>
+            <div className="text-lg font-semibold text-amber-900">{counts.parked}</div>
+          </div>
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+            <div className="text-[11px] text-red-900">Rejected</div>
+            <div className="text-lg font-semibold text-red-900">{counts.rejected}</div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {amendments.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            No amendments logged for {formatMonthLabel(month)} yet.
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            No amendments match this filter.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Change</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Logged</TableHead>
+                <TableHead className="text-right">Next step</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(row => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <div className="font-medium">{row.provider_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.requested_by_label || 'ClinOps'}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="capitalize">
+                      {row.request_type.replaceAll('_', ' ')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-xl">
+                    <div className="text-sm">{row.summary || 'No summary provided'}</div>
+                    {row.notes && (
+                      <div className="text-xs text-muted-foreground mt-1">{row.notes}</div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={cn(
+                        'capitalize',
+                        row.status === 'requested' && 'bg-purple-100 text-purple-800 hover:bg-purple-100',
+                        row.status === 'approved' && 'bg-blue-100 text-blue-800 hover:bg-blue-100',
+                        row.status === 'applied' && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+                        row.status === 'parked' && 'bg-amber-100 text-amber-900 hover:bg-amber-100',
+                        row.status === 'rejected' && 'bg-red-100 text-red-800 hover:bg-red-100',
+                      )}
+                    >
+                      {row.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <div>{formatRelativeTime(row.created_at)}</div>
+                    {row.resolved_at && (
+                      <div>
+                        Resolved {formatRelativeTime(row.resolved_at)}
+                        {row.resolved_by_label ? ` by ${row.resolved_by_label}` : ''}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {row.status === 'requested' ? (
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={isUpdating}
+                          onClick={() => onUpdateStatus(row, 'approved')}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                          Approve
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={isUpdating}
+                          onClick={() => onUpdateStatus(row, 'parked')}
+                        >
+                          <CircleDot className="h-3.5 w-3.5 mr-1" />
+                          Park
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 border-red-200 text-red-700 hover:bg-red-50"
+                          disabled={isUpdating}
+                          onClick={() => onUpdateStatus(row, 'rejected')}
+                        >
+                          <X className="h-3.5 w-3.5 mr-1" />
+                          Reject
+                        </Button>
+                      </div>
+                    ) : row.status === 'approved' ? (
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={isUpdating}
+                          onClick={() => onUpdateStatus(row, 'applied')}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                          Mark applied
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={isUpdating}
+                          onClick={() => onUpdateStatus(row, 'parked')}
+                        >
+                          <CircleDot className="h-3.5 w-3.5 mr-1" />
+                          Park
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 border-red-200 text-red-700 hover:bg-red-50"
+                          disabled={isUpdating}
+                          onClick={() => onUpdateStatus(row, 'rejected')}
+                        >
+                          <X className="h-3.5 w-3.5 mr-1" />
+                          Reject
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-8"
+                        disabled={isUpdating}
+                        onClick={() => onUpdateStatus(row, 'requested')}
+                      >
+                        Reopen
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -3461,14 +4514,17 @@ function AvailabilitySubmissionsPanel({
   isLoading,
   onResolve,
   isResolvePending,
+  recalculationLocked = false,
 }: {
   month: string;
   rows: AvailabilitySubmissionRow[];
   isLoading: boolean;
   onResolve: (args: ResolveArgs) => void;
   isResolvePending: boolean;
+  recalculationLocked?: boolean;
 }) {
   const [resolutionTarget, setResolutionTarget] = useState<SubmissionResolutionTarget | null>(null);
+  const branchSummary = useMemo(() => summarizeIntakeBranches(rows), [rows]);
 
   const openResolutionDialog = (
     row: AvailabilitySubmissionRow,
@@ -3518,12 +4574,30 @@ function AvailabilitySubmissionsPanel({
             Source: Jotform form 252224341308043 → sync-jotform-submissions →
             schedule_submissions.
           </p>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+              <div className="text-xs font-medium text-red-900">Blocked logic errors</div>
+              <div className="mt-1 text-lg font-semibold text-red-900">{branchSummary.blocked}</div>
+              <div className="text-[11px] leading-snug text-red-800">Fix before allocation.</div>
+            </div>
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+              <div className="text-xs font-medium text-amber-900">Non-blocking flags</div>
+              <div className="mt-1 text-lg font-semibold text-amber-900">{branchSummary.flagged}</div>
+              <div className="text-[11px] leading-snug text-amber-800">Can flow; review in parallel if needed.</div>
+            </div>
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <div className="text-xs font-medium text-emerald-900">Clean intake</div>
+              <div className="mt-1 text-lg font-semibold text-emerald-900">{branchSummary.clean}</div>
+              <div className="text-[11px] leading-snug text-emerald-800">Ready for allocation.</div>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Provider</TableHead>
+                <TableHead>Intake quality</TableHead>
                 <TableHead>Shift type</TableHead>
                 <TableHead>Recurring virtual</TableHead>
                 <TableHead>One-off virtual</TableHead>
@@ -3542,6 +4616,7 @@ function AvailabilitySubmissionsPanel({
                   : String(parsed.shift_types ?? '—');
                 const submissionIntent = formatSubmissionIntent(parsed.submission_intent);
                 const warnings = warningStringsFromUnknown(row.validation_warnings);
+                const intakeBranch = intakeBranchForSubmission(row);
                 const needsReview = row.decision_status === 'needs_review';
                 const isPending = row.decision_status === 'pending';
                 const isHumanReviewPending = row.human_review_state === 'pending';
@@ -3571,6 +4646,25 @@ function AvailabilitySubmissionsPanel({
                         <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
                           Unmatched
                         </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="align-top text-xs max-w-[220px]">
+                      <Badge variant="outline" className={cn('font-medium', intakeBranchStyles[intakeBranch.kind])}>
+                        {intakeBranch.label}
+                      </Badge>
+                      <div className="mt-1 text-muted-foreground">{intakeBranch.detail}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        Owner: {intakeBranch.owner}
+                      </div>
+                      {intakeBranch.issues.length > 0 && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                            Why
+                          </summary>
+                          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-snug text-muted-foreground">
+                            {intakeBranch.issues.slice(0, 5).join('\n')}
+                          </div>
+                        </details>
                       )}
                     </TableCell>
                     <TableCell className="align-top text-xs">
@@ -3739,6 +4833,7 @@ function AvailabilitySubmissionsPanel({
         onClose={() => setResolutionTarget(null)}
         onResolve={onResolve}
         isPending={isResolvePending}
+        recalculationLocked={recalculationLocked}
       />
     </>
   );
@@ -3978,10 +5073,10 @@ const describeRecalculationRowChange = (
   after: RecalculationSnapshotRow | null,
   hasRun: boolean,
 ) => {
-  if (!hasRun) return 'Current snapshot. Run Recalculate schedule to capture before and after changes.';
-  if (!before && after) return 'Added to the current schedule after this recalculation.';
-  if (before && !after) return 'Removed from the current schedule after this recalculation.';
-  if (!before || !after) return 'Provider changed during this recalculation.';
+  if (!hasRun) return 'Current snapshot. Run allocation to capture before and after changes.';
+  if (!before && after) return 'Added to the current schedule after this allocation run.';
+  if (before && !after) return 'Removed from the current schedule after this allocation run.';
+  if (!before || !after) return 'Provider changed during this allocation run.';
 
   const changes: string[] = [];
   if (before.status !== after.status) {
@@ -4016,7 +5111,7 @@ const explainRecalculationRow = (
   hasRun: boolean,
 ) => {
   if (!hasRun) {
-    return 'This is the current allocation snapshot. Use the button above to run a fresh before/after comparison.';
+    return 'This is the current allocation snapshot. Run allocation before Draft v1 to capture a fresh before/after comparison.';
   }
   if (decision?.error) return `Evaluator error: ${decision.error}`;
 
@@ -4230,9 +5325,9 @@ function RecalculationChangeReport({
       : `${formatHours(coverageTotals.demandHours)} telehealth demand hrs; ${formatHours(coverageTotals.stateGapHours)} hrs still short by state.`;
   const activeRunLabel = selectedRun
     ? `Run ${shortRunId(selectedRun.decision_run_id)} · ${formatRelativeTime(selectedRun.created_at)}`
-    : showLocalFallback && lastRun
-      ? `Current session run ${shortRunId(lastRun.result.decision_run_id)} · ${formatRelativeTime(lastRun.ranAt)}`
-      : 'No recalculation history yet';
+      : showLocalFallback && lastRun
+        ? `Current session run ${shortRunId(lastRun.result.decision_run_id)} · ${formatRelativeTime(lastRun.ranAt)}`
+      : 'No allocation history yet';
   const activeChangeCount = selectedRun
     ? selectedRun.changed_provider_count
     : showLocalFallback
@@ -4240,9 +5335,9 @@ function RecalculationChangeReport({
       : 0;
   const activeDeltaSummary = selectedRun
     ? runDeltaSummary(selectedRun)
-    : showLocalFallback
-      ? `${changedRows.length} provider${changedRows.length === 1 ? '' : 's'} changed in this browser session`
-      : 'Run Recalculate schedule to create the first history entry.';
+      : showLocalFallback
+        ? `${changedRows.length} provider${changedRows.length === 1 ? '' : 's'} changed in this browser session`
+      : 'Run allocation before Draft v1 to create the first history entry.';
 
   return (
     <Card>
@@ -4250,7 +5345,7 @@ function RecalculationChangeReport({
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
             <CardTitle className="text-base">
-              Recalculation history · {formatMonthLabel(month)}
+              Allocation history · {formatMonthLabel(month)}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
               Each run stores only provider rows whose decision, publishable hours, cut rows, or state allocation changed.
@@ -4314,7 +5409,7 @@ function RecalculationChangeReport({
 
         {historyQ.isLoading && (
           <div className="rounded-md border px-3 py-3">
-            <LoadingRow label="Loading recalculation history" />
+            <LoadingRow label="Loading allocation history" />
           </div>
         )}
 
@@ -4322,7 +5417,7 @@ function RecalculationChangeReport({
           <Alert className="border-amber-200 bg-amber-50">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              Recalculation history could not load yet. The current-session comparison can still appear after a run.
+              Allocation history could not load yet. The current-session comparison can still appear after a run.
             </AlertDescription>
           </Alert>
         )}
@@ -4490,7 +5585,7 @@ function RecalculationChangeReport({
           </Table>
         ) : (
           <div className="rounded-md border px-4 py-6 text-center text-sm text-muted-foreground">
-            No recalculation history for {formatMonthLabel(month)} yet. Run Recalculate schedule to create a changes-only log.
+            No allocation history for {formatMonthLabel(month)} yet. Run allocation before Draft v1 to create a changes-only log.
           </div>
         )}
       </CardContent>
@@ -4509,6 +5604,9 @@ function PendingRecalculationPanel({
   isLoading,
   isReevaluating,
   onReevaluate,
+  recalculationLocked = false,
+  activeBuild = null,
+  stage = 'intake',
 }: {
   month: string;
   rows: AvailabilitySubmissionRow[];
@@ -4524,6 +5622,9 @@ function PendingRecalculationPanel({
   isLoading: boolean;
   isReevaluating: boolean;
   onReevaluate: () => void;
+  recalculationLocked?: boolean;
+  activeBuild?: ScheduleBuild | null;
+  stage?: SchedulingPipelineStage;
 }) {
   if (isLoading) {
     return (
@@ -4550,26 +5651,45 @@ function PendingRecalculationPanel({
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <CardTitle className="text-base">
-                Pending recalculation · {formatMonthLabel(month)}
+                Pending allocation · {formatMonthLabel(month)}
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                These submissions are still pending a schedule evaluation. Recalculate to move them into accepted, cut / declined, or needs decision.
+                {recalculationLocked
+                  ? 'These submissions arrived after Draft v1. Review them as amendments instead of rerunning the whole month.'
+                  : 'These submissions are still pending allocation. Run allocation to move them into accepted, cut / declined, or needs decision.'}
               </p>
             </div>
-            <Button onClick={onReevaluate} disabled={isReevaluating}>
-              {isReevaluating ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-1 h-4 w-4" />
-              )}
-              Recalculate schedule
-            </Button>
+            {recalculationLocked ? (
+              <div className="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+                <Lock className="mr-1 h-4 w-4" />
+                Allocation closed
+              </div>
+            ) : (
+              <Button onClick={onReevaluate} disabled={isReevaluating}>
+                {isReevaluating ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1 h-4 w-4" />
+                )}
+                Run allocation
+              </Button>
+            )}
           </div>
+          {recalculationLocked && activeBuild && (
+            <Alert className="mt-3 border-amber-200 bg-amber-50">
+              <Lock className="h-4 w-4 text-amber-700" />
+              <AlertDescription className="text-amber-900">
+                Draft v{activeBuild.version_number} is in {pipelineStageLabel(stage)}. Changes
+                approved from here should become amendment requests so the team can see exactly
+                what changed before updating the published schedule.
+              </AlertDescription>
+            </Alert>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {rows.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No pending submissions need recalculation for {formatMonthLabel(month)}.
+              No pending submissions need allocation for {formatMonthLabel(month)}.
             </div>
           ) : (
             <Table>
@@ -4598,7 +5718,7 @@ function PendingRecalculationPanel({
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="bg-blue-50 text-blue-800">
-                        Needs recalculation
+                        Needs allocation
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -4679,7 +5799,7 @@ function PublishingQueue({
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No accepted shift list for {formatMonthLabel(month)}. Recalculate the schedule first.
+          No accepted shift list for {formatMonthLabel(month)}. Create Draft v1 before publishing.
         </AlertDescription>
       </Alert>
     );
@@ -4973,6 +6093,7 @@ type ResolveArgs = {
   reason: string;
   existing_notes: string | null;
   corrected_parsed_shifts?: unknown;
+  corrected_draft_rows?: ScheduleBuildRowInput[];
   correction_summary?: string | null;
   provider_name: string;
 };
@@ -4985,6 +6106,7 @@ type ReviewableSubmission = Pick<
   | 'target_month'
   | 'decision_status'
   | 'decision_notes'
+  | 'decision_run_id'
   | 'parsed_shifts'
   | 'validation_warnings'
   | 'raw_requested_hours'
@@ -5006,12 +6128,14 @@ function SubmissionResolutionDialog({
   onClose,
   onResolve,
   isPending,
+  recalculationLocked = false,
 }: {
   month: string;
   target: SubmissionResolutionTarget | null;
   onClose: () => void;
   onResolve: (args: ResolveArgs) => void;
   isPending: boolean;
+  recalculationLocked?: boolean;
 }) {
   const [resolutionReason, setResolutionReason] = useState('');
   const [useCorrectedTimes, setUseCorrectedTimes] = useState(false);
@@ -5101,6 +6225,18 @@ function SubmissionResolutionDialog({
       reason,
       existing_notes: sub.decision_notes,
       corrected_parsed_shifts: correctedParsedShifts,
+      corrected_draft_rows:
+        useCorrectedTimes && target.decision === 'accepted'
+          ? buildDraftRowsFromManualAvailability({
+              drafts: manualDrafts,
+              month,
+              submissionId: sub.id,
+              providerId: sub.provider_id,
+              providerName: target.providerName,
+              decisionRunId: sub.decision_run_id,
+              reason: `Manual draft edit - ClinOps approved corrected times (${correctionSummary ?? 'reviewed times'})`,
+            })
+          : undefined,
       correction_summary: correctionSummary,
       provider_name: target.providerName,
     });
@@ -5112,7 +6248,7 @@ function SubmissionResolutionDialog({
       ? 'Approve hours'
       : target?.decision === 'declined'
         ? 'Decline hours'
-        : '—';
+        : '-';
   const submittedHours = expandedSubmittedHours(target?.submission);
   const correctedHours = totalManualAvailabilityHours(manualDrafts, month);
 
@@ -5166,7 +6302,9 @@ function SubmissionResolutionDialog({
                   </Label>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Corrected rows replace the submitted availability for this provider-month before publish rows are rebuilt.
+                  {recalculationLocked
+                    ? 'Corrected rows save the reviewed decision to the draft or amendment trail instead of rerunning monthly allocation.'
+                    : 'Corrected rows replace the submitted availability for this provider-month before allocation creates publish rows.'}
                 </p>
               </div>
               <Button
@@ -5355,7 +6493,9 @@ function SubmissionResolutionDialog({
           <Button onClick={submitResolution} disabled={isPending || !target}>
             {isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
             {useCorrectedTimes && target?.decision === 'accepted'
-              ? 'Approve corrected hours & recalculate'
+              ? recalculationLocked
+                ? 'Approve corrected hours & log change'
+                : 'Approve corrected hours & run allocation'
               : target?.decision === 'accepted'
                 ? 'Approve hours'
                 : 'Decline hours'}
@@ -5372,12 +6512,14 @@ function NeedsReviewPanel({
   isLoading,
   onResolve,
   isPending,
+  recalculationLocked = false,
 }: {
   month: string;
   rows: ProviderPublishView[];
   isLoading: boolean;
   onResolve: (args: ResolveArgs) => void;
   isPending: boolean;
+  recalculationLocked?: boolean;
 }) {
   const [resolutionTarget, setResolutionTarget] = useState<SubmissionResolutionTarget | null>(null);
 
@@ -5428,7 +6570,9 @@ function NeedsReviewPanel({
             Needs decision · {formatMonthLabel(month)}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Resolve these after a ClinOps lead decision. Approve hours rebuilds publishable shift rows; decline hours moves them to cut / declined coverage.
+            {recalculationLocked
+              ? 'Resolve these after a ClinOps lead decision. Approved changes update the draft or amendment trail instead of rerunning the month.'
+              : 'Resolve these after a ClinOps lead decision. Approve hours feeds the next allocation run; decline hours moves them to cut / declined coverage.'}
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -5543,6 +6687,7 @@ function NeedsReviewPanel({
         onClose={() => setResolutionTarget(null)}
         onResolve={onResolve}
         isPending={isPending}
+        recalculationLocked={recalculationLocked}
       />
     </>
   );
@@ -5693,7 +6838,7 @@ function MentalHealthDashboard({
         <SummaryCard
           label="Declined / review"
           value={`${summary.declinedCount}/${summary.needsReviewCount}`}
-          sub={`${MH_MIN_SHIFT_HOURS}h minimum shift`}
+          sub={`${MH_PREFERRED_SHIFT_HOURS}h preferred block`}
         />
         <SummaryCard
           label="Unmatched MH"
@@ -7468,7 +8613,7 @@ function OverflowPanel({
               {entries.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
-                    No overflow hours have been generated yet. Recalculate after August submissions are in.
+                    No overflow hours have been generated yet. Run allocation after August submissions are in.
                   </TableCell>
                 </TableRow>
               )}
@@ -7711,7 +8856,7 @@ function PublishHistoryPanel({
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
               Append-only log of every Homebase / EHR mark, revert, and
-              schedule-recalculation preservation. {entries.length} event
+              allocation preservation. {entries.length} event
               {entries.length === 1 ? '' : 's'} this month.
             </p>
           </div>
@@ -7806,8 +8951,14 @@ function ReadinessPanel({
   declinedHours,
   inboxNeedsReviewCount,
   unmatchedCount,
+  blockedIntakeCount,
+  flaggedIntakeCount,
   onReevaluate,
   isReevaluating,
+  recalculationLocked = false,
+  activeBuild = null,
+  stage = 'intake',
+  openAmendmentCount = 0,
   onJumpToCoverage,
   onJumpToAvailability,
   onJumpToReview,
@@ -7835,8 +8986,14 @@ function ReadinessPanel({
   declinedHours: number;
   inboxNeedsReviewCount: number;
   unmatchedCount: number;
+  blockedIntakeCount: number;
+  flaggedIntakeCount: number;
   onReevaluate: () => void;
   isReevaluating: boolean;
+  recalculationLocked?: boolean;
+  activeBuild?: ScheduleBuild | null;
+  stage?: SchedulingPipelineStage;
+  openAmendmentCount?: number;
   onJumpToCoverage: () => void;
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToReview: (tab?: ReviewTabKey) => void;
@@ -7959,6 +9116,9 @@ function ReadinessPanel({
     summary.totalShifts > 0 ? Math.round((summary.ehrShifts / summary.totalShifts) * 100) : 0;
   const reviewCount = summary.needsReviewCount + inboxNeedsReviewCount;
   const hasPublishRows = summary.totalShifts > 0;
+  const publishStageReady = Boolean(
+    activeBuild && ['locked', 'published', 'amend'].includes(stage),
+  );
   const checksLoading = isLoading || coverageQ.isLoading;
 
   type BlockerCategory = 'Scheduler can do this' | 'Escalate to ClinOps lead' | 'System/admin issue';
@@ -7970,6 +9130,7 @@ function ReadinessPanel({
     category: BlockerCategory;
     action: string;
     onClick: () => void;
+    overrideable?: boolean;
   };
 
   const hardBlockers = useMemo<OperatorBlocker[]>(() => {
@@ -7987,22 +9148,68 @@ function ReadinessPanel({
       out.push({
         key: 'no_coverage_rows',
         label: 'No coverage rows for this month',
-        detail: 'Recalculate the schedule from the latest submissions. If coverage still does not load, ask an admin for help.',
+        detail: 'Run allocation from the latest submissions. If coverage still does not load, ask an admin for help.',
         category: 'System/admin issue',
         action: 'Open Coverage Gaps',
         onClick: onJumpToCoverage,
+      });
+    }
+    if (blockedIntakeCount > 0) {
+      out.push({
+        key: 'blocked_intake',
+        label: `${blockedIntakeCount} blocked intake issue${blockedIntakeCount === 1 ? '' : 's'}`,
+        detail: 'Wrong-month, malformed time, unmatched-provider, or other logic errors must be fixed before allocation.',
+        category: 'Scheduler can do this',
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
       });
     }
     if (!checksLoading && !hasPublishRows) {
       out.push({
         key: 'no_publish_rows',
         label: 'No publishable shift list yet',
-        detail: submittedHours > 0
-          ? 'Availability exists, but the accepted shift list is not ready. Recalculate the schedule from the latest submissions.'
-          : `No usable ${formatMonthLabel(month)} availability has been expanded yet.`,
+        detail: recalculationLocked && activeBuild
+          ? `Draft v${activeBuild.version_number} is already in review, so do not rebuild the month. Log this as an amendment or ask a ClinOps lead to reopen allocation.`
+          : submittedHours > 0
+            ? 'Availability exists, but the accepted shift list is not ready. Run allocation from the latest submissions.'
+            : `No usable ${formatMonthLabel(month)} availability has been expanded yet.`,
         category: 'Scheduler can do this',
-        action: 'Recalculate schedule',
-        onClick: onReevaluate,
+        action: recalculationLocked ? 'Open Amendments' : 'Run allocation',
+        onClick: recalculationLocked ? () => onJumpToReview('amendments') : onReevaluate,
+        overrideable: false,
+      });
+    }
+    if (hasPublishRows && !activeBuild) {
+      out.push({
+        key: 'no_draft',
+        label: 'No frozen draft exists yet',
+        detail: 'Create Draft v1 from the current allocation before Homebase or EHR publishing starts.',
+        category: 'Scheduler can do this',
+        action: 'Open Allocation Runs',
+        onClick: () => onJumpToReview('recalculate'),
+        overrideable: false,
+      });
+    }
+    if (hasPublishRows && activeBuild && !publishStageReady) {
+      out.push({
+        key: 'draft_not_locked',
+        label: `Draft v${activeBuild.version_number} is not locked yet`,
+        detail: 'Finish Review and lock the draft before treating this month as ready to publish.',
+        category: 'Scheduler can do this',
+        action: 'Review lock blockers',
+        onClick: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+        overrideable: false,
+      });
+    }
+    if (openAmendmentCount > 0) {
+      out.push({
+        key: 'open_amendments',
+        label: `${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'}`,
+        detail: 'Apply, park, or reject open amendments before publishing so the team is posting one final schedule.',
+        category: 'Scheduler can do this',
+        action: 'Open Amendments',
+        onClick: () => onJumpToReview('amendments'),
+        overrideable: false,
       });
     }
     if (hasPublishRows && unmatchedCount > 0) {
@@ -8023,6 +9230,7 @@ function ReadinessPanel({
         category: 'Escalate to ClinOps lead',
         action: summary.needsReviewCount > 0 ? 'Open Needs Decision' : 'Open Resubmits',
         onClick: summary.needsReviewCount > 0 ? () => onJumpToReview('decisions') : () => onJumpToReview('resubmits'),
+        overrideable: false,
       });
     }
     if (criticalGapStates.length > 0) {
@@ -8050,8 +9258,12 @@ function ReadinessPanel({
     coverageQ.isError,
     coverageQ.isLoading,
     coverageRows,
+    activeBuild,
+    blockedIntakeCount,
     checksLoading,
     hasPublishRows,
+    publishStageReady,
+    openAmendmentCount,
     unmatchedCount,
     submittedHours,
     reviewCount,
@@ -8060,6 +9272,7 @@ function ReadinessPanel({
     criticalGapStates,
     missingCount,
     month,
+    recalculationLocked,
     onReevaluate,
     onJumpToAvailability,
     onJumpToCoverage,
@@ -8067,14 +9280,15 @@ function ReadinessPanel({
   ]);
 
   const activeBlockers = useMemo(
-    () => hardBlockers.filter(b => !blockerOverrides[b.key]),
+    () => hardBlockers.filter(b => b.overrideable === false || !blockerOverrides[b.key]),
     [hardBlockers, blockerOverrides],
   );
   const overriddenBlockers = useMemo(
-    () => hardBlockers.filter(b => blockerOverrides[b.key]),
+    () => hardBlockers.filter(b => b.overrideable !== false && blockerOverrides[b.key]),
     [hardBlockers, blockerOverrides],
   );
-  const workbenchReady = !checksLoading && activeBlockers.length === 0 && hasPublishRows;
+  const workflowReady = hasPublishRows && publishStageReady && openAmendmentCount === 0;
+  const workbenchReady = !checksLoading && activeBlockers.length === 0 && workflowReady;
   const publishingComplete = workbenchReady && homebasePct === 100 && ehrPct === 100;
 
   type Readiness = {
@@ -8097,13 +9311,47 @@ function ReadinessPanel({
     nextCategory: BlockerCategory;
     nextDisabled?: boolean;
   }>(() => {
+    if (blockedIntakeCount > 0 && !blockerOverrides['blocked_intake']) {
+      return {
+        blocker: `${blockedIntakeCount} blocked intake issue${blockedIntakeCount === 1 ? '' : 's'}`,
+        nextAction: 'Fix blocked intake',
+        nextActionJump: () => onJumpToAvailability('submissions'),
+        nextCategory: 'Scheduler can do this',
+      };
+    }
     if (!hasPublishRows) {
       return {
         blocker: 'Accepted shift list is not ready yet',
-        nextAction: 'Recalculate schedule from latest submissions',
-        nextActionJump: onReevaluate,
+        nextAction: recalculationLocked
+          ? 'Review draft amendments'
+          : 'Run allocation from latest submissions',
+        nextActionJump: recalculationLocked ? () => onJumpToReview('amendments') : onReevaluate,
         nextCategory: 'Scheduler can do this',
-        nextDisabled: isReevaluating,
+        nextDisabled: isReevaluating && !recalculationLocked,
+      };
+    }
+    if (!activeBuild) {
+      return {
+        blocker: 'No frozen draft exists yet',
+        nextAction: 'Create Draft v1 from allocation',
+        nextActionJump: () => onJumpToReview('recalculate'),
+        nextCategory: 'Scheduler can do this',
+      };
+    }
+    if (activeBuild && !publishStageReady) {
+      return {
+        blocker: `Draft v${activeBuild.version_number} is not locked yet`,
+        nextAction: 'Lock reviewed draft',
+        nextActionJump: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+        nextCategory: 'Scheduler can do this',
+      };
+    }
+    if (openAmendmentCount > 0) {
+      return {
+        blocker: `${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'}`,
+        nextAction: 'Apply, park, or reject amendments',
+        nextActionJump: () => onJumpToReview('amendments'),
+        nextCategory: 'Scheduler can do this',
       };
     }
     if (unmatchedCount > 0 && !blockerOverrides['unmatched']) {
@@ -8114,7 +9362,7 @@ function ReadinessPanel({
         nextCategory: 'Scheduler can do this',
       };
     }
-    if (reviewCount > 0 && !blockerOverrides['manual_review']) {
+    if (reviewCount > 0) {
       return {
         blocker: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need ClinOps lead review`,
         nextAction: summary.needsReviewCount > 0
@@ -8164,7 +9412,12 @@ function ReadinessPanel({
     };
   }, [
     month,
+    blockedIntakeCount,
     hasPublishRows,
+    activeBuild,
+    publishStageReady,
+    openAmendmentCount,
+    recalculationLocked,
     unmatchedCount,
     reviewCount,
     summary.needsReviewCount,
@@ -8193,10 +9446,12 @@ function ReadinessPanel({
   const workflowSteps: OperatorStep[] = [
     {
       label: '1. Confirm Jotform availability',
-      detail: submittedHours > 0
-        ? `${submittedHours.toFixed(0)} expanded availability hours are in the workbench.`
-        : 'No expanded availability hours are visible yet.',
-      status: submittedHours > 0 ? 'done' : 'blocked',
+      detail: blockedIntakeCount > 0
+        ? `${blockedIntakeCount} intake issue${blockedIntakeCount === 1 ? '' : 's'} must be fixed before allocation.`
+        : submittedHours > 0
+          ? `${submittedHours.toFixed(0)} expanded availability hours are in the workbench.`
+          : 'No expanded availability hours are visible yet.',
+      status: blockedIntakeCount > 0 || submittedHours <= 0 ? 'blocked' : 'done',
       action: 'Open Availability',
       onClick: () => onJumpToAvailability('submissions'),
     },
@@ -8205,12 +9460,22 @@ function ReadinessPanel({
       detail: hasPublishRows
         ? `${summary.totalShifts} publishable shift${summary.totalShifts === 1 ? '' : 's'} for ${summary.totalProviders} provider${summary.totalProviders === 1 ? '' : 's'}.`
         : submittedHours > 0
-          ? 'Click Recalculate schedule, then wait for shift rows to appear.'
-          : 'Wait for availability before recalculating the schedule.',
+          ? recalculationLocked && activeBuild
+            ? `Draft v${activeBuild.version_number} is already under review. Do not rerun allocation; use Amendments for changes.`
+            : 'Run allocation, then create Draft v1 when the shift rows look ready.'
+          : 'Wait for availability before running allocation.',
       status: hasPublishRows ? 'done' : submittedHours > 0 ? 'current' : 'waiting',
-      action: !hasPublishRows && submittedHours > 0 ? 'Recalculate schedule' : undefined,
-      onClick: !hasPublishRows && submittedHours > 0 ? onReevaluate : undefined,
-      disabled: isReevaluating,
+      action: !hasPublishRows && submittedHours > 0
+        ? recalculationLocked
+          ? 'Open Amendments'
+          : 'Run allocation'
+        : undefined,
+      onClick: !hasPublishRows && submittedHours > 0
+        ? recalculationLocked
+          ? () => onJumpToReview('amendments')
+          : onReevaluate
+        : undefined,
+      disabled: isReevaluating && !recalculationLocked,
     },
     {
       label: '3. Clear manual review',
@@ -8222,7 +9487,26 @@ function ReadinessPanel({
       onClick: summary.needsReviewCount > 0 ? () => onJumpToReview('decisions') : () => onJumpToReview('resubmits'),
     },
     {
-      label: '4. Check state coverage',
+      label: '4. Lock reviewed draft',
+      detail: activeBuild
+        ? publishStageReady
+          ? `Draft v${activeBuild.version_number} is locked for Publish.`
+          : openAmendmentCount > 0
+            ? `${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'} must be cleared before locking.`
+            : 'Draft exists, but it is still in Review. Lock it before Homebase or EHR posting.'
+        : 'Create Draft v1 before locking the schedule.',
+      status: publishStageReady
+        ? 'done'
+        : !activeBuild
+          ? 'waiting'
+          : reviewCount > 0 || openAmendmentCount > 0
+            ? 'blocked'
+            : 'current',
+      action: publishStageReady ? undefined : 'Review workflow',
+      onClick: publishStageReady ? undefined : () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+    },
+    {
+      label: '5. Check state coverage',
       detail: criticalGapStates.length > 0
         ? `${criticalGapStates.length} state${criticalGapStates.length === 1 ? '' : 's'} are critically under-covered.`
         : watchGapStates.length > 0
@@ -8233,7 +9517,7 @@ function ReadinessPanel({
       onClick: onJumpToCoverage,
     },
     {
-      label: '5. Post accepted shifts to Homebase',
+      label: '6. Post accepted shifts to Homebase',
       detail: hasPublishRows
         ? `${summary.homebaseShifts}/${summary.totalShifts} shifts posted to Homebase.`
         : 'Homebase posting starts after the shift list is built.',
@@ -8242,7 +9526,7 @@ function ReadinessPanel({
       onClick: () => onJumpToPublish(),
     },
     {
-      label: '6. Transfer posted shifts to EHR',
+      label: '7. Transfer posted shifts to EHR',
       detail: hasPublishRows
         ? `${summary.ehrShifts}/${summary.totalShifts} shifts confirmed in EHR.`
         : 'EHR transfer starts after Homebase posting.',
@@ -8254,6 +9538,16 @@ function ReadinessPanel({
 
   const softWarnings = useMemo<OperatorBlocker[]>(() => {
     const out: OperatorBlocker[] = [];
+    if (flaggedIntakeCount > 0) {
+      out.push({
+        key: 'flagged_intake',
+        label: `${flaggedIntakeCount} non-blocking intake flag${flaggedIntakeCount === 1 ? '' : 's'}`,
+        detail: 'These can flow to allocation. Review the intake note in parallel if the flag looks operationally important.',
+        category: 'Escalate to ClinOps lead',
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
+      });
+    }
     if (watchGapStates.length > 0 && criticalGapStates.length === 0) {
       out.push({
         key: 'thin_coverage',
@@ -8267,6 +9561,8 @@ function ReadinessPanel({
     return out;
   }, [
     criticalGapStates.length,
+    flaggedIntakeCount,
+    onJumpToAvailability,
     watchGapStates.length,
     onJumpToCoverage,
   ]);
@@ -8286,16 +9582,42 @@ function ReadinessPanel({
 
   const actionItems = useMemo<ActionCenterItem[]>(() => {
     const out: ActionCenterItem[] = [];
+    if (blockedIntakeCount > 0) {
+      out.push({
+        key: 'blocked-intake',
+        label: 'Blocked intake',
+        value: blockedIntakeCount.toString(),
+        detail: 'Logic errors such as wrong month, malformed time, or unmatched provider must be fixed before allocation.',
+        badge: 'Fix before allocation',
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
+        tone: 'border-red-200 bg-red-50/70',
+      });
+    }
+    if (flaggedIntakeCount > 0) {
+      out.push({
+        key: 'flagged-intake',
+        label: 'Non-blocking intake flags',
+        value: flaggedIntakeCount.toString(),
+        detail: 'These can flow to allocation. Use the intake note for any parallel follow-up.',
+        badge: 'Parallel review',
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
+        tone: 'border-amber-200 bg-amber-50/70',
+      });
+    }
     if (pendingSubmissionCount > 0) {
       out.push({
         key: 'pending',
-        label: 'Needs recalculation',
+        label: recalculationLocked ? 'Post-draft submissions' : 'Needs allocation',
         value: pendingSubmissionCount.toString(),
-        detail: `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} need a schedule decision. Recalculate to move them into accepted, declined, or needs review.`,
-        badge: 'Rebuild schedule',
-        action: 'Open Pending Recalculation',
-        onClick: () => onJumpToReview('recalculate'),
-        tone: 'border-blue-200 bg-blue-50/60',
+        detail: recalculationLocked
+          ? `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} arrived after Draft v1. Review as amendments instead of rerunning the month.`
+          : `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} need allocation before Draft v1.`,
+        badge: recalculationLocked ? 'Amendment review' : 'Run allocation',
+        action: recalculationLocked ? 'Open Amendments' : 'Open Allocation Runs',
+        onClick: recalculationLocked ? () => onJumpToReview('amendments') : () => onJumpToReview('recalculate'),
+        tone: recalculationLocked ? 'border-purple-200 bg-purple-50/70' : 'border-blue-200 bg-blue-50/60',
         disabled: isReevaluating,
         loading: isReevaluating,
       });
@@ -8322,6 +9644,18 @@ function ReadinessPanel({
         action: 'Open Resubmits',
         onClick: () => onJumpToReview('resubmits'),
         tone: 'border-sky-200 bg-sky-50/70',
+      });
+    }
+    if (openAmendmentCount > 0) {
+      out.push({
+        key: 'open-amendments',
+        label: 'Open amendments',
+        value: openAmendmentCount.toString(),
+        detail: 'These post-draft changes must be applied, parked, or rejected before the final schedule is published.',
+        badge: 'Clear before publish',
+        action: 'Open Amendments',
+        onClick: () => onJumpToReview('amendments'),
+        tone: 'border-purple-200 bg-purple-50/70',
       });
     }
     if (unmatchedCount > 0) {
@@ -8362,8 +9696,10 @@ function ReadinessPanel({
     }
     return out;
   }, [
+    blockedIntakeCount,
     declinedCount,
     declinedHours,
+    flaggedIntakeCount,
     inboxNeedsReviewCount,
     isReevaluating,
     missingCount,
@@ -8372,8 +9708,10 @@ function ReadinessPanel({
     onJumpToAvailability,
     onJumpToDeclined,
     onJumpToReview,
+    openAmendmentCount,
     pendingSubmissionCount,
     pendingSubmissionHours,
+    recalculationLocked,
     summary.needsReviewCount,
     unmatchedCount,
   ]);
@@ -8842,6 +10180,7 @@ function OperatorBlockersCard({
     category: string;
     action: string;
     onClick: () => void;
+    overrideable?: boolean;
   }[];
   overriddenBlockers: {
     key: string;
@@ -8850,6 +10189,7 @@ function OperatorBlockersCard({
     category: string;
     action: string;
     onClick: () => void;
+    overrideable?: boolean;
   }[];
   blockerOverrides: Record<string, { reason: string; by: string; at: string }>;
   isAdmin: boolean;
@@ -8907,7 +10247,11 @@ function OperatorBlockersCard({
                     <Button size="sm" variant="outline" className="h-7" onClick={item.onClick}>
                       {item.action}
                     </Button>
-                    {isAdmin && (
+                    {item.overrideable === false ? (
+                      <Badge variant="outline" className="h-7 bg-white text-[11px]">
+                        Required
+                      </Badge>
+                    ) : isAdmin && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -9160,6 +10504,10 @@ function PublishGateBanner({
   inboxNeedsReviewCount,
   unmatchedCount,
   missingCount,
+  blockedIntakeCount,
+  activeBuild,
+  stage,
+  openAmendmentCount,
   onJumpToAvailability,
   onJumpToReview,
   onJumpToCoverage,
@@ -9175,6 +10523,10 @@ function PublishGateBanner({
   inboxNeedsReviewCount: number;
   unmatchedCount: number;
   missingCount: number;
+  blockedIntakeCount: number;
+  activeBuild: ScheduleBuild | null;
+  stage: SchedulingPipelineStage;
+  openAmendmentCount: number;
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToReview: (tab?: ReviewTabKey) => void;
   onJumpToCoverage: () => void;
@@ -9193,6 +10545,26 @@ function PublishGateBanner({
       action: string;
       onClick: () => void;
     }[] = [];
+    if (!activeBuild) {
+      out.push({
+        label: 'No frozen Draft v1 exists yet. Create a draft before starting Homebase or EHR publishing.',
+        action: 'Open Allocation Runs',
+        onClick: () => onJumpToReview('recalculate'),
+      });
+    } else if (!['locked', 'published', 'amend'].includes(stage)) {
+      out.push({
+        label: `Draft v${activeBuild.version_number} is still in ${pipelineStageLabel(stage)}. Lock the reviewed draft before publishing.`,
+        action: 'Open Review',
+        onClick: () => onJumpToReview('decisions'),
+      });
+    }
+    if (openAmendmentCount > 0) {
+      out.push({
+        label: `${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'} must be applied, parked, or rejected before publishing.`,
+        action: 'Open Amendments',
+        onClick: () => onJumpToReview('amendments'),
+      });
+    }
     if (coverageQ.isError) {
       out.push({
         label: 'Coverage failed to load. Open Coverage Gaps and reload before publishing.',
@@ -9206,10 +10578,17 @@ function PublishGateBanner({
         onClick: onJumpToCoverage,
       });
     }
+    if (blockedIntakeCount > 0) {
+      out.push({
+        label: `${blockedIntakeCount} blocked intake issue${blockedIntakeCount === 1 ? '' : 's'} must be fixed before publishing.`,
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
+      });
+    }
     if (!summary.totalShifts) {
       out.push({
         label: submittedHours > 0
-          ? 'No publishable shifts yet. Click Recalculate schedule in the header.'
+          ? 'No publishable shifts yet. Run allocation before Draft v1.'
           : 'No usable availability has been expanded yet.',
         action: 'Open Availability',
         onClick: () => onJumpToAvailability('submissions'),
@@ -9250,6 +10629,7 @@ function PublishGateBanner({
     coverageRows.length,
     summary.totalShifts,
     summary.needsReviewCount,
+    blockedIntakeCount,
     submittedHours,
     unmatchedCount,
     missingCount,
@@ -9259,6 +10639,9 @@ function PublishGateBanner({
     onJumpToAvailability,
     onJumpToCoverage,
     onJumpToReview,
+    activeBuild,
+    stage,
+    openAmendmentCount,
   ]);
 
   if (coverageQ.isLoading) {
@@ -9326,6 +10709,9 @@ function CostPerVisitPanel({
   isLoading,
   onRecalculate,
   isReevaluating,
+  recalculationLocked = false,
+  activeBuild = null,
+  stage = 'intake',
 }: {
   month: string;
   rows: ProviderPublishView[];
@@ -9333,6 +10719,9 @@ function CostPerVisitPanel({
   isLoading: boolean;
   onRecalculate: () => void;
   isReevaluating: boolean;
+  recalculationLocked?: boolean;
+  activeBuild?: ScheduleBuild | null;
+  stage?: SchedulingPipelineStage;
 }) {
   const upsertRate = useUpsertProviderPayRate();
   const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
@@ -9394,7 +10783,21 @@ function CostPerVisitPanel({
     );
   };
 
-  const recalculateButton = (
+  const recalculateButton = recalculationLocked ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="inline-flex h-9 shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+          <Lock className="h-4 w-4 mr-1" />
+          Allocation closed
+        </div>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {activeBuild
+          ? `Draft v${activeBuild.version_number} is in ${pipelineStageLabel(stage)}. Use amendments for post-draft changes instead of rerunning the month.`
+          : 'Allocation is closed for this month.'}
+      </TooltipContent>
+    </Tooltip>
+  ) : (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
@@ -9410,17 +10813,17 @@ function CostPerVisitPanel({
           ) : (
             <RefreshCw className="h-4 w-4 mr-1" />
           )}
-          Recalculate schedule
+          Run allocation
         </Button>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs">
-        Rebuilds Cost / Visit from the latest accepted hours, provider rates, and scheduling decisions for {formatMonthLabel(month)}.
+        Runs allocation with the latest accepted hours, provider rates, and scheduling decisions for {formatMonthLabel(month)}.
       </TooltipContent>
     </Tooltip>
   );
 
   if (isLoading) {
-    return <LoadingRow label="Loading cost per visit" />;
+    return <LoadingRow label="Loading cost audit" />;
   }
 
   if (model.providerRows.length === 0) {
@@ -9431,7 +10834,7 @@ function CostPerVisitPanel({
             No scheduling decisions for {formatMonthLabel(month)} yet
           </div>
           <div className="text-xs text-muted-foreground max-w-md mx-auto">
-            Recalculate the schedule after availability submissions are loaded. This view uses accepted hours and provider rates from those monthly decisions.
+            Run allocation after availability submissions are loaded. This view uses accepted hours and provider rates from those monthly decisions.
           </div>
           <div className="flex justify-center">
             {recalculateButton}
@@ -9456,10 +10859,10 @@ function CostPerVisitPanel({
             <div>
               <CardTitle className="text-base flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-emerald-700" />
-                Cost / Visit · {formatMonthLabel(month)}
+                Cost audit · {formatMonthLabel(month)}
               </CardTitle>
               <p className="mt-1 text-xs text-muted-foreground">
-                Includes telehealth and mental health hours. State-coverage math on the readiness tab counts telehealth only. Standard care uses 2 visits/hr; mental health coach, therapist, and LPC rows use 3 visits per 2.5h shift. CPV assumes 70% target utilization.
+                Finance-only audit of the accepted schedule. Revenue forecasts are not used for September allocation decisions; CPV is shown after the schedule exists. Standard care uses 2 visits/hr; mental health rows use the preferred 2.5h block model. CPV assumes 70% target utilization.
               </p>
             </div>
             {recalculateButton}
@@ -9637,9 +11040,9 @@ function CostPerVisitPanel({
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Provider cost and routing detail</CardTitle>
+          <CardTitle className="text-sm">Provider cost audit detail</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Provider-level view of accepted hours, wage rate, projected cost, and the concise routing signals behind the decision.
+            Provider-level view of accepted hours, wage rate, projected cost, and recorded routing signals. Use Allocation history for schedule movement; this audit does not introduce a revenue forecast input.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -10067,7 +11470,7 @@ function CoverageGapsPanel({
     return (
       <EmptyState
         title={`No coverage data for ${formatMonthLabel(month)} yet`}
-        body="The accepted shift list has not been connected to state coverage yet. Next: click 'Recalculate schedule' in the header, then come back. If it still does not load, ask an admin for help."
+        body="The accepted shift list has not been connected to state coverage yet. Next: run allocation before Draft v1, then come back. If it still does not load, ask an admin for help."
       />
     );
   }
@@ -10562,7 +11965,7 @@ function decisionReasonTilesForRow(
       addTile({
         label: 'Visit capacity',
         value: `${visitCapacity} visits`,
-        detail: 'Mental health capacity from accepted 2.5-hour blocks.',
+        detail: 'Mental health capacity from accepted hours using the preferred 2.5-hour block model.',
         tone: 'emerald',
       });
     }
@@ -10868,7 +12271,7 @@ function MatchingPanel({
         <ProviderPriorityPolicyCard month={month} />
         <EmptyState
           title={`No matching decisions yet for ${formatMonthLabel(month)}`}
-          body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one schedule recalculation after Jotform submissions. Next: open Availability to confirm submissions are in, then click 'Recalculate schedule' in the page header."
+          body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one allocation run after Jotform submissions. Next: open Availability to confirm submissions are in, then run allocation from the page header."
         />
       </>
     );
@@ -11423,7 +12826,7 @@ function DataQualityPanel({
     {
       label: 'Accepted providers missing publish rows',
       count: missingPublishRows,
-      detail: missingPublishRows ? 'Recalculate schedule to create accepted shift rows' : '',
+      detail: missingPublishRows ? 'Run allocation to create accepted shift rows' : '',
     },
   ];
 
@@ -11555,7 +12958,7 @@ function AuditPanel({
         />
         <EmptyState
           title="No decisions to explain yet"
-          body="Once the schedule is recalculated, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on Availability, then click 'Recalculate schedule'."
+          body="Once allocation has run, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on Availability, then run allocation."
         />
       </div>
     );

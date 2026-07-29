@@ -103,8 +103,8 @@ export interface NormalizationSummary {
    *  operating-hours window (default 9 AM - 9 PM ET weekdays, 9 AM - 12 PM ET
    *  weekends). */
   hours_removed_for_operating_hours: number;
-  /** Hours dropped because a window is shorter than the configured minimum
-   *  shift length. Used for MH coaching's 2.5h minimum. */
+  /** Hours dropped because a window is shorter than a configured hard minimum
+   *  shift length. Leave the threshold at 0 for advisory-only preferences. */
   hours_removed_for_minimum_shift: number;
   hours_changed_by_validation: number;
   intervals_auto_corrected: number;
@@ -831,8 +831,8 @@ export interface NormalizationResult {
    *  preserved, so downstream can emit "declined: outside business hours"
    *  per-shift rows. */
   outOfHoursTimeline: ExpandedSlot[];
-  /** Slots dropped because they are shorter than the configured minimum shift
-   *  length. These can be emitted as explicit cut rows downstream. */
+  /** Slots dropped because they are shorter than a configured hard minimum
+   *  shift length. These can be emitted as explicit cut rows downstream. */
   policyCutTimeline: ExpandedSlot[];
   summary: NormalizationSummary;
   report: ValidationReportRow[];

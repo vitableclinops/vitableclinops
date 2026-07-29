@@ -23,7 +23,7 @@ interface InfoTooltipProps {
  *   <th>
  *     <span className="inline-flex items-center gap-1">
  *       SLA Target
- *       <InfoTooltip>Daily appointment-slot target: max(5, weekly_visits / 5 × 1.5).</InfoTooltip>
+ *       <InfoTooltip>Daily appointment-slot target: weekly_visits / 5 × 1.5.</InfoTooltip>
  *     </span>
  *   </th>
  */

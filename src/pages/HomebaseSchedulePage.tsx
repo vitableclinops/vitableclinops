@@ -102,6 +102,7 @@ interface DayReconciliation {
   dateKey: string;
   approvedCount: number;
   homebaseCount: number;
+  ignoredHomebaseOnlyCount: number;
   matchedCount: number;
   issues: ReconciliationIssue[];
   severity: ReconciliationSeverity;
@@ -449,6 +450,7 @@ const buildReconciliation = (
         dateKey,
         approvedCount: 0,
         homebaseCount: 0,
+        ignoredHomebaseOnlyCount: 0,
         matchedCount: 0,
         issues: [],
         severity: 'empty',
@@ -476,6 +478,11 @@ const buildReconciliation = (
     const day = dayMap.get(issue.dateKey);
     if (!day) return;
     day.issues.push(issue);
+  };
+  const markHomebaseOnlyIgnored = (row: ComparableHomebaseShift) => {
+    const day = dayMap.get(row.dateKey);
+    if (!day) return;
+    day.ignoredHomebaseOnlyCount += 1;
   };
 
   for (const approved of approvedRows) {
@@ -562,41 +569,16 @@ const buildReconciliation = (
 
   for (const homebase of homebaseComparable) {
     if (usedHomebaseIds.has(homebase.shift.id)) continue;
-    if (!homebase.providerId) {
-      pushIssue({
-        id: `unmatched-homebase-${homebase.shift.homebase_id}`,
-        type: 'unmatched_homebase_employee',
-        severity: 'red',
-        dateKey: homebase.dateKey,
-        providerName: homebase.providerName,
-        title: 'Homebase employee is not matched',
-        detail: `${homebase.providerName} ${formatEtTimeRange(homebase.shift.start_at, homebase.shift.end_at)} is in Homebase but is not linked to a ClinOps provider profile.`,
-        fix: 'Map this Homebase employee to the correct provider profile, sync again, then re-check the day.',
-        homebase,
-      });
-      continue;
-    }
-
-    pushIssue({
-      id: `extra-homebase-${homebase.shift.homebase_id}`,
-      type: 'extra_homebase',
-      severity: 'red',
-      dateKey: homebase.dateKey,
-      providerName: homebase.providerName,
-      title: 'Extra Homebase shift',
-      detail: `${homebase.providerName} ${formatEtTimeRange(homebase.shift.start_at, homebase.shift.end_at)} is in Homebase but does not match an approved Lovable shift.`,
-      fix: 'Remove or adjust this Homebase shift, or approve the matching availability in Lovable if it should stay.',
-      homebase,
-    });
+    markHomebaseOnlyIgnored(homebase);
   }
 
   return days.map(dateKey => {
     const day = dayMap.get(dateKey)!;
     const worstIssue = [...day.issues].sort((a, b) => issueSeverityRank(b) - issueSeverityRank(a))[0];
-    const hasAnySchedule = day.approvedCount > 0 || day.homebaseCount > 0;
+    const hasApprovedSchedule = day.approvedCount > 0 || day.matchedCount > 0;
     const severity: ReconciliationSeverity = worstIssue
       ? worstIssue.severity
-      : hasAnySchedule
+      : hasApprovedSchedule
         ? 'green'
         : 'empty';
     return {
@@ -761,6 +743,10 @@ export const HomebaseScheduleContent = () => {
       (sum, day) => sum + day.issues.filter(i => overrides.has(i.id)).length,
       0,
     );
+    const ignoredHomebaseOnlyCount = effectiveDays.reduce(
+      (sum, day) => sum + day.ignoredHomebaseOnlyCount,
+      0,
+    );
     return {
       issueDays,
       publishDays,
@@ -770,6 +756,7 @@ export const HomebaseScheduleContent = () => {
       matchedCount,
       issueCount: openIssues.length,
       resolvedCount,
+      ignoredHomebaseOnlyCount,
     };
   }, [effectiveDays, overrides]);
 
@@ -936,7 +923,11 @@ export const HomebaseScheduleContent = () => {
               value={`${approvedRows.length}`}
               sub={`${reconciliationTotals.matchedCount} matched${approvedSourceRows.length !== approvedRows.length ? ` · ${approvedSourceRows.length} source rows` : ''}`}
             />
-            <KpiCard label="Last sync" value={formatSyncedAt(totals.latestSync)} sub={`${rows.length} Homebase rows`} />
+            <KpiCard
+              label="Last sync"
+              value={formatSyncedAt(totals.latestSync)}
+              sub={`${rows.length} Homebase rows · ${reconciliationTotals.ignoredHomebaseOnlyCount} ignored Homebase-only`}
+            />
           </div>
 
           {reconciliationLoading ? (
@@ -1126,6 +1117,9 @@ const ReconciliationCalendar = ({
                         if (resolved > 0) {
                           return <div className="font-medium text-emerald-700">resolved</div>;
                         }
+                        if (day.ignoredHomebaseOnlyCount > 0) {
+                          return <div className="text-muted-foreground">{day.ignoredHomebaseOnlyCount} ignored</div>;
+                        }
                         if (day.severity === 'green') {
                           return <div className="font-medium">matched</div>;
                         }
@@ -1182,6 +1176,7 @@ const ReconciliationDayDetails = ({
             <h2 className="text-base font-semibold">{formatDateKey(day.dateKey)}</h2>
             <p className="text-xs text-muted-foreground">
               {day.approvedCount} approved · {day.homebaseCount} in Homebase · {day.matchedCount} matched
+              {day.ignoredHomebaseOnlyCount > 0 ? ` · ${day.ignoredHomebaseOnlyCount} Homebase-only ignored` : ''}
             </p>
           </div>
           <DayStatusBadge day={day} />
@@ -1206,6 +1201,8 @@ const ReconciliationDayDetails = ({
               ? 'All issues resolved for this day. Toggle "Show resolved" to review them.'
               : day.severity === 'green'
                 ? 'Approved Lovable shifts match published Homebase shifts for this day.'
+                : day.ignoredHomebaseOnlyCount > 0
+                ? 'Only Homebase-only rows remain for this day. They are ignored for scheduling reconciliation; use Raw Homebase if they need a separate audit.'
                 : 'No approved or Homebase shifts for this day.'}
           </div>
         ) : (

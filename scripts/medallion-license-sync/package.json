@@ -1,0 +1,16 @@
+{
+  "name": "medallion-license-sync",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "sync": "node --env-file=.env sync-medallion.js",
+    "dry-run": "node --env-file=.env sync-medallion.js --dry-run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.94.1"
+  }
+}

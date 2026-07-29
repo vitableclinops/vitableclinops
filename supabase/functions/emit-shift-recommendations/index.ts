@@ -111,7 +111,6 @@ const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
 };
 const MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   ...OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG,
-  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const MH_POLICY_CUT_REASON =
   'Cut — mental health shift policy violation';

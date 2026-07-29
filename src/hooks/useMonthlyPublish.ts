@@ -868,7 +868,9 @@ export function useOverrideDecision() {
 
 export type ShiftRow = {
   id: string;
-  submission_id: string;
+  schedule_build_row_id?: string | null;
+  source_shift_recommendation_id?: string | null;
+  submission_id: string | null;
   provider_id: string | null;
   provider_name: string;
   provider_time_zone?: string | null;
@@ -892,6 +894,141 @@ export type ShiftRow = {
 };
 
 export type ShiftPublishStep = 'homebase' | 'ehr';
+
+export type SchedulingPipelineStage =
+  | 'intake'
+  | 'allocated'
+  | 'review'
+  | 'locked'
+  | 'published'
+  | 'amend';
+
+export type ScheduleBuildStatus =
+  | 'draft'
+  | 'review'
+  | 'locked'
+  | 'published'
+  | 'superseded';
+
+export type ScheduleBuild = {
+  id: string;
+  target_month: string;
+  version_number: number;
+  status: ScheduleBuildStatus;
+  source_decision_run_id: string | null;
+  source: string;
+  created_by: string | null;
+  created_by_label: string | null;
+  notes: string | null;
+  locked_at: string | null;
+  locked_by: string | null;
+  locked_by_label: string | null;
+  published_at: string | null;
+  published_by: string | null;
+  published_by_label: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ScheduleBuildRow = {
+  id: string;
+  build_id: string;
+  source_shift_recommendation_id: string | null;
+  submission_id: string | null;
+  provider_id: string | null;
+  provider_name: string;
+  target_month: string;
+  shift_date: string;
+  start_min: number;
+  end_min: number;
+  hours: number;
+  shift_type: string;
+  assigned_state: string | null;
+  recommendation: 'publish' | 'cut';
+  recommendation_reason: string | null;
+  decision_run_id: string | null;
+  source_publish_status: string | null;
+  source_published_at: string | null;
+  source_ehr_posted_at: string | null;
+  publish_status: string;
+  published_at: string | null;
+  published_by: string | null;
+  ehr_posted_at: string | null;
+  ehr_posted_by: string | null;
+  created_at: string;
+};
+
+export type ScheduleBuildRowInput = {
+  submission_id: string | null;
+  provider_id: string | null;
+  provider_name: string;
+  target_month: string;
+  shift_date: string;
+  start_min: number;
+  end_min: number;
+  hours: number;
+  shift_type: string;
+  assigned_state?: string | null;
+  recommendation: 'publish' | 'cut';
+  recommendation_reason?: string | null;
+  decision_run_id?: string | null;
+};
+
+export type SchedulingMonthWorkflow = {
+  id: string;
+  target_month: string;
+  current_stage: SchedulingPipelineStage;
+  active_build_id: string | null;
+  locked_build_id: string | null;
+  intake_started_at: string;
+  review_started_at: string | null;
+  locked_at: string | null;
+  published_at: string | null;
+  amendment_started_at: string | null;
+  updated_by: string | null;
+  updated_by_label: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ScheduleAmendmentRequest = {
+  id: string;
+  target_month: string;
+  build_id: string | null;
+  submission_id: string | null;
+  provider_id: string | null;
+  provider_name: string;
+  request_type: 'resubmission' | 'manual_review' | 'post_publish_change';
+  status: 'requested' | 'approved' | 'parked' | 'applied' | 'rejected';
+  summary: string | null;
+  notes: string | null;
+  requested_by: string | null;
+  requested_by_label: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  resolved_by_label: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SchedulingPipelineState = {
+  workflow: SchedulingMonthWorkflow | null;
+  builds: ScheduleBuild[];
+  activeBuild: ScheduleBuild | null;
+  amendments: ScheduleAmendmentRequest[];
+};
+
+type ShiftRecommendationSnapshotRow = ShiftRow & {
+  source_shift_recommendation_id?: string | null;
+};
+
+const pipelineQueryKey = (monthStart: string) => ['workbench', 'scheduling-pipeline', monthStart];
+const buildRowsQueryKey = (buildId: string | null | undefined) => [
+  'workbench',
+  'schedule-build-rows',
+  buildId ?? 'none',
+];
 
 type ProviderSchedulingPreferenceRow = {
   provider_id: string | null;
@@ -1020,6 +1157,513 @@ export function useShiftRecommendationsForMonth(
   });
 }
 
+export function useSchedulingPipeline(month: string) {
+  const monthStart = monthIso(month);
+  return useQuery({
+    queryKey: pipelineQueryKey(monthStart),
+    queryFn: async (): Promise<SchedulingPipelineState> => {
+      const [workflowRes, buildsRes, amendmentsRes] = await Promise.all([
+        clinopsDb
+          .from('scheduling_month_workflows')
+          .select(
+            'id, target_month, current_stage, active_build_id, locked_build_id, intake_started_at, review_started_at, locked_at, published_at, amendment_started_at, updated_by, updated_by_label, notes, created_at, updated_at',
+          )
+          .eq('target_month', monthStart)
+          .range(0, 0),
+        clinopsDb
+          .from('schedule_builds')
+          .select(
+            'id, target_month, version_number, status, source_decision_run_id, source, created_by, created_by_label, notes, locked_at, locked_by, locked_by_label, published_at, published_by, published_by_label, created_at, updated_at',
+          )
+          .eq('target_month', monthStart)
+          .order('version_number', { ascending: false })
+          .range(0, 49),
+        clinopsDb
+          .from('schedule_amendment_requests')
+          .select(
+            'id, target_month, build_id, submission_id, provider_id, provider_name, request_type, status, summary, notes, requested_by, requested_by_label, resolved_at, resolved_by, resolved_by_label, created_at, updated_at',
+          )
+          .eq('target_month', monthStart)
+          .order('created_at', { ascending: false })
+          .range(0, 199),
+      ]);
+      if (workflowRes.error) throw workflowRes.error;
+      if (buildsRes.error) throw buildsRes.error;
+      if (amendmentsRes.error) throw amendmentsRes.error;
+      const workflow = ((workflowRes.data ?? []) as SchedulingMonthWorkflow[])[0] ?? null;
+      const builds = (buildsRes.data ?? []) as ScheduleBuild[];
+      const activeBuild =
+        (workflow?.active_build_id
+          ? builds.find(build => build.id === workflow.active_build_id)
+          : null) ??
+        builds.find(build => ['review', 'locked', 'published'].includes(build.status)) ??
+        null;
+      return {
+        workflow,
+        builds,
+        activeBuild,
+        amendments: (amendmentsRes.data ?? []) as ScheduleAmendmentRequest[],
+      };
+    },
+    staleTime: 30_000,
+    enabled: Boolean(monthStart),
+  });
+}
+
+export function useScheduleBuildRows(buildId: string | null | undefined) {
+  return useQuery({
+    queryKey: buildRowsQueryKey(buildId),
+    queryFn: async (): Promise<ScheduleBuildRow[]> => {
+      if (!buildId) return [];
+      const { data, error } = await clinopsDb
+        .from('schedule_build_rows')
+        .select(
+          'id, build_id, source_shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, source_publish_status, source_published_at, source_ehr_posted_at, publish_status, published_at, published_by, ehr_posted_at, ehr_posted_by, created_at',
+        )
+        .eq('build_id', buildId)
+        .order('recommendation', { ascending: false })
+        .order('provider_name', { ascending: true })
+        .order('shift_date', { ascending: true })
+        .order('start_min', { ascending: true })
+        .range(0, 49999);
+      if (error) throw error;
+      return (data ?? []) as ScheduleBuildRow[];
+    },
+    staleTime: 30_000,
+    enabled: Boolean(buildId),
+  });
+}
+
+export function useCreateScheduleDraft() {
+  const queryClient = useQueryClient();
+  const { actorId, actorLabel } = useActorLabel();
+  return useMutation({
+    mutationFn: async (args: { month: string; notes?: string }) => {
+      const monthStart = monthIso(args.month);
+      const nowIso = new Date().toISOString();
+      const [existingBuildsRes, activeBuildsRes, shiftsRes, submissionsRes] = await Promise.all([
+        clinopsDb
+          .from('schedule_builds')
+          .select('version_number')
+          .eq('target_month', monthStart)
+          .order('version_number', { ascending: false })
+          .range(0, 0),
+        clinopsDb
+          .from('schedule_builds')
+          .select('id, version_number, status')
+          .eq('target_month', monthStart)
+          .in('status', ['locked', 'published'])
+          .range(0, 0),
+        clinopsDb
+          .from('shift_recommendations')
+          .select(
+            'id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, publish_status, published_at, ehr_posted_at',
+          )
+          .eq('target_month', monthStart)
+          .order('shift_date', { ascending: true })
+          .order('start_min', { ascending: true })
+          .range(0, 49999),
+        clinopsDb
+          .from('schedule_submissions')
+          .select('id, provider_id, target_month, decision_status, submitted_at')
+          .eq('target_month', monthStart)
+          .range(0, 9999),
+      ]);
+      if (existingBuildsRes.error) throw existingBuildsRes.error;
+      if (activeBuildsRes.error) throw activeBuildsRes.error;
+      if (shiftsRes.error) throw shiftsRes.error;
+      if (submissionsRes.error) throw submissionsRes.error;
+      const activeLockedBuild = ((activeBuildsRes.data ?? []) as Array<{
+        version_number?: number | string;
+        status?: string | null;
+      }>)[0];
+      if (activeLockedBuild) {
+        throw new Error(
+          `Draft v${activeLockedBuild.version_number ?? ''} is already ${activeLockedBuild.status}. Use amendments for post-draft changes instead of creating a new draft.`,
+        );
+      }
+
+      const rawShifts = (shiftsRes.data ?? []) as ShiftRecommendationSnapshotRow[];
+      const submissions = (submissionsRes.data ?? []) as LatestSchedulingSubmission[];
+      const shifts = dedupeShiftRecommendationRows(
+        filterRowsToLatestSubmissions(rawShifts, submissions),
+      );
+      if (shifts.length === 0) {
+        throw new Error('No current allocation rows exist yet. Run allocation before creating Draft v1.');
+      }
+
+      const latestVersion = Number(
+        ((existingBuildsRes.data ?? []) as Array<{ version_number?: number | string }>)[0]?.version_number ?? 0,
+      );
+      const versionNumber = Number.isFinite(latestVersion) ? latestVersion + 1 : 1;
+
+      const { error: supersedeError } = await clinopsDb
+        .from('schedule_builds')
+        .update({ status: 'superseded', updated_at: nowIso })
+        .eq('target_month', monthStart)
+        .in('status', ['draft', 'review']);
+      if (supersedeError) throw supersedeError;
+
+      const sourceDecisionRunId =
+        shifts.find(shift => shift.decision_run_id)?.decision_run_id ?? null;
+      const buildRes = await clinopsDb
+        .from('schedule_builds')
+        .insert({
+          target_month: monthStart,
+          version_number: versionNumber,
+          status: 'review',
+          source_decision_run_id: sourceDecisionRunId,
+          created_by: actorId,
+          created_by_label: actorLabel,
+          notes: args.notes ?? null,
+          updated_at: nowIso,
+        })
+        .select(
+          'id, target_month, version_number, status, source_decision_run_id, source, created_by, created_by_label, notes, locked_at, locked_by, locked_by_label, published_at, published_by, published_by_label, created_at, updated_at',
+        )
+        .range(0, 0);
+      if (buildRes.error) throw buildRes.error;
+      const build = ((buildRes.data ?? []) as ScheduleBuild[])[0];
+      if (!build) throw new Error('Draft build was not returned after insert.');
+
+      const rows = shifts.map(shift => ({
+        build_id: build.id,
+        source_shift_recommendation_id: shift.id,
+        submission_id: shift.submission_id,
+        provider_id: shift.provider_id,
+        provider_name: shift.provider_name,
+        target_month: monthStart,
+        shift_date: shift.shift_date,
+        start_min: shift.start_min,
+        end_min: shift.end_min,
+        hours: shift.hours,
+        shift_type: shift.shift_type,
+        assigned_state: shift.assigned_state,
+        recommendation: shift.recommendation,
+        recommendation_reason: shift.recommendation_reason,
+        decision_run_id: shift.decision_run_id,
+        source_publish_status: shift.publish_status,
+        source_published_at: shift.published_at,
+        source_ehr_posted_at: shift.ehr_posted_at,
+        publish_status: shift.publish_status,
+        published_at: shift.published_at,
+        published_by: null,
+        ehr_posted_at: shift.ehr_posted_at,
+        ehr_posted_by: null,
+      }));
+
+      const CHUNK = 500;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const { error } = await clinopsDb
+          .from('schedule_build_rows')
+          .insert(rows.slice(i, i + CHUNK));
+        if (error) throw error;
+      }
+
+      const { error: workflowError } = await clinopsDb
+        .from('scheduling_month_workflows')
+        .upsert({
+          target_month: monthStart,
+          current_stage: 'review',
+          active_build_id: build.id,
+          review_started_at: nowIso,
+          updated_by: actorId,
+          updated_by_label: actorLabel,
+          notes: args.notes ?? null,
+          updated_at: nowIso,
+        }, { onConflict: 'target_month' });
+      if (workflowError) throw workflowError;
+
+      return build;
+    },
+    onSuccess: (build, args) => {
+      const monthStart = monthIso(args.month);
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKey(monthStart) });
+      queryClient.invalidateQueries({ queryKey: buildRowsQueryKey(build.id) });
+    },
+  });
+}
+
+export function useAdvanceSchedulingPipeline() {
+  const queryClient = useQueryClient();
+  const { actorId, actorLabel } = useActorLabel();
+  return useMutation({
+    mutationFn: async (args: {
+      month: string;
+      stage: SchedulingPipelineStage;
+      buildId?: string | null;
+      notes?: string;
+    }) => {
+      const monthStart = monthIso(args.month);
+      const nowIso = new Date().toISOString();
+      const workflowPatch: Record<string, unknown> = {
+        target_month: monthStart,
+        current_stage: args.stage,
+        updated_by: actorId,
+        updated_by_label: actorLabel,
+        notes: args.notes ?? null,
+        updated_at: nowIso,
+      };
+      if (args.buildId) workflowPatch.active_build_id = args.buildId;
+      if (args.stage === 'review') workflowPatch.review_started_at = nowIso;
+      if (args.stage === 'locked') {
+        workflowPatch.locked_at = nowIso;
+        workflowPatch.locked_build_id = args.buildId ?? null;
+      }
+      if (args.stage === 'published') workflowPatch.published_at = nowIso;
+      if (args.stage === 'amend') workflowPatch.amendment_started_at = nowIso;
+
+      if (args.stage === 'locked') {
+        if (!args.buildId) {
+          throw new Error('Create Draft v1 before locking the schedule.');
+        }
+        const [openAmendmentsRes, reviewRowsRes] = await Promise.all([
+          clinopsDb
+            .from('schedule_amendment_requests')
+            .select('id, status')
+            .eq('target_month', monthStart)
+            .in('status', ['requested', 'approved'])
+            .range(0, 9999),
+          clinopsDb
+            .from('schedule_submissions')
+            .select('id, provider_name, decision_status, human_review_state')
+            .eq('target_month', monthStart)
+            .range(0, 9999),
+        ]);
+        if (openAmendmentsRes.error) throw openAmendmentsRes.error;
+        if (reviewRowsRes.error) throw reviewRowsRes.error;
+        const openAmendmentCount = ((openAmendmentsRes.data ?? []) as unknown[]).length;
+        const openReviewRows = ((reviewRowsRes.data ?? []) as Array<{
+          decision_status: string | null;
+          human_review_state: string | null;
+        }>).filter(
+          row =>
+            row.decision_status !== 'superseded' &&
+            (row.decision_status === 'needs_review' || row.human_review_state === 'pending'),
+        );
+        if (openReviewRows.length > 0 || openAmendmentCount > 0) {
+          throw new Error(
+            `Clear review work before locking: ${openReviewRows.length} review row${openReviewRows.length === 1 ? '' : 's'} and ${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'} remain.`,
+          );
+        }
+      }
+
+      if (args.stage === 'published') {
+        if (!args.buildId) {
+          throw new Error('Create and lock a schedule draft before marking it published.');
+        }
+        const { data: publishRowsData, error: publishRowsError } = await clinopsDb
+          .from('schedule_build_rows')
+          .select('id, publish_status, ehr_posted_at')
+          .eq('build_id', args.buildId)
+          .eq('recommendation', 'publish')
+          .range(0, 49999);
+        if (publishRowsError) throw publishRowsError;
+        const publishRows = (publishRowsData ?? []) as Array<{
+          id: string;
+          publish_status: string;
+          ehr_posted_at: string | null;
+        }>;
+        if (publishRows.length === 0) {
+          throw new Error('No publishable draft rows exist for this schedule.');
+        }
+        const homebaseRemaining = publishRows.filter(row => !isHomebaseDone(row)).length;
+        const ehrRemaining = publishRows.filter(row => !isEhrDone(row)).length;
+        if (ehrRemaining > 0) {
+          throw new Error(
+            `Finish the Publish checklist before marking the schedule published: ${homebaseRemaining} Homebase row${homebaseRemaining === 1 ? '' : 's'} and ${ehrRemaining} EHR row${ehrRemaining === 1 ? '' : 's'} remain.`,
+          );
+        }
+      }
+
+      if (args.buildId && ['locked', 'published'].includes(args.stage)) {
+        const buildPatch: Record<string, unknown> = {
+          status: args.stage,
+          updated_at: nowIso,
+        };
+        if (args.stage === 'locked') {
+          buildPatch.locked_at = nowIso;
+          buildPatch.locked_by = actorId;
+          buildPatch.locked_by_label = actorLabel;
+        }
+        if (args.stage === 'published') {
+          buildPatch.published_at = nowIso;
+          buildPatch.published_by = actorId;
+          buildPatch.published_by_label = actorLabel;
+        }
+        const { error: buildError } = await clinopsDb
+          .from('schedule_builds')
+          .update(buildPatch)
+          .eq('id', args.buildId);
+        if (buildError) throw buildError;
+      }
+
+      const { error } = await clinopsDb
+        .from('scheduling_month_workflows')
+        .upsert(workflowPatch, { onConflict: 'target_month' });
+      if (error) throw error;
+    },
+    onSuccess: (_data, args) => {
+      const monthStart = monthIso(args.month);
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKey(monthStart) });
+    },
+  });
+}
+
+export function useCreateScheduleAmendmentRequest() {
+  const queryClient = useQueryClient();
+  const { actorId, actorLabel } = useActorLabel();
+  return useMutation({
+    mutationFn: async (args: {
+      month: string;
+      buildId?: string | null;
+      submissionId?: string | null;
+      providerId?: string | null;
+      providerName: string;
+      requestType: ScheduleAmendmentRequest['request_type'];
+      status?: ScheduleAmendmentRequest['status'];
+      summary?: string | null;
+      notes?: string | null;
+    }) => {
+      const monthStart = monthIso(args.month);
+      const nowIso = new Date().toISOString();
+      const status = args.status ?? 'requested';
+      const { error } = await clinopsDb
+        .from('schedule_amendment_requests')
+        .insert({
+          target_month: monthStart,
+          build_id: args.buildId ?? null,
+          submission_id: args.submissionId ?? null,
+          provider_id: args.providerId ?? null,
+          provider_name: args.providerName,
+          request_type: args.requestType,
+          status,
+          summary: args.summary ?? null,
+          notes: args.notes ?? null,
+          requested_by: actorId,
+          requested_by_label: actorLabel,
+          resolved_at: status === 'requested' ? null : nowIso,
+          resolved_by: status === 'requested' ? null : actorId,
+          resolved_by_label: status === 'requested' ? null : actorLabel,
+          updated_at: nowIso,
+        });
+      if (error) throw error;
+    },
+    onSuccess: (_data, args) => {
+      const monthStart = monthIso(args.month);
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKey(monthStart) });
+    },
+  });
+}
+
+export function useReplaceScheduleBuildRowsForSubmission() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      buildId: string;
+      month: string;
+      submissionId: string | null;
+      providerId: string | null;
+      providerName: string;
+      rows: ScheduleBuildRowInput[];
+    }) => {
+      const monthStart = monthIso(args.month);
+      let deleteQuery = clinopsDb
+        .from('schedule_build_rows')
+        .delete()
+        .eq('build_id', args.buildId);
+      if (args.submissionId) {
+        deleteQuery = deleteQuery.eq('submission_id', args.submissionId);
+      } else if (args.providerId) {
+        deleteQuery = deleteQuery.eq('provider_id', args.providerId);
+      } else {
+        deleteQuery = deleteQuery.eq('provider_name', args.providerName);
+      }
+      const { error: deleteError } = await deleteQuery;
+      if (deleteError) throw deleteError;
+
+      if (args.rows.length > 0) {
+        const rows = args.rows.map(row => ({
+          build_id: args.buildId,
+          source_shift_recommendation_id: null,
+          submission_id: row.submission_id ?? args.submissionId,
+          provider_id: row.provider_id ?? args.providerId,
+          provider_name: row.provider_name || args.providerName,
+          target_month: monthStart,
+          shift_date: row.shift_date,
+          start_min: row.start_min,
+          end_min: row.end_min,
+          hours: row.hours,
+          shift_type: row.shift_type,
+          assigned_state: row.assigned_state ?? null,
+          recommendation: row.recommendation,
+          recommendation_reason: row.recommendation_reason ?? null,
+          decision_run_id: row.decision_run_id ?? null,
+          source_publish_status: 'pending',
+          source_published_at: null,
+          source_ehr_posted_at: null,
+          publish_status: 'pending',
+          published_at: null,
+          published_by: null,
+          ehr_posted_at: null,
+          ehr_posted_by: null,
+        }));
+        const CHUNK = 500;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          const { error } = await clinopsDb
+            .from('schedule_build_rows')
+            .insert(rows.slice(i, i + CHUNK));
+          if (error) throw error;
+        }
+      }
+    },
+    onSuccess: (_data, args) => {
+      queryClient.invalidateQueries({ queryKey: buildRowsQueryKey(args.buildId) });
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKey(monthIso(args.month)) });
+    },
+  });
+}
+
+export function useUpdateScheduleAmendmentRequest() {
+  const queryClient = useQueryClient();
+  const { actorId, actorLabel } = useActorLabel();
+  return useMutation({
+    mutationFn: async (args: {
+      month: string;
+      amendmentId: string;
+      status: ScheduleAmendmentRequest['status'];
+      notes?: string | null;
+    }) => {
+      const monthStart = monthIso(args.month);
+      const nowIso = new Date().toISOString();
+      const patch: Record<string, unknown> = {
+        status: args.status,
+        updated_at: nowIso,
+      };
+      if (args.notes !== undefined) patch.notes = args.notes;
+      if (args.status !== 'requested') {
+        patch.resolved_at = nowIso;
+        patch.resolved_by = actorId;
+        patch.resolved_by_label = actorLabel;
+      } else {
+        patch.resolved_at = null;
+        patch.resolved_by = null;
+        patch.resolved_by_label = null;
+      }
+      const { error } = await clinopsDb
+        .from('schedule_amendment_requests')
+        .update(patch)
+        .eq('id', args.amendmentId)
+        .eq('target_month', monthStart);
+      if (error) throw error;
+    },
+    onSuccess: (_data, args) => {
+      const monthStart = monthIso(args.month);
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKey(monthStart) });
+    },
+  });
+}
+
 const homebasePatch = (done: boolean, actorId: string | null, nowIso: string) =>
   done
     ? {
@@ -1051,6 +1695,8 @@ const ehrPatch = (done: boolean, actorId: string | null, nowIso: string) =>
 type AuditableShift = Pick<
   ShiftRow,
   | 'id'
+  | 'schedule_build_row_id'
+  | 'source_shift_recommendation_id'
   | 'submission_id'
   | 'provider_id'
   | 'provider_name'
@@ -1069,7 +1715,9 @@ const buildAuditEntries = (
   actorLabel: string | null,
 ): Record<string, unknown>[] =>
   shifts.map(s => ({
-    shift_recommendation_id: s.id,
+    schedule_build_row_id: s.schedule_build_row_id ?? null,
+    shift_recommendation_id:
+      s.source_shift_recommendation_id ?? (s.schedule_build_row_id ? null : s.id),
     submission_id: s.submission_id,
     provider_id: s.provider_id,
     provider_name: s.provider_name,
@@ -1119,16 +1767,23 @@ export function useTogglePublishShift() {
         args.step === 'homebase'
           ? homebasePatch(args.done, actorId, nowIso)
           : ehrPatch(args.done, actorId, nowIso);
-      const { error } = await clinopsDb
-        .from('shift_recommendations')
-        .update(patch)
-        .eq('id', args.shift.id);
+      const { error } = args.shift.schedule_build_row_id
+        ? await clinopsDb
+            .from('schedule_build_rows')
+            .update(patch)
+            .eq('id', args.shift.schedule_build_row_id)
+        : await clinopsDb
+            .from('shift_recommendations')
+            .update(patch)
+            .eq('id', args.shift.id);
       if (error) throw error;
       await writeAuditLog(
         buildAuditEntries([args.shift], args.step, args.done, actorId, actorLabel),
       );
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'schedule-build-rows'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-pipeline'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'publish-audit-log'] });
@@ -1152,16 +1807,33 @@ export function useBulkMarkPublishShifts() {
         args.step === 'homebase'
           ? homebasePatch(args.done, actorId, nowIso)
           : ehrPatch(args.done, actorId, nowIso);
-      const { error } = await clinopsDb
-        .from('shift_recommendations')
-        .update(patch)
-        .in('id', args.shifts.map(s => s.id));
-      if (error) throw error;
+      const buildRowIds = args.shifts
+        .map(s => s.schedule_build_row_id)
+        .filter((id): id is string => Boolean(id));
+      const recommendationIds = args.shifts
+        .filter(s => !s.schedule_build_row_id)
+        .map(s => s.id);
+      if (buildRowIds.length > 0) {
+        const { error } = await clinopsDb
+          .from('schedule_build_rows')
+          .update(patch)
+          .in('id', buildRowIds);
+        if (error) throw error;
+      }
+      if (recommendationIds.length > 0) {
+        const { error } = await clinopsDb
+          .from('shift_recommendations')
+          .update(patch)
+          .in('id', recommendationIds);
+        if (error) throw error;
+      }
       await writeAuditLog(
         buildAuditEntries(args.shifts, args.step, args.done, actorId, actorLabel),
       );
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'schedule-build-rows'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-pipeline'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'shift-recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'monthly-publish'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'publish-audit-log'] });
@@ -1177,6 +1849,7 @@ export function useBulkMarkPublishShifts() {
 
 export type PublishAuditEntry = {
   id: string;
+  schedule_build_row_id: string | null;
   shift_recommendation_id: string | null;
   submission_id: string | null;
   provider_id: string | null;
@@ -1202,7 +1875,7 @@ export function usePublishAuditLog(month: string | null) {
       let q = clinopsDb
         .from('publish_audit_log')
         .select(
-          'id, shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, shift_type, step, action, actor_id, actor_label, notes, created_at',
+          'id, schedule_build_row_id, shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, shift_type, step, action, actor_id, actor_label, notes, created_at',
         )
         .order('created_at', { ascending: false })
         .range(0, 999);
@@ -1236,6 +1909,7 @@ export function useResolveNeedsReview() {
       existing_notes: string | null;
       corrected_parsed_shifts?: unknown;
       correction_summary?: string | null;
+      skip_evaluate?: boolean;
     }) => {
       const nowIso = new Date().toISOString();
       const actor = profile?.full_name || profile?.email || user?.email || 'ClinOps';
@@ -1300,7 +1974,12 @@ export function useResolveNeedsReview() {
       // rebuilds publish rows from the canonical schedule path. Keep this
       // best-effort because the review decision and audit log have already
       // landed; a later full/monthly recalculation can recover if needed.
-      if (args.provider_id && args.target_month && args.decision === 'accepted') {
+      if (
+        !args.skip_evaluate &&
+        args.provider_id &&
+        args.target_month &&
+        args.decision === 'accepted'
+      ) {
         const monthStart = monthIso(args.target_month);
         const providerParam = encodeURIComponent(args.provider_id);
         const monthParam = encodeURIComponent(monthStart);
@@ -1311,7 +1990,7 @@ export function useResolveNeedsReview() {
         if (evalErr) {
           console.warn(`Per-group re-evaluate failed: ${evalErr.message}`);
         }
-      } else if (args.provider_id && args.target_month) {
+      } else if (!args.skip_evaluate && args.provider_id && args.target_month) {
         const monthStart = monthIso(args.target_month);
         const providerParam = encodeURIComponent(args.provider_id);
         const monthParam = encodeURIComponent(monthStart);
@@ -1454,6 +2133,7 @@ export function useSchedulingRecalculationHistory(month: string) {
 
 export function useReevaluateMonth() {
   const queryClient = useQueryClient();
+  const { actorId, actorLabel } = useActorLabel();
   return useMutation({
     mutationFn: async (month: string) => {
       const monthStart = monthIso(month);
@@ -1462,6 +2142,33 @@ export function useReevaluateMonth() {
         { body: {} },
       );
       if (error) throw error;
+      const { data: workflowData, error: workflowReadError } = await clinopsDb
+        .from('scheduling_month_workflows')
+        .select('current_stage, active_build_id')
+        .eq('target_month', monthStart)
+        .range(0, 0);
+      if (workflowReadError) throw workflowReadError;
+      const workflow = ((workflowData ?? []) as Array<{
+        current_stage: SchedulingPipelineStage | null;
+        active_build_id: string | null;
+      }>)[0];
+      const canMarkAllocated =
+        !workflow?.active_build_id &&
+        (!workflow?.current_stage || ['intake', 'allocated'].includes(workflow.current_stage));
+      if (canMarkAllocated) {
+        const nowIso = new Date().toISOString();
+        const { error: workflowWriteError } = await clinopsDb
+          .from('scheduling_month_workflows')
+          .upsert({
+            target_month: monthStart,
+            current_stage: 'allocated',
+            updated_by: actorId,
+            updated_by_label: actorLabel,
+            notes: 'Allocation run completed. Create Draft v1 when the shift list is ready for review.',
+            updated_at: nowIso,
+          }, { onConflict: 'target_month' });
+        if (workflowWriteError) throw workflowWriteError;
+      }
       return data as ScheduleRecalculationResult;
     },
     onSuccess: () => {
@@ -1471,6 +2178,7 @@ export function useReevaluateMonth() {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'state-coverage'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-search'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-recalculation-history'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-pipeline'] });
     },
   });
 }
@@ -1878,6 +2586,7 @@ export function useResolveResubmission() {
       // Re-run, which defeats the purpose of a cross-month inbox.
       provider_id?: string | null;
       target_month?: string;
+      skip_evaluate?: boolean;
     }) => {
       const nowIso = new Date().toISOString();
       const actor =
@@ -1906,7 +2615,12 @@ export function useResolveResubmission() {
       // change applies right away (publish_status is preserved across
       // re-runs by the writeShiftRecommendations preservation logic). The
       // user doesn't need to leave the inbox.
-      if (args.action === 'approved' && args.provider_id && args.target_month) {
+      if (
+        !args.skip_evaluate &&
+        args.action === 'approved' &&
+        args.provider_id &&
+        args.target_month
+      ) {
         const monthStart = monthIso(args.target_month);
         const { error: evalErr } = await clinopsSupabase.functions.invoke(
           `evaluate-schedule-submissions?provider_id=${args.provider_id}&target_month=${monthStart}`,

@@ -257,7 +257,6 @@ const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
 };
 const MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   ...OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG,
-  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const MH_POLICY_CUT_REASON =
   'Cut — mental health shift policy violation';
@@ -268,10 +267,13 @@ const ACCESS_GROWTH_BUFFER_POLICY = 'midpoint_targets_no_extra_buffer';
 const AUGUST_2026_MONTH = '2026-08-01';
 const AUGUST_2026_JOTFORM_DEADLINE_UTC_MS = Date.parse('2026-07-08T04:59:59.999Z');
 const AUGUST_2026_DIRECTSHIFTS_NP_NAMES = new Set([
+  'abby grant',
   'akosua norgbey',
   'brittney afram',
   'cassondra hawkins',
   'jarrod nero',
+  'nycole cox',
+  'stacy lynn',
   'stephanie lumsden',
 ]);
 
@@ -1580,7 +1582,7 @@ Deno.serve(async (req: Request) => {
           pushPublishedLockNoteParts(noHoursNoteParts, publishedLocks);
           if (isMentalHealth) {
             noHoursNoteParts.push(
-              `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
+              `mh_preferred_shift_hours=${MH_PREFERRED_SHIFT_HOURS}`,
               `mh_visit_cadence=${MH_VISIT_MINUTES}m_visit+${MH_CHARTING_BUFFER_MINUTES}m_charting_buffer`,
               `mh_ehr_slot_gap_minutes=${MH_EHR_SLOT_GAP_MINUTES}`,
             );
@@ -1680,7 +1682,7 @@ Deno.serve(async (req: Request) => {
             `mh_charting_buffer_minutes=${MH_CHARTING_BUFFER_MINUTES}`,
             `mh_ehr_slot_gap_minutes=${MH_EHR_SLOT_GAP_MINUTES}`,
             `mh_visit_capacity=${mhVisitCapacity}`,
-            `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
+            `mh_preferred_shift_hours=${MH_PREFERRED_SHIFT_HOURS}`,
             'note=MH uses service-line forecast; bypasses telehealth state allocator',
           ];
           pushProviderPriorityNotes(mhNoteParts, providerPriority, providerProfile, useUtilizationTieBreak, allocationPolicy);

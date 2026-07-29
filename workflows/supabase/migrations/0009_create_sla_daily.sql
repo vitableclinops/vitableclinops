@@ -2,7 +2,7 @@
 -- workflows/src/prompts/daily_availability_prompt.py:
 --
 --   daily_demand = monthly_completed_visits / 20
---   daily_target = max(5, daily_demand * 1.5)
+--   daily_target = daily_demand * 1.5
 --   ratio        = available_slots / daily_target
 --
 -- Buckets: critical (ratio < 1.0), low (1.0 <= ratio < 2.0), ok (>= 2.0).
@@ -13,7 +13,7 @@ create table if not exists public.sla_daily (
   state               text not null,
   available_slots     integer not null check (available_slots >= 0),
   monthly_visits      integer check (monthly_visits is null or monthly_visits >= 0),
-  daily_target        integer not null check (daily_target >= 5),
+  daily_target        integer not null check (daily_target >= 0),
   ratio               numeric(6,3) not null,
   sla_pct             numeric(5,2) check (sla_pct is null or (sla_pct >= 0 and sla_pct <= 100)),
   status              text not null

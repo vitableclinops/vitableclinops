@@ -48,6 +48,7 @@ import {
   groupSubmissionsForInbox,
   isHomebaseDone,
   isEhrDone,
+  useCreateScheduleAmendmentRequest,
   useResolveResubmission,
   useShiftRecommendationsInboxWindow,
   type ResubmissionGroup,
@@ -228,10 +229,14 @@ export function ResubmissionInboxPanel({
   anchorMonth,
   submissions,
   isLoading,
+  disableAutoRecalculate = false,
+  activeBuildId = null,
 }: {
   anchorMonth: string;
   submissions: SubmissionForInbox[];
   isLoading: boolean;
+  disableAutoRecalculate?: boolean;
+  activeBuildId?: string | null;
 }) {
   // Cross-month published-shifts map so the "touches already-published"
   // signal stays accurate for resubmissions that span multiple months.
@@ -424,6 +429,8 @@ export function ResubmissionInboxPanel({
       {open && (
         <ResubmissionDialog
           group={open}
+          disableAutoRecalculate={disableAutoRecalculate}
+          activeBuildId={activeBuildId}
           onClose={() => setOpen(null)}
         />
       )}
@@ -433,13 +440,18 @@ export function ResubmissionInboxPanel({
 
 function ResubmissionDialog({
   group,
+  disableAutoRecalculate,
+  activeBuildId,
   onClose,
 }: {
   group: EnrichedGroup;
+  disableAutoRecalculate: boolean;
+  activeBuildId: string | null;
   onClose: () => void;
 }) {
   const [notes, setNotes] = useState(group.latest.human_review_notes ?? '');
   const resolve = useResolveResubmission();
+  const createAmendment = useCreateScheduleAmendmentRequest();
 
   useEffect(() => {
     setNotes(group.latest.human_review_notes ?? '');
@@ -458,12 +470,35 @@ function ResubmissionDialog({
         notes: trimmedNotes || undefined,
         provider_id: group.provider_id,
         target_month: group.target_month,
+        skip_evaluate: disableAutoRecalculate,
       },
       {
         onSuccess: () => {
+          if (action === 'approved' && disableAutoRecalculate) {
+            createAmendment.mutate(
+              {
+                month: group.target_month,
+                buildId: activeBuildId,
+                submissionId: group.latest.id,
+                providerId: group.provider_id,
+                providerName: group.provider_name,
+                requestType: 'resubmission',
+                summary:
+                  group.diff.summary.slice(0, 2).join('; ') ||
+                  'Approved resubmission after draft lock',
+                notes: trimmedNotes || undefined,
+              },
+              {
+                onError: e =>
+                  toast.error(`Approved, but amendment history failed: ${(e as Error).message}`),
+              },
+            );
+          }
           toast.success(
             action === 'approved'
-              ? `Approved ${group.provider_name}'s ${formatMonthShort(group.target_month)} submission · re-evaluating`
+              ? disableAutoRecalculate
+                ? `Approved ${group.provider_name}'s ${formatMonthShort(group.target_month)} submission · amendment logged`
+                : `Approved ${group.provider_name}'s ${formatMonthShort(group.target_month)} submission · re-evaluating`
               : `Parked ${group.provider_name}'s ${formatMonthShort(group.target_month)} submission`,
           );
           onClose();
@@ -482,6 +517,7 @@ function ResubmissionDialog({
         notes: trimmedNotes || undefined,
         provider_id: group.provider_id,
         target_month: group.target_month,
+        skip_evaluate: disableAutoRecalculate,
       },
       {
         onSuccess: () => {
@@ -591,10 +627,16 @@ function ResubmissionDialog({
                   un-park to return it to the inbox.
                 </p>
               )}
-              {group.latest.human_review_state === 'pending' && (
-                <p className="text-xs text-blue-700 mt-2">
-                  Pending review. The evaluator is gated on this group until you Approve or
-                  Park for follow-up.
+          {disableAutoRecalculate && (
+            <p className="text-xs text-amber-700 mt-2">
+              Draft allocation is already under review. Approving this submission will save the
+              decision and add it to Amendments instead of recalculating the month.
+            </p>
+          )}
+          {group.latest.human_review_state === 'pending' && !disableAutoRecalculate && (
+            <p className="text-xs text-blue-700 mt-2">
+              Pending review. The evaluator is gated on this group until you Approve or
+              Park for follow-up.
                 </p>
               )}
             </CardContent>
@@ -623,13 +665,16 @@ function ResubmissionDialog({
             <PauseCircle className="h-4 w-4 mr-1" />
             Park for follow-up
           </Button>
-          <Button onClick={() => handle('approved')} disabled={resolve.isPending}>
+          <Button
+            onClick={() => handle('approved')}
+            disabled={resolve.isPending || createAmendment.isPending}
+          >
             {resolve.isPending ? (
               <Loader2 className="h-4 w-4 mr-1 animate-spin" />
             ) : (
               <Check className="h-4 w-4 mr-1" />
             )}
-            Approve & recalculate
+            {disableAutoRecalculate ? 'Approve & log amendment' : 'Approve & recalculate'}
           </Button>
         </DialogFooter>
       </DialogContent>

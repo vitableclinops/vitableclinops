@@ -25,7 +25,7 @@ export function dailyDemandVisits(weeklyVisits: number): number {
   return weeklyVisits / WORKING_DAYS_PER_WEEK;
 }
 
-/** SLA target in slots/day. Live from weekly forecast — no floor. */
+/** SLA target in slots/day. Live from weekly forecast with no demand floor. */
 export function slaTargetSlots(weeklyVisits: number, buffer: number = DEFAULT_SLA_BUFFER): number {
   return dailyDemandVisits(weeklyVisits) * buffer;
 }

@@ -9,7 +9,7 @@ trim). Unmatched names are logged loudly so they can be fixed in either
 system — typically the Metabase card name or the Supabase `providers.name`.
 
 Required env vars:
-    METABASE_URL, METABASE_API_KEY        - same as the daily report
+    METABASE_URL, METABASE_USERNAME, METABASE_PASSWORD
     SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
     METABASE_DAILY_UTIL_CARD_ID           - Metabase card with today's util
     METABASE_5WK_UTIL_CARD_ID             - Metabase card with 5-week avg

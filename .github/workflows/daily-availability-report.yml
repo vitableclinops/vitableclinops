@@ -1,11 +1,8 @@
 name: Daily Availability Report
 
 on:
-  schedule:
-    # 8:00 AM CDT (UTC-5) = 13:00 UTC — active Mar through Nov
-    - cron: '0 13 * * 1-5'
-    # 8:00 AM CST (UTC-6) = 14:00 UTC — active Nov through Mar
-    - cron: '0 14 * * 1-5'
+  # Replaced by the Supabase pg_cron-backed same-next-day-coverage-alert
+  # job. Keep workflow_dispatch for manual fallback while the new job beds in.
   workflow_dispatch:
     inputs:
       date:
@@ -42,7 +39,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           METABASE_URL: ${{ secrets.METABASE_URL }}
-          METABASE_API_KEY: ${{ secrets.METABASE_API_KEY }}
+          METABASE_USERNAME: ${{ secrets.METABASE_USERNAME }}
+          METABASE_PASSWORD: ${{ secrets.METABASE_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           HOMEBASE_API_KEY: ${{ secrets.HOMEBASE_API_KEY }}

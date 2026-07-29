@@ -535,7 +535,7 @@ export default function OpsDashboardPage() {
                   <p className="text-muted-foreground">
                     <span className="font-medium text-foreground">Status thresholds explained:</span>
                     {' '}OK = available slots ≥ SLA target · LOW = 50–99% of target · CRITICAL = {'<'} 50% · ZERO = no slots at all · NO DATA = CSV not yet uploaded for this date.
-                    SLA target = <code className="bg-muted px-1 rounded text-xs">max(5, weekly_visits / 5 × 1.5)</code> daily slots.
+                    SLA target = <code className="bg-muted px-1 rounded text-xs">weekly_visits / 5 × 1.5</code> daily slots.
                   </p>
                   <p className="text-muted-foreground">
                     <span className="font-medium text-foreground">For leadership / SLA reporting:</span>
@@ -682,7 +682,7 @@ export default function OpsDashboardPage() {
                           <span className="inline-flex items-center gap-1 justify-end">
                             SLA Target
                             <InfoTooltip label="What is the SLA target?">
-                              Daily slot target we need to meet service-level commitments. Formula: <code className="bg-muted px-1 rounded">max(5, weekly_visits / 5 × 1.5)</code>. Below target → LOW / CRITICAL in the Status column.
+                              Daily slot target we need to meet service-level commitments. Formula: <code className="bg-muted px-1 rounded">weekly_visits / 5 × 1.5</code>. Below target → LOW / CRITICAL in the Status column.
                             </InfoTooltip>
                           </span>
                           <div className="text-[10px] font-normal text-muted-foreground/70">slots / hours</div>
@@ -755,7 +755,7 @@ export default function OpsDashboardPage() {
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">
                             {row.slaTargetSlots != null ? (
-                              <span title={`From ${row.weeklyVisits ?? '—'} weekly visits × ${slaBuffer} buffer`}>
+                              <span title={`${row.weeklyVisits ?? '—'} weekly visits / 5 × ${slaBuffer} buffer`}>
                                 {round1(row.slaTargetSlots)}
                                 {row.slaTargetHours != null && (
                                   <span className="text-[10px] ml-1">/ {round1(row.slaTargetHours)}h</span>
