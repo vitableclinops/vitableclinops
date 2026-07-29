@@ -20,6 +20,8 @@ import {
   ClipboardList,
   Database,
   HelpCircle,
+  History,
+  Inbox,
   LogOut,
   LayoutDashboard,
   Map as MapIcon,
@@ -36,11 +38,17 @@ interface SchedulingSidebarProps {
   showAdminDashboardLink?: boolean;
 }
 
+// Ordered to mirror the five-stage pipeline (Intake → Allocate/Readiness →
+// Review → Publish → Amend) so the sidebar reads as the workflow, and every
+// stage has a direct destination — including Intake and Amendments, which
+// previously had no top-level entry.
 const items = [
   { label: 'Readiness', icon: CalendarCheck, href: '/scheduling/workbench?section=readiness&scope=all' },
+  { label: 'Intake', icon: Inbox, href: '/scheduling/workbench?section=intake&view=submissions&scope=all' },
   { label: 'Review', icon: AlertCircle, href: '/scheduling/workbench?section=review&view=decisions&scope=all' },
   { label: 'Coverage Plan', icon: MapIcon, href: '/scheduling/workbench?section=coverage-plan&view=coverage&scope=all' },
   { label: 'Publish', icon: Send, href: '/scheduling/workbench?section=publish&view=provider&scope=all' },
+  { label: 'Amendments', icon: History, href: '/scheduling/workbench?section=review&view=amendments&scope=all' },
   { label: 'Homebase Schedule', icon: Database, href: '/scheduling/homebase-schedule' },
   { label: 'Mental Health', icon: Brain, href: '/scheduling/workbench?section=readiness&scope=mental_health' },
   { label: 'Exceptions', icon: ClipboardList, href: '/scheduling/workbench?section=exceptions&scope=all' },
