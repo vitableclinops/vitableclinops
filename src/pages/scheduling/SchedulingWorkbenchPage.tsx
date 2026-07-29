@@ -3423,28 +3423,95 @@ function AmendmentRequestsPanel({
     status: ScheduleAmendmentRequest['status'],
   ) => void;
 }) {
-  const rows = [...amendments].sort((a, b) => {
+  type AmendmentFilter = 'open' | 'all' | ScheduleAmendmentRequest['status'];
+  const [filter, setFilter] = useState<AmendmentFilter>('open');
+  const counts = useMemo(() => ({
+    requested: amendments.filter(row => row.status === 'requested').length,
+    approved: amendments.filter(row => row.status === 'approved').length,
+    applied: amendments.filter(row => row.status === 'applied').length,
+    parked: amendments.filter(row => row.status === 'parked').length,
+    rejected: amendments.filter(row => row.status === 'rejected').length,
+  }), [amendments]);
+  const openCount = counts.requested + counts.approved;
+  const sortedRows = [...amendments].sort((a, b) => {
     const rank = (status: ScheduleAmendmentRequest['status']) =>
-      status === 'requested' ? 0 : status === 'approved' ? 1 : status === 'parked' ? 2 : 3;
+      status === 'requested'
+        ? 0
+        : status === 'approved'
+          ? 1
+          : status === 'parked'
+            ? 2
+            : status === 'applied'
+              ? 3
+              : 4;
     const byStatus = rank(a.status) - rank(b.status);
     if (byStatus !== 0) return byStatus;
     return b.created_at.localeCompare(a.created_at);
   });
+  const rows = sortedRows.filter(row => {
+    if (filter === 'all') return true;
+    if (filter === 'open') return row.status === 'requested' || row.status === 'approved';
+    return row.status === filter;
+  });
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <History className="h-4 w-4 text-purple-700" />
-          Amendment history · {formatMonthLabel(month)}
-        </CardTitle>
-        <p className="text-xs text-muted-foreground mt-1">
-          Shows only post-draft review changes. These are the items that need a deliberate schedule update after Draft {activeBuild ? `v${activeBuild.version_number}` : 'v1'} exists.
-        </p>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="h-4 w-4 text-purple-700" />
+              Amendment queue · {formatMonthLabel(month)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Discrete post-draft changes only. Requested changes need approval; approved changes are ready to apply against Draft {activeBuild ? `v${activeBuild.version_number}` : 'v1'} or the published schedule.
+            </p>
+          </div>
+          <Select value={filter} onValueChange={value => setFilter(value as AmendmentFilter)}>
+            <SelectTrigger className="w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open work ({openCount})</SelectItem>
+              <SelectItem value="requested">Requested ({counts.requested})</SelectItem>
+              <SelectItem value="approved">Approved ({counts.approved})</SelectItem>
+              <SelectItem value="applied">Applied ({counts.applied})</SelectItem>
+              <SelectItem value="parked">Parked ({counts.parked})</SelectItem>
+              <SelectItem value="rejected">Rejected ({counts.rejected})</SelectItem>
+              <SelectItem value="all">All changes ({amendments.length})</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-5">
+          <div className="rounded-md border border-purple-200 bg-purple-50 px-3 py-2">
+            <div className="text-[11px] text-purple-900">Requested</div>
+            <div className="text-lg font-semibold text-purple-900">{counts.requested}</div>
+          </div>
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+            <div className="text-[11px] text-blue-900">Approved</div>
+            <div className="text-lg font-semibold text-blue-900">{counts.approved}</div>
+          </div>
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <div className="text-[11px] text-emerald-900">Applied</div>
+            <div className="text-lg font-semibold text-emerald-900">{counts.applied}</div>
+          </div>
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+            <div className="text-[11px] text-amber-900">Parked</div>
+            <div className="text-lg font-semibold text-amber-900">{counts.parked}</div>
+          </div>
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+            <div className="text-[11px] text-red-900">Rejected</div>
+            <div className="text-lg font-semibold text-red-900">{counts.rejected}</div>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
-        {rows.length === 0 ? (
+        {amendments.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             No amendments logged for {formatMonthLabel(month)} yet.
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            No amendments match this filter.
           </div>
         ) : (
           <Table>
@@ -3502,7 +3569,43 @@ function AmendmentRequestsPanel({
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    {row.status === 'requested' || row.status === 'approved' ? (
+                    {row.status === 'requested' ? (
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={isUpdating}
+                          onClick={() => onUpdateStatus(row, 'approved')}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                          Approve
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={isUpdating}
+                          onClick={() => onUpdateStatus(row, 'parked')}
+                        >
+                          <CircleDot className="h-3.5 w-3.5 mr-1" />
+                          Park
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 border-red-200 text-red-700 hover:bg-red-50"
+                          disabled={isUpdating}
+                          onClick={() => onUpdateStatus(row, 'rejected')}
+                        >
+                          <X className="h-3.5 w-3.5 mr-1" />
+                          Reject
+                        </Button>
+                      </div>
+                    ) : row.status === 'approved' ? (
                       <div className="flex justify-end gap-1">
                         <Button
                           type="button"
