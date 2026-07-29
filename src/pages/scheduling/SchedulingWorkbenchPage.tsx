@@ -1978,7 +1978,7 @@ export default function SchedulingWorkbenchPage({
         }
         if (shouldRecalculateAfterApproval) {
           toast.success(
-            `Approved corrected hours for ${args.provider_name}. Recalculating ${formatMonthLabel(month)} now.`,
+            `Approved corrected hours for ${args.provider_name}. Running allocation for ${formatMonthLabel(month)} now.`,
           );
           setReviewTab('recalculate');
           updateWorkbenchParams({ section: 'review', view: 'allocation-runs', replace: true });
