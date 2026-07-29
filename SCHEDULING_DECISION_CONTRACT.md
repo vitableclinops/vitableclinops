@@ -39,7 +39,7 @@ Run every morning at 7am ET.
 - **Status calculation** (canonical — also encoded in `workflows/src/prompts/daily_availability_prompt.py`):
   ```
   daily_demand = monthly_completed_visits / 20      # 20 working days/month
-  daily_target = max(5, daily_demand * 1.5)         # 50% wiggle room, floor of 5
+  daily_target = daily_demand * 1.5                 # 50% wiggle room, no demand floor
   ratio        = available_slots / daily_target
   ```
 - **Buckets:**
@@ -88,7 +88,7 @@ Three sub-questions, written to `recommendations_daily`:
 - Provider utilization is measured for visibility/outreach only; it is not part of default monthly ranking unless explicitly enabled.
 
 **Two-sided objective:**
-- **Lower bound:** cover projected demand with wiggle room (target = `monthly_visits/20 × 1.5`, floor 5 slots/day per state).
+- **Lower bound:** cover projected demand with wiggle room (target = `monthly_visits/20 × 1.5`, no slot floor).
 - **Upper bound:** stay under cost-per-visit ceiling. **Target: <$60/visit. Current state: well above target.**
 - Overshooting inflates cost-per-visit by paying for unused capacity; undershooting hurts member experience and SLA. Optimize for the smallest provider footprint that still keeps every state at `ratio ≥ 1.5` on the daily SLA bucket.
 - **Equity guardrails:** Validated clinical lead/admin hours are accepted in full before demand trimming, hourly rate is the next routing signal, and DirectShifts/access should land near 15% of accepted telehealth appointment volume when eligible supply exists; same-rate DirectShifts/access providers should receive similar accepted percentages of submitted forecastable hours; non-clinical providers hit a 75% submitted-hours soft cap before additional hours are routed to them. Genevieve Teetie, Shanta Williams, and Rebecca Keuch are explicit clinical lead/admin overrides even when source metadata does not carry that label.
@@ -149,9 +149,9 @@ These were open questions during drafting and have been resolved. Encode in code
 
 | Setting | Value | Source / rationale |
 |---|---|---|
-| Daily slot target formula | `max(5, monthly_visits/20 × 1.5)` | `workflows/src/prompts/daily_availability_prompt.py` |
+| Daily slot target formula | `monthly_visits/20 × 1.5` | `workflows/src/prompts/daily_availability_prompt.py` |
 | Daily slot wiggle room | **50%** (the 1.5× multiplier) | Same |
-| Daily slot floor | 5 slots/day per state | Same |
+| Daily slot floor | None | Maddi |
 | SLA bucket: critical | ratio < 1.0 | Same |
 | SLA bucket: low | 1.0 ≤ ratio < 2.0 | Same |
 | SLA bucket: ok | ratio ≥ 2.0 | Same |

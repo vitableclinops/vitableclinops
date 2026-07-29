@@ -8,7 +8,8 @@ report to #appointment-availability-update.
 Required env vars:
     ANTHROPIC_API_KEY          - Anthropic API key
     METABASE_URL               - https://metabase.vitablehealth.com
-    METABASE_API_KEY           - X-API-Key value from Metabase Admin
+    METABASE_USERNAME          - Metabase login email
+    METABASE_PASSWORD          - Metabase login password
     SUPABASE_URL               - https://bbquooftytwprllipcsb.supabase.co
     SUPABASE_SERVICE_ROLE_KEY  - service_role key (bypasses RLS)
     HOMEBASE_API_KEY           - Bearer token for Homebase API

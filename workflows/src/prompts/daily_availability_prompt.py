@@ -44,7 +44,7 @@ You have four tools. Call them directly — do not narrate intent first.
 
 3. Compute coverage ratios per state, for both today and tomorrow:
        daily_demand = monthly_visits / 20
-       target       = max(5, daily_demand * 1.5)
+       target       = daily_demand * 1.5
        ratio        = available_slots / target
    Bucket each (state, day):
        Critical: ratio < 1.0

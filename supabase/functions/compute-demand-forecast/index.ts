@@ -460,7 +460,7 @@ Deno.serve(async (req: Request) => {
         month: targetMonth,
         monthly_visits_target: Math.round(monthlyHours),
         monthly_hours_target: monthlyHours,
-        daily_target_slots: Math.max(5, Math.round(dailyTargetHours)),
+        daily_target_slots: Math.max(0, Math.round(dailyTargetHours)),
         raw_weekly_hours: round2(t.raw),
         adjusted_weekly_hours: round2(t.adjusted),
         daily_target_hours: dailyTargetHours,

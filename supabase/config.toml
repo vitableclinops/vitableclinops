@@ -99,3 +99,9 @@ verify_jwt = false
 # function authenticates with BOOKING_SYNC_SECRET or the service-role bearer.
 [functions.notify-late-booking]
 verify_jwt = false
+
+# Scheduled by pg_cron + pg_net with the service-role JWT in Authorization.
+# The function writes coverage_alerts and posts Slack parent/thread messages
+# through chat.postMessage using SLACK_BOT_TOKEN and SLACK_CHANNEL_ID.
+[functions.same-next-day-coverage-alert]
+verify_jwt = true
