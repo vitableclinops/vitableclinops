@@ -2611,7 +2611,7 @@ export default function SchedulingWorkbenchPage({
                   <Badge className="ml-1 bg-blue-100 text-blue-800">{scopedCutRows.length}</Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="cost"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost / Visit</TabsTrigger>
+              <TabsTrigger value="cost"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost audit</TabsTrigger>
               <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
             </TabsList>
 
@@ -10777,7 +10777,7 @@ function CostPerVisitPanel({
   );
 
   if (isLoading) {
-    return <LoadingRow label="Loading cost per visit" />;
+    return <LoadingRow label="Loading cost audit" />;
   }
 
   if (model.providerRows.length === 0) {
@@ -10813,10 +10813,10 @@ function CostPerVisitPanel({
             <div>
               <CardTitle className="text-base flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-emerald-700" />
-                Cost / Visit · {formatMonthLabel(month)}
+                Cost audit · {formatMonthLabel(month)}
               </CardTitle>
               <p className="mt-1 text-xs text-muted-foreground">
-                Includes telehealth and mental health hours. State-coverage math on the readiness tab counts telehealth only. Standard care uses 2 visits/hr; mental health coach, therapist, and LPC rows use 3 visits per 2.5h shift. CPV assumes 70% target utilization.
+                Finance-only audit of the accepted schedule. Revenue forecasts are not used for September allocation decisions; CPV is shown after the schedule exists. Standard care uses 2 visits/hr; mental health rows use the preferred 2.5h block model. CPV assumes 70% target utilization.
               </p>
             </div>
             {recalculateButton}
@@ -10994,9 +10994,9 @@ function CostPerVisitPanel({
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Provider cost and routing detail</CardTitle>
+          <CardTitle className="text-sm">Provider cost audit detail</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Provider-level view of accepted hours, wage rate, projected cost, and the concise routing signals behind the decision.
+            Provider-level view of accepted hours, wage rate, projected cost, and recorded routing signals. Use Allocation history for schedule movement; this audit does not introduce a revenue forecast input.
           </p>
         </CardHeader>
         <CardContent className="p-0">
