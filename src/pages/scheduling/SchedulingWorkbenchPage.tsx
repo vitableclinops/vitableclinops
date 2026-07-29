@@ -1217,6 +1217,29 @@ export default function SchedulingWorkbenchPage({
     setTopTab('publish');
     updateWorkbenchParams({ section: 'publish', view: tab, replace: true });
   };
+  const jumpToReadiness = () => {
+    setTopTab('readiness');
+    updateWorkbenchParams({ section: 'readiness', replace: true });
+  };
+  // Maps a pipeline stage to the place where that stage's work happens, so the
+  // stepper and the "What do you need to do?" guide double as navigation.
+  const navigateToStage = (stage: SchedulingPipelineStage) => {
+    switch (stage) {
+      case 'intake':
+        return jumpToAvailability('submissions');
+      case 'allocated':
+        return jumpToReadiness();
+      case 'review':
+        return jumpToReview('decisions');
+      case 'locked':
+      case 'published':
+        return jumpToPublish('provider');
+      case 'amend':
+        return jumpToReview('amendments');
+      default:
+        return jumpToReadiness();
+    }
+  };
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggleExpanded = (id: string) =>
@@ -2206,6 +2229,21 @@ export default function SchedulingWorkbenchPage({
             },
           )
         }
+        onNavigateStage={navigateToStage}
+      />
+
+      <HubTaskGuide
+        stage={pipelineStage}
+        blockers={{
+          blockedIntake: scopedIntakeBranchSummary.blocked,
+          needsDecision: scopedSummary.needsReviewCount,
+          resubmits: scopedInboxActionable,
+          openAmendments: openAmendments.length,
+        }}
+        onGoToIntake={() => jumpToAvailability('submissions')}
+        onGoToReview={() => jumpToReview('decisions')}
+        onGoToPublish={() => jumpToPublish('provider')}
+        onGoToAmendments={() => jumpToReview('amendments')}
       />
 
       <Tabs value={topTab} onValueChange={onTopTabChange}>
@@ -3242,6 +3280,107 @@ function LoadingRow({ label }: { label: string }) {
   );
 }
 
+// Task-first "where do I go?" guide. Each tile names a job, says which stage
+// owns it, and jumps straight there — so a coordinator following an SOP never
+// has to guess which tab does what.
+function HubTaskGuide({
+  stage,
+  blockers,
+  onGoToIntake,
+  onGoToReview,
+  onGoToPublish,
+  onGoToAmendments,
+}: {
+  stage: SchedulingPipelineStage;
+  blockers: {
+    blockedIntake: number;
+    needsDecision: number;
+    resubmits: number;
+    openAmendments: number;
+  };
+  onGoToIntake: () => void;
+  onGoToReview: () => void;
+  onGoToPublish: () => void;
+  onGoToAmendments: () => void;
+}) {
+  const reviewCount = blockers.needsDecision + blockers.resubmits;
+  const tiles = [
+    {
+      key: 'intake',
+      task: 'A submission is wrong or flagged',
+      where: 'Fix it in Intake',
+      owner: 'Tasneem',
+      count: blockers.blockedIntake,
+      onClick: onGoToIntake,
+      active: stage === 'intake',
+    },
+    {
+      key: 'review',
+      task: 'Review & edit the draft schedule',
+      where: 'Go to Review',
+      owner: 'Maddi · Tasneem',
+      count: reviewCount,
+      onClick: onGoToReview,
+      active: stage === 'review',
+    },
+    {
+      key: 'publish',
+      task: 'Post shifts to Homebase & EHR',
+      where: 'Open the Publish checklist',
+      owner: 'Sarabjeet',
+      count: 0,
+      onClick: onGoToPublish,
+      active: stage === 'locked' || stage === 'published',
+    },
+    {
+      key: 'amend',
+      task: 'Log a change after publishing',
+      where: 'Add an Amendment',
+      owner: 'Tasneem · providers',
+      count: blockers.openAmendments,
+      onClick: onGoToAmendments,
+      active: stage === 'amend',
+    },
+  ];
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">What do you need to do?</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Pick your task — each one takes you straight to the right stage.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {tiles.map(tile => (
+            <button
+              key={tile.key}
+              type="button"
+              onClick={tile.onClick}
+              className={cn(
+                'flex flex-col items-start gap-1 rounded-md border px-3 py-2 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/60',
+                tile.active ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white',
+              )}
+            >
+              <div className="flex w-full items-start justify-between gap-2">
+                <span className="text-sm font-medium leading-snug">{tile.task}</span>
+                {tile.count > 0 && (
+                  <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">{tile.count}</Badge>
+                )}
+              </div>
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-800">
+                {tile.where}
+                <ArrowRight className="h-3 w-3" />
+              </span>
+              <span className="text-[11px] text-muted-foreground">Owner: {tile.owner}</span>
+            </button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function SchedulingPipelinePanel({
   month,
   stage,
@@ -3256,6 +3395,7 @@ function SchedulingPipelinePanel({
   isAdvancing,
   onCreateDraft,
   onAdvance,
+  onNavigateStage,
 }: {
   month: string;
   stage: SchedulingPipelineStage;
@@ -3275,6 +3415,7 @@ function SchedulingPipelinePanel({
   isAdvancing: boolean;
   onCreateDraft: () => void;
   onAdvance: (stage: SchedulingPipelineStage) => void;
+  onNavigateStage: (stage: SchedulingPipelineStage) => void;
 }) {
   const activeBuild = state.activeBuild;
   const stages: SchedulingPipelineStage[] = ['intake', 'allocated', 'review', 'locked', 'published', 'amend'];
@@ -3370,23 +3511,34 @@ function SchedulingPipelinePanel({
                 </Badge>
               )}
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               {stages.map((s, index) => {
                 const isCurrent = s === stage;
                 const isDone = activeIndex >= 0 && index < activeIndex;
                 return (
-                  <Badge
-                    key={s}
-                    variant="outline"
-                    className={cn(
-                      'h-7 rounded-md px-2',
-                      isCurrent && 'border-emerald-300 bg-emerald-50 text-emerald-900',
-                      isDone && 'border-slate-200 bg-slate-50 text-slate-600',
-                    )}
-                  >
-                    {isDone && <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
-                    {pipelineStageLabel(s)}
-                  </Badge>
+                  <Fragment key={s}>
+                    {index > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => onNavigateStage(s)}
+                          className={cn(
+                            'inline-flex h-7 items-center rounded-md border px-2 text-xs font-medium transition-colors hover:bg-emerald-50 hover:border-emerald-300',
+                            isCurrent
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                              : isDone
+                                ? 'border-slate-200 bg-slate-50 text-slate-600'
+                                : 'border-slate-200 bg-white text-slate-700',
+                          )}
+                        >
+                          {isDone && <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                          {pipelineStageLabel(s)}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Go to {pipelineStageLabel(s)}</TooltipContent>
+                    </Tooltip>
+                  </Fragment>
                 );
               })}
             </div>
