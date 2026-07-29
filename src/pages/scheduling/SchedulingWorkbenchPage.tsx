@@ -805,7 +805,7 @@ const attributionLabel = (entry: PublishAuditEntry | undefined): string => {
   const who = entry.actor_label || (entry.actor_id ? 'someone' : 'system');
   const verb =
     entry.action === 'preserved'
-      ? 'preserved during schedule recalculation'
+      ? 'preserved during allocation'
       : entry.action === 'reverted'
         ? 'reverted'
         : 'marked';
@@ -1887,7 +1887,7 @@ export default function SchedulingWorkbenchPage({
 
   const runScheduleRecalculation = (
     before = buildRecalculationSnapshot(scopedRows, scopedFlatAccepted, scopedCutRows),
-    toastPrefix = `Recalculated ${formatMonthLabel(month)} schedule`,
+    toastPrefix = `Ran allocation for ${formatMonthLabel(month)}`,
   ) => {
     if (recalculationLocked) {
       toast.info(
@@ -3318,7 +3318,7 @@ function SchedulingPipelinePanel({
               </div>
               {lockedFromRecalc && (
                 <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
-                  Recalculation locked
+                  Allocation closed
                 </Badge>
               )}
               {openAmendments.length > 0 && (
@@ -8571,7 +8571,7 @@ function OverflowPanel({
               {entries.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
-                    No overflow hours have been generated yet. Recalculate after August submissions are in.
+                    No overflow hours have been generated yet. Run allocation after August submissions are in.
                   </TableCell>
                 </TableRow>
               )}
@@ -8814,7 +8814,7 @@ function PublishHistoryPanel({
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
               Append-only log of every Homebase / EHR mark, revert, and
-              schedule-recalculation preservation. {entries.length} event
+              allocation preservation. {entries.length} event
               {entries.length === 1 ? '' : 's'} this month.
             </p>
           </div>
@@ -9413,7 +9413,7 @@ function ReadinessPanel({
         ? `${summary.totalShifts} publishable shift${summary.totalShifts === 1 ? '' : 's'} for ${summary.totalProviders} provider${summary.totalProviders === 1 ? '' : 's'}.`
         : submittedHours > 0
           ? recalculationLocked && activeBuild
-            ? `Draft v${activeBuild.version_number} is already under review. Do not recalculate; use Amendments for changes.`
+            ? `Draft v${activeBuild.version_number} is already under review. Do not rerun allocation; use Amendments for changes.`
             : 'Run allocation, then create Draft v1 when the shift rows look ready.'
           : 'Wait for availability before running allocation.',
       status: hasPublishRows ? 'done' : submittedHours > 0 ? 'current' : 'waiting',
@@ -10779,7 +10779,7 @@ function CostPerVisitPanel({
             No scheduling decisions for {formatMonthLabel(month)} yet
           </div>
           <div className="text-xs text-muted-foreground max-w-md mx-auto">
-            Recalculate the schedule after availability submissions are loaded. This view uses accepted hours and provider rates from those monthly decisions.
+            Run allocation after availability submissions are loaded. This view uses accepted hours and provider rates from those monthly decisions.
           </div>
           <div className="flex justify-center">
             {recalculateButton}
