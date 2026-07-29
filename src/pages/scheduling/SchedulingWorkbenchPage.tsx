@@ -55,6 +55,7 @@ import {
   ChevronRight,
   ChevronDown,
   Upload,
+  Download,
   X,
   Brain,
   UserX,
@@ -150,7 +151,7 @@ import { ResubmissionInboxPanel } from '@/components/scheduling/ResubmissionInbo
 import { OnboardingReadinessPanel } from '@/components/scheduling/OnboardingReadinessPanel';
 import { UnmatchedSubmissionsPanel } from '@/components/scheduling/UnmatchedSubmissionsPanel';
 import { ProviderNoteIndicator, ProviderNotesCard } from '@/components/scheduling/ProviderNotesCard';
-import { cn } from '@/lib/utils';
+import { cn, downloadCSV } from '@/lib/utils';
 import { diffParsedShifts } from '@/lib/scheduling/submissionDiff';
 import {
   useOnboardingReadiness,
@@ -1958,6 +1959,38 @@ export default function SchedulingWorkbenchPage({
     }
   };
 
+  // Locked-export option for the publishing checklist: Sarabjeet's stage needs
+  // zero calculation, so this dumps the exact publish worklist (with HB/EHR
+  // status) to CSV to work from outside the app if preferred.
+  const exportPublishingChecklist = () => {
+    const rows = [...scopedFlatAccepted]
+      .sort(
+        (a, b) =>
+          a.shift_date.localeCompare(b.shift_date) ||
+          a.provider_name.localeCompare(b.provider_name) ||
+          a.start_min - b.start_min,
+      )
+      .map(s => ({
+        Provider: s.provider_name,
+        Date: formatProviderShiftDate(s),
+        Time: formatProviderShiftTime(s),
+        Hours: formatHours(s.hours),
+        Type: labelShiftType(s.shift_type),
+        State: s.assigned_state ?? '',
+        'Posted to Homebase': isHomebaseDone(s) ? 'Yes' : 'No',
+        'Entered in EHR': isEhrDone(s) ? 'Yes' : 'No',
+      }));
+    if (rows.length === 0) {
+      toast.info('No shifts to export yet for this month.');
+      return;
+    }
+    const draftLabel = activeScheduleBuild
+      ? `draft-v${activeScheduleBuild.version_number}`
+      : 'current';
+    downloadCSV(rows, `publishing-checklist-${monthIsoToParam(month)}-${draftLabel}.csv`);
+    toast.success(`Exported ${rows.length} shift${rows.length === 1 ? '' : 's'} to CSV`);
+  };
+
   const runScheduleRecalculation = (
     before = buildRecalculationSnapshot(scopedRows, scopedFlatAccepted, scopedCutRows),
     toastPrefix = `Ran allocation for ${formatMonthLabel(month)}`,
@@ -2812,6 +2845,20 @@ export default function SchedulingWorkbenchPage({
                 : 'Publish is using the current allocation rows because no monthly draft exists yet. Create Draft v1 before the final publishing pass.'}
             </AlertDescription>
           </Alert>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              Work the checklist here, or export it to post from outside the app.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportPublishingChecklist}
+              disabled={scopedFlatAccepted.length === 0}
+            >
+              <Download className="h-4 w-4 mr-1" />
+              Export checklist (CSV)
+            </Button>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard
               label="Shifts to publish"
