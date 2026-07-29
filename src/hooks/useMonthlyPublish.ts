@@ -1385,6 +1385,34 @@ export function useAdvanceSchedulingPipeline() {
       if (args.stage === 'published') workflowPatch.published_at = nowIso;
       if (args.stage === 'amend') workflowPatch.amendment_started_at = nowIso;
 
+      if (args.stage === 'published') {
+        if (!args.buildId) {
+          throw new Error('Create and lock a schedule draft before marking it published.');
+        }
+        const { data: publishRowsData, error: publishRowsError } = await clinopsDb
+          .from('schedule_build_rows')
+          .select('id, publish_status, ehr_posted_at')
+          .eq('build_id', args.buildId)
+          .eq('recommendation', 'publish')
+          .range(0, 49999);
+        if (publishRowsError) throw publishRowsError;
+        const publishRows = (publishRowsData ?? []) as Array<{
+          id: string;
+          publish_status: string;
+          ehr_posted_at: string | null;
+        }>;
+        if (publishRows.length === 0) {
+          throw new Error('No publishable draft rows exist for this schedule.');
+        }
+        const homebaseRemaining = publishRows.filter(row => !isHomebaseDone(row)).length;
+        const ehrRemaining = publishRows.filter(row => !isEhrDone(row)).length;
+        if (ehrRemaining > 0) {
+          throw new Error(
+            `Finish the Publish checklist before marking the schedule published: ${homebaseRemaining} Homebase row${homebaseRemaining === 1 ? '' : 's'} and ${ehrRemaining} EHR row${ehrRemaining === 1 ? '' : 's'} remain.`,
+          );
+        }
+      }
+
       if (args.buildId && ['locked', 'published'].includes(args.stage)) {
         const buildPatch: Record<string, unknown> = {
           status: args.stage,
