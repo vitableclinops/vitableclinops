@@ -1239,7 +1239,7 @@ export function useCreateScheduleDraft() {
     mutationFn: async (args: { month: string; notes?: string }) => {
       const monthStart = monthIso(args.month);
       const nowIso = new Date().toISOString();
-      const [existingBuildsRes, shiftsRes] = await Promise.all([
+      const [existingBuildsRes, shiftsRes, submissionsRes] = await Promise.all([
         clinopsDb
           .from('schedule_builds')
           .select('version_number')
@@ -1255,13 +1255,23 @@ export function useCreateScheduleDraft() {
           .order('shift_date', { ascending: true })
           .order('start_min', { ascending: true })
           .range(0, 49999),
+        clinopsDb
+          .from('schedule_submissions')
+          .select('id, provider_id, target_month, decision_status, submitted_at')
+          .eq('target_month', monthStart)
+          .range(0, 9999),
       ]);
       if (existingBuildsRes.error) throw existingBuildsRes.error;
       if (shiftsRes.error) throw shiftsRes.error;
+      if (submissionsRes.error) throw submissionsRes.error;
 
-      const shifts = (shiftsRes.data ?? []) as ShiftRecommendationSnapshotRow[];
+      const rawShifts = (shiftsRes.data ?? []) as ShiftRecommendationSnapshotRow[];
+      const submissions = (submissionsRes.data ?? []) as LatestSchedulingSubmission[];
+      const shifts = dedupeShiftRecommendationRows(
+        filterRowsToLatestSubmissions(rawShifts, submissions),
+      );
       if (shifts.length === 0) {
-        throw new Error('No shift recommendation rows exist yet. Run allocation before creating Draft v1.');
+        throw new Error('No current allocation rows exist yet. Run allocation before creating Draft v1.');
       }
 
       const latestVersion = Number(
