@@ -2667,6 +2667,9 @@ export default function SchedulingWorkbenchPage({
             unmatchedCount={scopedUnmatched.length}
             missingCount={scopedSummary.missingCount}
             blockedIntakeCount={scopedIntakeBranchSummary.blocked}
+            activeBuild={activeScheduleBuild}
+            stage={pipelineStage}
+            openAmendmentCount={openAmendments.length}
             onJumpToAvailability={jumpToAvailability}
             onJumpToReview={jumpToReview}
             onJumpToCoverage={() => jumpToCoveragePlan('coverage')}
@@ -10285,6 +10288,9 @@ function PublishGateBanner({
   unmatchedCount,
   missingCount,
   blockedIntakeCount,
+  activeBuild,
+  stage,
+  openAmendmentCount,
   onJumpToAvailability,
   onJumpToReview,
   onJumpToCoverage,
@@ -10301,6 +10307,9 @@ function PublishGateBanner({
   unmatchedCount: number;
   missingCount: number;
   blockedIntakeCount: number;
+  activeBuild: ScheduleBuild | null;
+  stage: SchedulingPipelineStage;
+  openAmendmentCount: number;
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToReview: (tab?: ReviewTabKey) => void;
   onJumpToCoverage: () => void;
@@ -10319,6 +10328,26 @@ function PublishGateBanner({
       action: string;
       onClick: () => void;
     }[] = [];
+    if (!activeBuild) {
+      out.push({
+        label: 'No frozen Draft v1 exists yet. Create a draft before starting Homebase or EHR publishing.',
+        action: 'Open Allocation Runs',
+        onClick: () => onJumpToReview('recalculate'),
+      });
+    } else if (!['locked', 'published', 'amend'].includes(stage)) {
+      out.push({
+        label: `Draft v${activeBuild.version_number} is still in ${pipelineStageLabel(stage)}. Lock the reviewed draft before publishing.`,
+        action: 'Open Review',
+        onClick: () => onJumpToReview('decisions'),
+      });
+    }
+    if (openAmendmentCount > 0) {
+      out.push({
+        label: `${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'} must be applied, parked, or rejected before publishing.`,
+        action: 'Open Amendments',
+        onClick: () => onJumpToReview('amendments'),
+      });
+    }
     if (coverageQ.isError) {
       out.push({
         label: 'Coverage failed to load. Open Coverage Gaps and reload before publishing.',
@@ -10393,6 +10422,9 @@ function PublishGateBanner({
     onJumpToAvailability,
     onJumpToCoverage,
     onJumpToReview,
+    activeBuild,
+    stage,
+    openAmendmentCount,
   ]);
 
   if (coverageQ.isLoading) {
