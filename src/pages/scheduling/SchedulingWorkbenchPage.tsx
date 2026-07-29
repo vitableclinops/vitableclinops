@@ -1807,8 +1807,8 @@ export default function SchedulingWorkbenchPage({
     if (recalculationLocked) {
       toast.info(
         activeScheduleBuild
-          ? `Draft v${activeScheduleBuild.version_number} is already in ${pipelineStageLabel(pipelineStage)}. Review changes as amendments instead of recalculating the whole month.`
-          : 'This schedule is locked from recalculation. Review changes as amendments instead.',
+          ? `Draft v${activeScheduleBuild.version_number} is already in ${pipelineStageLabel(pipelineStage)}. Review changes as draft edits or amendments instead of rerunning the whole month.`
+          : 'Allocation is closed. Review changes as amendments instead.',
       );
       return;
     }
@@ -1833,7 +1833,7 @@ export default function SchedulingWorkbenchPage({
         refetchShifts();
         refetchCuts();
       },
-      onError: e => toast.error(`Schedule recalculation failed: ${(e as Error).message}`),
+      onError: e => toast.error(`Allocation run failed: ${(e as Error).message}`),
     });
   };
 
@@ -1899,7 +1899,7 @@ export default function SchedulingWorkbenchPage({
           updateWorkbenchParams({ section: 'review', view: 'recalculate', replace: true });
           runScheduleRecalculation(
             beforeRecalculation,
-            `Approved corrected hours and recalculated ${formatMonthLabel(month)}`,
+            `Approved corrected hours and ran allocation for ${formatMonthLabel(month)}`,
           );
         } else {
           toast.success(
@@ -1976,30 +1976,42 @@ export default function SchedulingWorkbenchPage({
               ))}
             </SelectContent>
           </Select>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={reevaluateNow}
-                disabled={reevaluate.isPending || recalculationLocked}
-              >
-                {reevaluate.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : recalculationLocked ? (
+          {recalculationLocked ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
                   <Lock className="h-4 w-4 mr-1" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-1" />
-                )}
-                {recalculationLocked ? 'Draft locked' : 'Recalculate schedule'}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs">
-              {recalculationLocked && activeScheduleBuild
-                ? `Draft v${activeScheduleBuild.version_number} is in ${pipelineStageLabel(pipelineStage)}. Save review changes as amendments instead of rebuilding the month.`
-                : `Rebuilds the recommended ${formatMonthLabel(month)} schedule from the latest Jotform submissions. Already-published shifts keep their Homebase / EHR state — only shifts that change or disappear lose their progress.`}
-            </TooltipContent>
-          </Tooltip>
+                  Allocation closed
+                </div>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                {activeScheduleBuild
+                  ? `Draft v${activeScheduleBuild.version_number} is in ${pipelineStageLabel(pipelineStage)}. Allocation is closed; save review changes to the draft or amendments instead.`
+                  : 'Allocation is closed for this month.'}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={reevaluateNow}
+                  disabled={reevaluate.isPending}
+                >
+                  {reevaluate.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                  )}
+                  Run allocation
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                Runs the monthly allocator for {formatMonthLabel(month)} from the latest Jotform submissions. Create Draft v1 after this looks ready.
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -2181,14 +2193,14 @@ export default function SchedulingWorkbenchPage({
                     if (recalculationLocked) {
                       toast.success(
                         activeScheduleBuild
-                          ? `Jotform sync complete. Draft v${activeScheduleBuild.version_number} is in ${pipelineStageLabel(pipelineStage)}, so the schedule was not recalculated.`
-                          : 'Jotform sync complete. Schedule recalculation is currently locked.',
+                          ? `Jotform sync complete. Draft v${activeScheduleBuild.version_number} is in ${pipelineStageLabel(pipelineStage)}, so allocation stayed closed.`
+                          : 'Jotform sync complete. Allocation is currently closed.',
                         { id: toastId },
                       );
                       refetch();
                       return;
                     }
-                    toast.loading('Re-evaluating submissions…', { id: toastId });
+                    toast.loading('Running allocation...', { id: toastId });
                     const { error: evalErr } = await clinopsSupabase.functions.invoke(
                       `evaluate-schedule-submissions?target_month=${encodeURIComponent(month)}`,
                       { body: {} },
@@ -2244,7 +2256,7 @@ export default function SchedulingWorkbenchPage({
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
             No submissions found for {formatMonthLabel(month)}. Pick a different month or run the
-            direct Jotform sync, then click "Recalculate schedule".
+            direct Jotform sync, then run allocation before Draft v1.
           </AlertDescription>
         </Alert>
       )}
@@ -2390,7 +2402,7 @@ export default function SchedulingWorkbenchPage({
                 )}
               </TabsTrigger>
               <TabsTrigger value="recalculate">
-                Pending recalculation
+                Allocation runs
                 {scopedPendingAvailability.length > 0 && (
                   <Badge className="ml-1 bg-slate-200 text-slate-700">
                     {scopedPendingAvailability.length}
@@ -2776,7 +2788,7 @@ export default function SchedulingWorkbenchPage({
                                 {flats.length === 0 ? (
                                   <div className="text-xs text-muted-foreground italic">
                                     No per-shift data — submission hasn't been expanded yet.
-                                    Click "Recalculate schedule" above to generate the shift list.
+                                    Run allocation before Draft v1 to generate the shift list.
                                   </div>
                                 ) : (
                                   <ShiftListInline
@@ -3200,7 +3212,7 @@ function SchedulingPipelinePanel({
             <p className="text-xs text-muted-foreground max-w-3xl">
               {lockedFromRecalc
                 ? 'The monthly allocator should not run again from this point. Save corrected hours and resubmits into Amendments so the team can review only what changed.'
-                : 'Run allocation until the schedule looks right, then create Draft v1. After that, changes move through Review and Amendments instead of full-month recalculation.'}
+                : 'Run allocation until the schedule looks right, then create Draft v1. After that, changes move through Review and Amendments instead of full-month allocation.'}
             </p>
             {activeBuild && (
               <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
@@ -4679,10 +4691,10 @@ const describeRecalculationRowChange = (
   after: RecalculationSnapshotRow | null,
   hasRun: boolean,
 ) => {
-  if (!hasRun) return 'Current snapshot. Run Recalculate schedule to capture before and after changes.';
-  if (!before && after) return 'Added to the current schedule after this recalculation.';
-  if (before && !after) return 'Removed from the current schedule after this recalculation.';
-  if (!before || !after) return 'Provider changed during this recalculation.';
+  if (!hasRun) return 'Current snapshot. Run allocation to capture before and after changes.';
+  if (!before && after) return 'Added to the current schedule after this allocation run.';
+  if (before && !after) return 'Removed from the current schedule after this allocation run.';
+  if (!before || !after) return 'Provider changed during this allocation run.';
 
   const changes: string[] = [];
   if (before.status !== after.status) {
@@ -4717,7 +4729,7 @@ const explainRecalculationRow = (
   hasRun: boolean,
 ) => {
   if (!hasRun) {
-    return 'This is the current allocation snapshot. Use the button above to run a fresh before/after comparison.';
+    return 'This is the current allocation snapshot. Run allocation before Draft v1 to capture a fresh before/after comparison.';
   }
   if (decision?.error) return `Evaluator error: ${decision.error}`;
 
@@ -4931,9 +4943,9 @@ function RecalculationChangeReport({
       : `${formatHours(coverageTotals.demandHours)} telehealth demand hrs; ${formatHours(coverageTotals.stateGapHours)} hrs still short by state.`;
   const activeRunLabel = selectedRun
     ? `Run ${shortRunId(selectedRun.decision_run_id)} · ${formatRelativeTime(selectedRun.created_at)}`
-    : showLocalFallback && lastRun
-      ? `Current session run ${shortRunId(lastRun.result.decision_run_id)} · ${formatRelativeTime(lastRun.ranAt)}`
-      : 'No recalculation history yet';
+      : showLocalFallback && lastRun
+        ? `Current session run ${shortRunId(lastRun.result.decision_run_id)} · ${formatRelativeTime(lastRun.ranAt)}`
+      : 'No allocation history yet';
   const activeChangeCount = selectedRun
     ? selectedRun.changed_provider_count
     : showLocalFallback
@@ -4941,9 +4953,9 @@ function RecalculationChangeReport({
       : 0;
   const activeDeltaSummary = selectedRun
     ? runDeltaSummary(selectedRun)
-    : showLocalFallback
-      ? `${changedRows.length} provider${changedRows.length === 1 ? '' : 's'} changed in this browser session`
-      : 'Run Recalculate schedule to create the first history entry.';
+      : showLocalFallback
+        ? `${changedRows.length} provider${changedRows.length === 1 ? '' : 's'} changed in this browser session`
+      : 'Run allocation before Draft v1 to create the first history entry.';
 
   return (
     <Card>
@@ -4951,7 +4963,7 @@ function RecalculationChangeReport({
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
             <CardTitle className="text-base">
-              Recalculation history · {formatMonthLabel(month)}
+              Allocation history · {formatMonthLabel(month)}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
               Each run stores only provider rows whose decision, publishable hours, cut rows, or state allocation changed.
@@ -5015,7 +5027,7 @@ function RecalculationChangeReport({
 
         {historyQ.isLoading && (
           <div className="rounded-md border px-3 py-3">
-            <LoadingRow label="Loading recalculation history" />
+            <LoadingRow label="Loading allocation history" />
           </div>
         )}
 
@@ -5023,7 +5035,7 @@ function RecalculationChangeReport({
           <Alert className="border-amber-200 bg-amber-50">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              Recalculation history could not load yet. The current-session comparison can still appear after a run.
+              Allocation history could not load yet. The current-session comparison can still appear after a run.
             </AlertDescription>
           </Alert>
         )}
@@ -5191,7 +5203,7 @@ function RecalculationChangeReport({
           </Table>
         ) : (
           <div className="rounded-md border px-4 py-6 text-center text-sm text-muted-foreground">
-            No recalculation history for {formatMonthLabel(month)} yet. Run Recalculate schedule to create a changes-only log.
+            No allocation history for {formatMonthLabel(month)} yet. Run allocation before Draft v1 to create a changes-only log.
           </div>
         )}
       </CardContent>
@@ -5257,24 +5269,29 @@ function PendingRecalculationPanel({
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <CardTitle className="text-base">
-                Pending recalculation · {formatMonthLabel(month)}
+                Pending allocation · {formatMonthLabel(month)}
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
                 {recalculationLocked
-                  ? 'These submissions arrived after a draft was created. Review them as amendments instead of recalculating the whole month.'
-                  : 'These submissions are still pending a schedule evaluation. Recalculate to move them into accepted, cut / declined, or needs decision.'}
+                  ? 'These submissions arrived after Draft v1. Review them as amendments instead of rerunning the whole month.'
+                  : 'These submissions are still pending allocation. Run allocation to move them into accepted, cut / declined, or needs decision.'}
               </p>
             </div>
-            <Button onClick={onReevaluate} disabled={isReevaluating || recalculationLocked}>
-              {isReevaluating ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : recalculationLocked ? (
+            {recalculationLocked ? (
+              <div className="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
                 <Lock className="mr-1 h-4 w-4" />
-              ) : (
-                <RefreshCw className="mr-1 h-4 w-4" />
-              )}
-              {recalculationLocked ? 'Draft locked' : 'Recalculate schedule'}
-            </Button>
+                Allocation closed
+              </div>
+            ) : (
+              <Button onClick={onReevaluate} disabled={isReevaluating}>
+                {isReevaluating ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1 h-4 w-4" />
+                )}
+                Run allocation
+              </Button>
+            )}
           </div>
           {recalculationLocked && activeBuild && (
             <Alert className="mt-3 border-amber-200 bg-amber-50">
@@ -5290,7 +5307,7 @@ function PendingRecalculationPanel({
         <CardContent className="p-0">
           {rows.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No pending submissions need recalculation for {formatMonthLabel(month)}.
+              No pending submissions need allocation for {formatMonthLabel(month)}.
             </div>
           ) : (
             <Table>
@@ -5319,7 +5336,7 @@ function PendingRecalculationPanel({
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="bg-blue-50 text-blue-800">
-                        Needs recalculation
+                        Needs allocation
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -5890,8 +5907,8 @@ function SubmissionResolutionDialog({
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {recalculationLocked
-                    ? 'Corrected rows save the reviewed decision and appear in Amendments instead of rebuilding the monthly allocation.'
-                    : 'Corrected rows replace the submitted availability for this provider-month before publish rows are rebuilt.'}
+                    ? 'Corrected rows save the reviewed decision to the draft or amendment trail instead of rerunning monthly allocation.'
+                    : 'Corrected rows replace the submitted availability for this provider-month before allocation creates publish rows.'}
                 </p>
               </div>
               <Button
@@ -6082,7 +6099,7 @@ function SubmissionResolutionDialog({
             {useCorrectedTimes && target?.decision === 'accepted'
               ? recalculationLocked
                 ? 'Approve corrected hours & log change'
-                : 'Approve corrected hours & recalculate'
+                : 'Approve corrected hours & run allocation'
               : target?.decision === 'accepted'
                 ? 'Approve hours'
                 : 'Decline hours'}
@@ -6158,8 +6175,8 @@ function NeedsReviewPanel({
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
             {recalculationLocked
-              ? 'Resolve these after a ClinOps lead decision. Approved changes are logged for draft/amendment review instead of recalculating the month.'
-              : 'Resolve these after a ClinOps lead decision. Approve hours rebuilds publishable shift rows; decline hours moves them to cut / declined coverage.'}
+              ? 'Resolve these after a ClinOps lead decision. Approved changes update the draft or amendment trail instead of rerunning the month.'
+              : 'Resolve these after a ClinOps lead decision. Approve hours feeds the next allocation run; decline hours moves them to cut / declined coverage.'}
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -8722,7 +8739,7 @@ function ReadinessPanel({
       out.push({
         key: 'no_coverage_rows',
         label: 'No coverage rows for this month',
-        detail: 'Recalculate the schedule from the latest submissions. If coverage still does not load, ask an admin for help.',
+        detail: 'Run allocation from the latest submissions. If coverage still does not load, ask an admin for help.',
         category: 'System/admin issue',
         action: 'Open Coverage Gaps',
         onClick: onJumpToCoverage,
@@ -8735,10 +8752,10 @@ function ReadinessPanel({
         detail: recalculationLocked && activeBuild
           ? `Draft v${activeBuild.version_number} is already in review, so do not rebuild the month. Log this as an amendment or ask a ClinOps lead to reopen allocation.`
           : submittedHours > 0
-            ? 'Availability exists, but the accepted shift list is not ready. Recalculate the schedule from the latest submissions.'
+            ? 'Availability exists, but the accepted shift list is not ready. Run allocation from the latest submissions.'
             : `No usable ${formatMonthLabel(month)} availability has been expanded yet.`,
         category: 'Scheduler can do this',
-        action: recalculationLocked ? 'Open Amendments' : 'Recalculate schedule',
+        action: recalculationLocked ? 'Open Amendments' : 'Run allocation',
         onClick: recalculationLocked ? () => onJumpToReview('amendments') : onReevaluate,
       });
     }
@@ -8841,7 +8858,7 @@ function ReadinessPanel({
         blocker: 'Accepted shift list is not ready yet',
         nextAction: recalculationLocked
           ? 'Review draft amendments'
-          : 'Recalculate schedule from latest submissions',
+          : 'Run allocation from latest submissions',
         nextActionJump: recalculationLocked ? () => onJumpToReview('amendments') : onReevaluate,
         nextCategory: 'Scheduler can do this',
         nextDisabled: isReevaluating && !recalculationLocked,
@@ -8949,13 +8966,13 @@ function ReadinessPanel({
         : submittedHours > 0
           ? recalculationLocked && activeBuild
             ? `Draft v${activeBuild.version_number} is already under review. Do not recalculate; use Amendments for changes.`
-            : 'Click Recalculate schedule, then wait for shift rows to appear.'
-          : 'Wait for availability before recalculating the schedule.',
+            : 'Run allocation, then create Draft v1 when the shift rows look ready.'
+          : 'Wait for availability before running allocation.',
       status: hasPublishRows ? 'done' : submittedHours > 0 ? 'current' : 'waiting',
       action: !hasPublishRows && submittedHours > 0
         ? recalculationLocked
           ? 'Open Amendments'
-          : 'Recalculate schedule'
+          : 'Run allocation'
         : undefined,
       onClick: !hasPublishRows && submittedHours > 0
         ? recalculationLocked
@@ -9041,11 +9058,11 @@ function ReadinessPanel({
     if (pendingSubmissionCount > 0) {
       out.push({
         key: 'pending',
-        label: 'Needs recalculation',
+        label: 'Needs allocation',
         value: pendingSubmissionCount.toString(),
-        detail: `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} need a schedule decision. Recalculate to move them into accepted, declined, or needs review.`,
-        badge: 'Rebuild schedule',
-        action: 'Open Pending Recalculation',
+        detail: `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} need allocation before Draft v1. After Draft v1, use amendments instead.`,
+        badge: 'Run allocation',
+        action: 'Open Allocation Runs',
         onClick: () => onJumpToReview('recalculate'),
         tone: 'border-blue-200 bg-blue-50/60',
         disabled: isReevaluating,
@@ -9960,7 +9977,7 @@ function PublishGateBanner({
     if (!summary.totalShifts) {
       out.push({
         label: submittedHours > 0
-          ? 'No publishable shifts yet. Click Recalculate schedule in the header.'
+          ? 'No publishable shifts yet. Run allocation before Draft v1.'
           : 'No usable availability has been expanded yet.',
         action: 'Open Availability',
         onClick: () => onJumpToAvailability('submissions'),
@@ -10151,7 +10168,21 @@ function CostPerVisitPanel({
     );
   };
 
-  const recalculateButton = (
+  const recalculateButton = recalculationLocked ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="inline-flex h-9 shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+          <Lock className="h-4 w-4 mr-1" />
+          Allocation closed
+        </div>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {activeBuild
+          ? `Draft v${activeBuild.version_number} is in ${pipelineStageLabel(stage)}. Use amendments for post-draft changes instead of rerunning the month.`
+          : 'Allocation is closed for this month.'}
+      </TooltipContent>
+    </Tooltip>
+  ) : (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
@@ -10159,23 +10190,19 @@ function CostPerVisitPanel({
           variant="outline"
           size="sm"
           onClick={onRecalculate}
-          disabled={isReevaluating || recalculationLocked}
+          disabled={isReevaluating}
           className="shrink-0"
         >
           {isReevaluating ? (
             <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-          ) : recalculationLocked ? (
-            <Lock className="h-4 w-4 mr-1" />
           ) : (
             <RefreshCw className="h-4 w-4 mr-1" />
           )}
-          {recalculationLocked ? 'Draft locked' : 'Recalculate schedule'}
+          Run allocation
         </Button>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs">
-        {recalculationLocked && activeBuild
-          ? `Draft v${activeBuild.version_number} is in ${pipelineStageLabel(stage)}. Use amendments for post-draft changes instead of rebuilding the month.`
-          : `Rebuilds Cost / Visit from the latest accepted hours, provider rates, and scheduling decisions for ${formatMonthLabel(month)}.`}
+        Runs allocation with the latest accepted hours, provider rates, and scheduling decisions for {formatMonthLabel(month)}.
       </TooltipContent>
     </Tooltip>
   );
@@ -10832,7 +10859,7 @@ function CoverageGapsPanel({
     return (
       <EmptyState
         title={`No coverage data for ${formatMonthLabel(month)} yet`}
-        body="The accepted shift list has not been connected to state coverage yet. Next: click 'Recalculate schedule' in the header, then come back. If it still does not load, ask an admin for help."
+        body="The accepted shift list has not been connected to state coverage yet. Next: run allocation before Draft v1, then come back. If it still does not load, ask an admin for help."
       />
     );
   }
@@ -11632,7 +11659,7 @@ function MatchingPanel({
         <ProviderPriorityPolicyCard month={month} />
         <EmptyState
           title={`No matching decisions yet for ${formatMonthLabel(month)}`}
-          body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one schedule recalculation after Jotform submissions. Next: open Availability to confirm submissions are in, then click 'Recalculate schedule' in the page header."
+          body="The matching view summarizes which providers were accepted, cut, or flagged. What's missing: at least one allocation run after Jotform submissions. Next: open Availability to confirm submissions are in, then run allocation from the page header."
         />
       </>
     );
@@ -12187,7 +12214,7 @@ function DataQualityPanel({
     {
       label: 'Accepted providers missing publish rows',
       count: missingPublishRows,
-      detail: missingPublishRows ? 'Recalculate schedule to create accepted shift rows' : '',
+      detail: missingPublishRows ? 'Run allocation to create accepted shift rows' : '',
     },
   ];
 
@@ -12319,7 +12346,7 @@ function AuditPanel({
         />
         <EmptyState
           title="No decisions to explain yet"
-          body="Once the schedule is recalculated, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on Availability, then click 'Recalculate schedule'."
+          body="Once allocation has run, every accept / decline / cut shows up here with a plain-English reason. Next: confirm submissions are in on Availability, then run allocation."
         />
       </div>
     );
