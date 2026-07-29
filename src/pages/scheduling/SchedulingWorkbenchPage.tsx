@@ -9561,13 +9561,15 @@ function ReadinessPanel({
     if (pendingSubmissionCount > 0) {
       out.push({
         key: 'pending',
-        label: 'Needs allocation',
+        label: recalculationLocked ? 'Post-draft submissions' : 'Needs allocation',
         value: pendingSubmissionCount.toString(),
-        detail: `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} need allocation before Draft v1. After Draft v1, use amendments instead.`,
-        badge: 'Run allocation',
-        action: 'Open Allocation Runs',
-        onClick: () => onJumpToReview('recalculate'),
-        tone: 'border-blue-200 bg-blue-50/60',
+        detail: recalculationLocked
+          ? `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} arrived after Draft v1. Review as amendments instead of rerunning the month.`
+          : `${pendingSubmissionHours.toFixed(1)} submitted hour${pendingSubmissionHours.toFixed(1) === '1.0' ? '' : 's'} need allocation before Draft v1.`,
+        badge: recalculationLocked ? 'Amendment review' : 'Run allocation',
+        action: recalculationLocked ? 'Open Amendments' : 'Open Allocation Runs',
+        onClick: recalculationLocked ? () => onJumpToReview('amendments') : () => onJumpToReview('recalculate'),
+        tone: recalculationLocked ? 'border-purple-200 bg-purple-50/70' : 'border-blue-200 bg-blue-50/60',
         disabled: isReevaluating,
         loading: isReevaluating,
       });
@@ -9661,6 +9663,7 @@ function ReadinessPanel({
     openAmendmentCount,
     pendingSubmissionCount,
     pendingSubmissionHours,
+    recalculationLocked,
     summary.needsReviewCount,
     unmatchedCount,
   ]);
