@@ -111,8 +111,10 @@ function ChartTooltip({ active, payload, label }: any) {
 
 export default function ScheduledHoursPage() {
   const { user, profile, roles } = useAuth();
-  const [year,  setYear]  = useState(2026);
-  const [month, setMonth] = useState(6);
+  // Default to the current month/year rather than a hard-coded past month.
+  const now = new Date();
+  const [year,  setYear]  = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
 
   const { data, isLoading, error, refetch, isFetching } = useScheduledHours(year, month);
 
