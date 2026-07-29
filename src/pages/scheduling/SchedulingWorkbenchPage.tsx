@@ -476,6 +476,71 @@ const warningStringsFromUnknown = (warnings: unknown): string[] => {
   return [];
 };
 
+type IntakeBranchKind = 'blocked' | 'flagged' | 'clean';
+
+type IntakeBranch = {
+  kind: IntakeBranchKind;
+  label: string;
+  detail: string;
+  owner: string;
+  issues: string[];
+};
+
+const intakeBranchStyles: Record<IntakeBranchKind, string> = {
+  blocked: 'border-red-200 bg-red-50 text-red-800',
+  flagged: 'border-amber-200 bg-amber-50 text-amber-800',
+  clean: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+};
+
+const blockingIntakeIssue = (warning: string) =>
+  /wrong month|outside target month|malformed|unparseable|parse|invalid time|end time.*before start|end time is at or before start|overnight|date .*outside/i
+    .test(warning);
+
+const nonBlockingIntakeFlag = (warning: string) =>
+  /high hours|unrealistic|too many|outside.*business|out-of-hours|operating hours|unavailable|off-day|single shift duration|exceeds max_single_shift/i
+    .test(warning);
+
+const intakeBranchForSubmission = (row: AvailabilitySubmissionRow): IntakeBranch => {
+  const warnings = warningStringsFromUnknown(row.validation_warnings);
+  const notes = row.decision_notes ? [row.decision_notes] : [];
+  const text = [...warnings, ...notes];
+  const blocking = text.filter(blockingIntakeIssue);
+  if (!row.provider_id) blocking.unshift('Provider is not linked to the directory');
+  if (blocking.length > 0) {
+    return {
+      kind: 'blocked',
+      label: 'Blocked logic error',
+      detail: 'Fix before allocation',
+      owner: 'Tasneem',
+      issues: blocking,
+    };
+  }
+  const flags = text.filter(nonBlockingIntakeFlag);
+  const needsHumanReview = row.decision_status === 'needs_review' || row.human_review_state === 'pending';
+  if (flags.length > 0 || needsHumanReview) {
+    return {
+      kind: 'flagged',
+      label: 'Non-blocking flag',
+      detail: 'Flows to allocation; notify/review in parallel',
+      owner: 'Pod Lead / Tasneem fallback',
+      issues: flags.length > 0 ? flags : ['Marked for human review'],
+    };
+  }
+  return {
+    kind: 'clean',
+    label: 'Clean intake',
+    detail: 'Ready for allocation',
+    owner: 'System',
+    issues: [],
+  };
+};
+
+const summarizeIntakeBranches = (rows: AvailabilitySubmissionRow[]) => {
+  const summary = { blocked: 0, flagged: 0, clean: 0 };
+  for (const row of rows) summary[intakeBranchForSubmission(row).kind] += 1;
+  return summary;
+};
+
 const manualDraftIssues = (draft: ManualAvailabilityDraft, month: string): string[] => {
   const issues: string[] = [...(draft.sourceIssues ?? [])];
   const start = parseTimeToMinutes(draft.startTime);
@@ -4181,6 +4246,7 @@ function AvailabilitySubmissionsPanel({
   recalculationLocked?: boolean;
 }) {
   const [resolutionTarget, setResolutionTarget] = useState<SubmissionResolutionTarget | null>(null);
+  const branchSummary = useMemo(() => summarizeIntakeBranches(rows), [rows]);
 
   const openResolutionDialog = (
     row: AvailabilitySubmissionRow,
@@ -4230,12 +4296,30 @@ function AvailabilitySubmissionsPanel({
             Source: Jotform form 252224341308043 → sync-jotform-submissions →
             schedule_submissions.
           </p>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+              <div className="text-xs font-medium text-red-900">Blocked logic errors</div>
+              <div className="mt-1 text-lg font-semibold text-red-900">{branchSummary.blocked}</div>
+              <div className="text-[11px] leading-snug text-red-800">Fix before allocation.</div>
+            </div>
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+              <div className="text-xs font-medium text-amber-900">Non-blocking flags</div>
+              <div className="mt-1 text-lg font-semibold text-amber-900">{branchSummary.flagged}</div>
+              <div className="text-[11px] leading-snug text-amber-800">Can flow; route to Pod Lead or Tasneem.</div>
+            </div>
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <div className="text-xs font-medium text-emerald-900">Clean intake</div>
+              <div className="mt-1 text-lg font-semibold text-emerald-900">{branchSummary.clean}</div>
+              <div className="text-[11px] leading-snug text-emerald-800">Ready for allocation.</div>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Provider</TableHead>
+                <TableHead>Intake quality</TableHead>
                 <TableHead>Shift type</TableHead>
                 <TableHead>Recurring virtual</TableHead>
                 <TableHead>One-off virtual</TableHead>
@@ -4254,6 +4338,7 @@ function AvailabilitySubmissionsPanel({
                   : String(parsed.shift_types ?? '—');
                 const submissionIntent = formatSubmissionIntent(parsed.submission_intent);
                 const warnings = warningStringsFromUnknown(row.validation_warnings);
+                const intakeBranch = intakeBranchForSubmission(row);
                 const needsReview = row.decision_status === 'needs_review';
                 const isPending = row.decision_status === 'pending';
                 const isHumanReviewPending = row.human_review_state === 'pending';
@@ -4283,6 +4368,25 @@ function AvailabilitySubmissionsPanel({
                         <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
                           Unmatched
                         </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="align-top text-xs max-w-[220px]">
+                      <Badge variant="outline" className={cn('font-medium', intakeBranchStyles[intakeBranch.kind])}>
+                        {intakeBranch.label}
+                      </Badge>
+                      <div className="mt-1 text-muted-foreground">{intakeBranch.detail}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        Owner: {intakeBranch.owner}
+                      </div>
+                      {intakeBranch.issues.length > 0 && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                            Why
+                          </summary>
+                          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-snug text-muted-foreground">
+                            {intakeBranch.issues.slice(0, 5).join('\n')}
+                          </div>
+                        </details>
                       )}
                     </TableCell>
                     <TableCell className="align-top text-xs">
