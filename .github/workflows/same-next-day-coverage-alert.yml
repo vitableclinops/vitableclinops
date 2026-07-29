@@ -2,10 +2,16 @@ name: ClinOps - Same/Next-Day Coverage Alert
 
 on:
   schedule:
-    # 8:00 AM Central during daylight time (CDT, UTC-5).
-    - cron: '0 13 * * *'
-    # 8:00 AM Central during standard time (CST, UTC-6).
-    - cron: '0 14 * * *'
+    # 8:07, 8:22, and 8:37 AM Central during daylight time (CDT, UTC-5).
+    # GitHub can delay or drop top-of-hour cron events under load, so avoid :00
+    # and keep backup attempts in the morning handoff window.
+    - cron: '7 13 * * *'
+    - cron: '22 13 * * *'
+    - cron: '37 13 * * *'
+    # 8:07, 8:22, and 8:37 AM Central during standard time (CST, UTC-6).
+    - cron: '7 14 * * *'
+    - cron: '22 14 * * *'
+    - cron: '37 14 * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -18,8 +24,14 @@ on:
         required: false
         type: boolean
         default: false
+      mark_posted_only:
+        description: 'Record today as already posted without sending Slack.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -35,6 +47,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       FORCE: ${{ inputs.force }}
       FULL_LOOKUP: ${{ inputs.full_lookup }}
+      MARK_POSTED_ONLY: ${{ inputs.mark_posted_only }}
       EVENT_SCHEDULE: ${{ github.event.schedule }}
     steps:
       - name: Install Supabase CLI
@@ -48,18 +61,69 @@ jobs:
           should_run=true
           if [ "${{ github.event_name }}" = "schedule" ]; then
             chicago_offset="$(TZ=America/Chicago date +%z)"
-            if [ "$EVENT_SCHEDULE" = "0 13 * * *" ] && [ "$chicago_offset" != "-0500" ]; then
-              should_run=false
-            fi
-            if [ "$EVENT_SCHEDULE" = "0 14 * * *" ] && [ "$chicago_offset" != "-0600" ]; then
-              should_run=false
-            fi
+            case "$EVENT_SCHEDULE" in
+              "7 13 * * *"|"22 13 * * *"|"37 13 * * *")
+                if [ "$chicago_offset" != "-0500" ]; then
+                  should_run=false
+                fi
+                ;;
+              "7 14 * * *"|"22 14 * * *"|"37 14 * * *")
+                if [ "$chicago_offset" != "-0600" ]; then
+                  should_run=false
+                fi
+                ;;
+              *)
+                should_run=false
+                ;;
+            esac
           fi
           echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
           echo "should_run=$should_run"
 
-      - name: Sanity check - required secrets
+      - name: Compute daily alert marker
+        id: marker
         if: steps.guard.outputs.should_run == 'true'
+        run: |
+          alert_date="$(TZ=America/Chicago date +%F)"
+          marker_name="same-next-day-coverage-alert-${alert_date}"
+          echo "alert_date=$alert_date" >> "$GITHUB_OUTPUT"
+          echo "name=$marker_name" >> "$GITHUB_OUTPUT"
+          echo "marker_name=$marker_name"
+
+      - name: Check whether today's alert already posted
+        id: marker_check
+        if: steps.guard.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER_NAME: ${{ steps.marker.outputs.name }}
+        run: |
+          if [ "${FORCE:-false}" = "true" ]; then
+            echo "already_posted=false" >> "$GITHUB_OUTPUT"
+            echo "manual force=true; not using marker skip"
+            exit 0
+          fi
+
+          encoded_name="$(node -e 'process.stdout.write(encodeURIComponent(process.env.MARKER_NAME))')"
+          artifacts_json="$(curl -fsS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts?name=${encoded_name}&per_page=1")"
+          artifact_count="$(node -e '
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync(0, "utf8"));
+            process.stdout.write(String(data.total_count || 0));
+          ' <<< "$artifacts_json")"
+
+          if [ "$artifact_count" -gt 0 ]; then
+            echo "already_posted=true" >> "$GITHUB_OUTPUT"
+            echo "Daily marker exists; skipping duplicate alert."
+          else
+            echo "already_posted=false" >> "$GITHUB_OUTPUT"
+            echo "No daily marker found; continuing."
+          fi
+
+      - name: Sanity check - required secrets
+        if: steps.guard.outputs.should_run == 'true' && steps.marker_check.outputs.already_posted != 'true' && env.MARK_POSTED_ONLY != 'true'
         run: |
           if [ -z "$SERVICE_ROLE_KEY" ] && [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
             echo "::error::Either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ACCESS_TOKEN is required."
@@ -67,7 +131,7 @@ jobs:
           fi
 
       - name: Resolve service-role key
-        if: steps.guard.outputs.should_run == 'true'
+        if: steps.guard.outputs.should_run == 'true' && steps.marker_check.outputs.already_posted != 'true' && env.MARK_POSTED_ONLY != 'true'
         run: |
           if [ -n "$SERVICE_ROLE_KEY" ]; then
             echo "::add-mask::$SERVICE_ROLE_KEY"
@@ -97,7 +161,7 @@ jobs:
           echo "SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
 
       - name: Post Same/Next-Day Coverage alert
-        if: steps.guard.outputs.should_run == 'true'
+        if: steps.guard.outputs.should_run == 'true' && steps.marker_check.outputs.already_posted != 'true' && env.MARK_POSTED_ONLY != 'true'
         run: |
           if [ "${FULL_LOOKUP:-false}" = "true" ]; then
             fast=false
@@ -161,3 +225,27 @@ jobs:
             warning: data.warning || null,
           }, null, 2));
           NODE
+
+      - name: Write daily alert marker
+        if: steps.guard.outputs.should_run == 'true' && steps.marker_check.outputs.already_posted != 'true'
+        run: |
+          mkdir -p .alert-marker
+          node <<'NODE' > .alert-marker/posted.json
+          const marker = {
+            alert_date: process.env.ALERT_DATE,
+            run_id: process.env.GITHUB_RUN_ID,
+            run_attempt: process.env.GITHUB_RUN_ATTEMPT,
+            posted_at: new Date().toISOString(),
+          };
+          process.stdout.write(JSON.stringify(marker, null, 2));
+          NODE
+        env:
+          ALERT_DATE: ${{ steps.marker.outputs.alert_date }}
+
+      - name: Upload daily alert marker
+        if: steps.guard.outputs.should_run == 'true' && steps.marker_check.outputs.already_posted != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.marker.outputs.name }}
+          path: .alert-marker/posted.json
+          retention-days: 7
