@@ -69,6 +69,8 @@ import {
   CheckCircle2,
   ClipboardList,
   CircleDot,
+  FileCheck2,
+  Lock,
   PlayCircle,
   Plus,
   Search,
@@ -100,6 +102,10 @@ import {
   useProviderSearch,
   useSchedulingExceptions,
   useSchedulingRecalculationHistory,
+  useSchedulingPipeline,
+  useCreateScheduleDraft,
+  useAdvanceSchedulingPipeline,
+  useCreateScheduleAmendmentRequest,
   useUpdateProviderSchedulingException,
   useUpsertSchedulingException,
   useDeleteSchedulingException,
@@ -124,6 +130,10 @@ import {
   type ScheduleRecalculationResult,
   type SchedulingRecalculationChange,
   type SchedulingRecalculationRun,
+  type SchedulingPipelineStage,
+  type SchedulingPipelineState,
+  type ScheduleBuild,
+  type ScheduleAmendmentRequest,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -216,6 +226,25 @@ const formatMonthLabel = (iso: string) => {
     year: 'numeric',
     timeZone: 'UTC',
   });
+};
+
+const pipelineStageLabel = (stage: SchedulingPipelineStage) => {
+  switch (stage) {
+    case 'intake':
+      return 'Intake';
+    case 'allocated':
+      return 'Allocated';
+    case 'review':
+      return 'Review';
+    case 'locked':
+      return 'Locked';
+    case 'published':
+      return 'Published';
+    case 'amend':
+      return 'Amendments';
+    default:
+      return stage;
+  }
 };
 
 const normalizeMonthStart = (iso: string) => (iso.length === 7 ? `${iso}-01` : iso);
@@ -770,7 +799,7 @@ const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : [
 export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
 type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
 type PublishTabKey = 'provider' | 'queue' | 'day' | 'history';
-type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate';
+type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate' | 'amendments';
 type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'overflow' | 'cost' | 'forecast';
 type ProviderTimeOffEntry = {
   row: ProviderPublishView;
@@ -816,6 +845,7 @@ const reviewTabFromView = (view: string | null): ReviewTabKey => {
   if (view === 'needs-review' || view === 'needs-decision' || view === 'decisions') return 'decisions';
   if (view === 'resubmits' || view === 'inbox') return 'resubmits';
   if (view === 'pending-recalculation' || view === 'recalculate') return 'recalculate';
+  if (view === 'amendments' || view === 'history') return 'amendments';
   return 'decisions';
 };
 
@@ -1015,6 +1045,7 @@ export default function SchedulingWorkbenchPage({
     useProviderPayRates(month);
   const { data: outreachLogsData = [] } = useProviderOutreachLog(month);
   const { data: readinessRowsData = [] } = useOnboardingReadiness(30);
+  const { data: pipelineStateData, isLoading: pipelineLoading } = useSchedulingPipeline(month);
 
   const dbRows = safeArray<ProviderPublishView>(dbRowsData);
   const shiftRows = safeArray<ShiftRow>(shiftRowsData);
@@ -1028,6 +1059,29 @@ export default function SchedulingWorkbenchPage({
   const outreachLogs = safeArray<ProviderOutreachLog>(outreachLogsData);
   const readinessRows = safeArray<{ readyForSubmissions: boolean }>(readinessRowsData);
   const selectedMonthStart = normalizeMonthStart(month);
+  const pipelineState: SchedulingPipelineState = pipelineStateData ?? {
+    workflow: null,
+    builds: [],
+    activeBuild: null,
+    amendments: [],
+  };
+  const activeScheduleBuild = pipelineState.activeBuild;
+  const pipelineStage: SchedulingPipelineStage =
+    pipelineState.workflow?.current_stage ??
+    (activeScheduleBuild?.status === 'published'
+      ? 'published'
+      : activeScheduleBuild?.status === 'locked'
+        ? 'locked'
+        : activeScheduleBuild
+          ? 'review'
+          : 'intake');
+  const recalculationLocked = Boolean(
+    activeScheduleBuild && ['review', 'locked', 'published', 'amend'].includes(pipelineStage),
+  );
+  const requestedAmendments = useMemo(
+    () => pipelineState.amendments.filter(a => a.status === 'requested'),
+    [pipelineState.amendments],
+  );
   const setupIssuesCount = useMemo(
     () => readinessRows.filter(r => !r.readyForSubmissions).length,
     [readinessRows],
@@ -1051,6 +1105,9 @@ export default function SchedulingWorkbenchPage({
   const resolveReview = useResolveNeedsReview();
   const markOutreachSent = useMarkProviderOutreachSent();
   const reevaluate = useReevaluateMonth();
+  const createScheduleDraft = useCreateScheduleDraft();
+  const advanceSchedulingPipeline = useAdvanceSchedulingPipeline();
+  const createAmendmentRequest = useCreateScheduleAmendmentRequest();
   const [lastRecalculation, setLastRecalculation] = useState<{
     result: ScheduleRecalculationResult;
     before: RecalculationSnapshotRow[];
@@ -1614,6 +1671,14 @@ export default function SchedulingWorkbenchPage({
     before = buildRecalculationSnapshot(scopedRows, scopedFlatAccepted, scopedCutRows),
     toastPrefix = `Recalculated ${formatMonthLabel(month)} schedule`,
   ) => {
+    if (recalculationLocked) {
+      toast.info(
+        activeScheduleBuild
+          ? `Draft v${activeScheduleBuild.version_number} is already in ${pipelineStageLabel(pipelineStage)}. Review changes as amendments instead of recalculating the whole month.`
+          : 'This schedule is locked from recalculation. Review changes as amendments instead.',
+      );
+      return;
+    }
     reevaluate.mutate(month, {
       onSuccess: result => {
         setLastRecalculation({
@@ -1645,14 +1710,28 @@ export default function SchedulingWorkbenchPage({
 
   const handleResolveNeedsReview = (args: ResolveArgs) => {
     const shouldRecalculateAfterApproval =
-      Boolean(args.correction_summary) && args.decision === 'accepted';
+      Boolean(args.correction_summary) && args.decision === 'accepted' && !recalculationLocked;
     const beforeRecalculation = buildRecalculationSnapshot(
       scopedRows,
       scopedFlatAccepted,
       scopedCutRows,
     );
-    resolveReview.mutate(args, {
+    resolveReview.mutate({ ...args, skip_evaluate: recalculationLocked }, {
       onSuccess: () => {
+        if (recalculationLocked && args.decision === 'accepted') {
+          createAmendmentRequest.mutate({
+            month: args.target_month,
+            buildId: activeScheduleBuild?.id ?? null,
+            submissionId: args.submission_id,
+            providerId: args.provider_id,
+            providerName: args.provider_name,
+            requestType: 'manual_review',
+            summary: args.correction_summary
+              ? `Approved corrected hours: ${args.correction_summary}`
+              : `Approved reviewed hours for ${args.provider_name}`,
+            notes: args.reason,
+          });
+        }
         if (shouldRecalculateAfterApproval) {
           toast.success(
             `Approved corrected hours for ${args.provider_name}. Recalculating ${formatMonthLabel(month)} now.`,
@@ -1666,7 +1745,9 @@ export default function SchedulingWorkbenchPage({
         } else {
           toast.success(
             args.decision === 'accepted'
-              ? `Approved hours for ${args.provider_name}`
+              ? recalculationLocked
+                ? `Approved hours for ${args.provider_name} · amendment logged`
+                : `Approved hours for ${args.provider_name}`
               : `Declined hours for ${args.provider_name}`,
           );
         }
@@ -1742,20 +1823,22 @@ export default function SchedulingWorkbenchPage({
                 variant="outline"
                 size="sm"
                 onClick={reevaluateNow}
-                disabled={reevaluate.isPending}
+                disabled={reevaluate.isPending || recalculationLocked}
               >
                 {reevaluate.isPending ? (
                   <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : recalculationLocked ? (
+                  <Lock className="h-4 w-4 mr-1" />
                 ) : (
                   <RefreshCw className="h-4 w-4 mr-1" />
                 )}
-                Recalculate schedule
+                {recalculationLocked ? 'Draft locked' : 'Recalculate schedule'}
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              Rebuilds the recommended {formatMonthLabel(month)} schedule from the latest Jotform submissions.
-              Already-published shifts keep their Homebase / EHR state — only
-              shifts that change or disappear lose their progress.
+              {recalculationLocked && activeScheduleBuild
+                ? `Draft v${activeScheduleBuild.version_number} is in ${pipelineStageLabel(pipelineStage)}. Save review changes as amendments instead of rebuilding the month.`
+                : `Rebuilds the recommended ${formatMonthLabel(month)} schedule from the latest Jotform submissions. Already-published shifts keep their Homebase / EHR state — only shifts that change or disappear lose their progress.`}
             </TooltipContent>
           </Tooltip>
           <Button
@@ -1797,15 +1880,58 @@ export default function SchedulingWorkbenchPage({
         }
       />
 
+      <SchedulingPipelinePanel
+        month={month}
+        stage={pipelineStage}
+        state={pipelineState}
+        isLoading={pipelineLoading}
+        hasAllocationRows={shiftRows.length > 0 || cutRows.length > 0}
+        requestedAmendments={requestedAmendments}
+        isCreatingDraft={createScheduleDraft.isPending}
+        isAdvancing={advanceSchedulingPipeline.isPending}
+        onCreateDraft={() =>
+          createScheduleDraft.mutate(
+            {
+              month,
+              notes: `Draft created from current ${formatMonthLabel(month)} allocation.`,
+            },
+            {
+              onSuccess: build =>
+                toast.success(`Created Draft v${build.version_number} for ${formatMonthLabel(month)}`),
+              onError: error => toast.error(`Could not create draft: ${(error as Error).message}`),
+            },
+          )
+        }
+        onAdvance={(stage) =>
+          advanceSchedulingPipeline.mutate(
+            {
+              month,
+              stage,
+              buildId: activeScheduleBuild?.id ?? null,
+              notes:
+                stage === 'locked'
+                  ? `Draft v${activeScheduleBuild?.version_number ?? ''} locked for publish.`
+                  : stage === 'published'
+                    ? `Draft v${activeScheduleBuild?.version_number ?? ''} marked published.`
+                    : 'Post-publish amendments opened.',
+            },
+            {
+              onSuccess: () => toast.success(`Scheduling workflow moved to ${pipelineStageLabel(stage)}`),
+              onError: error => toast.error(`Could not update workflow: ${(error as Error).message}`),
+            },
+          )
+        }
+      />
+
       <Tabs value={topTab} onValueChange={onTopTabChange}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="readiness"><ShieldCheck className="h-3.5 w-3.5 mr-1" />Readiness</TabsTrigger>
           <TabsTrigger value="intake"><Inbox className="h-3.5 w-3.5 mr-1" />Intake</TabsTrigger>
           <TabsTrigger value="review">
             <AlertCircle className="h-3.5 w-3.5 mr-1" />Review
-            {(scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length) > 0 && (
+            {(scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length + requestedAmendments.length) > 0 && (
               <Badge className="ml-1 bg-orange-100 text-orange-800">
-                {scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length}
+                {scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length + requestedAmendments.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -1887,6 +2013,16 @@ export default function SchedulingWorkbenchPage({
                       { body: {} },
                     );
                     if (syncErr) throw syncErr;
+                    if (recalculationLocked) {
+                      toast.success(
+                        activeScheduleBuild
+                          ? `Jotform sync complete. Draft v${activeScheduleBuild.version_number} is in ${pipelineStageLabel(pipelineStage)}, so the schedule was not recalculated.`
+                          : 'Jotform sync complete. Schedule recalculation is currently locked.',
+                        { id: toastId },
+                      );
+                      refetch();
+                      return;
+                    }
                     toast.loading('Re-evaluating submissions…', { id: toastId });
                     const { error: evalErr } = await clinopsSupabase.functions.invoke(
                       `evaluate-schedule-submissions?target_month=${encodeURIComponent(month)}`,
@@ -2017,6 +2153,8 @@ export default function SchedulingWorkbenchPage({
             anchorMonth={month}
             submissions={scopedInboxSubs}
             isLoading={inboxLoading}
+            disableAutoRecalculate={recalculationLocked}
+            activeBuildId={activeScheduleBuild?.id ?? null}
           />
         </TabsContent>
 
@@ -2093,6 +2231,14 @@ export default function SchedulingWorkbenchPage({
                   </Badge>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="amendments">
+                Amendments
+                {requestedAmendments.length > 0 && (
+                  <Badge className="ml-1 bg-purple-100 text-purple-800">
+                    {requestedAmendments.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="decisions" className="mt-4 space-y-4">
@@ -2110,6 +2256,8 @@ export default function SchedulingWorkbenchPage({
                 anchorMonth={month}
                 submissions={scopedInboxSubs}
                 isLoading={inboxLoading}
+                disableAutoRecalculate={recalculationLocked}
+                activeBuildId={activeScheduleBuild?.id ?? null}
               />
             </TabsContent>
 
@@ -2125,6 +2273,17 @@ export default function SchedulingWorkbenchPage({
                 isLoading={availabilityLoading}
                 isReevaluating={reevaluate.isPending}
                 onReevaluate={reevaluateNow}
+                recalculationLocked={recalculationLocked}
+                activeBuild={activeScheduleBuild}
+                stage={pipelineStage}
+              />
+            </TabsContent>
+
+            <TabsContent value="amendments" className="mt-4 space-y-4">
+              <AmendmentRequestsPanel
+                month={month}
+                amendments={pipelineState.amendments}
+                activeBuild={activeScheduleBuild}
               />
             </TabsContent>
           </Tabs>
@@ -2201,6 +2360,9 @@ export default function SchedulingWorkbenchPage({
                 isLoading={isLoading || providerPayRatesLoading}
                 onRecalculate={reevaluateNow}
                 isReevaluating={reevaluate.isPending}
+                recalculationLocked={recalculationLocked}
+                activeBuild={activeScheduleBuild}
+                stage={pipelineStage}
               />
             </TabsContent>
 
@@ -2739,6 +2901,254 @@ function LoadingRow({ label }: { label: string }) {
       <Loader2 className="h-5 w-5 animate-spin mr-2" />
       {label}
     </div>
+  );
+}
+
+function SchedulingPipelinePanel({
+  month,
+  stage,
+  state,
+  isLoading,
+  hasAllocationRows,
+  requestedAmendments,
+  isCreatingDraft,
+  isAdvancing,
+  onCreateDraft,
+  onAdvance,
+}: {
+  month: string;
+  stage: SchedulingPipelineStage;
+  state: SchedulingPipelineState;
+  isLoading: boolean;
+  hasAllocationRows: boolean;
+  requestedAmendments: ScheduleAmendmentRequest[];
+  isCreatingDraft: boolean;
+  isAdvancing: boolean;
+  onCreateDraft: () => void;
+  onAdvance: (stage: SchedulingPipelineStage) => void;
+}) {
+  const activeBuild = state.activeBuild;
+  const stages: SchedulingPipelineStage[] = ['intake', 'allocated', 'review', 'locked', 'published', 'amend'];
+  const activeIndex = stages.indexOf(stage);
+  const title = activeBuild
+    ? `Draft v${activeBuild.version_number} · ${pipelineStageLabel(stage)}`
+    : hasAllocationRows
+      ? 'Allocation ready for Draft v1'
+      : 'Intake / allocation not drafted';
+  const lockedFromRecalc = Boolean(
+    activeBuild && ['review', 'locked', 'published', 'amend'].includes(stage),
+  );
+
+  return (
+    <Card>
+      <CardContent className="py-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="bg-slate-50">
+                {formatMonthLabel(month)}
+              </Badge>
+              <div className="font-medium flex items-center gap-2">
+                <FileCheck2 className="h-4 w-4 text-emerald-700" />
+                {isLoading ? 'Loading scheduling workflow' : title}
+              </div>
+              {lockedFromRecalc && (
+                <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
+                  Recalculation locked
+                </Badge>
+              )}
+              {requestedAmendments.length > 0 && (
+                <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">
+                  {requestedAmendments.length} amendment{requestedAmendments.length === 1 ? '' : 's'}
+                </Badge>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {stages.map((s, index) => {
+                const isCurrent = s === stage;
+                const isDone = activeIndex >= 0 && index < activeIndex;
+                return (
+                  <Badge
+                    key={s}
+                    variant="outline"
+                    className={cn(
+                      'h-7 rounded-md px-2',
+                      isCurrent && 'border-emerald-300 bg-emerald-50 text-emerald-900',
+                      isDone && 'border-slate-200 bg-slate-50 text-slate-600',
+                    )}
+                  >
+                    {isDone && <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                    {pipelineStageLabel(s)}
+                  </Badge>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground max-w-3xl">
+              {lockedFromRecalc
+                ? 'The monthly allocator should not run again from this point. Save corrected hours and resubmits into Amendments so the team can review only what changed.'
+                : 'Run allocation until the schedule looks right, then create Draft v1. After that, changes move through Review and Amendments instead of full-month recalculation.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!activeBuild && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={onCreateDraft}
+                    disabled={isCreatingDraft || !hasAllocationRows}
+                  >
+                    {isCreatingDraft ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <FileCheck2 className="h-4 w-4 mr-1" />
+                    )}
+                    Create Draft v1
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  Snapshot the current accepted and cut allocation rows as the first reviewable draft.
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {activeBuild && stage === 'review' && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onAdvance('locked')}
+                disabled={isAdvancing}
+              >
+                {isAdvancing ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Lock className="h-4 w-4 mr-1" />
+                )}
+                Lock draft
+              </Button>
+            )}
+            {activeBuild && stage === 'locked' && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onAdvance('published')}
+                disabled={isAdvancing}
+              >
+                {isAdvancing ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-1" />
+                )}
+                Mark published
+              </Button>
+            )}
+            {activeBuild && (stage === 'published' || stage === 'locked') && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onAdvance('amend')}
+                disabled={isAdvancing}
+              >
+                <History className="h-4 w-4 mr-1" />
+                Open amendments
+              </Button>
+            )}
+          </div>
+        </div>
+        {activeBuild && (
+          <div className="mt-3 text-[11px] text-muted-foreground">
+            Created {formatRelativeTime(activeBuild.created_at)}
+            {activeBuild.created_by_label ? ` by ${activeBuild.created_by_label}` : ''}
+            {activeBuild.locked_at ? ` · locked ${formatRelativeTime(activeBuild.locked_at)}` : ''}
+            {activeBuild.published_at ? ` · published ${formatRelativeTime(activeBuild.published_at)}` : ''}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AmendmentRequestsPanel({
+  month,
+  amendments,
+  activeBuild,
+}: {
+  month: string;
+  amendments: ScheduleAmendmentRequest[];
+  activeBuild: ScheduleBuild | null;
+}) {
+  const rows = amendments;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <History className="h-4 w-4 text-purple-700" />
+          Amendment history · {formatMonthLabel(month)}
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Shows only post-draft review changes. These are the items that need a deliberate schedule update after Draft {activeBuild ? `v${activeBuild.version_number}` : 'v1'} exists.
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        {rows.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            No amendments logged for {formatMonthLabel(month)} yet.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Change</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Logged</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(row => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <div className="font-medium">{row.provider_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.requested_by_label || 'ClinOps'}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="capitalize">
+                      {row.request_type.replaceAll('_', ' ')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-xl">
+                    <div className="text-sm">{row.summary || 'No summary provided'}</div>
+                    {row.notes && (
+                      <div className="text-xs text-muted-foreground mt-1">{row.notes}</div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={cn(
+                        'capitalize',
+                        row.status === 'requested' && 'bg-purple-100 text-purple-800 hover:bg-purple-100',
+                        row.status === 'applied' && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+                        row.status === 'parked' && 'bg-amber-100 text-amber-900 hover:bg-amber-100',
+                      )}
+                    >
+                      {row.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {formatRelativeTime(row.created_at)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -4479,6 +4889,9 @@ function PendingRecalculationPanel({
   isLoading,
   isReevaluating,
   onReevaluate,
+  recalculationLocked = false,
+  activeBuild = null,
+  stage = 'intake',
 }: {
   month: string;
   rows: AvailabilitySubmissionRow[];
@@ -4494,6 +4907,9 @@ function PendingRecalculationPanel({
   isLoading: boolean;
   isReevaluating: boolean;
   onReevaluate: () => void;
+  recalculationLocked?: boolean;
+  activeBuild?: ScheduleBuild | null;
+  stage?: SchedulingPipelineStage;
 }) {
   if (isLoading) {
     return (
@@ -4523,18 +4939,32 @@ function PendingRecalculationPanel({
                 Pending recalculation · {formatMonthLabel(month)}
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                These submissions are still pending a schedule evaluation. Recalculate to move them into accepted, cut / declined, or needs decision.
+                {recalculationLocked
+                  ? 'These submissions arrived after a draft was created. Review them as amendments instead of recalculating the whole month.'
+                  : 'These submissions are still pending a schedule evaluation. Recalculate to move them into accepted, cut / declined, or needs decision.'}
               </p>
             </div>
-            <Button onClick={onReevaluate} disabled={isReevaluating}>
+            <Button onClick={onReevaluate} disabled={isReevaluating || recalculationLocked}>
               {isReevaluating ? (
                 <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : recalculationLocked ? (
+                <Lock className="mr-1 h-4 w-4" />
               ) : (
                 <RefreshCw className="mr-1 h-4 w-4" />
               )}
-              Recalculate schedule
+              {recalculationLocked ? 'Draft locked' : 'Recalculate schedule'}
             </Button>
           </div>
+          {recalculationLocked && activeBuild && (
+            <Alert className="mt-3 border-amber-200 bg-amber-50">
+              <Lock className="h-4 w-4 text-amber-700" />
+              <AlertDescription className="text-amber-900">
+                Draft v{activeBuild.version_number} is in {pipelineStageLabel(stage)}. Changes
+                approved from here should become amendment requests so the team can see exactly
+                what changed before updating the published schedule.
+              </AlertDescription>
+            </Alert>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {rows.length === 0 ? (
@@ -9280,6 +9710,9 @@ function CostPerVisitPanel({
   isLoading,
   onRecalculate,
   isReevaluating,
+  recalculationLocked = false,
+  activeBuild = null,
+  stage = 'intake',
 }: {
   month: string;
   rows: ProviderPublishView[];
@@ -9287,6 +9720,9 @@ function CostPerVisitPanel({
   isLoading: boolean;
   onRecalculate: () => void;
   isReevaluating: boolean;
+  recalculationLocked?: boolean;
+  activeBuild?: ScheduleBuild | null;
+  stage?: SchedulingPipelineStage;
 }) {
   const upsertRate = useUpsertProviderPayRate();
   const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
@@ -9356,19 +9792,23 @@ function CostPerVisitPanel({
           variant="outline"
           size="sm"
           onClick={onRecalculate}
-          disabled={isReevaluating}
+          disabled={isReevaluating || recalculationLocked}
           className="shrink-0"
         >
           {isReevaluating ? (
             <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+          ) : recalculationLocked ? (
+            <Lock className="h-4 w-4 mr-1" />
           ) : (
             <RefreshCw className="h-4 w-4 mr-1" />
           )}
-          Recalculate schedule
+          {recalculationLocked ? 'Draft locked' : 'Recalculate schedule'}
         </Button>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs">
-        Rebuilds Cost / Visit from the latest accepted hours, provider rates, and scheduling decisions for {formatMonthLabel(month)}.
+        {recalculationLocked && activeBuild
+          ? `Draft v${activeBuild.version_number} is in ${pipelineStageLabel(stage)}. Use amendments for post-draft changes instead of rebuilding the month.`
+          : `Rebuilds Cost / Visit from the latest accepted hours, provider rates, and scheduling decisions for ${formatMonthLabel(month)}.`}
       </TooltipContent>
     </Tooltip>
   );
