@@ -979,6 +979,7 @@ const TOP_TAB_VALUES = [
 type TopTabKey = (typeof TOP_TAB_VALUES)[number];
 
 const topTabFromParam = (tab: string | null, section?: string | null): TopTabKey => {
+  if (section === 'allocate' || tab === 'allocate') return 'review';
   if (TOP_TAB_VALUES.includes(section as TopTabKey)) return section as TopTabKey;
   if (TOP_TAB_VALUES.includes(tab as TopTabKey)) return tab as TopTabKey;
   if (tab === 'availability') return 'intake';
@@ -1005,10 +1006,19 @@ const publishTabFromView = (view: string | null): PublishTabKey =>
 const reviewTabFromView = (view: string | null): ReviewTabKey => {
   if (view === 'needs-review' || view === 'needs-decision' || view === 'decisions') return 'decisions';
   if (view === 'resubmits' || view === 'inbox') return 'resubmits';
-  if (view === 'pending-recalculation' || view === 'recalculate') return 'recalculate';
+  if (
+    view === 'pending-recalculation' ||
+    view === 'pending-allocation' ||
+    view === 'allocation-runs' ||
+    view === 'allocate' ||
+    view === 'recalculate'
+  ) return 'recalculate';
   if (view === 'amendments' || view === 'history') return 'amendments';
   return 'decisions';
 };
+
+const reviewViewToParam = (view: ReviewTabKey) =>
+  view === 'recalculate' ? 'allocation-runs' : view;
 
 const coveragePlanTabFromView = (view: string | null, tab: string | null): CoveragePlanTabKey => {
   const candidate = view ?? tab;
@@ -1121,6 +1131,8 @@ export default function SchedulingWorkbenchPage({
     const legacyView =
       tabParam === 'availability'
         ? viewParam || 'submissions'
+        : tabParam === 'allocate'
+          ? viewParam || 'allocation-runs'
         : tabParam === 'forecast' || tabParam === 'matching' || tabParam === 'coverage' || tabParam === 'declined' || tabParam === 'overflow' || tabParam === 'cost'
           ? tabParam
         : tabParam === 'publish'
@@ -1148,7 +1160,7 @@ export default function SchedulingWorkbenchPage({
       nextTab === 'intake'
         ? availabilityTab
         : nextTab === 'review'
-          ? reviewTab
+          ? reviewViewToParam(reviewTab)
           : nextTab === 'coverage-plan'
             ? coveragePlanTab
             : nextTab === 'publish'
@@ -1172,7 +1184,7 @@ export default function SchedulingWorkbenchPage({
   const jumpToReview = (tab: ReviewTabKey = 'decisions') => {
     setReviewTab(tab);
     setTopTab('review');
-    updateWorkbenchParams({ section: 'review', view: tab, replace: true });
+    updateWorkbenchParams({ section: 'review', view: reviewViewToParam(tab), replace: true });
   };
   const jumpToCoveragePlan = (tab: CoveragePlanTabKey = 'coverage') => {
     setCoveragePlanTab(tab);
@@ -1969,7 +1981,7 @@ export default function SchedulingWorkbenchPage({
             `Approved corrected hours for ${args.provider_name}. Recalculating ${formatMonthLabel(month)} now.`,
           );
           setReviewTab('recalculate');
-          updateWorkbenchParams({ section: 'review', view: 'recalculate', replace: true });
+          updateWorkbenchParams({ section: 'review', view: 'allocation-runs', replace: true });
           runScheduleRecalculation(
             beforeRecalculation,
             `Approved corrected hours and ran allocation for ${formatMonthLabel(month)}`,
@@ -2472,7 +2484,7 @@ export default function SchedulingWorkbenchPage({
           <Tabs value={reviewTab} onValueChange={(v) => {
             const next = v as ReviewTabKey;
             setReviewTab(next);
-            updateWorkbenchParams({ section: 'review', view: next, replace: true });
+            updateWorkbenchParams({ section: 'review', view: reviewViewToParam(next), replace: true });
           }}>
             <TabsList className="flex-wrap h-auto">
               <TabsTrigger value="decisions">
