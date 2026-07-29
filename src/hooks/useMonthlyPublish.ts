@@ -926,6 +926,29 @@ export type ScheduleBuild = {
   updated_at: string;
 };
 
+export type ScheduleBuildRow = {
+  id: string;
+  build_id: string;
+  source_shift_recommendation_id: string | null;
+  submission_id: string | null;
+  provider_id: string | null;
+  provider_name: string;
+  target_month: string;
+  shift_date: string;
+  start_min: number;
+  end_min: number;
+  hours: number;
+  shift_type: string;
+  assigned_state: string | null;
+  recommendation: 'publish' | 'cut';
+  recommendation_reason: string | null;
+  decision_run_id: string | null;
+  source_publish_status: string | null;
+  source_published_at: string | null;
+  source_ehr_posted_at: string | null;
+  created_at: string;
+};
+
 export type SchedulingMonthWorkflow = {
   id: string;
   target_month: string;
@@ -976,6 +999,11 @@ type ShiftRecommendationSnapshotRow = ShiftRow & {
 };
 
 const pipelineQueryKey = (monthStart: string) => ['workbench', 'scheduling-pipeline', monthStart];
+const buildRowsQueryKey = (buildId: string | null | undefined) => [
+  'workbench',
+  'schedule-build-rows',
+  buildId ?? 'none',
+];
 
 type ProviderSchedulingPreferenceRow = {
   provider_id: string | null;
@@ -1157,6 +1185,30 @@ export function useSchedulingPipeline(month: string) {
   });
 }
 
+export function useScheduleBuildRows(buildId: string | null | undefined) {
+  return useQuery({
+    queryKey: buildRowsQueryKey(buildId),
+    queryFn: async (): Promise<ScheduleBuildRow[]> => {
+      if (!buildId) return [];
+      const { data, error } = await clinopsDb
+        .from('schedule_build_rows')
+        .select(
+          'id, build_id, source_shift_recommendation_id, submission_id, provider_id, provider_name, target_month, shift_date, start_min, end_min, hours, shift_type, assigned_state, recommendation, recommendation_reason, decision_run_id, source_publish_status, source_published_at, source_ehr_posted_at, created_at',
+        )
+        .eq('build_id', buildId)
+        .order('recommendation', { ascending: false })
+        .order('provider_name', { ascending: true })
+        .order('shift_date', { ascending: true })
+        .order('start_min', { ascending: true })
+        .range(0, 49999);
+      if (error) throw error;
+      return (data ?? []) as ScheduleBuildRow[];
+    },
+    staleTime: 30_000,
+    enabled: Boolean(buildId),
+  });
+}
+
 export function useCreateScheduleDraft() {
   const queryClient = useQueryClient();
   const { actorId, actorLabel } = useActorLabel();
@@ -1268,9 +1320,10 @@ export function useCreateScheduleDraft() {
 
       return build;
     },
-    onSuccess: (_build, args) => {
+    onSuccess: (build, args) => {
       const monthStart = monthIso(args.month);
       queryClient.invalidateQueries({ queryKey: pipelineQueryKey(monthStart) });
+      queryClient.invalidateQueries({ queryKey: buildRowsQueryKey(build.id) });
     },
   });
 }
@@ -1370,6 +1423,46 @@ export function useCreateScheduleAmendmentRequest() {
           requested_by_label: actorLabel,
           updated_at: nowIso,
         });
+      if (error) throw error;
+    },
+    onSuccess: (_data, args) => {
+      const monthStart = monthIso(args.month);
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKey(monthStart) });
+    },
+  });
+}
+
+export function useUpdateScheduleAmendmentRequest() {
+  const queryClient = useQueryClient();
+  const { actorId, actorLabel } = useActorLabel();
+  return useMutation({
+    mutationFn: async (args: {
+      month: string;
+      amendmentId: string;
+      status: ScheduleAmendmentRequest['status'];
+      notes?: string | null;
+    }) => {
+      const monthStart = monthIso(args.month);
+      const nowIso = new Date().toISOString();
+      const patch: Record<string, unknown> = {
+        status: args.status,
+        updated_at: nowIso,
+      };
+      if (args.notes !== undefined) patch.notes = args.notes;
+      if (args.status !== 'requested') {
+        patch.resolved_at = nowIso;
+        patch.resolved_by = actorId;
+        patch.resolved_by_label = actorLabel;
+      } else {
+        patch.resolved_at = null;
+        patch.resolved_by = null;
+        patch.resolved_by_label = null;
+      }
+      const { error } = await clinopsDb
+        .from('schedule_amendment_requests')
+        .update(patch)
+        .eq('id', args.amendmentId)
+        .eq('target_month', monthStart);
       if (error) throw error;
     },
     onSuccess: (_data, args) => {
