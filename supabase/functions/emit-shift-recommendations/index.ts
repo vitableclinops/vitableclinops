@@ -92,10 +92,8 @@ const isMentalHealthProvider = (
   return MH_COACHING_PROFESSIONS.has(norm) || THERAPY_PROFESSIONS.has(norm);
 };
 
-const MH_MIN_SHIFT_HOURS = 2.5;
 const MENTAL_HEALTH_VALIDATION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
-  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
@@ -106,10 +104,9 @@ const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
 };
 const MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   ...OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG,
-  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const MH_POLICY_CUT_REASON =
-  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
+  'Cut — below configured minimum shift length';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
 

@@ -238,10 +238,9 @@ const MH_VISIT_MINUTES = 40;
 const MH_CHARTING_BUFFER_MINUTES = 10;
 const MH_EHR_SLOT_GAP_MINUTES = 0;
 const MH_VISIT_CADENCE_MINUTES = MH_VISIT_MINUTES + MH_CHARTING_BUFFER_MINUTES;
-const MH_MIN_SHIFT_HOURS = 2.5;
+const MH_PREFERRED_SHIFT_HOURS = 2.5;
 const MENTAL_HEALTH_VALIDATION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
-  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
@@ -252,10 +251,9 @@ const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
 };
 const MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   ...OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG,
-  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const MH_POLICY_CUT_REASON =
-  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
+  'Cut — below configured minimum shift length';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
 const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1;
@@ -1578,7 +1576,7 @@ Deno.serve(async (req: Request) => {
           pushPublishedLockNoteParts(noHoursNoteParts, publishedLocks);
           if (isMentalHealth) {
             noHoursNoteParts.push(
-              `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
+              `mh_preferred_shift_hours=${MH_PREFERRED_SHIFT_HOURS}`,
               `mh_visit_cadence=${MH_VISIT_MINUTES}m_visit+${MH_CHARTING_BUFFER_MINUTES}m_charting_buffer`,
               `mh_ehr_slot_gap_minutes=${MH_EHR_SLOT_GAP_MINUTES}`,
             );
@@ -1678,7 +1676,7 @@ Deno.serve(async (req: Request) => {
             `mh_charting_buffer_minutes=${MH_CHARTING_BUFFER_MINUTES}`,
             `mh_ehr_slot_gap_minutes=${MH_EHR_SLOT_GAP_MINUTES}`,
             `mh_visit_capacity=${mhVisitCapacity}`,
-            `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
+            `mh_preferred_shift_hours=${MH_PREFERRED_SHIFT_HOURS}`,
             'note=MH uses service-line forecast; bypasses telehealth state allocator',
           ];
           pushProviderPriorityNotes(mhNoteParts, providerPriority, providerProfile, useUtilizationTieBreak, allocationPolicy);

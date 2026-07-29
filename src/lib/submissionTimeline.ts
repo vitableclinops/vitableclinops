@@ -386,7 +386,7 @@ export interface BuildShiftRecommendationsArgs {
    *  not part of the forecast cut budget — they were already removed from
    *  `final_approvable_hours` upstream. */
   outOfHoursTimeline?: ExpandedSlot[];
-  /** Policy-rejected fragments, e.g. MH blocks shorter than 2.5h. */
+  /** Policy-rejected fragments from configured hard validation rules. */
   policyCutTimeline?: ExpandedSlot[];
   policyCutReason?: string;
   unallocatedForecastPublishReason?: string;

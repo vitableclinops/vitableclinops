@@ -415,8 +415,8 @@ export interface NormalizationSummary {
    *  operating-hours window (default 9 AM - 9 PM ET weekdays, 9 AM - 12 PM ET
    *  weekends). */
   hours_removed_for_operating_hours: number;
-  /** Hours dropped because a window is shorter than the configured minimum
-   *  shift length. Used for MH coaching's 2.5h minimum. */
+  /** Hours dropped because a window is shorter than a configured hard minimum
+   *  shift length. Leave the threshold at 0 for advisory-only preferences. */
   hours_removed_for_minimum_shift: number;
   hours_changed_by_validation: number;
   intervals_auto_corrected: number;
@@ -1143,8 +1143,8 @@ export interface NormalizationResult {
    *  preserved, so downstream can emit "declined: outside business hours"
    *  per-shift rows. */
   outOfHoursTimeline: ExpandedSlot[];
-  /** Slots dropped because they are shorter than the configured minimum shift
-   *  length. These can be emitted as explicit cut rows downstream. */
+  /** Slots dropped because they are shorter than a configured hard minimum
+   *  shift length. These can be emitted as explicit cut rows downstream. */
   policyCutTimeline: ExpandedSlot[];
   summary: NormalizationSummary;
   report: ValidationReportRow[];
@@ -1697,7 +1697,7 @@ export interface BuildShiftRecommendationsArgs {
    *  not part of the forecast cut budget — they were already removed from
    *  `final_approvable_hours` upstream. */
   outOfHoursTimeline?: ExpandedSlot[];
-  /** Policy-rejected fragments, e.g. MH blocks shorter than 2.5h. */
+  /** Policy-rejected fragments from configured hard validation rules. */
   policyCutTimeline?: ExpandedSlot[];
   policyCutReason?: string;
   unallocatedForecastPublishReason?: string;
@@ -3386,10 +3386,9 @@ const MH_VISIT_MINUTES = 40;
 const MH_CHARTING_BUFFER_MINUTES = 10;
 const MH_EHR_SLOT_GAP_MINUTES = 0;
 const MH_VISIT_CADENCE_MINUTES = MH_VISIT_MINUTES + MH_CHARTING_BUFFER_MINUTES;
-const MH_MIN_SHIFT_HOURS = 2.5;
+const MH_PREFERRED_SHIFT_HOURS = 2.5;
 const MENTAL_HEALTH_VALIDATION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
-  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   ...DEFAULT_VALIDATION_CONFIG,
@@ -3400,10 +3399,9 @@ const OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
 };
 const MH_OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG = {
   ...OUTSIDE_OPERATING_HOURS_EXCEPTION_CONFIG,
-  min_single_shift_hours: MH_MIN_SHIFT_HOURS,
 };
 const MH_POLICY_CUT_REASON =
-  'Cut — mental health shifts must be at least 2.5h (3 visits at 40m plus charting buffers; EHR slots stay back-to-back)';
+  'Cut — below configured minimum shift length';
 const MH_PUBLISH_REASON =
   'Publish (mental health service-line forecast; state allocator bypassed)';
 const ACCESS_GROWTH_BUFFER_MULTIPLIER = 1;
@@ -4726,7 +4724,7 @@ Deno.serve(async (req: Request) => {
           pushPublishedLockNoteParts(noHoursNoteParts, publishedLocks);
           if (isMentalHealth) {
             noHoursNoteParts.push(
-              `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
+              `mh_preferred_shift_hours=${MH_PREFERRED_SHIFT_HOURS}`,
               `mh_visit_cadence=${MH_VISIT_MINUTES}m_visit+${MH_CHARTING_BUFFER_MINUTES}m_charting_buffer`,
               `mh_ehr_slot_gap_minutes=${MH_EHR_SLOT_GAP_MINUTES}`,
             );
@@ -4826,7 +4824,7 @@ Deno.serve(async (req: Request) => {
             `mh_charting_buffer_minutes=${MH_CHARTING_BUFFER_MINUTES}`,
             `mh_ehr_slot_gap_minutes=${MH_EHR_SLOT_GAP_MINUTES}`,
             `mh_visit_capacity=${mhVisitCapacity}`,
-            `mh_min_shift_hours=${MH_MIN_SHIFT_HOURS}`,
+            `mh_preferred_shift_hours=${MH_PREFERRED_SHIFT_HOURS}`,
             'note=MH uses service-line forecast; bypasses telehealth state allocator',
           ];
           pushProviderPriorityNotes(mhNoteParts, providerPriority, providerProfile, useUtilizationTieBreak, allocationPolicy);

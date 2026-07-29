@@ -511,7 +511,7 @@ const intakeBranchForSubmission = (row: AvailabilitySubmissionRow): IntakeBranch
       kind: 'blocked',
       label: 'Blocked logic error',
       detail: 'Fix before allocation',
-      owner: 'Tasneem',
+      owner: 'Data quality',
       issues: blocking,
     };
   }
@@ -521,8 +521,8 @@ const intakeBranchForSubmission = (row: AvailabilitySubmissionRow): IntakeBranch
     return {
       kind: 'flagged',
       label: 'Non-blocking flag',
-      detail: 'Flows to allocation; notify/review in parallel',
-      owner: 'Pod Lead / Tasneem fallback',
+      detail: 'Flows to allocation; review in parallel if needed',
+      owner: 'Jotform intake routing',
       issues: flags.length > 0 ? flags : ['Marked for human review'],
     };
   }
@@ -934,7 +934,7 @@ const SHIFT_TYPE_LABEL: Record<string, string> = {
 };
 
 const MH_VISIT_CADENCE_MINUTES = 50;
-const MH_MIN_SHIFT_HOURS = 2.5;
+const MH_PREFERRED_SHIFT_HOURS = 2.5;
 
 const labelShiftType = (t: string | null | undefined) => {
   if (!t) return '—';
@@ -2564,7 +2564,6 @@ export default function SchedulingWorkbenchPage({
               <AmendmentRequestsPanel
                 month={month}
                 amendments={pipelineState.amendments}
-                activeBuild={activeScheduleBuild}
                 isUpdating={updateScheduleAmendment.isPending}
                 onUpdateStatus={(amendment, status) =>
                   updateScheduleAmendment.mutate(
@@ -3544,13 +3543,11 @@ function SchedulingPipelinePanel({
 function AmendmentRequestsPanel({
   month,
   amendments,
-  activeBuild,
   isUpdating,
   onUpdateStatus,
 }: {
   month: string;
   amendments: ScheduleAmendmentRequest[];
-  activeBuild: ScheduleBuild | null;
   isUpdating: boolean;
   onUpdateStatus: (
     amendment: ScheduleAmendmentRequest,
@@ -3597,7 +3594,7 @@ function AmendmentRequestsPanel({
               Amendment queue · {formatMonthLabel(month)}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Discrete post-draft changes only. Requested changes need approval; approved changes are ready to apply against Draft {activeBuild ? `v${activeBuild.version_number}` : 'v1'} or the published schedule.
+              Change history only. Requested changes need approval; approved changes should be marked applied after the schedule rows are updated.
             </p>
           </div>
           <Select value={filter} onValueChange={value => setFilter(value as AmendmentFilter)}>
@@ -3750,7 +3747,7 @@ function AmendmentRequestsPanel({
                           onClick={() => onUpdateStatus(row, 'applied')}
                         >
                           <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                          Applied
+                          Mark applied
                         </Button>
                         <Button
                           type="button"
@@ -4556,7 +4553,7 @@ function AvailabilitySubmissionsPanel({
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
               <div className="text-xs font-medium text-amber-900">Non-blocking flags</div>
               <div className="mt-1 text-lg font-semibold text-amber-900">{branchSummary.flagged}</div>
-              <div className="text-[11px] leading-snug text-amber-800">Can flow; route to Pod Lead or Tasneem.</div>
+              <div className="text-[11px] leading-snug text-amber-800">Can flow; review in parallel if needed.</div>
             </div>
             <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
               <div className="text-xs font-medium text-emerald-900">Clean intake</div>
@@ -6797,7 +6794,7 @@ function MentalHealthDashboard({
         <SummaryCard
           label="Declined / review"
           value={`${summary.declinedCount}/${summary.needsReviewCount}`}
-          sub={`${MH_MIN_SHIFT_HOURS}h minimum shift`}
+          sub={`${MH_PREFERRED_SHIFT_HOURS}h preferred block`}
         />
         <SummaryCard
           label="Unmatched MH"
@@ -9500,7 +9497,7 @@ function ReadinessPanel({
       out.push({
         key: 'flagged_intake',
         label: `${flaggedIntakeCount} non-blocking intake flag${flaggedIntakeCount === 1 ? '' : 's'}`,
-        detail: 'These can flow to allocation, but should be reviewed or routed to a Pod Lead/Tasneem fallback in parallel.',
+        detail: 'These can flow to allocation. Review the intake note in parallel if the flag looks operationally important.',
         category: 'Escalate to ClinOps lead',
         action: 'Open Intake',
         onClick: () => onJumpToAvailability('submissions'),
@@ -9557,7 +9554,7 @@ function ReadinessPanel({
         key: 'flagged-intake',
         label: 'Non-blocking intake flags',
         value: flaggedIntakeCount.toString(),
-        detail: 'These can flow to allocation, but should be reviewed or routed to the Pod Lead/Tasneem fallback in parallel.',
+        detail: 'These can flow to allocation. Use the intake note for any parallel follow-up.',
         badge: 'Parallel review',
         action: 'Open Intake',
         onClick: () => onJumpToAvailability('submissions'),
@@ -11925,7 +11922,7 @@ function decisionReasonTilesForRow(
       addTile({
         label: 'Visit capacity',
         value: `${visitCapacity} visits`,
-        detail: 'Mental health capacity from accepted 2.5-hour blocks.',
+        detail: 'Mental health capacity from accepted hours using the preferred 2.5-hour block model.',
         tone: 'emerald',
       });
     }
