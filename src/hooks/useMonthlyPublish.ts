@@ -949,6 +949,22 @@ export type ScheduleBuildRow = {
   created_at: string;
 };
 
+export type ScheduleBuildRowInput = {
+  submission_id: string | null;
+  provider_id: string | null;
+  provider_name: string;
+  target_month: string;
+  shift_date: string;
+  start_min: number;
+  end_min: number;
+  hours: number;
+  shift_type: string;
+  assigned_state?: string | null;
+  recommendation: 'publish' | 'cut';
+  recommendation_reason?: string | null;
+  decision_run_id?: string | null;
+};
+
 export type SchedulingMonthWorkflow = {
   id: string;
   target_month: string;
@@ -1402,11 +1418,13 @@ export function useCreateScheduleAmendmentRequest() {
       providerId?: string | null;
       providerName: string;
       requestType: ScheduleAmendmentRequest['request_type'];
+      status?: ScheduleAmendmentRequest['status'];
       summary?: string | null;
       notes?: string | null;
     }) => {
       const monthStart = monthIso(args.month);
       const nowIso = new Date().toISOString();
+      const status = args.status ?? 'requested';
       const { error } = await clinopsDb
         .from('schedule_amendment_requests')
         .insert({
@@ -1416,11 +1434,14 @@ export function useCreateScheduleAmendmentRequest() {
           provider_id: args.providerId ?? null,
           provider_name: args.providerName,
           request_type: args.requestType,
-          status: 'requested',
+          status,
           summary: args.summary ?? null,
           notes: args.notes ?? null,
           requested_by: actorId,
           requested_by_label: actorLabel,
+          resolved_at: status === 'requested' ? null : nowIso,
+          resolved_by: status === 'requested' ? null : actorId,
+          resolved_by_label: status === 'requested' ? null : actorLabel,
           updated_at: nowIso,
         });
       if (error) throw error;
@@ -1428,6 +1449,69 @@ export function useCreateScheduleAmendmentRequest() {
     onSuccess: (_data, args) => {
       const monthStart = monthIso(args.month);
       queryClient.invalidateQueries({ queryKey: pipelineQueryKey(monthStart) });
+    },
+  });
+}
+
+export function useReplaceScheduleBuildRowsForSubmission() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      buildId: string;
+      month: string;
+      submissionId: string | null;
+      providerId: string | null;
+      providerName: string;
+      rows: ScheduleBuildRowInput[];
+    }) => {
+      const monthStart = monthIso(args.month);
+      let deleteQuery = clinopsDb
+        .from('schedule_build_rows')
+        .delete()
+        .eq('build_id', args.buildId);
+      if (args.submissionId) {
+        deleteQuery = deleteQuery.eq('submission_id', args.submissionId);
+      } else if (args.providerId) {
+        deleteQuery = deleteQuery.eq('provider_id', args.providerId);
+      } else {
+        deleteQuery = deleteQuery.eq('provider_name', args.providerName);
+      }
+      const { error: deleteError } = await deleteQuery;
+      if (deleteError) throw deleteError;
+
+      if (args.rows.length > 0) {
+        const rows = args.rows.map(row => ({
+          build_id: args.buildId,
+          source_shift_recommendation_id: null,
+          submission_id: row.submission_id ?? args.submissionId,
+          provider_id: row.provider_id ?? args.providerId,
+          provider_name: row.provider_name || args.providerName,
+          target_month: monthStart,
+          shift_date: row.shift_date,
+          start_min: row.start_min,
+          end_min: row.end_min,
+          hours: row.hours,
+          shift_type: row.shift_type,
+          assigned_state: row.assigned_state ?? null,
+          recommendation: row.recommendation,
+          recommendation_reason: row.recommendation_reason ?? null,
+          decision_run_id: row.decision_run_id ?? null,
+          source_publish_status: 'pending',
+          source_published_at: null,
+          source_ehr_posted_at: null,
+        }));
+        const CHUNK = 500;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          const { error } = await clinopsDb
+            .from('schedule_build_rows')
+            .insert(rows.slice(i, i + CHUNK));
+          if (error) throw error;
+        }
+      }
+    },
+    onSuccess: (_data, args) => {
+      queryClient.invalidateQueries({ queryKey: buildRowsQueryKey(args.buildId) });
+      queryClient.invalidateQueries({ queryKey: pipelineQueryKey(monthIso(args.month)) });
     },
   });
 }

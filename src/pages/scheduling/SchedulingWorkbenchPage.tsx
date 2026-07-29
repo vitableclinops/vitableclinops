@@ -107,6 +107,7 @@ import {
   useCreateScheduleDraft,
   useAdvanceSchedulingPipeline,
   useCreateScheduleAmendmentRequest,
+  useReplaceScheduleBuildRowsForSubmission,
   useUpdateScheduleAmendmentRequest,
   useUpdateProviderSchedulingException,
   useUpsertSchedulingException,
@@ -136,6 +137,7 @@ import {
   type SchedulingPipelineState,
   type ScheduleBuild,
   type ScheduleBuildRow,
+  type ScheduleBuildRowInput,
   type ScheduleAmendmentRequest,
 } from '@/hooks/useMonthlyPublish';
 import { toast } from 'sonner';
@@ -415,6 +417,21 @@ const weekdayCountInMonth = (weekday: string, month: string): number => {
   return count;
 };
 
+const datesForWeekdayInMonth = (weekday: string, month: string): string[] => {
+  const target = WEEKDAY_INDEX.get(weekday.toLowerCase());
+  if (target == null) return [];
+  const [year, monthNumber] = month.split('-').map(Number);
+  const days = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const dates: string[] = [];
+  for (let day = 1; day <= days; day += 1) {
+    const date = new Date(Date.UTC(year, monthNumber - 1, day));
+    if (date.getUTCDay() === target) {
+      dates.push(`${year}-${pad2(monthNumber)}-${pad2(day)}`);
+    }
+  }
+  return dates;
+};
+
 const draftShiftHours = (draft: ManualAvailabilityDraft, month: string): number => {
   const start = parseTimeToMinutes(draft.startTime);
   const end = parseTimeToMinutes(draft.endTime);
@@ -596,6 +613,57 @@ const summarizeManualAvailability = (
   const labels = drafts.slice(0, 3).map(formatManualDraftLabel);
   const more = drafts.length > labels.length ? `; +${drafts.length - labels.length} more` : '';
   return `${labels.join('; ')}${more}; total=${formatHours(totalManualAvailabilityHours(drafts, month))}h`;
+};
+
+const manualDraftShiftType = (kind: ManualAvailabilityKind) => {
+  if (kind === 'recurring_virtual') return 'virtual_recurring';
+  if (kind === 'one_off_virtual') return 'virtual_oneoff';
+  return 'in_home_clinic';
+};
+
+const buildDraftRowsFromManualAvailability = (args: {
+  drafts: ManualAvailabilityDraft[];
+  month: string;
+  submissionId: string;
+  providerId: string | null;
+  providerName: string;
+  decisionRunId?: string | null;
+  reason: string;
+}): ScheduleBuildRowInput[] => {
+  const rows: ScheduleBuildRowInput[] = [];
+  for (const draft of args.drafts) {
+    const start = parseTimeToMinutes(draft.startTime);
+    const end = parseTimeToMinutes(draft.endTime);
+    if (start == null || end == null || end <= start) continue;
+    const dates =
+      draft.kind === 'recurring_virtual'
+        ? datesForWeekdayInMonth(draft.dayOfWeek, args.month)
+        : draft.date.startsWith(args.month.slice(0, 7))
+          ? [draft.date]
+          : [];
+    for (const shiftDate of dates) {
+      rows.push({
+        submission_id: args.submissionId,
+        provider_id: args.providerId,
+        provider_name: args.providerName,
+        target_month: normalizeMonthStart(args.month),
+        shift_date: shiftDate,
+        start_min: start,
+        end_min: end,
+        hours: Math.round(((end - start) / 60) * 100) / 100,
+        shift_type: manualDraftShiftType(draft.kind),
+        assigned_state: null,
+        recommendation: 'publish',
+        recommendation_reason: args.reason,
+        decision_run_id: args.decisionRunId ?? null,
+      });
+    }
+  }
+  return rows.sort((a, b) =>
+    a.shift_date.localeCompare(b.shift_date) ||
+    a.provider_name.localeCompare(b.provider_name) ||
+    a.start_min - b.start_min,
+  );
 };
 
 const buildCorrectedParsedShifts = (
@@ -1114,6 +1182,7 @@ export default function SchedulingWorkbenchPage({
   const createScheduleDraft = useCreateScheduleDraft();
   const advanceSchedulingPipeline = useAdvanceSchedulingPipeline();
   const createAmendmentRequest = useCreateScheduleAmendmentRequest();
+  const replaceScheduleBuildRows = useReplaceScheduleBuildRowsForSubmission();
   const updateScheduleAmendment = useUpdateScheduleAmendmentRequest();
   const [lastRecalculation, setLastRecalculation] = useState<{
     result: ScheduleRecalculationResult;
@@ -1718,6 +1787,11 @@ export default function SchedulingWorkbenchPage({
   const handleResolveNeedsReview = (args: ResolveArgs) => {
     const shouldRecalculateAfterApproval =
       Boolean(args.correction_summary) && args.decision === 'accepted' && !recalculationLocked;
+    const shouldReplaceDraftRows =
+      Boolean(args.corrected_draft_rows?.length) &&
+      args.decision === 'accepted' &&
+      Boolean(activeScheduleBuild?.id) &&
+      pipelineStage === 'review';
     const beforeRecalculation = buildRecalculationSnapshot(
       scopedRows,
       scopedFlatAccepted,
@@ -1726,6 +1800,26 @@ export default function SchedulingWorkbenchPage({
     resolveReview.mutate({ ...args, skip_evaluate: recalculationLocked }, {
       onSuccess: () => {
         if (recalculationLocked && args.decision === 'accepted') {
+          if (shouldReplaceDraftRows && activeScheduleBuild) {
+            replaceScheduleBuildRows.mutate(
+              {
+                buildId: activeScheduleBuild.id,
+                month: args.target_month,
+                submissionId: args.submission_id,
+                providerId: args.provider_id,
+                providerName: args.provider_name,
+                rows: args.corrected_draft_rows ?? [],
+              },
+              {
+                onSuccess: () =>
+                  toast.success(
+                    `Updated Draft v${activeScheduleBuild.version_number} rows for ${args.provider_name}`,
+                  ),
+                onError: error =>
+                  toast.error(`Approved, but draft rows were not updated: ${(error as Error).message}`),
+              },
+            );
+          }
           createAmendmentRequest.mutate({
             month: args.target_month,
             buildId: activeScheduleBuild?.id ?? null,
@@ -1733,6 +1827,7 @@ export default function SchedulingWorkbenchPage({
             providerId: args.provider_id,
             providerName: args.provider_name,
             requestType: 'manual_review',
+            status: shouldReplaceDraftRows ? 'applied' : 'requested',
             summary: args.correction_summary
               ? `Approved corrected hours: ${args.correction_summary}`
               : `Approved reviewed hours for ${args.provider_name}`,
@@ -5518,6 +5613,7 @@ type ResolveArgs = {
   reason: string;
   existing_notes: string | null;
   corrected_parsed_shifts?: unknown;
+  corrected_draft_rows?: ScheduleBuildRowInput[];
   correction_summary?: string | null;
   provider_name: string;
 };
@@ -5530,6 +5626,7 @@ type ReviewableSubmission = Pick<
   | 'target_month'
   | 'decision_status'
   | 'decision_notes'
+  | 'decision_run_id'
   | 'parsed_shifts'
   | 'validation_warnings'
   | 'raw_requested_hours'
@@ -5648,6 +5745,18 @@ function SubmissionResolutionDialog({
       reason,
       existing_notes: sub.decision_notes,
       corrected_parsed_shifts: correctedParsedShifts,
+      corrected_draft_rows:
+        useCorrectedTimes && target.decision === 'accepted'
+          ? buildDraftRowsFromManualAvailability({
+              drafts: manualDrafts,
+              month,
+              submissionId: sub.id,
+              providerId: sub.provider_id,
+              providerName: target.providerName,
+              decisionRunId: sub.decision_run_id,
+              reason: `Manual draft edit - ClinOps approved corrected times (${correctionSummary ?? 'reviewed times'})`,
+            })
+          : undefined,
       correction_summary: correctionSummary,
       provider_name: target.providerName,
     });
@@ -5659,7 +5768,7 @@ function SubmissionResolutionDialog({
       ? 'Approve hours'
       : target?.decision === 'declined'
         ? 'Decline hours'
-        : '—';
+        : '-';
   const submittedHours = expandedSubmittedHours(target?.submission);
   const correctedHours = totalManualAvailabilityHours(manualDrafts, month);
 
