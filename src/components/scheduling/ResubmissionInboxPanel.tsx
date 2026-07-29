@@ -91,6 +91,57 @@ const formatMonthShort = (iso: string) => {
 
 const normalizeMonthStart = (iso: string) => (iso.length === 7 ? `${iso}-01` : iso);
 
+const formatHrs = (n: number | null | undefined): string => {
+  const v = Number(n ?? 0);
+  return `${Number.isInteger(v) ? v : v.toFixed(1)}h`;
+};
+
+const PRIOR_DECISION_LABEL: Record<string, { label: string; className: string }> = {
+  accepted: { label: 'Accepted', className: 'bg-emerald-100 text-emerald-800' },
+  partial: { label: 'Partially accepted', className: 'bg-amber-100 text-amber-800' },
+  declined: { label: 'Declined', className: 'bg-red-100 text-red-700' },
+  needs_review: { label: 'Needed a decision', className: 'bg-orange-100 text-orange-800' },
+  pending: { label: 'Not yet evaluated', className: 'bg-slate-100 text-slate-700' },
+  superseded: { label: 'Replaced by a newer submission', className: 'bg-slate-100 text-slate-600' },
+};
+
+// Surfaces what the evaluator did with the PRIOR submission so the coordinator
+// isn't approving an amendment blind. All fields are already loaded on the
+// submission row; they were just never shown here.
+function PriorDecisionCard({ prior }: { prior: SubmissionForInbox }) {
+  const status = (prior.decision_status ?? '') as string;
+  const meta = PRIOR_DECISION_LABEL[status];
+  const hasHours =
+    (prior.accepted_hours ?? null) !== null || (prior.declined_hours ?? null) !== null;
+  return (
+    <Card className="border-slate-200 bg-slate-50/60">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">What happened to the prior submission</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          {meta ? (
+            <Badge className={meta.className}>{meta.label}</Badge>
+          ) : (
+            <span className="text-muted-foreground">No prior decision recorded.</span>
+          )}
+          {hasHours && (
+            <span className="tabular-nums text-muted-foreground">
+              Accepted {formatHrs(prior.accepted_hours)} · Declined {formatHrs(prior.declined_hours)}
+            </span>
+          )}
+        </div>
+        {prior.decision_notes && (
+          <div className="rounded border bg-white px-2 py-1 text-xs leading-snug text-muted-foreground whitespace-pre-wrap">
+            <span className="font-medium text-slate-600">System's reason: </span>
+            {prior.decision_notes}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const formatTimestamp = (iso: string) => new Date(iso).toLocaleString();
 
 const formatRelative = (iso: string): string => {
@@ -554,6 +605,7 @@ function ResubmissionDialog({
             parsedShifts={group.prior.parsed_shifts}
             title="Provider's note on the prior submission"
           />
+          <PriorDecisionCard prior={group.prior} />
           <SignalsCard signals={group.signals} />
 
           <Card>

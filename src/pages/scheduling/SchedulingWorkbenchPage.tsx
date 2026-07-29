@@ -27,6 +27,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ConfirmActionDialog } from '@/components/ConfirmActionDialog';
 import {
   Dialog,
   DialogContent,
@@ -204,7 +205,17 @@ import {
   isAugust2026Month,
 } from '@/lib/scheduling/august2026';
 
-const MONTH_OPTIONS = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'];
+// Derived from today so the workbench always opens on the current cycle rather
+// than drifting to a stale hard-coded month — the tool is a monthly pipeline.
+const isoMonthStart = (year: number, monthIndex0: number): string =>
+  `${year}-${String(monthIndex0 + 1).padStart(2, '0')}-01`;
+const buildMonthOptions = (now: Date = new Date()): string[] =>
+  [-1, 0, 1, 2].map(offset => {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    return isoMonthStart(d.getFullYear(), d.getMonth());
+  });
+const MONTH_OPTIONS = buildMonthOptions();
+const DEFAULT_MONTH = isoMonthStart(new Date().getFullYear(), new Date().getMonth());
 const monthParamToIso = (value: string | null): string | null => {
   if (!value) return null;
   if (/^\d{4}-\d{2}$/.test(value)) return `${value}-01`;
@@ -1066,7 +1077,7 @@ export default function SchedulingWorkbenchPage({
   const viewParam = searchParams.get('view');
   const scopeParam = searchParams.get('scope');
   const monthParam = searchParams.get('month');
-  const [month, setMonth] = useState(() => monthParamToIso(monthParam) ?? '2026-08-01');
+  const [month, setMonth] = useState(() => monthParamToIso(monthParam) ?? DEFAULT_MONTH);
   const [activeScope, setActiveScope] = useState<SchedulingWorkbenchScope>(() =>
     scopeParam ? scopeFromParam(scopeParam) : scope,
   );
@@ -1929,6 +1940,24 @@ export default function SchedulingWorkbenchPage({
     );
   };
 
+  // Marking a provider's shifts as posted is low-risk; undoing them all clears
+  // status a teammate may have recorded, so confirm the undo direction only.
+  const [providerBulkUndo, setProviderBulkUndo] = useState<{
+    row: ProviderPublishView;
+    step: ShiftPublishStep;
+  } | null>(null);
+  const requestBulkAllProviderShifts = (
+    row: ProviderPublishView,
+    step: ShiftPublishStep,
+    done: boolean,
+  ) => {
+    if (done) {
+      handleBulkAllProviderShifts(row, step, true);
+    } else {
+      setProviderBulkUndo({ row, step });
+    }
+  };
+
   const runScheduleRecalculation = (
     before = buildRecalculationSnapshot(scopedRows, scopedFlatAccepted, scopedCutRows),
     toastPrefix = `Ran allocation for ${formatMonthLabel(month)}`,
@@ -2055,6 +2084,29 @@ export default function SchedulingWorkbenchPage({
   return (
     <SchedulingShell>
     <TooltipProvider delayDuration={200}>
+      <ConfirmActionDialog
+        open={providerBulkUndo !== null}
+        onOpenChange={open => {
+          if (!open) setProviderBulkUndo(null);
+        }}
+        title={
+          providerBulkUndo
+            ? `Undo all ${providerBulkUndo.step === 'homebase' ? 'Homebase' : 'EHR'} marks for ${providerBulkUndo.row.provider_name}?`
+            : ''
+        }
+        description={
+          providerBulkUndo
+            ? `This clears the "${providerBulkUndo.step === 'homebase' ? 'posted in Homebase' : 'entered in EHR'}" status on every one of ${providerBulkUndo.row.provider_name}'s shifts, including any a teammate marked. It does not change anything in ${providerBulkUndo.step === 'homebase' ? 'Homebase' : 'the EHR'} itself.`
+            : ''
+        }
+        confirmLabel="Undo marks"
+        onConfirm={() => {
+          if (providerBulkUndo) {
+            handleBulkAllProviderShifts(providerBulkUndo.row, providerBulkUndo.step, false);
+            setProviderBulkUndo(null);
+          }
+        }}
+      />
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -2098,7 +2150,7 @@ export default function SchedulingWorkbenchPage({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {MONTH_OPTIONS.map(m => (
+              {(MONTH_OPTIONS.includes(month) ? MONTH_OPTIONS : [month, ...MONTH_OPTIONS]).map(m => (
                 <SelectItem key={m} value={m}>
                   {formatMonthLabel(m)}
                 </SelectItem>
@@ -2900,37 +2952,55 @@ export default function SchedulingWorkbenchPage({
                             <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex justify-end gap-1">
                                 {totalShifts > 0 && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 text-xs"
-                                    onClick={() =>
-                                      handleBulkAllProviderShifts(
-                                        row,
-                                        'homebase',
-                                        hbDone < totalShifts,
-                                      )
-                                    }
-                                  >
-                                    {hbDone < totalShifts ? 'HB all' : 'Revert HB'}
-                                  </Button>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 text-xs"
+                                        onClick={() =>
+                                          requestBulkAllProviderShifts(
+                                            row,
+                                            'homebase',
+                                            hbDone < totalShifts,
+                                          )
+                                        }
+                                      >
+                                        {hbDone < totalShifts ? 'Mark all HB' : 'Undo HB'}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                      {hbDone < totalShifts
+                                        ? `Marks all ${totalShifts} of ${row.provider_name}'s shifts as posted in Homebase. Records status only — it does not post to Homebase.`
+                                        : `Clears the "posted in Homebase" mark on all ${totalShifts} of ${row.provider_name}'s shifts.`}
+                                    </TooltipContent>
+                                  </Tooltip>
                                 )}
                                 {totalShifts > 0 && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 text-xs"
-                                    disabled={ehrBulkBlocked}
-                                    onClick={() =>
-                                      handleBulkAllProviderShifts(
-                                        row,
-                                        'ehr',
-                                        ehrDone < totalShifts,
-                                      )
-                                    }
-                                  >
-                                    {ehrDone < totalShifts ? 'EHR all' : 'Revert EHR'}
-                                  </Button>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 text-xs"
+                                        disabled={ehrBulkBlocked}
+                                        onClick={() =>
+                                          requestBulkAllProviderShifts(
+                                            row,
+                                            'ehr',
+                                            ehrDone < totalShifts,
+                                          )
+                                        }
+                                      >
+                                        {ehrDone < totalShifts ? 'Mark all EHR' : 'Undo EHR'}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                      {ehrDone < totalShifts
+                                        ? `Marks all ${totalShifts} of ${row.provider_name}'s shifts as entered in the EHR. Records status only — it does not enter anything into the EHR.`
+                                        : `Clears the "entered in EHR" mark on all ${totalShifts} of ${row.provider_name}'s shifts.`}
+                                    </TooltipContent>
+                                  </Tooltip>
                                 )}
                               </div>
                               {ehrBulkBlocked && (
@@ -4723,8 +4793,7 @@ function AvailabilitySubmissionsPanel({
             Availability submissions · {formatMonthLabel(month)}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Source: Jotform form 252224341308043 → sync-jotform-submissions →
-            schedule_submissions.
+            Source: provider availability submissions from Jotform, synced automatically.
           </p>
           <div className="mt-3 grid gap-2 md:grid-cols-3">
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
@@ -5903,6 +5972,7 @@ function PublishingQueue({
     'pending_hb',
   );
   const [providerFilter, setProviderFilter] = useState('');
+  const [queueBulkConfirm, setQueueBulkConfirm] = useState<'homebase' | 'ehr' | null>(null);
 
   const filtered = useMemo(() => {
     const q = providerFilter.trim().toLowerCase();
@@ -5989,7 +6059,7 @@ function PublishingQueue({
               size="sm"
               variant="outline"
               disabled={pendingHomebase.length === 0}
-              onClick={() => onBulkShifts(pendingHomebase, 'homebase', true)}
+              onClick={() => setQueueBulkConfirm('homebase')}
             >
               Mark HB ({pendingHomebase.length})
             </Button>
@@ -5997,10 +6067,33 @@ function PublishingQueue({
               size="sm"
               variant="outline"
               disabled={pendingEhr.length === 0}
-              onClick={() => onBulkShifts(pendingEhr, 'ehr', true)}
+              onClick={() => setQueueBulkConfirm('ehr')}
             >
               Mark EHR ({pendingEhr.length})
             </Button>
+            <ConfirmActionDialog
+              open={queueBulkConfirm !== null}
+              onOpenChange={open => {
+                if (!open) setQueueBulkConfirm(null);
+              }}
+              title={
+                queueBulkConfirm === 'ehr'
+                  ? `Mark ${pendingEhr.length} shift${pendingEhr.length === 1 ? '' : 's'} as entered in the EHR?`
+                  : `Mark ${pendingHomebase.length} shift${pendingHomebase.length === 1 ? '' : 's'} as posted in Homebase?`
+              }
+              description={
+                queueBulkConfirm === 'ehr'
+                  ? `This records ${pendingEhr.length} shift${pendingEhr.length === 1 ? '' : 's'} across ${new Set(pendingEhr.map(s => s.provider_id)).size} provider${new Set(pendingEhr.map(s => s.provider_id)).size === 1 ? '' : 's'} as entered in the EHR. Only do this after entering them into the EHR itself — it records status only.`
+                  : `This records ${pendingHomebase.length} shift${pendingHomebase.length === 1 ? '' : 's'} across ${new Set(pendingHomebase.map(s => s.provider_id)).size} provider${new Set(pendingHomebase.map(s => s.provider_id)).size === 1 ? '' : 's'} as posted in Homebase. Only do this after posting them in Homebase itself — it records status only.`
+              }
+              confirmLabel={queueBulkConfirm === 'ehr' ? 'Mark EHR' : 'Mark HB'}
+              destructive={false}
+              onConfirm={() => {
+                if (queueBulkConfirm === 'ehr') onBulkShifts(pendingEhr, 'ehr', true);
+                else if (queueBulkConfirm === 'homebase') onBulkShifts(pendingHomebase, 'homebase', true);
+                setQueueBulkConfirm(null);
+              }}
+            />
             {pendingEhr.length === 0 && pendingHomebase.length > 0 && (
               <div className="basis-full text-[11px] text-muted-foreground">
                 Finish Homebase first. EHR can only be marked after Homebase is complete.

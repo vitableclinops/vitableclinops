@@ -598,9 +598,12 @@ export const HomebaseScheduleContent = () => {
   const queryClient = useQueryClient();
 
   const today = useMemo(() => formatLocalDate(new Date()), []);
-  const [startDate, setStartDate] = useState(JULY_2026_START);
-  const [endDate, setEndDate] = useState(JULY_2026_END);
-  const [selectedDate, setSelectedDate] = useState(JULY_2026_START);
+  // Default to the current month so the page opens on the live cycle rather than
+  // a stale hard-coded window. Presets (incl. "July 2026") remain available.
+  const initialMonthStart = useMemo(() => getMonthStartIso(), []);
+  const [startDate, setStartDate] = useState(initialMonthStart);
+  const [endDate, setEndDate] = useState(() => getMonthEndIso(initialMonthStart));
+  const [selectedDate, setSelectedDate] = useState(initialMonthStart);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
