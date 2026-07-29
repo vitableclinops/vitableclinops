@@ -9088,6 +9088,7 @@ function ReadinessPanel({
     category: BlockerCategory;
     action: string;
     onClick: () => void;
+    overrideable?: boolean;
   };
 
   const hardBlockers = useMemo<OperatorBlocker[]>(() => {
@@ -9133,6 +9134,7 @@ function ReadinessPanel({
         category: 'Scheduler can do this',
         action: recalculationLocked ? 'Open Amendments' : 'Run allocation',
         onClick: recalculationLocked ? () => onJumpToReview('amendments') : onReevaluate,
+        overrideable: false,
       });
     }
     if (hasPublishRows && !activeBuild) {
@@ -9143,6 +9145,7 @@ function ReadinessPanel({
         category: 'Scheduler can do this',
         action: 'Open Allocation Runs',
         onClick: () => onJumpToReview('recalculate'),
+        overrideable: false,
       });
     }
     if (hasPublishRows && activeBuild && !publishStageReady) {
@@ -9153,6 +9156,7 @@ function ReadinessPanel({
         category: 'Scheduler can do this',
         action: 'Review lock blockers',
         onClick: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+        overrideable: false,
       });
     }
     if (openAmendmentCount > 0) {
@@ -9163,6 +9167,7 @@ function ReadinessPanel({
         category: 'Scheduler can do this',
         action: 'Open Amendments',
         onClick: () => onJumpToReview('amendments'),
+        overrideable: false,
       });
     }
     if (hasPublishRows && unmatchedCount > 0) {
@@ -9183,6 +9188,7 @@ function ReadinessPanel({
         category: 'Escalate to ClinOps lead',
         action: summary.needsReviewCount > 0 ? 'Open Needs Decision' : 'Open Resubmits',
         onClick: summary.needsReviewCount > 0 ? () => onJumpToReview('decisions') : () => onJumpToReview('resubmits'),
+        overrideable: false,
       });
     }
     if (criticalGapStates.length > 0) {
@@ -9232,11 +9238,11 @@ function ReadinessPanel({
   ]);
 
   const activeBlockers = useMemo(
-    () => hardBlockers.filter(b => !blockerOverrides[b.key]),
+    () => hardBlockers.filter(b => b.overrideable === false || !blockerOverrides[b.key]),
     [hardBlockers, blockerOverrides],
   );
   const overriddenBlockers = useMemo(
-    () => hardBlockers.filter(b => blockerOverrides[b.key]),
+    () => hardBlockers.filter(b => b.overrideable !== false && blockerOverrides[b.key]),
     [hardBlockers, blockerOverrides],
   );
   const workflowReady = hasPublishRows && publishStageReady && openAmendmentCount === 0;
@@ -9282,7 +9288,7 @@ function ReadinessPanel({
         nextDisabled: isReevaluating && !recalculationLocked,
       };
     }
-    if (!activeBuild && !blockerOverrides['no_draft']) {
+    if (!activeBuild) {
       return {
         blocker: 'No frozen draft exists yet',
         nextAction: 'Create Draft v1 from allocation',
@@ -9290,7 +9296,7 @@ function ReadinessPanel({
         nextCategory: 'Scheduler can do this',
       };
     }
-    if (activeBuild && !publishStageReady && !blockerOverrides['draft_not_locked']) {
+    if (activeBuild && !publishStageReady) {
       return {
         blocker: `Draft v${activeBuild.version_number} is not locked yet`,
         nextAction: 'Lock reviewed draft',
@@ -9298,7 +9304,7 @@ function ReadinessPanel({
         nextCategory: 'Scheduler can do this',
       };
     }
-    if (openAmendmentCount > 0 && !blockerOverrides['open_amendments']) {
+    if (openAmendmentCount > 0) {
       return {
         blocker: `${openAmendmentCount} open amendment${openAmendmentCount === 1 ? '' : 's'}`,
         nextAction: 'Apply, park, or reject amendments',
@@ -9314,7 +9320,7 @@ function ReadinessPanel({
         nextCategory: 'Scheduler can do this',
       };
     }
-    if (reviewCount > 0 && !blockerOverrides['manual_review']) {
+    if (reviewCount > 0) {
       return {
         blocker: `${reviewCount} item${reviewCount === 1 ? '' : 's'} need ClinOps lead review`,
         nextAction: summary.needsReviewCount > 0
@@ -10132,6 +10138,7 @@ function OperatorBlockersCard({
     category: string;
     action: string;
     onClick: () => void;
+    overrideable?: boolean;
   }[];
   overriddenBlockers: {
     key: string;
@@ -10140,6 +10147,7 @@ function OperatorBlockersCard({
     category: string;
     action: string;
     onClick: () => void;
+    overrideable?: boolean;
   }[];
   blockerOverrides: Record<string, { reason: string; by: string; at: string }>;
   isAdmin: boolean;
@@ -10197,7 +10205,11 @@ function OperatorBlockersCard({
                     <Button size="sm" variant="outline" className="h-7" onClick={item.onClick}>
                       {item.action}
                     </Button>
-                    {isAdmin && (
+                    {item.overrideable === false ? (
+                      <Badge variant="outline" className="h-7 bg-white text-[11px]">
+                        Required
+                      </Badge>
+                    ) : isAdmin && (
                       <Button
                         size="sm"
                         variant="outline"
