@@ -2105,6 +2105,7 @@ export function useSchedulingRecalculationHistory(month: string) {
 
 export function useReevaluateMonth() {
   const queryClient = useQueryClient();
+  const { actorId, actorLabel } = useActorLabel();
   return useMutation({
     mutationFn: async (month: string) => {
       const monthStart = monthIso(month);
@@ -2113,6 +2114,33 @@ export function useReevaluateMonth() {
         { body: {} },
       );
       if (error) throw error;
+      const { data: workflowData, error: workflowReadError } = await clinopsDb
+        .from('scheduling_month_workflows')
+        .select('current_stage, active_build_id')
+        .eq('target_month', monthStart)
+        .range(0, 0);
+      if (workflowReadError) throw workflowReadError;
+      const workflow = ((workflowData ?? []) as Array<{
+        current_stage: SchedulingPipelineStage | null;
+        active_build_id: string | null;
+      }>)[0];
+      const canMarkAllocated =
+        !workflow?.active_build_id &&
+        (!workflow?.current_stage || ['intake', 'allocated'].includes(workflow.current_stage));
+      if (canMarkAllocated) {
+        const nowIso = new Date().toISOString();
+        const { error: workflowWriteError } = await clinopsDb
+          .from('scheduling_month_workflows')
+          .upsert({
+            target_month: monthStart,
+            current_stage: 'allocated',
+            updated_by: actorId,
+            updated_by_label: actorLabel,
+            notes: 'Allocation run completed. Create Draft v1 when the shift list is ready for review.',
+            updated_at: nowIso,
+          }, { onConflict: 'target_month' });
+        if (workflowWriteError) throw workflowWriteError;
+      }
       return data as ScheduleRecalculationResult;
     },
     onSuccess: () => {
@@ -2122,6 +2150,7 @@ export function useReevaluateMonth() {
       queryClient.invalidateQueries({ queryKey: ['workbench', 'state-coverage'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'provider-search'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-recalculation-history'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'scheduling-pipeline'] });
     },
   });
 }
