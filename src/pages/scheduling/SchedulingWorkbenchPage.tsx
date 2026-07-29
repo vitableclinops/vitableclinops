@@ -1706,6 +1706,10 @@ export default function SchedulingWorkbenchPage({
       ),
     [availabilitySubmissions, isMh, mhSlMatches],
   );
+  const scopedIntakeBranchSummary = useMemo(
+    () => summarizeIntakeBranches(scopedAvailabilitySubs),
+    [scopedAvailabilitySubs],
+  );
   const scopedInboxSubs = useMemo(
     () =>
       inboxSubmissions.filter(s =>
@@ -2164,7 +2168,14 @@ export default function SchedulingWorkbenchPage({
       <Tabs value={topTab} onValueChange={onTopTabChange}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="readiness"><ShieldCheck className="h-3.5 w-3.5 mr-1" />Readiness</TabsTrigger>
-          <TabsTrigger value="intake"><Inbox className="h-3.5 w-3.5 mr-1" />Intake</TabsTrigger>
+          <TabsTrigger value="intake">
+            <Inbox className="h-3.5 w-3.5 mr-1" />Intake
+            {scopedIntakeBranchSummary.blocked > 0 && (
+              <Badge className="ml-1 bg-red-100 text-red-700">
+                {scopedIntakeBranchSummary.blocked}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="review">
             <AlertCircle className="h-3.5 w-3.5 mr-1" />Review
             {(scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length + requestedAmendments.length) > 0 && (
@@ -2199,6 +2210,8 @@ export default function SchedulingWorkbenchPage({
             declinedHours={readinessDeclinedHours}
             inboxNeedsReviewCount={scopedInboxActionable}
             unmatchedCount={scopedUnmatched.length}
+            blockedIntakeCount={scopedIntakeBranchSummary.blocked}
+            flaggedIntakeCount={scopedIntakeBranchSummary.flagged}
             onReevaluate={reevaluateNow}
             isReevaluating={reevaluate.isPending}
             recalculationLocked={recalculationLocked}
@@ -2643,6 +2656,7 @@ export default function SchedulingWorkbenchPage({
             inboxNeedsReviewCount={scopedInboxActionable}
             unmatchedCount={scopedUnmatched.length}
             missingCount={scopedSummary.missingCount}
+            blockedIntakeCount={scopedIntakeBranchSummary.blocked}
             onJumpToAvailability={jumpToAvailability}
             onJumpToReview={jumpToReview}
             onJumpToCoverage={() => jumpToCoveragePlan('coverage')}
@@ -8658,6 +8672,8 @@ function ReadinessPanel({
   declinedHours,
   inboxNeedsReviewCount,
   unmatchedCount,
+  blockedIntakeCount,
+  flaggedIntakeCount,
   onReevaluate,
   isReevaluating,
   recalculationLocked = false,
@@ -8689,6 +8705,8 @@ function ReadinessPanel({
   declinedHours: number;
   inboxNeedsReviewCount: number;
   unmatchedCount: number;
+  blockedIntakeCount: number;
+  flaggedIntakeCount: number;
   onReevaluate: () => void;
   isReevaluating: boolean;
   recalculationLocked?: boolean;
@@ -8849,6 +8867,16 @@ function ReadinessPanel({
         onClick: onJumpToCoverage,
       });
     }
+    if (blockedIntakeCount > 0) {
+      out.push({
+        key: 'blocked_intake',
+        label: `${blockedIntakeCount} blocked intake issue${blockedIntakeCount === 1 ? '' : 's'}`,
+        detail: 'Wrong-month, malformed time, unmatched-provider, or other logic errors must be fixed before allocation.',
+        category: 'Scheduler can do this',
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
+      });
+    }
     if (!checksLoading && !hasPublishRows) {
       out.push({
         key: 'no_publish_rows',
@@ -8909,6 +8937,7 @@ function ReadinessPanel({
     coverageQ.isLoading,
     coverageRows,
     activeBuild,
+    blockedIntakeCount,
     checksLoading,
     hasPublishRows,
     unmatchedCount,
@@ -8957,6 +8986,14 @@ function ReadinessPanel({
     nextCategory: BlockerCategory;
     nextDisabled?: boolean;
   }>(() => {
+    if (blockedIntakeCount > 0 && !blockerOverrides['blocked_intake']) {
+      return {
+        blocker: `${blockedIntakeCount} blocked intake issue${blockedIntakeCount === 1 ? '' : 's'}`,
+        nextAction: 'Fix blocked intake',
+        nextActionJump: () => onJumpToAvailability('submissions'),
+        nextCategory: 'Scheduler can do this',
+      };
+    }
     if (!hasPublishRows) {
       return {
         blocker: 'Accepted shift list is not ready yet',
@@ -9026,6 +9063,7 @@ function ReadinessPanel({
     };
   }, [
     month,
+    blockedIntakeCount,
     hasPublishRows,
     recalculationLocked,
     unmatchedCount,
@@ -9056,10 +9094,12 @@ function ReadinessPanel({
   const workflowSteps: OperatorStep[] = [
     {
       label: '1. Confirm Jotform availability',
-      detail: submittedHours > 0
-        ? `${submittedHours.toFixed(0)} expanded availability hours are in the workbench.`
-        : 'No expanded availability hours are visible yet.',
-      status: submittedHours > 0 ? 'done' : 'blocked',
+      detail: blockedIntakeCount > 0
+        ? `${blockedIntakeCount} intake issue${blockedIntakeCount === 1 ? '' : 's'} must be fixed before allocation.`
+        : submittedHours > 0
+          ? `${submittedHours.toFixed(0)} expanded availability hours are in the workbench.`
+          : 'No expanded availability hours are visible yet.',
+      status: blockedIntakeCount > 0 || submittedHours <= 0 ? 'blocked' : 'done',
       action: 'Open Availability',
       onClick: () => onJumpToAvailability('submissions'),
     },
@@ -9127,6 +9167,16 @@ function ReadinessPanel({
 
   const softWarnings = useMemo<OperatorBlocker[]>(() => {
     const out: OperatorBlocker[] = [];
+    if (flaggedIntakeCount > 0) {
+      out.push({
+        key: 'flagged_intake',
+        label: `${flaggedIntakeCount} non-blocking intake flag${flaggedIntakeCount === 1 ? '' : 's'}`,
+        detail: 'These can flow to allocation, but should be reviewed or routed to a Pod Lead/Tasneem fallback in parallel.',
+        category: 'Escalate to ClinOps lead',
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
+      });
+    }
     if (watchGapStates.length > 0 && criticalGapStates.length === 0) {
       out.push({
         key: 'thin_coverage',
@@ -9140,6 +9190,8 @@ function ReadinessPanel({
     return out;
   }, [
     criticalGapStates.length,
+    flaggedIntakeCount,
+    onJumpToAvailability,
     watchGapStates.length,
     onJumpToCoverage,
   ]);
@@ -9159,6 +9211,30 @@ function ReadinessPanel({
 
   const actionItems = useMemo<ActionCenterItem[]>(() => {
     const out: ActionCenterItem[] = [];
+    if (blockedIntakeCount > 0) {
+      out.push({
+        key: 'blocked-intake',
+        label: 'Blocked intake',
+        value: blockedIntakeCount.toString(),
+        detail: 'Logic errors such as wrong month, malformed time, or unmatched provider must be fixed before allocation.',
+        badge: 'Fix before allocation',
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
+        tone: 'border-red-200 bg-red-50/70',
+      });
+    }
+    if (flaggedIntakeCount > 0) {
+      out.push({
+        key: 'flagged-intake',
+        label: 'Non-blocking intake flags',
+        value: flaggedIntakeCount.toString(),
+        detail: 'These can flow to allocation, but should be reviewed or routed to the Pod Lead/Tasneem fallback in parallel.',
+        badge: 'Parallel review',
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
+        tone: 'border-amber-200 bg-amber-50/70',
+      });
+    }
     if (pendingSubmissionCount > 0) {
       out.push({
         key: 'pending',
@@ -9235,8 +9311,10 @@ function ReadinessPanel({
     }
     return out;
   }, [
+    blockedIntakeCount,
     declinedCount,
     declinedHours,
+    flaggedIntakeCount,
     inboxNeedsReviewCount,
     isReevaluating,
     missingCount,
@@ -10032,6 +10110,7 @@ function PublishGateBanner({
   inboxNeedsReviewCount,
   unmatchedCount,
   missingCount,
+  blockedIntakeCount,
   onJumpToAvailability,
   onJumpToReview,
   onJumpToCoverage,
@@ -10047,6 +10126,7 @@ function PublishGateBanner({
   inboxNeedsReviewCount: number;
   unmatchedCount: number;
   missingCount: number;
+  blockedIntakeCount: number;
   onJumpToAvailability: (tab?: AvailabilityTabKey) => void;
   onJumpToReview: (tab?: ReviewTabKey) => void;
   onJumpToCoverage: () => void;
@@ -10076,6 +10156,13 @@ function PublishGateBanner({
         label: 'No coverage rows exist for this month.',
         action: 'Open Coverage',
         onClick: onJumpToCoverage,
+      });
+    }
+    if (blockedIntakeCount > 0) {
+      out.push({
+        label: `${blockedIntakeCount} blocked intake issue${blockedIntakeCount === 1 ? '' : 's'} must be fixed before publishing.`,
+        action: 'Open Intake',
+        onClick: () => onJumpToAvailability('submissions'),
       });
     }
     if (!summary.totalShifts) {
@@ -10122,6 +10209,7 @@ function PublishGateBanner({
     coverageRows.length,
     summary.totalShifts,
     summary.needsReviewCount,
+    blockedIntakeCount,
     submittedHours,
     unmatchedCount,
     missingCount,
