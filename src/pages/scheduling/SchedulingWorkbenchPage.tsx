@@ -1243,6 +1243,10 @@ export default function SchedulingWorkbenchPage({
     () => pipelineState.amendments.filter(a => a.status === 'requested'),
     [pipelineState.amendments],
   );
+  const openAmendments = useMemo(
+    () => pipelineState.amendments.filter(a => a.status === 'requested' || a.status === 'approved'),
+    [pipelineState.amendments],
+  );
   const { data: activeBuildRowsData = [], isLoading: buildRowsLoading } =
     useScheduleBuildRows(activeScheduleBuild?.id ?? null);
   const activeBuildRows = safeArray<ScheduleBuildRow>(activeBuildRowsData);
@@ -2128,7 +2132,13 @@ export default function SchedulingWorkbenchPage({
         hasAllocationRows={shiftRows.length > 0 || cutRows.length > 0}
         buildRows={activeBuildRows}
         isLoadingBuildRows={buildRowsLoading}
-        requestedAmendments={requestedAmendments}
+        openAmendments={openAmendments}
+        reviewLockBlockers={{
+          needsDecision: scopedSummary.needsReviewCount,
+          resubmits: scopedInboxActionable,
+          pendingAllocation: scopedPendingAvailability.length,
+          amendments: openAmendments.length,
+        }}
         isCreatingDraft={createScheduleDraft.isPending}
         isAdvancing={advanceSchedulingPipeline.isPending}
         onCreateDraft={() =>
@@ -3196,7 +3206,8 @@ function SchedulingPipelinePanel({
   hasAllocationRows,
   buildRows,
   isLoadingBuildRows,
-  requestedAmendments,
+  openAmendments,
+  reviewLockBlockers,
   isCreatingDraft,
   isAdvancing,
   onCreateDraft,
@@ -3209,7 +3220,13 @@ function SchedulingPipelinePanel({
   hasAllocationRows: boolean;
   buildRows: ScheduleBuildRow[];
   isLoadingBuildRows: boolean;
-  requestedAmendments: ScheduleAmendmentRequest[];
+  openAmendments: ScheduleAmendmentRequest[];
+  reviewLockBlockers: {
+    needsDecision: number;
+    resubmits: number;
+    pendingAllocation: number;
+    amendments: number;
+  };
   isCreatingDraft: boolean;
   isAdvancing: boolean;
   onCreateDraft: () => void;
@@ -3243,6 +3260,26 @@ function SchedulingPipelinePanel({
       : shiftDates[0] === shiftDates[shiftDates.length - 1]
         ? formatDateLabel(shiftDates[0])
         : `${formatDateLabel(shiftDates[0])} – ${formatDateLabel(shiftDates[shiftDates.length - 1])}`;
+  const reviewBlockerCount =
+    reviewLockBlockers.needsDecision +
+    reviewLockBlockers.resubmits +
+    reviewLockBlockers.pendingAllocation +
+    reviewLockBlockers.amendments;
+  const reviewBlockerLabels = [
+    reviewLockBlockers.needsDecision > 0
+      ? `${reviewLockBlockers.needsDecision} need decision`
+      : null,
+    reviewLockBlockers.resubmits > 0
+      ? `${reviewLockBlockers.resubmits} resubmit${reviewLockBlockers.resubmits === 1 ? '' : 's'}`
+      : null,
+    reviewLockBlockers.pendingAllocation > 0
+      ? `${reviewLockBlockers.pendingAllocation} pending allocation`
+      : null,
+    reviewLockBlockers.amendments > 0
+      ? `${reviewLockBlockers.amendments} open amendment${reviewLockBlockers.amendments === 1 ? '' : 's'}`
+      : null,
+  ].filter(Boolean);
+  const lockDisabled = isAdvancing || reviewBlockerCount > 0;
 
   return (
     <Card>
@@ -3262,9 +3299,14 @@ function SchedulingPipelinePanel({
                   Recalculation locked
                 </Badge>
               )}
-              {requestedAmendments.length > 0 && (
+              {openAmendments.length > 0 && (
                 <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">
-                  {requestedAmendments.length} amendment{requestedAmendments.length === 1 ? '' : 's'}
+                  {openAmendments.length} open amendment{openAmendments.length === 1 ? '' : 's'}
+                </Badge>
+              )}
+              {stage === 'review' && reviewBlockerCount > 0 && (
+                <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                  {reviewBlockerCount} before lock
                 </Badge>
               )}
             </div>
@@ -3325,6 +3367,22 @@ function SchedulingPipelinePanel({
                 </div>
               </div>
             )}
+            {activeBuild && stage === 'review' && (
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs',
+                  reviewBlockerCount > 0
+                    ? 'border-red-200 bg-red-50 text-red-900'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-900',
+                )}
+              >
+                <span className="font-medium">Before lock</span>
+                <span>Needs decision: {reviewLockBlockers.needsDecision}</span>
+                <span>Resubmits: {reviewLockBlockers.resubmits}</span>
+                <span>Pending allocation: {reviewLockBlockers.pendingAllocation}</span>
+                <span>Open amendments: {reviewLockBlockers.amendments}</span>
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!activeBuild && (
@@ -3350,20 +3408,33 @@ function SchedulingPipelinePanel({
               </Tooltip>
             )}
             {activeBuild && stage === 'review' && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => onAdvance('locked')}
-                disabled={isAdvancing}
-              >
-                {isAdvancing ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <Lock className="h-4 w-4 mr-1" />
-                )}
-                Lock draft
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (reviewBlockerCount === 0) onAdvance('locked');
+                      }}
+                      disabled={lockDisabled}
+                    >
+                      {isAdvancing ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Lock className="h-4 w-4 mr-1" />
+                      )}
+                      Lock draft
+                    </Button>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  {reviewBlockerCount > 0
+                    ? `Clear before locking: ${reviewBlockerLabels.join(', ')}.`
+                    : 'Lock the reviewed draft so Publish only handles Homebase and EHR posting.'}
+                </TooltipContent>
+              </Tooltip>
             )}
             {activeBuild && stage === 'locked' && (
               <Button
