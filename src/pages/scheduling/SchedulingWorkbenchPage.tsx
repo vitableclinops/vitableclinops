@@ -2741,7 +2741,7 @@ export default function SchedulingWorkbenchPage({
                     {
                       onSuccess: () =>
                         toast.success(
-                          `${amendment.provider_name} amendment marked ${status.replaceAll('_', ' ')}`,
+                          `${amendment.provider_name} amendment marked ${status.replace(/_/g, ' ')}`,
                         ),
                       onError: error =>
                         toast.error(`Could not update amendment: ${(error as Error).message}`),
@@ -3972,7 +3972,7 @@ function AmendmentRequestsPanel({
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">
-                      {row.request_type.replaceAll('_', ' ')}
+                      {row.request_type.replace(/_/g, ' ')}
                     </Badge>
                   </TableCell>
                   <TableCell className="max-w-xl">
@@ -4588,7 +4588,10 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
     add(`States still under-covered during scheduling: ${stateGaps}.`);
   }
 
-  const lower = raw.toLowerCase();
+  const lower = normalizeReasonText(raw);
+  if (lower.includes('no_state_demand_remaining')) {
+    add('No demand-hour gap was left in any of this provider\'s licensed states when the allocator reached them — this is a demand/capacity outcome, not a licensing problem.');
+  }
   if (lower.includes('outside') && lower.includes('business')) {
     add('Some hours were cut because they were outside approved scheduling hours.');
   }
@@ -4614,6 +4617,15 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
   return lines.length > 0 ? lines.join('\n') : raw;
 }
 
+// The allocator's most common decline text is
+// "no demand-hour gap remained in any licensed state ...". It contains the word
+// "licensed", which used to trip the license/state-issue matchers below and
+// mislabel routine demand-exhaustion cuts as licensing problems. Normalize that
+// phrase to a distinct token before any keyword matching.
+const NO_DEMAND_GAP_RE = /no demand[- ]hour gap remained in any licensed state/gi;
+const normalizeReasonText = (raw: string | null | undefined): string =>
+  (raw ?? '').toLowerCase().replace(NO_DEMAND_GAP_RE, ' no_state_demand_remaining ');
+
 type ReasonTag = {
   label: string;
   tone?: 'amber' | 'blue' | 'red' | 'slate' | 'emerald';
@@ -4628,7 +4640,7 @@ const REASON_TAG_STYLES: Record<NonNullable<ReasonTag['tone']>, string> = {
 };
 
 const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
-  const text = (raw ?? '').toLowerCase();
+  const text = normalizeReasonText(raw);
   const tags: ReasonTag[] = [];
   const add = (label: string, tone: ReasonTag['tone'] = 'slate') => {
     if (!tags.some(tag => tag.label === label)) tags.push({ label, tone });
@@ -4658,6 +4670,9 @@ const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
   }
   if (/unavailable_override|confirmed availability override|clinops_manual_correction|clinops corrected|correction=|availability corrected|corrected availability/.test(text)) {
     add('Availability correction', 'emerald');
+  }
+  if (/no_state_demand_remaining/.test(text)) {
+    add('No state demand left', 'amber');
   }
   if (/license|licensure|state-coverage|eligib|no state allocation/.test(text)) {
     add('License/state issue', 'red');
@@ -12062,8 +12077,9 @@ function MatchingPanel({
 // ============================================================================
 
 function classifyReason(text: string): string {
-  const t = text.toLowerCase();
+  const t = normalizeReasonText(text);
   if (!t) return 'No reason recorded';
+  if (t.includes('no_state_demand_remaining')) return 'No state demand left';
   if (t.includes('equity_floor') || t.includes('soft_cap') || t.includes('provider_acceptance_pct'))
     return 'Equity redistribution';
   if (t.includes('proportional_fairness_tolerance'))
