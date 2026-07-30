@@ -1,6 +1,10 @@
 -- Track Homebase/EHR publishing directly on frozen schedule draft rows.
 -- This lets the Publish checklist operate against Draft vN instead of the
 -- mutable shift_recommendations table once a monthly build exists.
+--
+-- ORDER DEPENDENCY: must run AFTER 20260729120000_september_scheduling_pipeline
+-- (which creates public.schedule_build_rows). Renamed from a 112611 timestamp
+-- that sorted before the create-table migration and broke `supabase db push`.
 
 alter table if exists public.schedule_build_rows
   add column if not exists publish_status text not null default 'pending'
