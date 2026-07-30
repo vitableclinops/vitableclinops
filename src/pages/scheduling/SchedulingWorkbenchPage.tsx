@@ -4640,7 +4640,7 @@ const REASON_TAG_STYLES: Record<NonNullable<ReasonTag['tone']>, string> = {
 };
 
 const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
-  const text = (raw ?? '').toLowerCase();
+  const text = normalizeReasonText(raw);
   const tags: ReasonTag[] = [];
   const add = (label: string, tone: ReasonTag['tone'] = 'slate') => {
     if (!tags.some(tag => tag.label === label)) tags.push({ label, tone });
@@ -4670,6 +4670,9 @@ const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
   }
   if (/unavailable_override|confirmed availability override|clinops_manual_correction|clinops corrected|correction=|availability corrected|corrected availability/.test(text)) {
     add('Availability correction', 'emerald');
+  }
+  if (/no_state_demand_remaining/.test(text)) {
+    add('No state demand left', 'amber');
   }
   if (/license|licensure|state-coverage|eligib|no state allocation/.test(text)) {
     add('License/state issue', 'red');
@@ -12074,8 +12077,9 @@ function MatchingPanel({
 // ============================================================================
 
 function classifyReason(text: string): string {
-  const t = text.toLowerCase();
+  const t = normalizeReasonText(text);
   if (!t) return 'No reason recorded';
+  if (t.includes('no_state_demand_remaining')) return 'No state demand left';
   if (t.includes('equity_floor') || t.includes('soft_cap') || t.includes('provider_acceptance_pct'))
     return 'Equity redistribution';
   if (t.includes('proportional_fairness_tolerance'))
