@@ -237,6 +237,7 @@ const mentalHealthServiceLineLabel = (serviceLine: MentalHealthServiceLine) =>
 const MH_VISIT_MINUTES = 40;
 const MH_CHARTING_BUFFER_MINUTES = 10;
 const MH_EHR_SLOT_GAP_MINUTES = 0;
+const MH_PREFERRED_SHIFT_HOURS = 2.5;
 const MH_VISIT_CADENCE_MINUTES = MH_VISIT_MINUTES + MH_CHARTING_BUFFER_MINUTES;
 // Policy (Jul 2026): MH providers no longer have a hard 2.5h minimum shift,
 // and weekend after-hours shifts are approvable (weekend window extended to
