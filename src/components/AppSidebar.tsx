@@ -111,13 +111,11 @@ const navGroups: NavGroup[] = [
     label: 'Coverage & Ops',
     roles: ['admin', 'pod_lead'],
     items: [
-      { label: 'Workbench',              icon: CalendarCheck, href: '/admin/workbench',                    roles: ['admin', 'pod_lead'] },
       { label: 'Executive Briefing',     icon: Target,        href: '/admin/executive-briefing',           roles: ['admin'] },
       { label: 'Coverage Hub',           icon: Activity,      href: '/admin/ops',                          roles: ['admin', 'pod_lead'] },
       { label: 'Coverage Copilot',       icon: Sparkles,      href: '/admin/coverage-copilot',             roles: ['admin'] },
       { label: 'Utilization',            icon: BarChart3,     href: '/admin/utilization',                  roles: ['admin', 'pod_lead'] },
       { label: 'Demand Forecast',        icon: TrendingUp,    href: '/admin/demand-forecast',              roles: ['admin'] },
-      { label: 'Monthly Forecast',       icon: Calendar,      href: '/admin/monthly-forecast',             roles: ['admin'] },
       { label: 'Homebase Schedule',      icon: Database,      href: '/admin/homebase-schedule',            roles: ['admin', 'pod_lead'] },
       { label: 'Scheduled Hours',        icon: Clock,         href: '/admin/scheduled-hours',              roles: ['admin', 'pod_lead'] },
       { label: 'SLA Average',            icon: Target,        href: '/admin/sla-aggregate',                roles: ['admin', 'pod_lead'] },

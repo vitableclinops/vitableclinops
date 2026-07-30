@@ -43,11 +43,8 @@ import LicenseOptimizerPage from "./pages/LicenseOptimizerPage";
 import OpsDashboardPage from "./pages/OpsDashboardPage";
 import CoverageCopilotPage from "./pages/CoverageCopilotPage";
 import DemandForecastPage from "./pages/DemandForecastPage";
-import MonthlyForecastPage from "./pages/MonthlyForecastPage";
-import ShiftPlanPage from "./pages/ShiftPlanPage";
 import HomebaseSchedulePage from "./pages/HomebaseSchedulePage";
 import ScheduledHoursPage from "./pages/ScheduledHoursPage";
-import WorkbenchPage from "./pages/WorkbenchPage";
 import UtilizationPage from "./pages/UtilizationPage";
 import RoutingIntelligencePage from "./pages/RoutingIntelligencePage";
 import DemandMatchingEnginePage from "./pages/DemandMatchingEnginePage";
@@ -61,7 +58,6 @@ import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
 import UsabilityGuidePage from "./pages/UsabilityGuidePage";
 import NotFound from "./pages/NotFound";
 import SchedulingWorkbenchPage from "./pages/scheduling/SchedulingWorkbenchPage";
-import HomebaseScheduleHubPage from "./pages/scheduling/HomebaseScheduleHubPage";
 
 const queryClient = new QueryClient();
 
@@ -326,15 +322,13 @@ const App = () => (
                 <DemandForecastPage />
               </ProtectedRoute>
             } />
+            {/* Retired: superseded by the Scheduling Dashboard's Forecast stage */}
             <Route path="/admin/monthly-forecast" element={
-              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
-                <MonthlyForecastPage />
-              </ProtectedRoute>
+              <Navigate to="/scheduling/workbench?section=forecast&scope=all" replace />
             } />
+            {/* Retired: superseded by the Scheduling Dashboard's Finalize stage */}
             <Route path="/admin/shift-plan" element={
-              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
-                <ShiftPlanPage />
-              </ProtectedRoute>
+              <Navigate to="/scheduling/workbench?section=publish&scope=all" replace />
             } />
             <Route path="/admin/homebase-schedule" element={
               <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
@@ -346,10 +340,9 @@ const App = () => (
                 <ScheduledHoursPage />
               </ProtectedRoute>
             } />
+            {/* Retired: superseded by the Scheduling Dashboard */}
             <Route path="/admin/workbench" element={
-              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
-                <WorkbenchPage />
-              </ProtectedRoute>
+              <Navigate to="/scheduling/workbench" replace />
             } />
             <Route path="/admin/utilization" element={
               <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
@@ -412,15 +405,14 @@ const App = () => (
                 <SchedulingWorkbenchPage />
               </ProtectedRoute>
             } />
+            {/* Retired: exact duplicate of /admin/homebase-schedule */}
             <Route path="/scheduling/homebase-schedule" element={
-              <ProtectedRoute requiredRoles={['admin', 'scheduling', 'pod_lead']}>
-                <HomebaseScheduleHubPage />
-              </ProtectedRoute>
+              <Navigate to="/admin/homebase-schedule" replace />
             } />
             <Route path="/scheduling/mental-health" element={
               <Navigate to="/scheduling/workbench?section=readiness&scope=mental_health" replace />
             } />
-            <Route path="/scheduling/forecast" element={<Navigate to="/scheduling/workbench?section=coverage-plan&view=forecast&scope=all" replace />} />
+            <Route path="/scheduling/forecast" element={<Navigate to="/scheduling/workbench?section=forecast&scope=all" replace />} />
             <Route path="/scheduling/june-mvp" element={<Navigate to="/scheduling/workbench" replace />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
