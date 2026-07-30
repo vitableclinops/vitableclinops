@@ -3194,7 +3194,7 @@ function SopCard() {
 function SopStep({ day, label }: { day: string; label: string }) {
   return (
     <div className="flex items-start gap-2">
-      <Badge variant="outline" className="bg-white">
+      <Badge variant="outline" className="bg-background">
         {day}
       </Badge>
       <span className="text-muted-foreground">{label}</span>
@@ -7256,7 +7256,7 @@ function MentalHealthDashboard({
                         {requestedHoursFromUnmatchedSubmission(row).toFixed(1)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="bg-white">
+                        <Badge variant="outline" className="bg-background">
                           {formatMonthLabel(row.target_month)}
                         </Badge>
                       </TableCell>
@@ -13209,7 +13209,7 @@ function AuditPanel({
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs">{e.reasonClass}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[420px]">
+                    <TableCell className="text-xs text-muted-foreground max-w-96">
                       {e.reasonText}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{e.hours.toFixed(1)}</TableCell>
