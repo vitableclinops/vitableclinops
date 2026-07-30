@@ -52,7 +52,7 @@ const items = [
 
 // Supporting tools, kept separate from the primary five-stage flow.
 const secondaryItems = [
-  { label: 'Exceptions', icon: ClipboardList, href: '/scheduling/workbench?section=exceptions&scope=all' },
+  { label: 'Exceptions', icon: ClipboardList, href: '/scheduling/workbench?section=review&view=exceptions&scope=all' },
   { label: 'Data & Sources', icon: HelpCircle, href: '/scheduling/workbench?section=data-sources&scope=all' },
   { label: 'Homebase Schedule', icon: Database, href: '/admin/homebase-schedule' },
   { label: 'Mental Health', icon: Brain, href: '/scheduling/workbench?section=readiness&scope=mental_health' },
