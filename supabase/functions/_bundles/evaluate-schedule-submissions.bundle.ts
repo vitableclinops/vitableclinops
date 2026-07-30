@@ -3987,6 +3987,7 @@ Deno.serve(async (req: Request) => {
     skipped_no_hours: 0,
     skipped_no_licensed_states: 0,
     skipped_awaiting_review: 0,
+    skipped_no_demand_targets: 0,
     published_locks: 0,
     published_lock_hours: 0,
     errors: 0,
@@ -4004,7 +4005,10 @@ Deno.serve(async (req: Request) => {
     if (!monthFilter && !providerFilter) {
       // Pick up new pending rows AND previously-flagged needs_review rows so
       // a re-run after fixing the override config or raw entry decides them.
-      pendingQuery = pendingQuery.in('decision_status', ['pending', 'needs_review']);
+      // Include 'declined' so submissions that were decided in an earlier run
+      // -- possibly long before the month's demand forecast existed -- are
+      // reconsidered on every re-run instead of being stranded forever.
+      pendingQuery = pendingQuery.in('decision_status', ['pending', 'needs_review', 'declined']);
     }
     pendingQuery = pendingQuery.range(0, 49999);
 
@@ -4522,8 +4526,31 @@ Deno.serve(async (req: Request) => {
     const beforeRecalculation = await loadRecalculationSnapshots(supabase, groupKeysSorted);
     const telehealthCandidates: TelehealthAllocationCandidate[] = [];
 
+    // ── Guard: never evaluate a month with no demand targets ───────────
+    // If the demand forecast for a month has not been computed yet, every
+    // state shows zero available hours and the allocator silently declines
+    // everyone. Skip those months instead so submissions stay pending.
+    const monthsWithDemand = new Set<string>();
+    for (const [key, visits] of demandByKey) {
+      if (Number(visits) > 0) monthsWithDemand.add(key.slice(key.indexOf('_') + 1));
+    }
+    for (const [key, hours] of serviceLineDemandByKey) {
+      if (Number(hours) > 0) monthsWithDemand.add(key.slice(key.indexOf('_') + 1));
+    }
+
     // ── Evaluate each group ─────────────────────────────────────────────
     for (const key of groupKeysSorted) {
+      const groupMonth = key.split('|')[1];
+      if (!monthsWithDemand.has(groupMonth)) {
+        counters.skipped_no_demand_targets++;
+        decisions.push({
+          group: key,
+          status: 'skipped',
+          reason: 'no_demand_targets_for_month',
+          target_month: groupMonth,
+        });
+        continue;
+      }
       const allGroupSubs = submissionsByGroup.get(key)!;
       try {
         counters.groups++;
