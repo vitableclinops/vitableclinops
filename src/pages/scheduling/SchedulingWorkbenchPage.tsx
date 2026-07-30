@@ -2783,7 +2783,7 @@ export default function SchedulingWorkbenchPage({
               </TabsTrigger>
               <TabsTrigger value="overflow">
                 <Plus className="h-3.5 w-3.5 mr-1" />Overflow
-                {isAugust2026Month(month) && scopedCutRows.length > 0 && (
+                {scopedCutRows.length > 0 && (
                   <Badge className="ml-1 bg-blue-100 text-blue-800">{scopedCutRows.length}</Badge>
                 )}
               </TabsTrigger>
@@ -8137,16 +8137,10 @@ function OverflowPanel({
     );
   }
 
-  if (!isAugust2026Month(month)) {
-    return (
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>
-          Overflow tracking starts with August 2026. June and July keep their original declined/cut views.
-        </AlertDescription>
-      </Alert>
-    );
-  }
+  // The core overflow view (held backup hours from cut shifts) works for any
+  // month. The DirectShifts-NP target block below is driven by hardcoded
+  // August 2026 roster/floor constants, so it stays gated to that month.
+  const isAug = isAugust2026Month(month);
 
   const rowByProvider = new Map(rows.map(row => [row.provider_id, row]));
   const today = new Date().toISOString().slice(0, 10);
@@ -8194,7 +8188,7 @@ function OverflowPanel({
   const availableHours = entries
     .filter(entry => entry.status === 'Available')
     .reduce((sum, entry) => sum + entry.hours, 0);
-  const dsNpRows = AUGUST_2026_DIRECTSHIFTS_NP_NAMES.map(name => {
+  const dsNpRows = (isAug ? AUGUST_2026_DIRECTSHIFTS_NP_NAMES : []).map(name => {
     const targetName = normalizeOverflowName(name);
     const row = rows.find(candidate => {
       const candidateName = normalizeOverflowName(candidate.provider_name);
@@ -8226,18 +8220,23 @@ function OverflowPanel({
           value={entries.length.toString()}
           sub="Grouped by provider/state"
         />
-        <SummaryCard
-          label="DS NP floor"
-          value={`${AUGUST_2026_DS_NP_MIN_HOURS} hrs`}
-          sub={`Target ${AUGUST_2026_DS_NP_TARGET_HOURS} hrs`}
-        />
-        <SummaryCard
-          label="Fairness guard"
-          value={`${AUGUST_2026_FAIRNESS_TOLERANCE_PCT} pts`}
-          sub={`Deadline ${AUGUST_2026_JOTFORM_DEADLINE_LABEL}`}
-        />
+        {isAug && (
+          <>
+            <SummaryCard
+              label="DS NP floor"
+              value={`${AUGUST_2026_DS_NP_MIN_HOURS} hrs`}
+              sub={`Target ${AUGUST_2026_DS_NP_TARGET_HOURS} hrs`}
+            />
+            <SummaryCard
+              label="Fairness guard"
+              value={`${AUGUST_2026_FAIRNESS_TOLERANCE_PCT} pts`}
+              sub={`Deadline ${AUGUST_2026_JOTFORM_DEADLINE_LABEL}`}
+            />
+          </>
+        )}
       </div>
 
+      {isAug && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">DirectShifts NP target status</CardTitle>
@@ -8282,6 +8281,7 @@ function OverflowPanel({
           </Table>
         </CardContent>
       </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -8308,7 +8308,7 @@ function OverflowPanel({
               {entries.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
-                    No overflow hours have been generated yet. Run allocation after August submissions are in.
+                    No overflow hours have been generated yet. Run allocation once this month's submissions are in.
                   </TableCell>
                 </TableRow>
               )}
