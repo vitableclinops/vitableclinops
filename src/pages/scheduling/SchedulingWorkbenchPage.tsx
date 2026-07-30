@@ -4588,7 +4588,10 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
     add(`States still under-covered during scheduling: ${stateGaps}.`);
   }
 
-  const lower = raw.toLowerCase();
+  const lower = normalizeReasonText(raw);
+  if (lower.includes('no_state_demand_remaining')) {
+    add('No demand-hour gap was left in any of this provider\'s licensed states when the allocator reached them — this is a demand/capacity outcome, not a licensing problem.');
+  }
   if (lower.includes('outside') && lower.includes('business')) {
     add('Some hours were cut because they were outside approved scheduling hours.');
   }
@@ -4613,6 +4616,15 @@ function formatDecisionNoteForStaff(notes: string | null | undefined): string {
 
   return lines.length > 0 ? lines.join('\n') : raw;
 }
+
+// The allocator's most common decline text is
+// "no demand-hour gap remained in any licensed state ...". It contains the word
+// "licensed", which used to trip the license/state-issue matchers below and
+// mislabel routine demand-exhaustion cuts as licensing problems. Normalize that
+// phrase to a distinct token before any keyword matching.
+const NO_DEMAND_GAP_RE = /no demand[- ]hour gap remained in any licensed state/gi;
+const normalizeReasonText = (raw: string | null | undefined): string =>
+  (raw ?? '').toLowerCase().replace(NO_DEMAND_GAP_RE, ' no_state_demand_remaining ');
 
 type ReasonTag = {
   label: string;
