@@ -3346,7 +3346,7 @@ function ShiftListInline({
                   </Badge>
                 )}
                 {schedulingNote && (
-                  <div className="mt-1 max-w-[260px] text-xs leading-snug text-muted-foreground">
+                  <div className="mt-1 max-w-64 text-xs leading-snug text-muted-foreground">
                     {schedulingNote}
                   </div>
                 )}
@@ -6192,7 +6192,7 @@ function PublishingQueue({
                       </Badge>
                     )}
                     {schedulingNote && (
-                      <div className="mt-1 max-w-[280px] text-xs leading-snug text-muted-foreground">
+                      <div className="mt-1 max-w-72 text-xs leading-snug text-muted-foreground">
                         {schedulingNote}
                       </div>
                     )}
@@ -8661,7 +8661,7 @@ function DeclinedHoursPanel({
                         <span className="text-muted-foreground">No eligible states found</span>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[260px]">
+                    <TableCell className="align-top text-xs max-w-64">
                       {cuts.length === 0 ? (
                         <span className="text-muted-foreground">No cut rows emitted</span>
                       ) : (
@@ -8685,7 +8685,7 @@ function DeclinedHoursPanel({
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[360px]">
+                    <TableCell className="align-top text-xs max-w-96">
                       <ReasonSummary
                         text={reasonText}
                         detailsText={reasonDetails}
@@ -8935,7 +8935,7 @@ function OverflowPanel({
                       {entry.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="max-w-[360px] text-xs text-muted-foreground">
+                  <TableCell className="max-w-96 text-xs text-muted-foreground">
                     <ReasonSummary text={entry.reasonText} maxTags={3} />
                   </TableCell>
                 </TableRow>
@@ -10955,7 +10955,7 @@ function CostPerVisitPanel({
   const recalculateButton = recalculationLocked ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="inline-flex h-9 shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+        <div className={cn('inline-flex h-9 shrink-0 items-center rounded-md border px-3 text-sm font-medium', TONE_AMBER)}>
           <Lock className="h-4 w-4 mr-1" />
           Allocation closed
         </div>
@@ -11072,7 +11072,7 @@ function CostPerVisitPanel({
           </div>
 
           {missingCount > 0 && (
-            <Alert className="border-amber-200 bg-amber-50">
+            <Alert className={TONE_AMBER}>
               <AlertCircle className="h-4 w-4 text-amber-700" />
               <AlertDescription className="text-xs text-amber-900">
                 CPV excludes {formatHours(model.missingRateHours)} accepted hour{model.missingRateHours === 1 ? '' : 's'} without a provider rate.
@@ -11336,7 +11336,7 @@ function CostProviderTableRow({ row }: { row: SchedulingCostProviderRow }) {
             <div className="text-xs text-muted-foreground">{row.rateSourceLabel}</div>
           </>
         ) : (
-          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
+          <Badge variant="outline" className={TONE_AMBER}>
             Missing
           </Badge>
         )}
@@ -11756,7 +11756,7 @@ function CoverageGapsPanel({
                   <TableCell>
                     <Badge className={guidance.className}>{guidance.label}</Badge>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[260px]">
+                  <TableCell className="text-xs text-muted-foreground max-w-64">
                     {guidance.action}
                   </TableCell>
                 </TableRow>
@@ -12270,13 +12270,13 @@ function DecisionReasonSummaryTiles({ row }: { row: ProviderPublishView }) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="space-y-1.5">
-      <div className="grid min-w-[240px] max-w-[320px] grid-cols-2 gap-1.5">
+      <div className="grid min-w-60 max-w-80 grid-cols-2 gap-1.5">
         {visibleTiles.map(tile => (
           <div
             key={`${tile.label}-${tile.value}`}
             title={tile.detail ?? tile.value}
             className={cn(
-              'min-h-[46px] rounded-md border px-2 py-1.5 shadow-sm',
+              'min-h-12 rounded-md border px-2 py-1.5 shadow-sm',
               REASON_TILE_STYLES[tile.tone],
             )}
           >
@@ -12289,7 +12289,7 @@ function DecisionReasonSummaryTiles({ row }: { row: ProviderPublishView }) {
           </div>
         ))}
         {tiles.length > visibleTiles.length && (
-          <div className="flex min-h-[46px] items-center justify-center rounded-md border border-slate-200 bg-slate-50/90 px-2 py-1.5 text-xs font-medium text-slate-700">
+          <div className="flex min-h-12 items-center justify-center rounded-md border border-slate-200 bg-slate-50/90 px-2 py-1.5 text-xs font-medium text-slate-700">
             +{tiles.length - visibleTiles.length} more
           </div>
         )}
@@ -12610,7 +12610,7 @@ function MatchingPanel({
                     <Badge
                       variant="outline"
                       className={cn(
-                        'mt-1 max-w-[180px] whitespace-normal text-xs font-medium leading-tight',
+                        'mt-1 max-w-44 whitespace-normal text-xs font-medium leading-tight',
                         priority.key === 'clinical_supervisor'
                           ? REASON_TAG_STYLES.emerald
                           : REASON_TAG_STYLES.blue,
@@ -12645,7 +12645,7 @@ function MatchingPanel({
                   <TableCell className={`text-right tabular-nums ${declined > 0 ? 'text-red-700' : ''}`}>
                     {declined.toFixed(1)}
                   </TableCell>
-                  <TableCell className="align-top text-xs text-muted-foreground min-w-[280px] max-w-[340px]">
+                  <TableCell className="align-top text-xs text-muted-foreground min-w-72 max-w-80">
                     <DecisionReasonSummaryTiles row={r} />
                   </TableCell>
                   <TableCell>
