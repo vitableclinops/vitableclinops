@@ -2172,7 +2172,7 @@ export default function SchedulingWorkbenchPage({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Select value={activeScope} onValueChange={(v) => onScopeChange(v as SchedulingWorkbenchScope)}>
-            <SelectTrigger className="w-[168px]">
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -2182,7 +2182,7 @@ export default function SchedulingWorkbenchPage({
           </Select>
           {isMh && (
             <Select value={mhServiceLine} onValueChange={(v) => setMhServiceLine(v as 'all' | MentalHealthServiceLine)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -2193,7 +2193,7 @@ export default function SchedulingWorkbenchPage({
             </Select>
           )}
           <Select value={month} onValueChange={onMonthChange}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -3900,7 +3900,7 @@ function AmendmentRequestsPanel({
             </p>
           </div>
           <Select value={filter} onValueChange={value => setFilter(value as AmendmentFilter)}>
-            <SelectTrigger className="w-[190px]">
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -3915,23 +3915,23 @@ function AmendmentRequestsPanel({
           </Select>
         </div>
         <div className="mt-3 grid gap-2 md:grid-cols-5">
-          <div className="rounded-md border border-purple-200 bg-purple-50 px-3 py-2">
+          <div className={cn('rounded-md border px-3 py-2', TONE_PURPLE)}>
             <div className="text-xs text-purple-900">Requested</div>
             <div className="text-lg font-semibold text-purple-900">{counts.requested}</div>
           </div>
-          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+          <div className={cn('rounded-md border px-3 py-2', TONE_BLUE)}>
             <div className="text-xs text-blue-900">Approved</div>
             <div className="text-lg font-semibold text-blue-900">{counts.approved}</div>
           </div>
-          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+          <div className={cn('rounded-md border px-3 py-2', TONE_EMERALD)}>
             <div className="text-xs text-emerald-900">Applied</div>
             <div className="text-lg font-semibold text-emerald-900">{counts.applied}</div>
           </div>
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <div className={cn('rounded-md border px-3 py-2', TONE_AMBER)}>
             <div className="text-xs text-amber-900">Parked</div>
             <div className="text-lg font-semibold text-amber-900">{counts.parked}</div>
           </div>
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+          <div className={cn('rounded-md border px-3 py-2', TONE_RED)}>
             <div className="text-xs text-red-900">Rejected</div>
             <div className="text-lg font-semibold text-red-900">{counts.rejected}</div>
           </div>
@@ -5625,7 +5625,7 @@ function RecalculationChangeReport({
             </p>
           </div>
           {(selectedRun || showLocalFallback) && (
-            <Badge variant="outline" className="w-fit bg-blue-50 text-blue-800">
+            <Badge variant="outline" className={cn('w-fit', TONE_BLUE)}>
               {activeChangeCount} provider{activeChangeCount === 1 ? '' : 's'} changed
             </Badge>
           )}
@@ -5710,12 +5710,12 @@ function RecalculationChangeReport({
                       'rounded-md border px-3 py-2 text-left text-xs transition-colors',
                       selected
                         ? 'border-blue-300 bg-blue-50 text-blue-950'
-                        : 'bg-white hover:bg-muted/40',
+                        : 'bg-card hover:bg-muted/40',
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium">{formatRelativeTime(run.created_at)}</span>
-                      <Badge variant="outline" className="bg-white text-xs">
+                      <Badge variant="outline" className="bg-background text-xs">
                         {run.changed_provider_count} changed
                       </Badge>
                     </div>
@@ -5933,7 +5933,7 @@ function PendingRecalculationPanel({
               </p>
             </div>
             {recalculationLocked ? (
-              <div className="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+              <div className={cn('inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium', TONE_AMBER)}>
                 <Lock className="mr-1 h-4 w-4" />
                 Allocation closed
               </div>
@@ -5949,7 +5949,7 @@ function PendingRecalculationPanel({
             )}
           </div>
           {recalculationLocked && activeBuild && (
-            <Alert className="mt-3 border-amber-200 bg-amber-50">
+            <Alert className={cn('mt-3', TONE_AMBER)}>
               <Lock className="h-4 w-4 text-amber-700" />
               <AlertDescription className="text-amber-900">
                 Draft v{activeBuild.version_number} is in {pipelineStageLabel(stage)}. Changes
@@ -5990,7 +5990,7 @@ function PendingRecalculationPanel({
                       {formatHours(expandedSubmittedHours(row))}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="bg-blue-50 text-blue-800">
+                      <Badge variant="outline" className={TONE_BLUE}>
                         Needs allocation
                       </Badge>
                     </TableCell>
@@ -6091,7 +6091,7 @@ function PublishingQueue({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -6910,7 +6910,7 @@ function NeedsReviewPanel({
                       {formatHours(expandedSubmittedHours(sub))}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-md">
-                      <Badge variant="outline" className="mb-1 bg-orange-50 text-orange-800">
+                      <Badge variant="outline" className={cn('mb-1', TONE_ORANGE)}>
                         {reasonLabel}
                       </Badge>
                       <div>
