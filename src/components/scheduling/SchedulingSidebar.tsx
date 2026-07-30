@@ -13,19 +13,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   AlertCircle,
-  CalendarCheck,
   Brain,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
   Database,
   HelpCircle,
-  History,
   Inbox,
   LogOut,
   LayoutDashboard,
   Map as MapIcon,
   Send,
+  TrendingUp,
   User,
   ChevronDown,
 } from 'lucide-react';
@@ -38,21 +37,25 @@ interface SchedulingSidebarProps {
   showAdminDashboardLink?: boolean;
 }
 
-// Ordered to mirror the five-stage pipeline (Intake → Allocate/Readiness →
-// Review → Publish → Amend) so the sidebar reads as the workflow, and every
-// stage has a direct destination — including Intake and Amendments, which
-// previously had no top-level entry.
+// Mirrors the in-page workflow exactly: an Overview landing plus the five
+// stages in the order the work is done (Forecast → Intake → Build Schedule →
+// Review Exceptions → Finalize), then a secondary group of supporting tools.
+// Keeps one navigation source of truth so the sidebar and the tab bar agree.
 const items = [
-  { label: 'Readiness', icon: CalendarCheck, href: '/scheduling/workbench?section=readiness&scope=all' },
+  { label: 'Overview', icon: LayoutDashboard, href: '/scheduling/workbench?section=readiness&scope=all' },
+  { label: 'Forecast', icon: TrendingUp, href: '/scheduling/workbench?section=forecast&scope=all' },
   { label: 'Intake', icon: Inbox, href: '/scheduling/workbench?section=intake&view=submissions&scope=all' },
-  { label: 'Review', icon: AlertCircle, href: '/scheduling/workbench?section=review&view=decisions&scope=all' },
-  { label: 'Coverage Plan', icon: MapIcon, href: '/scheduling/workbench?section=coverage-plan&view=coverage&scope=all' },
-  { label: 'Publish', icon: Send, href: '/scheduling/workbench?section=publish&view=provider&scope=all' },
-  { label: 'Amendments', icon: History, href: '/scheduling/workbench?section=review&view=amendments&scope=all' },
-  { label: 'Homebase Schedule', icon: Database, href: '/scheduling/homebase-schedule' },
-  { label: 'Mental Health', icon: Brain, href: '/scheduling/workbench?section=readiness&scope=mental_health' },
+  { label: 'Build Schedule', icon: MapIcon, href: '/scheduling/workbench?section=coverage-plan&view=coverage&scope=all' },
+  { label: 'Review Exceptions', icon: AlertCircle, href: '/scheduling/workbench?section=review&view=decisions&scope=all' },
+  { label: 'Finalize', icon: Send, href: '/scheduling/workbench?section=publish&view=provider&scope=all' },
+];
+
+// Supporting tools, kept separate from the primary five-stage flow.
+const secondaryItems = [
   { label: 'Exceptions', icon: ClipboardList, href: '/scheduling/workbench?section=exceptions&scope=all' },
-  { label: 'Data Sources', icon: HelpCircle, href: '/scheduling/workbench?section=data-sources&scope=all' },
+  { label: 'Data & Sources', icon: HelpCircle, href: '/scheduling/workbench?section=data-sources&scope=all' },
+  { label: 'Homebase Schedule', icon: Database, href: '/admin/homebase-schedule' },
+  { label: 'Mental Health', icon: Brain, href: '/scheduling/workbench?section=readiness&scope=mental_health' },
 ];
 
 export function SchedulingSidebar({
@@ -80,6 +83,35 @@ export function SchedulingSidebar({
     navigate('/auth');
   };
 
+  const renderNavItem = (item: { label: string; icon: typeof LayoutDashboard; href: string }) => {
+    const [path, query = ''] = item.href.split('?');
+    const itemParams = new URLSearchParams(query);
+    const currentParams = new URLSearchParams(location.search);
+    const active =
+      location.pathname === path &&
+      (query
+        ? Array.from(itemParams.entries()).every(
+            ([key, value]) => currentParams.get(key) === value,
+          )
+        : location.search === '');
+    return (
+      <NavLink
+        key={item.href}
+        to={item.href}
+        className={cn(
+          'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          active
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+          collapsed && 'justify-center px-2',
+        )}
+      >
+        <item.icon className="h-4 w-4 shrink-0" />
+        {!collapsed && <span>{item.label}</span>}
+      </NavLink>
+    );
+  };
+
   return (
     <aside
       className={cn(
@@ -105,35 +137,16 @@ export function SchedulingSidebar({
           </Button>
         </div>
 
-        <nav className="flex-1 px-2 py-4 space-y-1">
-          {visibleItems.map(item => {
-            const [path, query = ''] = item.href.split('?');
-            const itemParams = new URLSearchParams(query);
-            const currentParams = new URLSearchParams(location.search);
-            const active =
-              location.pathname === path &&
-              (query
-                ? Array.from(itemParams.entries()).every(
-                    ([key, value]) => currentParams.get(key) === value,
-                  )
-                : location.search === '');
-            return (
-              <NavLink
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
-                  collapsed && 'justify-center px-2',
-                )}
-              >
-                <item.icon className="h-4 w-4 shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
-              </NavLink>
-            );
-          })}
+        <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+          {visibleItems.map(item => renderNavItem(item))}
+
+          {!collapsed && (
+            <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Tools
+            </p>
+          )}
+          {collapsed && <div className="my-2 border-t" />}
+          {secondaryItems.map(item => renderNavItem(item))}
         </nav>
 
         <div className="border-t p-2">
