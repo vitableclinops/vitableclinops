@@ -1007,7 +1007,7 @@ const safeArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : [
 export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
 type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
 type PublishTabKey = 'provider' | 'queue' | 'day' | 'history';
-type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate' | 'amendments';
+type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate' | 'amendments' | 'exceptions';
 type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'overflow' | 'cost';
 type ProviderTimeOffEntry = {
   row: ProviderPublishView;
@@ -1021,17 +1021,19 @@ const TOP_TAB_VALUES = [
   'review',
   'coverage-plan',
   'publish',
-  'exceptions',
   'data-sources',
 ] as const;
 type TopTabKey = (typeof TOP_TAB_VALUES)[number];
 
 const topTabFromParam = (tab: string | null, section?: string | null): TopTabKey => {
   if (section === 'allocate' || tab === 'allocate') return 'review';
+  // Exceptions moved from a top-level tab to a Review Exceptions sub-tab;
+  // keep legacy section=exceptions links landing on the Review stage.
+  if (section === 'exceptions' || tab === 'exceptions') return 'review';
   if (TOP_TAB_VALUES.includes(section as TopTabKey)) return section as TopTabKey;
   if (TOP_TAB_VALUES.includes(tab as TopTabKey)) return tab as TopTabKey;
   if (tab === 'availability') return 'intake';
-  if (tab === 'forecast' || tab === 'matching' || tab === 'coverage' || tab === 'declined' || tab === 'cost') {
+  if (tab === 'matching' || tab === 'coverage' || tab === 'declined' || tab === 'cost') {
     return 'coverage-plan';
   }
   if (tab === 'audit') return 'data-sources';
@@ -1062,6 +1064,7 @@ const reviewTabFromView = (view: string | null): ReviewTabKey => {
     view === 'recalculate'
   ) return 'recalculate';
   if (view === 'amendments' || view === 'history') return 'amendments';
+  if (view === 'exceptions') return 'exceptions';
   return 'decisions';
 };
 
@@ -2245,17 +2248,6 @@ export default function SchedulingWorkbenchPage({
             variant="ghost"
             size="sm"
             onClick={() => {
-              setTopTab('exceptions');
-              updateWorkbenchParams({ section: 'exceptions', replace: true });
-            }}
-          >
-            <ClipboardList className="h-4 w-4 mr-1" />
-            Exceptions
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
               setTopTab('data-sources');
               updateWorkbenchParams({ section: 'data-sources', replace: true });
             }}
@@ -2421,10 +2413,7 @@ export default function SchedulingWorkbenchPage({
             onJumpToReview={jumpToReview}
             onJumpToPublish={jumpToPublish}
             onJumpToDeclined={() => jumpToCoveragePlan('declined')}
-            onJumpToExceptions={() => {
-              setTopTab('exceptions');
-              updateWorkbenchParams({ section: 'exceptions', replace: true });
-            }}
+            onJumpToExceptions={() => jumpToReview('exceptions')}
           />
           <SopCard />
           {!publishRowsLoading && publishShiftRows.length === 0 && acceptedRows.length > 0 && (
@@ -2695,6 +2684,7 @@ export default function SchedulingWorkbenchPage({
                   </Badge>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="exceptions">Exception rules</TabsTrigger>
             </TabsList>
 
             <TabsContent value="decisions" className="mt-4 space-y-4">
@@ -2759,6 +2749,10 @@ export default function SchedulingWorkbenchPage({
                   )
                 }
               />
+            </TabsContent>
+
+            <TabsContent value="exceptions" className="mt-4 space-y-4">
+              <SchedulingExceptionsPanel month={month} />
             </TabsContent>
           </Tabs>
         </TabsContent>
@@ -3160,11 +3154,6 @@ export default function SchedulingWorkbenchPage({
           <PublishHistoryPanel month={month} entries={scopedAuditEntries} />
         </TabsContent>
           </Tabs>
-        </TabsContent>
-
-        {/* ============ EXCEPTIONS ============ */}
-        <TabsContent value="exceptions" className="mt-4 space-y-4">
-          <SchedulingExceptionsPanel month={month} />
         </TabsContent>
 
         {/* ============ AUDIT / WHY ============ */}
