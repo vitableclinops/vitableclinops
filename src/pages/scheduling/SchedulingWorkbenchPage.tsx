@@ -10655,7 +10655,7 @@ function PublishInstructionsCard() {
       <CardContent>
         <div className="grid gap-2 md:grid-cols-4">
           {steps.map((step, index) => (
-            <div key={step} className="rounded-md border border-blue-200 bg-white px-3 py-2 text-xs">
+            <div key={step} className="rounded-md border border-blue-200 bg-background px-3 py-2 text-xs">
               <div className="font-medium text-blue-900">Step {index + 1}</div>
               <div className="mt-1 text-blue-800">{step}</div>
             </div>
@@ -10826,7 +10826,7 @@ function PublishGateBanner({
 
   if (stopItems.length > 0) {
     return (
-      <Alert variant="destructive" className="bg-red-50">
+      <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/20">
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
           <div className="font-medium">Stop before publishing</div>
@@ -10861,7 +10861,7 @@ function PublishGateBanner({
         : `All ${summary.totalShifts} shift${summary.totalShifts === 1 ? '' : 's'} are posted and confirmed.`;
 
   return (
-    <Alert className="border-emerald-200 bg-emerald-50">
+    <Alert className="border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20">
       <CheckCircle2 className="h-4 w-4 text-emerald-700" />
       <AlertDescription>
         <div className="font-medium text-emerald-900">{title}</div>
