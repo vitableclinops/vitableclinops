@@ -2741,7 +2741,7 @@ export default function SchedulingWorkbenchPage({
                     {
                       onSuccess: () =>
                         toast.success(
-                          `${amendment.provider_name} amendment marked ${status.replaceAll('_', ' ')}`,
+                          `${amendment.provider_name} amendment marked ${status.replace(/_/g, ' ')}`,
                         ),
                       onError: error =>
                         toast.error(`Could not update amendment: ${(error as Error).message}`),
@@ -3972,7 +3972,7 @@ function AmendmentRequestsPanel({
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">
-                      {row.request_type.replaceAll('_', ' ')}
+                      {row.request_type.replace(/_/g, ' ')}
                     </Badge>
                   </TableCell>
                   <TableCell className="max-w-xl">
