@@ -966,7 +966,7 @@ function PublishDisplayHours({ display }: { display: PublishDisplayValues }) {
     <div>
       <div>{formatHours(display.displayAcceptedHours)}</div>
       {display.hasPublishedRows && (
-        <div className="text-[11px] leading-tight text-muted-foreground">
+        <div className="text-xs leading-tight text-muted-foreground">
           {publishDisplaySplit(display)}
         </div>
       )}
@@ -3060,7 +3060,7 @@ export default function SchedulingWorkbenchPage({
                                 )}
                               </div>
                               {ehrBulkBlocked && (
-                                <div className="mt-1 text-[11px] text-muted-foreground">
+                                <div className="mt-1 text-xs text-muted-foreground">
                                   Finish Homebase first. EHR can only be marked after Homebase is complete.
                                 </div>
                               )}
@@ -3346,7 +3346,7 @@ function ShiftListInline({
                   </Badge>
                 )}
                 {schedulingNote && (
-                  <div className="mt-1 max-w-[260px] text-[11px] leading-snug text-muted-foreground">
+                  <div className="mt-1 max-w-[260px] text-xs leading-snug text-muted-foreground">
                     {schedulingNote}
                   </div>
                 )}
@@ -3370,7 +3370,7 @@ function ShiftListInline({
                   onToggle={onToggle}
                 />
                 {!hbDone && (
-                  <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                  <div className="mt-1 text-xs leading-tight text-muted-foreground">
                     Finish Homebase first
                   </div>
                 )}
@@ -3916,23 +3916,23 @@ function AmendmentRequestsPanel({
         </div>
         <div className="mt-3 grid gap-2 md:grid-cols-5">
           <div className="rounded-md border border-purple-200 bg-purple-50 px-3 py-2">
-            <div className="text-[11px] text-purple-900">Requested</div>
+            <div className="text-xs text-purple-900">Requested</div>
             <div className="text-lg font-semibold text-purple-900">{counts.requested}</div>
           </div>
           <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
-            <div className="text-[11px] text-blue-900">Approved</div>
+            <div className="text-xs text-blue-900">Approved</div>
             <div className="text-lg font-semibold text-blue-900">{counts.approved}</div>
           </div>
           <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
-            <div className="text-[11px] text-emerald-900">Applied</div>
+            <div className="text-xs text-emerald-900">Applied</div>
             <div className="text-lg font-semibold text-emerald-900">{counts.applied}</div>
           </div>
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-            <div className="text-[11px] text-amber-900">Parked</div>
+            <div className="text-xs text-amber-900">Parked</div>
             <div className="text-lg font-semibold text-amber-900">{counts.parked}</div>
           </div>
           <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
-            <div className="text-[11px] text-red-900">Rejected</div>
+            <div className="text-xs text-red-900">Rejected</div>
             <div className="text-lg font-semibold text-red-900">{counts.rejected}</div>
           </div>
         </div>
@@ -4720,23 +4720,23 @@ function ReasonSummary({
           <Badge
             key={tag.label}
             variant="outline"
-            className={cn('text-[11px] font-medium', REASON_TAG_STYLES[tag.tone ?? 'slate'])}
+            className={cn('text-xs font-medium', REASON_TAG_STYLES[tag.tone ?? 'slate'])}
           >
             {tag.label}
           </Badge>
         ))}
         {tags.length > visibleTags.length && (
-          <Badge variant="outline" className="text-[11px] font-medium">
+          <Badge variant="outline" className="text-xs font-medium">
             +{tags.length - visibleTags.length}
           </Badge>
         )}
       </div>
       {details && (
         <details>
-          <summary className="cursor-pointer text-[11px] text-muted-foreground">
+          <summary className="cursor-pointer text-xs text-muted-foreground">
             Details
           </summary>
-          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-snug text-muted-foreground">
+          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-xs leading-snug text-muted-foreground">
             {details}
           </div>
         </details>
@@ -4848,20 +4848,20 @@ function AvailabilitySubmissionsPanel({
             Source: provider availability submissions from Jotform, synced automatically.
           </p>
           <div className="mt-3 grid gap-2 md:grid-cols-3">
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+            <div className={cn('rounded-md border px-3 py-2', TONE_RED)}>
               <div className="text-xs font-medium text-red-900">Blocked logic errors</div>
               <div className="mt-1 text-lg font-semibold text-red-900">{branchSummary.blocked}</div>
-              <div className="text-[11px] leading-snug text-red-800">Fix before allocation.</div>
+              <div className="text-xs leading-snug text-red-800">Fix before allocation.</div>
             </div>
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+            <div className={cn('rounded-md border px-3 py-2', TONE_AMBER)}>
               <div className="text-xs font-medium text-amber-900">Non-blocking flags</div>
               <div className="mt-1 text-lg font-semibold text-amber-900">{branchSummary.flagged}</div>
-              <div className="text-[11px] leading-snug text-amber-800">Can flow; review in parallel if needed.</div>
+              <div className="text-xs leading-snug text-amber-800">Can flow; review in parallel if needed.</div>
             </div>
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <div className={cn('rounded-md border px-3 py-2', TONE_EMERALD)}>
               <div className="text-xs font-medium text-emerald-900">Clean intake</div>
               <div className="mt-1 text-lg font-semibold text-emerald-900">{branchSummary.clean}</div>
-              <div className="text-[11px] leading-snug text-emerald-800">Ready for allocation.</div>
+              <div className="text-xs leading-snug text-emerald-800">Ready for allocation.</div>
             </div>
           </div>
         </CardHeader>
@@ -4926,15 +4926,15 @@ function AvailabilitySubmissionsPanel({
                         {intakeBranch.label}
                       </Badge>
                       <div className="mt-1 text-muted-foreground">{intakeBranch.detail}</div>
-                      <div className="mt-1 text-[11px] text-muted-foreground">
+                      <div className="mt-1 text-xs text-muted-foreground">
                         Owner: {intakeBranch.owner}
                       </div>
                       {intakeBranch.issues.length > 0 && (
                         <details className="mt-1">
-                          <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                          <summary className="cursor-pointer text-xs text-muted-foreground">
                             Why
                           </summary>
-                          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-snug text-muted-foreground">
+                          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-xs leading-snug text-muted-foreground">
                             {intakeBranch.issues.slice(0, 5).join('\n')}
                           </div>
                         </details>
@@ -4995,7 +4995,7 @@ function AvailabilitySubmissionsPanel({
                         </div>
                       )}
                       {row.human_review_notes && (
-                        <div className="mt-1 rounded border bg-muted/40 px-2 py-1 text-[11px] leading-snug text-muted-foreground">
+                        <div className="mt-1 rounded border bg-muted/40 px-2 py-1 text-xs leading-snug text-muted-foreground">
                           {row.human_review_resolved_label
                             ? `${row.human_review_resolved_label}: `
                             : ''}
@@ -5009,7 +5009,7 @@ function AvailabilitySubmissionsPanel({
                             Times updated
                           </Badge>
                           {correctionSummary && (
-                            <div className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                            <div className="mt-1 text-xs leading-snug text-muted-foreground">
                               {correctionSummary}
                             </div>
                           )}
@@ -5021,10 +5021,10 @@ function AvailabilitySubmissionsPanel({
                         </div>
                       )}
                       <details className="mt-2">
-                        <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                        <summary className="cursor-pointer text-xs text-muted-foreground">
                           Raw / parsed
                         </summary>
-                        <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-[10px] leading-snug">
+                        <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-xs leading-snug">
                           {compactJson({
                             parsed_shifts: row.parsed_shifts,
                             raw_answers: row.raw_answers,
@@ -5648,21 +5648,21 @@ function RecalculationChangeReport({
           <div className="rounded-md border px-3 py-2">
             <div className="text-xs text-muted-foreground">Selected run</div>
             <div className="text-lg font-semibold">{activeChangeCount}</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               Changed provider{activeChangeCount === 1 ? '' : 's'} only.
             </div>
           </div>
           <div className="rounded-md border px-3 py-2">
             <div className="text-xs text-muted-foreground">Readiness accepted usable</div>
             <div className="text-lg font-semibold">{readinessAcceptedValue}</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               Same source as Readiness: publish rows assigned to states.
             </div>
           </div>
           <div className="rounded-md border px-3 py-2">
             <div className="text-xs text-muted-foreground">Readiness cut / declined</div>
             <div className="text-lg font-semibold">{formatHours(readinessDeclinedHours)} hrs</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               Same source as Readiness: provider decision declined_hours.
             </div>
           </div>
@@ -5674,7 +5674,7 @@ function RecalculationChangeReport({
                 ({formatHours(currentTotals.publishableHours)} hrs)
               </span>
             </div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               {readinessContext}
             </div>
           </div>
@@ -5715,14 +5715,14 @@ function RecalculationChangeReport({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium">{formatRelativeTime(run.created_at)}</span>
-                      <Badge variant="outline" className="bg-white text-[11px]">
+                      <Badge variant="outline" className="bg-white text-xs">
                         {run.changed_provider_count} changed
                       </Badge>
                     </div>
                     <div className="mt-1 text-muted-foreground">
                       {runDeltaSummary(run)}
                     </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       Run {shortRunId(run.decision_run_id)} · {run.groups_count} evaluated
                     </div>
                   </button>
@@ -5772,7 +5772,7 @@ function RecalculationChangeReport({
                   <TableRow key={change.id}>
                     <TableCell>
                       <div className="font-medium">{change.provider_name}</div>
-                      <Badge variant="outline" className="mt-1 text-[11px]">
+                      <Badge variant="outline" className="mt-1 text-xs">
                         {change.before_status ?? 'none'} -&gt; {change.after_status ?? 'none'}
                       </Badge>
                     </TableCell>
@@ -5830,7 +5830,7 @@ function RecalculationChangeReport({
                   <TableRow key={`${providerName}-${after?.key ?? before?.key}`}>
                     <TableCell>
                       <div className="font-medium">{providerName}</div>
-                      <Badge variant="outline" className="mt-1 text-[11px]">
+                      <Badge variant="outline" className="mt-1 text-xs">
                         {decisionText}
                       </Badge>
                     </TableCell>
@@ -6147,7 +6147,7 @@ function PublishingQueue({
               }}
             />
             {pendingEhr.length === 0 && pendingHomebase.length > 0 && (
-              <div className="basis-full text-[11px] text-muted-foreground">
+              <div className="basis-full text-xs text-muted-foreground">
                 Finish Homebase first. EHR can only be marked after Homebase is complete.
               </div>
             )}
@@ -6192,7 +6192,7 @@ function PublishingQueue({
                       </Badge>
                     )}
                     {schedulingNote && (
-                      <div className="mt-1 max-w-[280px] text-[11px] leading-snug text-muted-foreground">
+                      <div className="mt-1 max-w-[280px] text-xs leading-snug text-muted-foreground">
                         {schedulingNote}
                       </div>
                     )}
@@ -6216,7 +6216,7 @@ function PublishingQueue({
                       onToggle={onToggleShift}
                     />
                     {!hbDone && (
-                      <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                      <div className="mt-1 text-xs leading-tight text-muted-foreground">
                         Finish Homebase first
                       </div>
                     )}
@@ -6361,7 +6361,7 @@ function ByDayPanel({
                             onToggle={onToggleShift}
                           />
                           {!hbDone && (
-                            <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                            <div className="mt-1 text-xs leading-tight text-muted-foreground">
                               Finish Homebase first
                             </div>
                           )}
@@ -8625,7 +8625,7 @@ function DeclinedHoursPanel({
                         {row.employment_type ? ` · ${row.employment_type}` : ''}
                       </div>
                       {serviceLine && (
-                        <Badge variant="outline" className="mt-1 text-[11px]">
+                        <Badge variant="outline" className="mt-1 text-xs">
                           {SERVICE_LINE_LABEL[serviceLine]}
                         </Badge>
                       )}
@@ -8646,13 +8646,13 @@ function DeclinedHoursPanel({
                         <>
                           <div className="flex flex-wrap gap-1">
                             {eligibleStates.map(state => (
-                              <Badge key={state} variant="outline" className="text-[11px]">
+                              <Badge key={state} variant="outline" className="text-xs">
                                 {state}
                               </Badge>
                             ))}
                           </div>
                           {sourceLabels && (
-                            <div className="text-[11px] text-muted-foreground mt-1">
+                            <div className="text-xs text-muted-foreground mt-1">
                               {sourceLabels}
                             </div>
                           )}
@@ -9197,7 +9197,7 @@ function PublishHistoryPanel({
               <TableRow key={e.id}>
                 <TableCell className="text-xs text-muted-foreground tabular-nums">
                   <div>{formatRelativeTime(e.created_at)}</div>
-                  <div className="text-[10px] opacity-70">
+                  <div className="text-xs opacity-70">
                     {new Date(e.created_at).toLocaleString()}
                   </div>
                 </TableCell>
@@ -11333,7 +11333,7 @@ function CostProviderTableRow({ row }: { row: SchedulingCostProviderRow }) {
         {row.hourlyRate != null ? (
           <>
             {formatCurrency(row.hourlyRate, 2)}
-            <div className="text-[11px] text-muted-foreground">{row.rateSourceLabel}</div>
+            <div className="text-xs text-muted-foreground">{row.rateSourceLabel}</div>
           </>
         ) : (
           <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
@@ -11344,17 +11344,17 @@ function CostProviderTableRow({ row }: { row: SchedulingCostProviderRow }) {
       <TableCell className="text-right tabular-nums">{formatCurrency(row.wageCost)}</TableCell>
       <TableCell className="text-right tabular-nums">
         {formatCurrency(row.costPerVisitAtTarget, 2)}
-        <div className="text-[11px] text-muted-foreground">{row.visitSlotModelLabel}</div>
+        <div className="text-xs text-muted-foreground">{row.visitSlotModelLabel}</div>
       </TableCell>
       <TableCell className="min-w-52">
         <div className="flex flex-wrap gap-1">
           {row.routingTags.slice(0, 4).map(tag => (
-            <Badge key={tag} variant="outline" className="text-[11px] font-medium">
+            <Badge key={tag} variant="outline" className="text-xs font-medium">
               {tag}
             </Badge>
           ))}
           {row.routingTags.length > 4 && (
-            <Badge variant="outline" className="text-[11px] font-medium">
+            <Badge variant="outline" className="text-xs font-medium">
               +{row.routingTags.length - 4}
             </Badge>
           )}
@@ -11505,7 +11505,7 @@ function ForecastPanel({ month }: { month: string }) {
                     <TableRow key={r.state} className={r.inactive ? 'bg-muted/40 text-muted-foreground' : undefined}>
                       <TableCell className="font-medium">
                         {r.state}
-                        {r.inactive && <span className="ml-2 text-[11px] uppercase">inactive</span>}
+                        {r.inactive && <span className="ml-2 text-xs uppercase">inactive</span>}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{r.monthly.toFixed(0)}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.weekly.toFixed(1)}</TableCell>
@@ -11735,7 +11735,7 @@ function CoverageGapsPanel({
                   <TableCell className="text-right tabular-nums">
                     {r.needed.toFixed(0)}
                     {r.access_buffer_hours > 0 && (
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         includes extra access protection
                       </div>
                     )}
@@ -12280,7 +12280,7 @@ function DecisionReasonSummaryTiles({ row }: { row: ProviderPublishView }) {
               REASON_TILE_STYLES[tile.tone],
             )}
           >
-            <div className="text-[10px] font-semibold uppercase tracking-normal opacity-70">
+            <div className="text-xs font-semibold uppercase tracking-normal opacity-70">
               {tile.label}
             </div>
             <div className="mt-0.5 break-words text-xs font-semibold leading-tight">
@@ -12301,14 +12301,14 @@ function DecisionReasonSummaryTiles({ row }: { row: ProviderPublishView }) {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-6 px-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              className="h-6 px-1 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
               {open ? 'Hide reasoning' : 'Show reasoning'}
               <ChevronDown className={cn('ml-1 h-3 w-3 transition-transform', open && 'rotate-180')} />
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="whitespace-pre-wrap rounded-md border bg-muted/50 p-2 text-[11px] leading-snug text-muted-foreground">
+            <div className="whitespace-pre-wrap rounded-md border bg-muted/50 p-2 text-xs leading-snug text-muted-foreground">
               {details}
             </div>
           </CollapsibleContent>
@@ -12461,7 +12461,7 @@ function MatchingPanel({
           <div className="space-y-3 border-b p-4">
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.4fr)_160px_190px_170px_220px_auto] xl:items-end">
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Provider
                 </Label>
                 <div className="relative">
@@ -12475,7 +12475,7 @@ function MatchingPanel({
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Status
                 </Label>
                 <Select
@@ -12495,7 +12495,7 @@ function MatchingPanel({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Priority
                 </Label>
                 <Select
@@ -12515,7 +12515,7 @@ function MatchingPanel({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Hours
                 </Label>
                 <Select
@@ -12535,7 +12535,7 @@ function MatchingPanel({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Sort by
                 </Label>
                 <Select
@@ -12610,7 +12610,7 @@ function MatchingPanel({
                     <Badge
                       variant="outline"
                       className={cn(
-                        'mt-1 max-w-[180px] whitespace-normal text-[11px] font-medium leading-tight',
+                        'mt-1 max-w-[180px] whitespace-normal text-xs font-medium leading-tight',
                         priority.key === 'clinical_supervisor'
                           ? REASON_TAG_STYLES.emerald
                           : REASON_TAG_STYLES.blue,
@@ -12628,12 +12628,12 @@ function MatchingPanel({
                       <div>—</div>
                     )}
                     {assignedStateList.length > 0 && eligibleStates.length > 0 && (
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         Eligible: {eligibleStates.join(', ')}
                       </div>
                     )}
                     {sourceLabels && (
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         Sources: {sourceLabels}
                       </div>
                     )}
@@ -12821,7 +12821,7 @@ function SourceAuditPanel({ month }: { month: string }) {
             {section.details.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {section.details.map(detail => (
-                  <Badge key={`${detail.label}-${detail.count}`} variant="outline" className="text-[11px]">
+                  <Badge key={`${detail.label}-${detail.count}`} variant="outline" className="text-xs">
                     {detail.label} · {detail.count}
                   </Badge>
                 ))}
