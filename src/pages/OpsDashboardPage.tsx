@@ -246,6 +246,19 @@ function StatusIcon({ status }: { status: WeekStatus }) {
   }
 }
 
+// Shared 3-tier tone tokens, reused by the coverage table rows, the week
+// heatmap cells, and the SLA attainment grid so the same "good / warn / bad"
+// visual language reads consistently across the page.
+const TONE_GOOD_BG = 'bg-emerald-50 dark:bg-emerald-950/20';
+const TONE_WARN_BG = 'bg-yellow-50 dark:bg-yellow-950/20';
+const TONE_BAD_BG = 'bg-red-50 dark:bg-red-950/20';
+const TONE_GOOD_CELL = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300';
+const TONE_WARN_CELL = 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
+const TONE_BAD_CELL = 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300';
+const TONE_GOOD_TILE = 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20';
+const TONE_WARN_TILE = 'border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20';
+const TONE_BAD_TILE = 'border-red-200 bg-red-50 dark:bg-red-950/20';
+
 function KpiCard({
   title, value, sub, color, icon: Icon,
 }: {
@@ -723,9 +736,8 @@ export default function OpsDashboardPage() {
                           key={row.state}
                           className={cn(
                             'border-b transition-colors hover:bg-muted/30',
-                            row.weekStatus === 'zero'     && 'bg-destructive/5',
-                            row.weekStatus === 'critical' && 'bg-orange-50 dark:bg-orange-950/20',
-                            row.weekStatus === 'low'      && 'bg-yellow-50 dark:bg-yellow-950/20',
+                            (row.weekStatus === 'zero' || row.weekStatus === 'critical') && TONE_BAD_BG,
+                            row.weekStatus === 'low' && TONE_WARN_BG,
                           )}
                         >
                           <td className="px-4 py-2.5">
@@ -872,10 +884,10 @@ export default function OpsDashboardPage() {
                                           : ratio == null
                                             ? 'bg-muted/30 text-foreground'
                                             : ratio >= 1
-                                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                              ? TONE_GOOD_CELL
                                               : ratio >= 0.5
-                                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300'
-                                                : 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300',
+                                                ? TONE_WARN_CELL
+                                                : TONE_BAD_CELL,
                                       )}
                                       title={
                                         slots != null
@@ -963,10 +975,10 @@ export default function OpsDashboardPage() {
                         className={cn(
                           'rounded-lg p-2 text-center border',
                           (r.slaPct ?? 0) >= 80
-                            ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20'
+                            ? TONE_GOOD_TILE
                             : (r.slaPct ?? 0) >= 60
-                              ? 'border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20'
-                              : 'border-red-200 bg-red-50 dark:bg-red-950/20',
+                              ? TONE_WARN_TILE
+                              : TONE_BAD_TILE,
                         )}
                       >
                         <div className="text-xs font-bold">{r.state}</div>

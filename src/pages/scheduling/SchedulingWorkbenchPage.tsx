@@ -206,6 +206,20 @@ import {
   isAugust2026Month,
 } from '@/lib/scheduling/august2026';
 
+// Shared status-tone tokens, reused across the ~55 Workbench panels so the
+// same "which color means what" language (red = blocked/critical, amber =
+// needs attention, emerald = clean/good, blue = informational, purple =
+// locked/in-progress, orange = secondary warning) reads consistently instead
+// of being reimplemented slightly differently in each panel. Mirrors the
+// TONE_* pattern already used in OpsDashboardPage.tsx.
+const TONE_RED = 'border-red-200 bg-red-50 text-red-800';
+const TONE_AMBER = 'border-amber-200 bg-amber-50 text-amber-800';
+const TONE_ORANGE = 'border-orange-200 bg-orange-50 text-orange-800';
+const TONE_EMERALD = 'border-emerald-200 bg-emerald-50 text-emerald-800';
+const TONE_BLUE = 'border-blue-200 bg-blue-50 text-blue-800';
+const TONE_PURPLE = 'border-purple-200 bg-purple-50 text-purple-800';
+const TONE_SLATE = 'border-slate-200 bg-slate-50 text-slate-700';
+
 // Derived from today so the workbench always opens on the current cycle rather
 // than drifting to a stale hard-coded month — the tool is a monthly pipeline.
 const isoMonthStart = (year: number, monthIndex0: number): string =>
@@ -501,9 +515,9 @@ type IntakeBranch = {
 };
 
 const intakeBranchStyles: Record<IntakeBranchKind, string> = {
-  blocked: 'border-red-200 bg-red-50 text-red-800',
-  flagged: 'border-amber-200 bg-amber-50 text-amber-800',
-  clean: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  blocked: TONE_RED,
+  flagged: TONE_AMBER,
+  clean: TONE_EMERALD,
 };
 
 const blockingIntakeIssue = (warning: string) =>
@@ -952,7 +966,7 @@ function PublishDisplayHours({ display }: { display: PublishDisplayValues }) {
     <div>
       <div>{formatHours(display.displayAcceptedHours)}</div>
       {display.hasPublishedRows && (
-        <div className="text-[11px] leading-tight text-muted-foreground">
+        <div className="text-xs leading-tight text-muted-foreground">
           {publishDisplaySplit(display)}
         </div>
       )}
@@ -2158,7 +2172,7 @@ export default function SchedulingWorkbenchPage({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Select value={activeScope} onValueChange={(v) => onScopeChange(v as SchedulingWorkbenchScope)}>
-            <SelectTrigger className="w-[168px]">
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -2168,7 +2182,7 @@ export default function SchedulingWorkbenchPage({
           </Select>
           {isMh && (
             <Select value={mhServiceLine} onValueChange={(v) => setMhServiceLine(v as 'all' | MentalHealthServiceLine)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -2179,7 +2193,7 @@ export default function SchedulingWorkbenchPage({
             </Select>
           )}
           <Select value={month} onValueChange={onMonthChange}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -2193,7 +2207,7 @@ export default function SchedulingWorkbenchPage({
           {recalculationLocked ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+                <div className={cn('inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium', TONE_AMBER)}>
                   <Lock className="h-4 w-4 mr-1" />
                   Allocation closed
                 </div>
@@ -2832,11 +2846,6 @@ export default function SchedulingWorkbenchPage({
             onJumpToCoverage={() => jumpToCoveragePlan('coverage')}
           />
           <PublishInstructionsCard />
-          <PostHomebaseChangePlan
-            month={month}
-            rows={scopedPublishRows}
-            shiftsByProvider={shiftsByProvider}
-          />
           <Alert className={publishSourceIsDraft ? 'border-emerald-200 bg-emerald-50/50' : ''}>
             <FileCheck2 className="h-4 w-4" />
             <AlertDescription className="text-xs">
@@ -3051,7 +3060,7 @@ export default function SchedulingWorkbenchPage({
                                 )}
                               </div>
                               {ehrBulkBlocked && (
-                                <div className="mt-1 text-[11px] text-muted-foreground">
+                                <div className="mt-1 text-xs text-muted-foreground">
                                   Finish Homebase first. EHR can only be marked after Homebase is complete.
                                 </div>
                               )}
@@ -3185,7 +3194,7 @@ function SopCard() {
 function SopStep({ day, label }: { day: string; label: string }) {
   return (
     <div className="flex items-start gap-2">
-      <Badge variant="outline" className="bg-white">
+      <Badge variant="outline" className="bg-background">
         {day}
       </Badge>
       <span className="text-muted-foreground">{label}</span>
@@ -3337,7 +3346,7 @@ function ShiftListInline({
                   </Badge>
                 )}
                 {schedulingNote && (
-                  <div className="mt-1 max-w-[260px] text-[11px] leading-snug text-muted-foreground">
+                  <div className="mt-1 max-w-64 text-xs leading-snug text-muted-foreground">
                     {schedulingNote}
                   </div>
                 )}
@@ -3361,7 +3370,7 @@ function ShiftListInline({
                   onToggle={onToggle}
                 />
                 {!hbDone && (
-                  <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                  <div className="mt-1 text-xs leading-tight text-muted-foreground">
                     Finish Homebase first
                   </div>
                 )}
@@ -3476,7 +3485,7 @@ function HubTaskGuide({
               onClick={tile.onClick}
               className={cn(
                 'flex flex-col items-start gap-1 rounded-md border px-3 py-2 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/60',
-                tile.active ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white',
+                tile.active ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-card',
               )}
             >
               <div className="flex w-full items-start justify-between gap-2">
@@ -3489,7 +3498,7 @@ function HubTaskGuide({
                 {tile.where}
                 <ArrowRight className="h-3 w-3" />
               </span>
-              <span className="text-[11px] text-muted-foreground">Owner: {tile.owner}</span>
+              <span className="text-xs text-muted-foreground">Owner: {tile.owner}</span>
             </button>
           ))}
         </div>
@@ -3602,17 +3611,17 @@ function SchedulingPipelinePanel({
                 {isLoading ? 'Loading scheduling workflow' : title}
               </div>
               {lockedFromRecalc && (
-                <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
+                <Badge className={cn('hover:bg-amber-100', TONE_AMBER)}>
                   Allocation closed
                 </Badge>
               )}
               {openAmendments.length > 0 && (
-                <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">
+                <Badge className={cn('hover:bg-purple-100', TONE_PURPLE)}>
                   {openAmendments.length} open amendment{openAmendments.length === 1 ? '' : 's'}
                 </Badge>
               )}
               {stage === 'review' && reviewBlockerCount > 0 && (
-                <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                <Badge className={cn('hover:bg-red-100', TONE_RED)}>
                   {reviewBlockerCount} before lock
                 </Badge>
               )}
@@ -3620,8 +3629,8 @@ function SchedulingPipelinePanel({
                 <Badge
                   className={cn(
                     publishChecklistComplete
-                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
-                      : 'bg-blue-100 text-blue-800 hover:bg-blue-100',
+                      ? cn(TONE_EMERALD, 'hover:bg-emerald-100')
+                      : cn(TONE_BLUE, 'hover:bg-blue-100'),
                   )}
                 >
                   {ehrDoneCount}/{publishRows.length} EHR confirmed
@@ -3646,7 +3655,7 @@ function SchedulingPipelinePanel({
                               ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
                               : isDone
                                 ? 'border-slate-200 bg-slate-50 text-slate-600'
-                                : 'border-slate-200 bg-white text-slate-700',
+                                : 'border-slate-200 bg-card text-slate-700',
                           )}
                         >
                           {isDone && <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
@@ -3667,31 +3676,31 @@ function SchedulingPipelinePanel({
             {activeBuild && (
               <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
                 <div className="rounded-md border bg-slate-50 px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Draft rows</div>
+                  <div className="text-xs text-muted-foreground">Draft rows</div>
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : buildRows.length.toLocaleString()}
                   </div>
                 </div>
-                <div className="rounded-md border bg-emerald-50 px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Accepted</div>
+                <div className={cn('rounded-md border px-3 py-2', TONE_EMERALD)}>
+                  <div className="text-xs text-muted-foreground">Accepted</div>
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : `${formatHours(publishHours)}h`}
                   </div>
                 </div>
-                <div className="rounded-md border bg-red-50 px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Cut</div>
+                <div className={cn('rounded-md border px-3 py-2', TONE_RED)}>
+                  <div className="text-xs text-muted-foreground">Cut</div>
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : `${formatHours(cutHours)}h`}
                   </div>
                 </div>
-                <div className="rounded-md border bg-white px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Providers</div>
+                <div className="rounded-md border bg-slate-50 px-3 py-2">
+                  <div className="text-xs text-muted-foreground">Providers</div>
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : publishProviderCount.toLocaleString()}
                   </div>
                 </div>
-                <div className="rounded-md border bg-white px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Frozen dates</div>
+                <div className="rounded-md border bg-slate-50 px-3 py-2">
+                  <div className="text-xs text-muted-foreground">Frozen dates</div>
                   <div className="text-sm font-semibold">{isLoadingBuildRows ? 'Loading' : dateSpan}</div>
                 </div>
               </div>
@@ -3700,9 +3709,7 @@ function SchedulingPipelinePanel({
               <div
                 className={cn(
                   'flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs',
-                  reviewBlockerCount > 0
-                    ? 'border-red-200 bg-red-50 text-red-900'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-900',
+                  reviewBlockerCount > 0 ? TONE_RED : TONE_EMERALD,
                 )}
               >
                 <span className="font-medium">Before lock</span>
@@ -3716,9 +3723,7 @@ function SchedulingPipelinePanel({
               <div
                 className={cn(
                   'flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs',
-                  publishChecklistComplete
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                    : 'border-blue-200 bg-blue-50 text-blue-900',
+                  publishChecklistComplete ? TONE_EMERALD : TONE_BLUE,
                 )}
               >
                 <span className="font-medium">Before published</span>
@@ -3825,7 +3830,7 @@ function SchedulingPipelinePanel({
           </div>
         </div>
         {activeBuild && (
-          <div className="mt-3 text-[11px] text-muted-foreground">
+          <div className="mt-3 text-xs text-muted-foreground">
             Created {formatRelativeTime(activeBuild.created_at)}
             {activeBuild.created_by_label ? ` by ${activeBuild.created_by_label}` : ''}
             {activeBuild.locked_at ? ` · locked ${formatRelativeTime(activeBuild.locked_at)}` : ''}
@@ -3895,7 +3900,7 @@ function AmendmentRequestsPanel({
             </p>
           </div>
           <Select value={filter} onValueChange={value => setFilter(value as AmendmentFilter)}>
-            <SelectTrigger className="w-[190px]">
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -3910,24 +3915,24 @@ function AmendmentRequestsPanel({
           </Select>
         </div>
         <div className="mt-3 grid gap-2 md:grid-cols-5">
-          <div className="rounded-md border border-purple-200 bg-purple-50 px-3 py-2">
-            <div className="text-[11px] text-purple-900">Requested</div>
+          <div className={cn('rounded-md border px-3 py-2', TONE_PURPLE)}>
+            <div className="text-xs text-purple-900">Requested</div>
             <div className="text-lg font-semibold text-purple-900">{counts.requested}</div>
           </div>
-          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
-            <div className="text-[11px] text-blue-900">Approved</div>
+          <div className={cn('rounded-md border px-3 py-2', TONE_BLUE)}>
+            <div className="text-xs text-blue-900">Approved</div>
             <div className="text-lg font-semibold text-blue-900">{counts.approved}</div>
           </div>
-          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
-            <div className="text-[11px] text-emerald-900">Applied</div>
+          <div className={cn('rounded-md border px-3 py-2', TONE_EMERALD)}>
+            <div className="text-xs text-emerald-900">Applied</div>
             <div className="text-lg font-semibold text-emerald-900">{counts.applied}</div>
           </div>
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-            <div className="text-[11px] text-amber-900">Parked</div>
+          <div className={cn('rounded-md border px-3 py-2', TONE_AMBER)}>
+            <div className="text-xs text-amber-900">Parked</div>
             <div className="text-lg font-semibold text-amber-900">{counts.parked}</div>
           </div>
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
-            <div className="text-[11px] text-red-900">Rejected</div>
+          <div className={cn('rounded-md border px-3 py-2', TONE_RED)}>
+            <div className="text-xs text-red-900">Rejected</div>
             <div className="text-lg font-semibold text-red-900">{counts.rejected}</div>
           </div>
         </div>
@@ -4289,12 +4294,12 @@ function ProviderStatusSearchPanel({
                 </div>
                 <div className="flex flex-wrap gap-1 md:justify-end">
                   {selectedHasTimeCorrection && (
-                    <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                    <Badge variant="outline" className={TONE_EMERALD}>
                       <CheckCircle2 className="mr-1 h-3 w-3" />
                       Times updated
                     </Badge>
                   )}
-                  <Badge variant="outline" className="bg-white">
+                  <Badge variant="outline">
                     {reviewLabel}
                   </Badge>
                 </div>
@@ -4350,10 +4355,10 @@ function ProviderStatusMetric({
   sub?: string;
 }) {
   return (
-    <div className="rounded-md border bg-white px-2 py-2">
-      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+    <div className="rounded-md border bg-card px-2 py-2">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
       <div className="mt-1 min-h-8 text-sm font-semibold leading-tight">{value}</div>
-      {sub && <div className="text-[11px] leading-tight text-muted-foreground">{sub}</div>}
+      {sub && <div className="text-xs leading-tight text-muted-foreground">{sub}</div>}
     </div>
   );
 }
@@ -4612,11 +4617,11 @@ type ReasonTag = {
 };
 
 const REASON_TAG_STYLES: Record<NonNullable<ReasonTag['tone']>, string> = {
-  amber: 'border-amber-200 bg-amber-50 text-amber-800',
-  blue: 'border-blue-200 bg-blue-50 text-blue-800',
-  red: 'border-red-200 bg-red-50 text-red-800',
-  slate: 'border-slate-200 bg-slate-50 text-slate-700',
-  emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  amber: TONE_AMBER,
+  blue: TONE_BLUE,
+  red: TONE_RED,
+  slate: TONE_SLATE,
+  emerald: TONE_EMERALD,
 };
 
 const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
@@ -4715,23 +4720,23 @@ function ReasonSummary({
           <Badge
             key={tag.label}
             variant="outline"
-            className={cn('text-[11px] font-medium', REASON_TAG_STYLES[tag.tone ?? 'slate'])}
+            className={cn('text-xs font-medium', REASON_TAG_STYLES[tag.tone ?? 'slate'])}
           >
             {tag.label}
           </Badge>
         ))}
         {tags.length > visibleTags.length && (
-          <Badge variant="outline" className="text-[11px] font-medium">
+          <Badge variant="outline" className="text-xs font-medium">
             +{tags.length - visibleTags.length}
           </Badge>
         )}
       </div>
       {details && (
         <details>
-          <summary className="cursor-pointer text-[11px] text-muted-foreground">
+          <summary className="cursor-pointer text-xs text-muted-foreground">
             Details
           </summary>
-          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-snug text-muted-foreground">
+          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-xs leading-snug text-muted-foreground">
             {details}
           </div>
         </details>
@@ -4843,20 +4848,20 @@ function AvailabilitySubmissionsPanel({
             Source: provider availability submissions from Jotform, synced automatically.
           </p>
           <div className="mt-3 grid gap-2 md:grid-cols-3">
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+            <div className={cn('rounded-md border px-3 py-2', TONE_RED)}>
               <div className="text-xs font-medium text-red-900">Blocked logic errors</div>
               <div className="mt-1 text-lg font-semibold text-red-900">{branchSummary.blocked}</div>
-              <div className="text-[11px] leading-snug text-red-800">Fix before allocation.</div>
+              <div className="text-xs leading-snug text-red-800">Fix before allocation.</div>
             </div>
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+            <div className={cn('rounded-md border px-3 py-2', TONE_AMBER)}>
               <div className="text-xs font-medium text-amber-900">Non-blocking flags</div>
               <div className="mt-1 text-lg font-semibold text-amber-900">{branchSummary.flagged}</div>
-              <div className="text-[11px] leading-snug text-amber-800">Can flow; review in parallel if needed.</div>
+              <div className="text-xs leading-snug text-amber-800">Can flow; review in parallel if needed.</div>
             </div>
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <div className={cn('rounded-md border px-3 py-2', TONE_EMERALD)}>
               <div className="text-xs font-medium text-emerald-900">Clean intake</div>
               <div className="mt-1 text-lg font-semibold text-emerald-900">{branchSummary.clean}</div>
-              <div className="text-[11px] leading-snug text-emerald-800">Ready for allocation.</div>
+              <div className="text-xs leading-snug text-emerald-800">Ready for allocation.</div>
             </div>
           </div>
         </CardHeader>
@@ -4916,20 +4921,20 @@ function AvailabilitySubmissionsPanel({
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       <Badge variant="outline" className={cn('font-medium', intakeBranchStyles[intakeBranch.kind])}>
                         {intakeBranch.label}
                       </Badge>
                       <div className="mt-1 text-muted-foreground">{intakeBranch.detail}</div>
-                      <div className="mt-1 text-[11px] text-muted-foreground">
+                      <div className="mt-1 text-xs text-muted-foreground">
                         Owner: {intakeBranch.owner}
                       </div>
                       {intakeBranch.issues.length > 0 && (
                         <details className="mt-1">
-                          <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                          <summary className="cursor-pointer text-xs text-muted-foreground">
                             Why
                           </summary>
-                          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-snug text-muted-foreground">
+                          <div className="mt-1 whitespace-pre-wrap rounded bg-muted/60 p-2 text-xs leading-snug text-muted-foreground">
                             {intakeBranch.issues.slice(0, 5).join('\n')}
                           </div>
                         </details>
@@ -4938,21 +4943,21 @@ function AvailabilitySubmissionsPanel({
                     <TableCell className="align-top text-xs">
                       <div>{shiftTypes || '—'}</div>
                       {submissionIntent && (
-                        <Badge variant="outline" className="mt-1 border-blue-200 bg-blue-50 text-blue-800">
+                        <Badge variant="outline" className={cn('mt-1', TONE_BLUE)}>
                           {submissionIntent}
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {formatAvailabilityRows(parsed.recurring_virtual, 'recurring')}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {formatAvailabilityRows(parsed.one_off_virtual, 'dated')}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {formatAvailabilityRows(parsed.in_home_clinic, 'dated')}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {formatAvailabilityRows(parsed.unavailable_dates, 'unavailable')}
                       <div className="mt-1 text-muted-foreground">
                         Last-minute: {parsed.last_minute_ok == null ? '—' : parsed.last_minute_ok ? 'yes' : 'no'}
@@ -4976,9 +4981,9 @@ function AvailabilitySubmissionsPanel({
                           <Badge
                             variant="outline"
                             className={cn(
-                              row.human_review_state === 'parked' && 'border-amber-200 bg-amber-50 text-amber-800',
-                              row.human_review_state === 'approved' && 'border-emerald-200 bg-emerald-50 text-emerald-800',
-                              row.human_review_state === 'pending' && 'border-blue-200 bg-blue-50 text-blue-800',
+                              row.human_review_state === 'parked' && TONE_AMBER,
+                              row.human_review_state === 'approved' && TONE_EMERALD,
+                              row.human_review_state === 'pending' && TONE_BLUE,
                             )}
                           >
                             {row.human_review_state === 'parked'
@@ -4990,7 +4995,7 @@ function AvailabilitySubmissionsPanel({
                         </div>
                       )}
                       {row.human_review_notes && (
-                        <div className="mt-1 rounded border bg-muted/40 px-2 py-1 text-[11px] leading-snug text-muted-foreground">
+                        <div className="mt-1 rounded border bg-muted/40 px-2 py-1 text-xs leading-snug text-muted-foreground">
                           {row.human_review_resolved_label
                             ? `${row.human_review_resolved_label}: `
                             : ''}
@@ -4999,12 +5004,12 @@ function AvailabilitySubmissionsPanel({
                       )}
                       {hasTimeCorrection && (
                         <div className="mt-1">
-                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                          <Badge variant="outline" className={TONE_EMERALD}>
                             <CheckCircle2 className="mr-1 h-3 w-3" />
                             Times updated
                           </Badge>
                           {correctionSummary && (
-                            <div className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                            <div className="mt-1 text-xs leading-snug text-muted-foreground">
                               {correctionSummary}
                             </div>
                           )}
@@ -5016,10 +5021,10 @@ function AvailabilitySubmissionsPanel({
                         </div>
                       )}
                       <details className="mt-2">
-                        <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                        <summary className="cursor-pointer text-xs text-muted-foreground">
                           Raw / parsed
                         </summary>
-                        <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-[10px] leading-snug">
+                        <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-xs leading-snug">
                           {compactJson({
                             parsed_shifts: row.parsed_shifts,
                             raw_answers: row.raw_answers,
@@ -5074,13 +5079,13 @@ function AvailabilitySubmissionsPanel({
                             </Button>
                           </div>
                         ) : (
-                          <Badge variant="outline" className="bg-amber-50 text-amber-800">
+                          <Badge variant="outline" className={TONE_AMBER}>
                             Link provider first
                           </Badge>
                         )
                       ) : (
                         hasTimeCorrection ? (
-                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                          <Badge variant="outline" className={TONE_EMERALD}>
                             Updated
                           </Badge>
                         ) : (
@@ -5620,7 +5625,7 @@ function RecalculationChangeReport({
             </p>
           </div>
           {(selectedRun || showLocalFallback) && (
-            <Badge variant="outline" className="w-fit bg-blue-50 text-blue-800">
+            <Badge variant="outline" className={cn('w-fit', TONE_BLUE)}>
               {activeChangeCount} provider{activeChangeCount === 1 ? '' : 's'} changed
             </Badge>
           )}
@@ -5643,21 +5648,21 @@ function RecalculationChangeReport({
           <div className="rounded-md border px-3 py-2">
             <div className="text-xs text-muted-foreground">Selected run</div>
             <div className="text-lg font-semibold">{activeChangeCount}</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               Changed provider{activeChangeCount === 1 ? '' : 's'} only.
             </div>
           </div>
           <div className="rounded-md border px-3 py-2">
             <div className="text-xs text-muted-foreground">Readiness accepted usable</div>
             <div className="text-lg font-semibold">{readinessAcceptedValue}</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               Same source as Readiness: publish rows assigned to states.
             </div>
           </div>
           <div className="rounded-md border px-3 py-2">
             <div className="text-xs text-muted-foreground">Readiness cut / declined</div>
             <div className="text-lg font-semibold">{formatHours(readinessDeclinedHours)} hrs</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               Same source as Readiness: provider decision declined_hours.
             </div>
           </div>
@@ -5669,7 +5674,7 @@ function RecalculationChangeReport({
                 ({formatHours(currentTotals.publishableHours)} hrs)
               </span>
             </div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               {readinessContext}
             </div>
           </div>
@@ -5705,19 +5710,19 @@ function RecalculationChangeReport({
                       'rounded-md border px-3 py-2 text-left text-xs transition-colors',
                       selected
                         ? 'border-blue-300 bg-blue-50 text-blue-950'
-                        : 'bg-white hover:bg-muted/40',
+                        : 'bg-card hover:bg-muted/40',
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium">{formatRelativeTime(run.created_at)}</span>
-                      <Badge variant="outline" className="bg-white text-[11px]">
+                      <Badge variant="outline" className="bg-background text-xs">
                         {run.changed_provider_count} changed
                       </Badge>
                     </div>
                     <div className="mt-1 text-muted-foreground">
                       {runDeltaSummary(run)}
                     </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       Run {shortRunId(run.decision_run_id)} · {run.groups_count} evaluated
                     </div>
                   </button>
@@ -5767,7 +5772,7 @@ function RecalculationChangeReport({
                   <TableRow key={change.id}>
                     <TableCell>
                       <div className="font-medium">{change.provider_name}</div>
-                      <Badge variant="outline" className="mt-1 text-[11px]">
+                      <Badge variant="outline" className="mt-1 text-xs">
                         {change.before_status ?? 'none'} -&gt; {change.after_status ?? 'none'}
                       </Badge>
                     </TableCell>
@@ -5825,7 +5830,7 @@ function RecalculationChangeReport({
                   <TableRow key={`${providerName}-${after?.key ?? before?.key}`}>
                     <TableCell>
                       <div className="font-medium">{providerName}</div>
-                      <Badge variant="outline" className="mt-1 text-[11px]">
+                      <Badge variant="outline" className="mt-1 text-xs">
                         {decisionText}
                       </Badge>
                     </TableCell>
@@ -5928,7 +5933,7 @@ function PendingRecalculationPanel({
               </p>
             </div>
             {recalculationLocked ? (
-              <div className="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+              <div className={cn('inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium', TONE_AMBER)}>
                 <Lock className="mr-1 h-4 w-4" />
                 Allocation closed
               </div>
@@ -5944,7 +5949,7 @@ function PendingRecalculationPanel({
             )}
           </div>
           {recalculationLocked && activeBuild && (
-            <Alert className="mt-3 border-amber-200 bg-amber-50">
+            <Alert className={cn('mt-3', TONE_AMBER)}>
               <Lock className="h-4 w-4 text-amber-700" />
               <AlertDescription className="text-amber-900">
                 Draft v{activeBuild.version_number} is in {pipelineStageLabel(stage)}. Changes
@@ -5985,7 +5990,7 @@ function PendingRecalculationPanel({
                       {formatHours(expandedSubmittedHours(row))}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="bg-blue-50 text-blue-800">
+                      <Badge variant="outline" className={TONE_BLUE}>
                         Needs allocation
                       </Badge>
                     </TableCell>
@@ -6086,7 +6091,7 @@ function PublishingQueue({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -6142,7 +6147,7 @@ function PublishingQueue({
               }}
             />
             {pendingEhr.length === 0 && pendingHomebase.length > 0 && (
-              <div className="basis-full text-[11px] text-muted-foreground">
+              <div className="basis-full text-xs text-muted-foreground">
                 Finish Homebase first. EHR can only be marked after Homebase is complete.
               </div>
             )}
@@ -6187,7 +6192,7 @@ function PublishingQueue({
                       </Badge>
                     )}
                     {schedulingNote && (
-                      <div className="mt-1 max-w-[280px] text-[11px] leading-snug text-muted-foreground">
+                      <div className="mt-1 max-w-72 text-xs leading-snug text-muted-foreground">
                         {schedulingNote}
                       </div>
                     )}
@@ -6211,7 +6216,7 @@ function PublishingQueue({
                       onToggle={onToggleShift}
                     />
                     {!hbDone && (
-                      <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                      <div className="mt-1 text-xs leading-tight text-muted-foreground">
                         Finish Homebase first
                       </div>
                     )}
@@ -6356,7 +6361,7 @@ function ByDayPanel({
                             onToggle={onToggleShift}
                           />
                           {!hbDone && (
-                            <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                            <div className="mt-1 text-xs leading-tight text-muted-foreground">
                               Finish Homebase first
                             </div>
                           )}
@@ -6905,7 +6910,7 @@ function NeedsReviewPanel({
                       {formatHours(expandedSubmittedHours(sub))}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-md">
-                      <Badge variant="outline" className="mb-1 bg-orange-50 text-orange-800">
+                      <Badge variant="outline" className={cn('mb-1', TONE_ORANGE)}>
                         {reasonLabel}
                       </Badge>
                       <div>
@@ -7251,7 +7256,7 @@ function MentalHealthDashboard({
                         {requestedHoursFromUnmatchedSubmission(row).toFixed(1)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="bg-white">
+                        <Badge variant="outline" className="bg-background">
                           {formatMonthLabel(row.target_month)}
                         </Badge>
                       </TableCell>
@@ -8027,7 +8032,7 @@ function SchedulingExceptionsPanel({
                   id="scheduling-exception-rule"
                   value={exceptionDraft.rule}
                   onChange={e => updateExceptionDraft('rule', e.target.value)}
-                  className="min-h-[72px]"
+                  className="min-h-16"
                 />
               </div>
               <div className="space-y-2">
@@ -8036,7 +8041,7 @@ function SchedulingExceptionsPanel({
                   id="scheduling-exception-action"
                   value={exceptionDraft.schedulingAction}
                   onChange={e => updateExceptionDraft('schedulingAction', e.target.value)}
-                  className="min-h-[72px]"
+                  className="min-h-16"
                 />
               </div>
               <Button
@@ -8065,7 +8070,7 @@ function SchedulingExceptionsPanel({
                   <TableHead>Type</TableHead>
                   <TableHead>Rule</TableHead>
                   <TableHead>Scheduling action</TableHead>
-                  <TableHead className="w-[120px] text-right">Actions</TableHead>
+                  <TableHead className="w-28 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -8096,7 +8101,7 @@ function SchedulingExceptionsPanel({
                         <Textarea
                           value={editingExceptionDraft.rule}
                           onChange={e => updateEditingExceptionDraft('rule', e.target.value)}
-                          className="min-h-[72px]"
+                          className="min-h-16"
                         />
                       ) : (
                         item.rule
@@ -8107,7 +8112,7 @@ function SchedulingExceptionsPanel({
                         <Textarea
                           value={editingExceptionDraft.schedulingAction}
                           onChange={e => updateEditingExceptionDraft('schedulingAction', e.target.value)}
-                          className="min-h-[72px]"
+                          className="min-h-16"
                         />
                       ) : (
                         item.scheduling_action
@@ -8212,7 +8217,7 @@ function SchedulingExceptionsPanel({
                       {selectedProvider.email ?? 'No email'} · {selectedProvider.profession ?? '—'}
                     </span>
                     {selectedExistingException && (
-                      <Badge variant="outline" className="bg-white">Already listed</Badge>
+                      <Badge variant="outline" className="bg-background">Already listed</Badge>
                     )}
                     <Button
                       variant="ghost"
@@ -8266,7 +8271,7 @@ function SchedulingExceptionsPanel({
                   id="provider-exemption-reason"
                   value={reasonDraft}
                   onChange={e => setReasonDraft(e.target.value)}
-                  className="min-h-[72px]"
+                  className="min-h-16"
                 />
               </div>
 
@@ -8297,7 +8302,7 @@ function SchedulingExceptionsPanel({
                   <TableHead>Profession</TableHead>
                   <TableHead>Employment</TableHead>
                   <TableHead>Profile indicator</TableHead>
-                  <TableHead className="w-[120px] text-right">Actions</TableHead>
+                  <TableHead className="w-28 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -8317,7 +8322,7 @@ function SchedulingExceptionsPanel({
                         <Textarea
                           value={editingReason}
                           onChange={e => setEditingReason(e.target.value)}
-                          className="min-h-[72px]"
+                          className="min-h-16"
                         />
                       ) : (
                         <>
@@ -8620,7 +8625,7 @@ function DeclinedHoursPanel({
                         {row.employment_type ? ` · ${row.employment_type}` : ''}
                       </div>
                       {serviceLine && (
-                        <Badge variant="outline" className="mt-1 text-[11px]">
+                        <Badge variant="outline" className="mt-1 text-xs">
                           {SERVICE_LINE_LABEL[serviceLine]}
                         </Badge>
                       )}
@@ -8636,18 +8641,18 @@ function DeclinedHoursPanel({
                         {formatHours(sub.declined_hours)}
                       </span>
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {eligibleStates.length > 0 ? (
                         <>
                           <div className="flex flex-wrap gap-1">
                             {eligibleStates.map(state => (
-                              <Badge key={state} variant="outline" className="text-[11px]">
+                              <Badge key={state} variant="outline" className="text-xs">
                                 {state}
                               </Badge>
                             ))}
                           </div>
                           {sourceLabels && (
-                            <div className="text-[11px] text-muted-foreground mt-1">
+                            <div className="text-xs text-muted-foreground mt-1">
                               {sourceLabels}
                             </div>
                           )}
@@ -8656,7 +8661,7 @@ function DeclinedHoursPanel({
                         <span className="text-muted-foreground">No eligible states found</span>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[260px]">
+                    <TableCell className="align-top text-xs max-w-64">
                       {cuts.length === 0 ? (
                         <span className="text-muted-foreground">No cut rows emitted</span>
                       ) : (
@@ -8680,7 +8685,7 @@ function DeclinedHoursPanel({
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[360px]">
+                    <TableCell className="align-top text-xs max-w-96">
                       <ReasonSummary
                         text={reasonText}
                         detailsText={reasonDetails}
@@ -8930,7 +8935,7 @@ function OverflowPanel({
                       {entry.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="max-w-[360px] text-xs text-muted-foreground">
+                  <TableCell className="max-w-96 text-xs text-muted-foreground">
                     <ReasonSummary text={entry.reasonText} maxTags={3} />
                   </TableCell>
                 </TableRow>
@@ -9080,7 +9085,7 @@ function TimeOffPanel({
                       <Badge
                         key={`${range.startIso}-${range.endIso}-${i}`}
                         variant="outline"
-                        className="bg-amber-50 border-amber-200 text-amber-900 font-normal"
+                        className={cn(TONE_AMBER, 'font-normal')}
                       >
                         {formatRange(range.startIso, range.endIso)}
                       </Badge>
@@ -9192,7 +9197,7 @@ function PublishHistoryPanel({
               <TableRow key={e.id}>
                 <TableCell className="text-xs text-muted-foreground tabular-nums">
                   <div>{formatRelativeTime(e.created_at)}</div>
-                  <div className="text-[10px] opacity-70">
+                  <div className="text-xs opacity-70">
                     {new Date(e.created_at).toLocaleString()}
                   </div>
                 </TableCell>
@@ -9587,13 +9592,14 @@ function ReadinessPanel({
     label: 'Checking' | 'Blocked' | 'Action Needed' | 'Ready to Publish' | 'Publishing' | 'Complete';
     tone: string;
   };
+  const READY_TONE = 'bg-emerald-100 text-emerald-800 border-emerald-200';
   const readiness: Readiness = (() => {
     if (checksLoading) return { label: 'Checking', tone: 'bg-slate-100 text-slate-700 border-slate-200' };
     if (activeBlockers.length > 0) return { label: 'Blocked', tone: 'bg-red-100 text-red-800 border-red-200' };
     if (missingCount > 0) return { label: 'Action Needed', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
-    if (publishingComplete) return { label: 'Complete', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+    if (publishingComplete) return { label: 'Complete', tone: READY_TONE };
     if (homebasePct > 0 || ehrPct > 0) return { label: 'Publishing', tone: 'bg-blue-100 text-blue-800 border-blue-200' };
-    return { label: 'Ready to Publish', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+    return { label: 'Ready to Publish', tone: READY_TONE };
   })();
 
   const { blocker, nextAction, nextActionJump, nextCategory, nextDisabled } = useMemo<{
@@ -9872,6 +9878,10 @@ function ReadinessPanel({
     loading?: boolean;
   };
 
+  // Soft tones reused by more than one action-center item below.
+  const TONE_AMBER_SOFT = 'border-amber-200 bg-amber-50/70';
+  const TONE_PURPLE_SOFT = 'border-purple-200 bg-purple-50/70';
+
   const actionItems = useMemo<ActionCenterItem[]>(() => {
     const out: ActionCenterItem[] = [];
     if (blockedIntakeCount > 0) {
@@ -9895,7 +9905,7 @@ function ReadinessPanel({
         badge: 'Parallel review',
         action: 'Open Intake',
         onClick: () => onJumpToAvailability('submissions'),
-        tone: 'border-amber-200 bg-amber-50/70',
+        tone: TONE_AMBER_SOFT,
       });
     }
     if (pendingSubmissionCount > 0) {
@@ -9909,7 +9919,7 @@ function ReadinessPanel({
         badge: recalculationLocked ? 'Amendment review' : 'Run allocation',
         action: recalculationLocked ? 'Open Amendments' : 'Open Allocation Runs',
         onClick: recalculationLocked ? () => onJumpToReview('amendments') : () => onJumpToReview('recalculate'),
-        tone: recalculationLocked ? 'border-purple-200 bg-purple-50/70' : 'border-blue-200 bg-blue-50/60',
+        tone: recalculationLocked ? TONE_PURPLE_SOFT : 'border-blue-200 bg-blue-50/60',
         disabled: isReevaluating,
         loading: isReevaluating,
       });
@@ -9947,7 +9957,7 @@ function ReadinessPanel({
         badge: 'Clear before publish',
         action: 'Open Amendments',
         onClick: () => onJumpToReview('amendments'),
-        tone: 'border-purple-200 bg-purple-50/70',
+        tone: TONE_PURPLE_SOFT,
       });
     }
     if (unmatchedCount > 0) {
@@ -9959,7 +9969,7 @@ function ReadinessPanel({
         badge: 'Fix match',
         action: 'Open Unmatched',
         onClick: () => onJumpToAvailability('unmatched'),
-        tone: 'border-amber-200 bg-amber-50/70',
+        tone: TONE_AMBER_SOFT,
       });
     }
     if (declinedCount > 0) {
@@ -10028,9 +10038,9 @@ function ReadinessPanel({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="text-xs text-right max-w-[260px]">
+            <div className="text-xs text-right max-w-64">
               <div className="font-medium">One next action</div>
-              <Badge variant="outline" className="mt-1 bg-white/70 text-[11px]">
+              <Badge variant="outline" className="mt-1 bg-background/70 text-xs">
                 {nextCategory}
               </Badge>
               <div className="opacity-90">{nextAction}</div>
@@ -10096,7 +10106,7 @@ function ReadinessPanel({
         </CardHeader>
         <CardContent>
           {actionItems.length === 0 ? (
-            <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <div className={cn('flex items-start gap-2 rounded-md border px-3 py-2 text-xs', TONE_EMERALD)}>
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               No pending review actions for {formatMonthLabel(month)}. Use Publish when the gate is ready.
             </div>
@@ -10109,15 +10119,15 @@ function ReadinessPanel({
                       <div className="text-xs font-medium text-muted-foreground">{item.label}</div>
                       <div className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</div>
                     </div>
-                    <Badge variant="outline" className="bg-white text-[11px]">
+                    <Badge variant="outline" className="bg-background/80 text-xs">
                       {item.badge}
                     </Badge>
                   </div>
-                  <div className="mt-2 min-h-[36px] text-xs text-muted-foreground">{item.detail}</div>
+                  <div className="mt-2 min-h-9 text-xs text-muted-foreground">{item.detail}</div>
                   <Button
                     size="sm"
                     variant="outline"
-                    className="mt-3 h-8 bg-white/80"
+                    className="mt-3 h-8 bg-background/80"
                     onClick={item.onClick}
                     disabled={item.disabled}
                   >
@@ -10213,7 +10223,7 @@ function ReadinessPanel({
                     <div className="text-xs font-medium text-red-800">Short states</div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {shortStateRows.slice(0, 6).map(row => (
-                        <Badge key={row.state} variant="outline" className="bg-white/80 text-red-800">
+                        <Badge key={row.state} variant="outline" className="bg-background/80 text-red-800">
                           {row.state} {row.shortage.toFixed(0)} hrs short
                         </Badge>
                       ))}
@@ -10223,7 +10233,7 @@ function ReadinessPanel({
                     <div className="text-xs font-medium text-blue-800">Remaining extra by state</div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {surplusStateRows.slice(0, 6).map(row => (
-                        <Badge key={row.state} variant="outline" className="bg-white/80 text-blue-800">
+                        <Badge key={row.state} variant="outline" className="bg-background/80 text-blue-800">
                           {row.state} +{row.surplus.toFixed(0)} hrs
                         </Badge>
                       ))}
@@ -10527,10 +10537,10 @@ function OperatorBlockersCard({
               </div>
             ) : (
               hardBlockers.map(item => (
-                <div key={item.label} className="rounded-md border border-red-200 bg-red-50 p-2">
+                <div key={item.label} className={cn('rounded-md border p-2', TONE_RED)}>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-sm font-medium text-red-800">{item.label}</div>
-                    <Badge variant="outline" className="bg-white text-[11px]">
+                    <Badge variant="outline" className="bg-background text-xs">
                       {item.category}
                     </Badge>
                   </div>
@@ -10540,7 +10550,7 @@ function OperatorBlockersCard({
                       {item.action}
                     </Button>
                     {item.overrideable === false ? (
-                      <Badge variant="outline" className="h-7 bg-white text-[11px]">
+                      <Badge variant="outline" className="h-7 bg-background text-xs">
                         Required
                       </Badge>
                     ) : isAdmin && (
@@ -10570,10 +10580,10 @@ function OperatorBlockersCard({
               {overriddenBlockers.map(item => {
                 const ov = blockerOverrides[item.key];
                 return (
-                  <div key={item.key} className="rounded-md border border-emerald-200 bg-emerald-50 p-2">
+                  <div key={item.key} className={cn('rounded-md border p-2', TONE_EMERALD)}>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-sm font-medium text-emerald-900">{item.label}</div>
-                      <Badge variant="outline" className="bg-white text-[11px]">
+                      <Badge variant="outline" className="bg-background text-xs">
                         Override applied
                       </Badge>
                     </div>
@@ -10606,10 +10616,10 @@ function OperatorBlockersCard({
               <div className="text-xs text-muted-foreground">No chase list items right now.</div>
             ) : (
               softWarnings.map(item => (
-                <div key={item.label} className="rounded-md border border-amber-200 bg-amber-50 p-2">
+                <div key={item.label} className={cn('rounded-md border p-2', TONE_AMBER)}>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-sm font-medium text-amber-900">{item.label}</div>
-                    <Badge variant="outline" className="bg-white text-[11px]">
+                    <Badge variant="outline" className="bg-background text-xs">
                       {item.category}
                     </Badge>
                   </div>
@@ -10645,144 +10655,11 @@ function PublishInstructionsCard() {
       <CardContent>
         <div className="grid gap-2 md:grid-cols-4">
           {steps.map((step, index) => (
-            <div key={step} className="rounded-md border border-blue-200 bg-white px-3 py-2 text-xs">
+            <div key={step} className="rounded-md border border-blue-200 bg-background px-3 py-2 text-xs">
               <div className="font-medium text-blue-900">Step {index + 1}</div>
               <div className="mt-1 text-blue-800">{step}</div>
             </div>
           ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-const JULY_POST_HOMEBASE_CHANGE_MONTH = '2026-07-01';
-
-const JULY_REDUCTION_REQUESTS = [
-  {
-    provider: 'Dr. Sara Hammond',
-    request: 'Reduce 4 hrs/week in July',
-    status: 'Pending Sarabjeet confirmation',
-    redistribution: 'Consider Brittney first if this is confirmed.',
-  },
-  {
-    provider: 'Rachel McLeod',
-    request: 'Reduce 8 hrs on July 30',
-    status: 'Confirmed by Sarabjeet',
-    redistribution: 'Backfill candidates: Dr. Omari, Dr. Adamu, Brittney, Jarrod.',
-  },
-];
-
-const JULY_REALLOCATION_TARGETS = [
-  { label: 'Brittney', match: 'brittney', targetHours: 60 },
-  { label: 'Jarrod', match: 'jarrod', targetHours: 45 },
-  { label: 'Dr. Omari', match: 'omari', targetHours: 75 },
-];
-
-function PostHomebaseChangePlan({
-  month,
-  rows,
-  shiftsByProvider,
-}: {
-  month: string;
-  rows: ProviderPublishView[];
-  shiftsByProvider: Map<string, ShiftRow[]>;
-}) {
-  if (month !== JULY_POST_HOMEBASE_CHANGE_MONTH) return null;
-
-  const targetRows = JULY_REALLOCATION_TARGETS.map(target => {
-    const row = rows.find(candidate => normName(candidate.provider_name ?? '').includes(target.match));
-    const display = row
-      ? derivePublishDisplayValues({
-          shifts: shiftsByProvider.get(row.provider_id) ?? [],
-          acceptedHours: row.submission?.accepted_hours,
-          decisionStatus: row.submission?.decision_status,
-          humanReviewState: row.submission?.human_review_state,
-        })
-      : null;
-    const currentHours = display?.displayAcceptedHours ?? null;
-    const gapHours =
-      currentHours == null ? null : Math.max(0, target.targetHours - currentHours);
-    return {
-      ...target,
-      providerName: row?.provider_name ?? target.label,
-      currentHours,
-      gapHours,
-      display,
-    };
-  });
-
-  return (
-    <Card className="border-amber-200 bg-amber-50/60">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <ClipboardList className="h-4 w-4 text-amber-700" />
-          Post-Homebase change plan
-        </CardTitle>
-        <p className="text-xs text-amber-900">
-          After July shifts are published in Homebase, honor confirmed reduction requests first.
-          Reallocate freed hours to providers who were cut significantly. Do not add extra July hours
-          for new requests unless a true coverage need appears.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-2">
-          {JULY_REDUCTION_REQUESTS.map(request => (
-            <div key={request.provider} className="rounded-md border border-amber-200 bg-white px-3 py-2">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <div className="text-sm font-medium text-amber-950">{request.provider}</div>
-                  <div className="mt-1 text-xs text-amber-900">{request.request}</div>
-                </div>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    'bg-white text-[11px]',
-                    request.status.includes('Confirmed')
-                      ? 'border-emerald-200 text-emerald-800'
-                      : 'border-amber-300 text-amber-800',
-                  )}
-                >
-                  {request.status}
-                </Badge>
-              </div>
-              <div className="mt-2 text-xs text-muted-foreground">{request.redistribution}</div>
-            </div>
-          ))}
-        </div>
-
-        <div>
-          <div className="text-xs font-medium uppercase tracking-wide text-amber-900">
-            Reallocation targets
-          </div>
-          <div className="mt-2 grid gap-2 md:grid-cols-3">
-            {targetRows.map(target => (
-              <div key={target.label} className="rounded-md border border-amber-200 bg-white px-3 py-2">
-                <div className="text-sm font-medium">{target.providerName}</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Target: {formatHours(target.targetHours)}
-                </div>
-                <div className="mt-2 text-xs">
-                  {target.currentHours == null ? (
-                    <span className="text-muted-foreground">No current July row found.</span>
-                  ) : target.gapHours && target.gapHours > 0 ? (
-                    <span className="text-amber-800">
-                      Current {formatHours(target.currentHours)}; {formatHours(target.gapHours)} under target.
-                    </span>
-                  ) : (
-                    <span className="text-emerald-700">
-                      Current {formatHours(target.currentHours)}; at or above target.
-                    </span>
-                  )}
-                  {target.display?.hasPublishedRows && (
-                    <div className="mt-1 text-[11px] leading-tight text-muted-foreground">
-                      {publishDisplaySplit(target.display)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </CardContent>
     </Card>
@@ -10949,7 +10826,7 @@ function PublishGateBanner({
 
   if (stopItems.length > 0) {
     return (
-      <Alert variant="destructive" className="bg-red-50">
+      <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/20">
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
           <div className="font-medium">Stop before publishing</div>
@@ -10984,7 +10861,7 @@ function PublishGateBanner({
         : `All ${summary.totalShifts} shift${summary.totalShifts === 1 ? '' : 's'} are posted and confirmed.`;
 
   return (
-    <Alert className="border-emerald-200 bg-emerald-50">
+    <Alert className="border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20">
       <CheckCircle2 className="h-4 w-4 text-emerald-700" />
       <AlertDescription>
         <div className="font-medium text-emerald-900">{title}</div>
@@ -11078,7 +10955,7 @@ function CostPerVisitPanel({
   const recalculateButton = recalculationLocked ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="inline-flex h-9 shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+        <div className={cn('inline-flex h-9 shrink-0 items-center rounded-md border px-3 text-sm font-medium', TONE_AMBER)}>
           <Lock className="h-4 w-4 mr-1" />
           Allocation closed
         </div>
@@ -11195,7 +11072,7 @@ function CostPerVisitPanel({
           </div>
 
           {missingCount > 0 && (
-            <Alert className="border-amber-200 bg-amber-50">
+            <Alert className={TONE_AMBER}>
               <AlertCircle className="h-4 w-4 text-amber-700" />
               <AlertDescription className="text-xs text-amber-900">
                 CPV excludes {formatHours(model.missingRateHours)} accepted hour{model.missingRateHours === 1 ? '' : 's'} without a provider rate.
@@ -11456,10 +11333,10 @@ function CostProviderTableRow({ row }: { row: SchedulingCostProviderRow }) {
         {row.hourlyRate != null ? (
           <>
             {formatCurrency(row.hourlyRate, 2)}
-            <div className="text-[11px] text-muted-foreground">{row.rateSourceLabel}</div>
+            <div className="text-xs text-muted-foreground">{row.rateSourceLabel}</div>
           </>
         ) : (
-          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
+          <Badge variant="outline" className={TONE_AMBER}>
             Missing
           </Badge>
         )}
@@ -11467,17 +11344,17 @@ function CostProviderTableRow({ row }: { row: SchedulingCostProviderRow }) {
       <TableCell className="text-right tabular-nums">{formatCurrency(row.wageCost)}</TableCell>
       <TableCell className="text-right tabular-nums">
         {formatCurrency(row.costPerVisitAtTarget, 2)}
-        <div className="text-[11px] text-muted-foreground">{row.visitSlotModelLabel}</div>
+        <div className="text-xs text-muted-foreground">{row.visitSlotModelLabel}</div>
       </TableCell>
       <TableCell className="min-w-52">
         <div className="flex flex-wrap gap-1">
           {row.routingTags.slice(0, 4).map(tag => (
-            <Badge key={tag} variant="outline" className="text-[11px] font-medium">
+            <Badge key={tag} variant="outline" className="text-xs font-medium">
               {tag}
             </Badge>
           ))}
           {row.routingTags.length > 4 && (
-            <Badge variant="outline" className="text-[11px] font-medium">
+            <Badge variant="outline" className="text-xs font-medium">
               +{row.routingTags.length - 4}
             </Badge>
           )}
@@ -11628,7 +11505,7 @@ function ForecastPanel({ month }: { month: string }) {
                     <TableRow key={r.state} className={r.inactive ? 'bg-muted/40 text-muted-foreground' : undefined}>
                       <TableCell className="font-medium">
                         {r.state}
-                        {r.inactive && <span className="ml-2 text-[11px] uppercase">inactive</span>}
+                        {r.inactive && <span className="ml-2 text-xs uppercase">inactive</span>}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{r.monthly.toFixed(0)}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.weekly.toFixed(1)}</TableCell>
@@ -11858,7 +11735,7 @@ function CoverageGapsPanel({
                   <TableCell className="text-right tabular-nums">
                     {r.needed.toFixed(0)}
                     {r.access_buffer_hours > 0 && (
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         includes extra access protection
                       </div>
                     )}
@@ -11879,7 +11756,7 @@ function CoverageGapsPanel({
                   <TableCell>
                     <Badge className={guidance.className}>{guidance.label}</Badge>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[260px]">
+                  <TableCell className="text-xs text-muted-foreground max-w-64">
                     {guidance.action}
                   </TableCell>
                 </TableRow>
@@ -12393,17 +12270,17 @@ function DecisionReasonSummaryTiles({ row }: { row: ProviderPublishView }) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="space-y-1.5">
-      <div className="grid min-w-[240px] max-w-[320px] grid-cols-2 gap-1.5">
+      <div className="grid min-w-60 max-w-80 grid-cols-2 gap-1.5">
         {visibleTiles.map(tile => (
           <div
             key={`${tile.label}-${tile.value}`}
             title={tile.detail ?? tile.value}
             className={cn(
-              'min-h-[46px] rounded-md border px-2 py-1.5 shadow-sm',
+              'min-h-12 rounded-md border px-2 py-1.5 shadow-sm',
               REASON_TILE_STYLES[tile.tone],
             )}
           >
-            <div className="text-[10px] font-semibold uppercase tracking-normal opacity-70">
+            <div className="text-xs font-semibold uppercase tracking-normal opacity-70">
               {tile.label}
             </div>
             <div className="mt-0.5 break-words text-xs font-semibold leading-tight">
@@ -12412,7 +12289,7 @@ function DecisionReasonSummaryTiles({ row }: { row: ProviderPublishView }) {
           </div>
         ))}
         {tiles.length > visibleTiles.length && (
-          <div className="flex min-h-[46px] items-center justify-center rounded-md border border-slate-200 bg-slate-50/90 px-2 py-1.5 text-xs font-medium text-slate-700">
+          <div className="flex min-h-12 items-center justify-center rounded-md border border-slate-200 bg-slate-50/90 px-2 py-1.5 text-xs font-medium text-slate-700">
             +{tiles.length - visibleTiles.length} more
           </div>
         )}
@@ -12424,14 +12301,14 @@ function DecisionReasonSummaryTiles({ row }: { row: ProviderPublishView }) {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-6 px-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              className="h-6 px-1 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
               {open ? 'Hide reasoning' : 'Show reasoning'}
               <ChevronDown className={cn('ml-1 h-3 w-3 transition-transform', open && 'rotate-180')} />
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="whitespace-pre-wrap rounded-md border bg-muted/50 p-2 text-[11px] leading-snug text-muted-foreground">
+            <div className="whitespace-pre-wrap rounded-md border bg-muted/50 p-2 text-xs leading-snug text-muted-foreground">
               {details}
             </div>
           </CollapsibleContent>
@@ -12584,7 +12461,7 @@ function MatchingPanel({
           <div className="space-y-3 border-b p-4">
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.4fr)_160px_190px_170px_220px_auto] xl:items-end">
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Provider
                 </Label>
                 <div className="relative">
@@ -12598,7 +12475,7 @@ function MatchingPanel({
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Status
                 </Label>
                 <Select
@@ -12618,7 +12495,7 @@ function MatchingPanel({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Priority
                 </Label>
                 <Select
@@ -12638,7 +12515,7 @@ function MatchingPanel({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Hours
                 </Label>
                 <Select
@@ -12658,7 +12535,7 @@ function MatchingPanel({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Sort by
                 </Label>
                 <Select
@@ -12733,7 +12610,7 @@ function MatchingPanel({
                     <Badge
                       variant="outline"
                       className={cn(
-                        'mt-1 max-w-[180px] whitespace-normal text-[11px] font-medium leading-tight',
+                        'mt-1 max-w-44 whitespace-normal text-xs font-medium leading-tight',
                         priority.key === 'clinical_supervisor'
                           ? REASON_TAG_STYLES.emerald
                           : REASON_TAG_STYLES.blue,
@@ -12751,12 +12628,12 @@ function MatchingPanel({
                       <div>—</div>
                     )}
                     {assignedStateList.length > 0 && eligibleStates.length > 0 && (
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         Eligible: {eligibleStates.join(', ')}
                       </div>
                     )}
                     {sourceLabels && (
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         Sources: {sourceLabels}
                       </div>
                     )}
@@ -12768,7 +12645,7 @@ function MatchingPanel({
                   <TableCell className={`text-right tabular-nums ${declined > 0 ? 'text-red-700' : ''}`}>
                     {declined.toFixed(1)}
                   </TableCell>
-                  <TableCell className="align-top text-xs text-muted-foreground min-w-[280px] max-w-[340px]">
+                  <TableCell className="align-top text-xs text-muted-foreground min-w-72 max-w-80">
                     <DecisionReasonSummaryTiles row={r} />
                   </TableCell>
                   <TableCell>
@@ -12944,7 +12821,7 @@ function SourceAuditPanel({ month }: { month: string }) {
             {section.details.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {section.details.map(detail => (
-                  <Badge key={`${detail.label}-${detail.count}`} variant="outline" className="text-[11px]">
+                  <Badge key={`${detail.label}-${detail.count}`} variant="outline" className="text-xs">
                     {detail.label} · {detail.count}
                   </Badge>
                 ))}
@@ -13332,7 +13209,7 @@ function AuditPanel({
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs">{e.reasonClass}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[420px]">
+                    <TableCell className="text-xs text-muted-foreground max-w-96">
                       {e.reasonText}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{e.hours.toFixed(1)}</TableCell>
