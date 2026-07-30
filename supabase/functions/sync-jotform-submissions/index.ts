@@ -228,6 +228,8 @@ Deno.serve(async (req: Request) => {
             attestations: parsed.attestations,
             email: parsed.email,
             match_confidence: confidence,
+            target_month_source: parsed.targetMonthSource,
+            target_month_dropdown: parsed.dropdownMonth,
           };
 
           const { error: upsertErr } = await supabase
@@ -369,6 +371,8 @@ type ParsedSubmission = {
   feedback: string | null;
   nps: number | null;
   attestations: string[];
+  targetMonthSource: 'form_dates' | 'form_dropdown' | null;
+  dropdownMonth: string | null;
 };
 
 /**
@@ -395,6 +399,8 @@ function parseSubmission(sub: JotformSubmission, submittedAt: Date): ParsedSubmi
     feedback: null,
     nps: null,
     attestations: [],
+    targetMonthSource: null,
+    dropdownMonth: null,
   };
 
   for (const ans of Object.values(sub.answers || {})) {
@@ -454,6 +460,22 @@ function parseSubmission(sub: JotformSubmission, submittedAt: Date): ParsedSubmi
       default:
         break;
     }
+  }
+
+  out.dropdownMonth = out.targetMonth;
+  if (out.targetMonth) out.targetMonthSource = 'form_dropdown';
+
+  // The month a submission belongs to is decided by the ACTUAL dates written
+  // on the form, not by the "which month is this for" dropdown and not by when
+  // the form was submitted. Providers regularly pick the wrong dropdown value
+  // (or leave it blank) while entering correct dates, and those submissions
+  // must still land in the month they actually scheduled.
+  const datedMonth = dominantMonthFromDates(out.oneOffVirtual, out.inHomeClinic);
+  if (datedMonth && datedMonth !== out.targetMonth) {
+    out.targetMonth = datedMonth;
+    out.targetMonthSource = 'form_dates';
+  } else if (datedMonth) {
+    out.targetMonthSource = 'form_dates';
   }
 
   // Total hours: parse the widget JSON. Recurring entries get expanded by
@@ -601,6 +623,48 @@ function computeTotalHours(
   }
 
   return any ? Math.round(total * 100) / 100 : null;
+}
+
+/**
+ * Derives the calendar month a submission targets from the explicit dates it
+ * contains (one-off virtual + in-home/clinic widgets). Returns the month that
+ * holds a strict majority of the dated entries, or null when the form has no
+ * usable dates (e.g. recurring-only submissions).
+ */
+function dominantMonthFromDates(oneOff: unknown, inHome: unknown): string | null {
+  const counts = new Map<string, number>();
+  let total = 0;
+  for (const widgetData of [oneOff, inHome]) {
+    for (const e of parseWidgetArray(widgetData)) {
+      const month = monthFromDateAnswer(e['Date'] ?? e['date']);
+      if (!month) continue;
+      counts.set(month, (counts.get(month) ?? 0) + 1);
+      total++;
+    }
+  }
+  if (total === 0) return null;
+  let bestMonth: string | null = null;
+  let bestCount = 0;
+  for (const [month, count] of counts) {
+    if (count > bestCount) { bestMonth = month; bestCount = count; }
+  }
+  return bestCount * 2 > total ? bestMonth : null;
+}
+
+/** Parses "06-04-2026", "2026-06-04", "6/4/2026" → "2026-06-01". */
+function monthFromDateAnswer(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-01`;
+  const us = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (us) {
+    const month = Number(us[1]);
+    if (month < 1 || month > 12) return null;
+    return `${us[3]}-${String(month).padStart(2, '0')}-01`;
+  }
+  return null;
 }
 
 function parseWidgetArray(raw: unknown): Record<string, string>[] {
