@@ -155,20 +155,25 @@ const AdminDashboard = () => {
 
           {/* Stats Grid - only for admins */}
           {!isPodLead && (
-            <AdminStatsGrid
-              stats={stats}
-              loading={loading}
-              totalTasks={actionableTasks.length}
-              unassignedCount={unassignedCount}
-              blockedCount={blockedCount}
-              escalatedCount={escalatedCount}
-              completedCount={taskStatusCounts['completed'] || 0}
-            />
+            <div className="mb-8">
+              <p className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Network Overview
+              </p>
+              <AdminStatsGrid
+                stats={stats}
+                loading={loading}
+                totalTasks={actionableTasks.length}
+                unassignedCount={unassignedCount}
+                blockedCount={blockedCount}
+                escalatedCount={escalatedCount}
+                completedCount={taskStatusCounts['completed'] || 0}
+              />
+            </div>
           )}
 
           {/* Coverage & Ops quick links — admin only */}
           {!isPodLead && (
-            <div>
+            <div className="mb-8">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                   Coverage &amp; Ops
