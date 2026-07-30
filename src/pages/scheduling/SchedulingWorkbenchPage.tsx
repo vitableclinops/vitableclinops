@@ -8032,7 +8032,7 @@ function SchedulingExceptionsPanel({
                   id="scheduling-exception-rule"
                   value={exceptionDraft.rule}
                   onChange={e => updateExceptionDraft('rule', e.target.value)}
-                  className="min-h-[72px]"
+                  className="min-h-16"
                 />
               </div>
               <div className="space-y-2">
@@ -8041,7 +8041,7 @@ function SchedulingExceptionsPanel({
                   id="scheduling-exception-action"
                   value={exceptionDraft.schedulingAction}
                   onChange={e => updateExceptionDraft('schedulingAction', e.target.value)}
-                  className="min-h-[72px]"
+                  className="min-h-16"
                 />
               </div>
               <Button
@@ -8070,7 +8070,7 @@ function SchedulingExceptionsPanel({
                   <TableHead>Type</TableHead>
                   <TableHead>Rule</TableHead>
                   <TableHead>Scheduling action</TableHead>
-                  <TableHead className="w-[120px] text-right">Actions</TableHead>
+                  <TableHead className="w-28 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -8101,7 +8101,7 @@ function SchedulingExceptionsPanel({
                         <Textarea
                           value={editingExceptionDraft.rule}
                           onChange={e => updateEditingExceptionDraft('rule', e.target.value)}
-                          className="min-h-[72px]"
+                          className="min-h-16"
                         />
                       ) : (
                         item.rule
@@ -8112,7 +8112,7 @@ function SchedulingExceptionsPanel({
                         <Textarea
                           value={editingExceptionDraft.schedulingAction}
                           onChange={e => updateEditingExceptionDraft('schedulingAction', e.target.value)}
-                          className="min-h-[72px]"
+                          className="min-h-16"
                         />
                       ) : (
                         item.scheduling_action
@@ -8217,7 +8217,7 @@ function SchedulingExceptionsPanel({
                       {selectedProvider.email ?? 'No email'} · {selectedProvider.profession ?? '—'}
                     </span>
                     {selectedExistingException && (
-                      <Badge variant="outline" className="bg-white">Already listed</Badge>
+                      <Badge variant="outline" className="bg-background">Already listed</Badge>
                     )}
                     <Button
                       variant="ghost"
@@ -8271,7 +8271,7 @@ function SchedulingExceptionsPanel({
                   id="provider-exemption-reason"
                   value={reasonDraft}
                   onChange={e => setReasonDraft(e.target.value)}
-                  className="min-h-[72px]"
+                  className="min-h-16"
                 />
               </div>
 
@@ -8302,7 +8302,7 @@ function SchedulingExceptionsPanel({
                   <TableHead>Profession</TableHead>
                   <TableHead>Employment</TableHead>
                   <TableHead>Profile indicator</TableHead>
-                  <TableHead className="w-[120px] text-right">Actions</TableHead>
+                  <TableHead className="w-28 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -8322,7 +8322,7 @@ function SchedulingExceptionsPanel({
                         <Textarea
                           value={editingReason}
                           onChange={e => setEditingReason(e.target.value)}
-                          className="min-h-[72px]"
+                          className="min-h-16"
                         />
                       ) : (
                         <>
