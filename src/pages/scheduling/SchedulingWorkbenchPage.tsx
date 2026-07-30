@@ -1008,7 +1008,7 @@ export type SchedulingWorkbenchScope = 'medical' | 'mental_health';
 type AvailabilityTabKey = 'submissions' | 'inbox' | 'unmatched' | 'setup' | 'missing' | 'timeoff';
 type PublishTabKey = 'provider' | 'queue' | 'day' | 'history';
 type ReviewTabKey = 'decisions' | 'resubmits' | 'recalculate' | 'amendments';
-type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'overflow' | 'cost' | 'forecast';
+type CoveragePlanTabKey = 'coverage' | 'matching' | 'declined' | 'overflow' | 'cost';
 type ProviderTimeOffEntry = {
   row: ProviderPublishView;
   ranges: ReturnType<typeof extractUnavailableRanges>;
@@ -1016,6 +1016,7 @@ type ProviderTimeOffEntry = {
 };
 const TOP_TAB_VALUES = [
   'readiness',
+  'forecast',
   'intake',
   'review',
   'coverage-plan',
@@ -1071,7 +1072,7 @@ const coveragePlanTabFromView = (view: string | null, tab: string | null): Cover
   const candidate = view ?? tab;
   if (candidate === 'coverage-plan') return 'coverage';
   if (candidate === 'declined') return 'declined';
-  if (candidate === 'forecast' || candidate === 'matching' || candidate === 'coverage' || candidate === 'overflow' || candidate === 'cost') {
+  if (candidate === 'matching' || candidate === 'coverage' || candidate === 'overflow' || candidate === 'cost') {
     return candidate;
   }
   return 'coverage';
@@ -2346,9 +2347,16 @@ export default function SchedulingWorkbenchPage({
       />
 
       <Tabs value={topTab} onValueChange={onTopTabChange}>
-        <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="readiness"><ShieldCheck className="h-3.5 w-3.5 mr-1" />Readiness</TabsTrigger>
+        {/* Workflow stages, in the order the work is done. "Overview" is the
+            at-a-glance status landing; the numbered items are the five stages. */}
+        <TabsList className="flex-wrap h-auto gap-1">
+          <TabsTrigger value="readiness"><LayoutDashboard className="h-3.5 w-3.5 mr-1" />Overview</TabsTrigger>
+          <TabsTrigger value="forecast">
+            <span className="mr-1 text-muted-foreground">1</span>
+            <TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast
+          </TabsTrigger>
           <TabsTrigger value="intake">
+            <span className="mr-1 text-muted-foreground">2</span>
             <Inbox className="h-3.5 w-3.5 mr-1" />Intake
             {scopedIntakeBranchSummary.blocked > 0 && (
               <Badge className="ml-1 bg-red-100 text-red-700">
@@ -2356,26 +2364,36 @@ export default function SchedulingWorkbenchPage({
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="review">
-            <AlertCircle className="h-3.5 w-3.5 mr-1" />Review
-            {(scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length + requestedAmendments.length) > 0 && (
-              <Badge className="ml-1 bg-orange-100 text-orange-800">
-                {scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length + requestedAmendments.length}
-              </Badge>
-            )}
-          </TabsTrigger>
           <TabsTrigger value="coverage-plan">
-            <MapIcon className="h-3.5 w-3.5 mr-1" />Coverage Plan
+            <span className="mr-1 text-muted-foreground">3</span>
+            <MapIcon className="h-3.5 w-3.5 mr-1" />Build Schedule
             {(isMh ? scopedDeclined.length : allDeclinedRows.length) > 0 && (
               <Badge className="ml-1 bg-red-100 text-red-700">
                 {isMh ? scopedDeclined.length : allDeclinedRows.length}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="publish"><Send className="h-3.5 w-3.5 mr-1" />Publish</TabsTrigger>
+          <TabsTrigger value="review">
+            <span className="mr-1 text-muted-foreground">4</span>
+            <AlertCircle className="h-3.5 w-3.5 mr-1" />Review Exceptions
+            {(scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length + requestedAmendments.length) > 0 && (
+              <Badge className="ml-1 bg-orange-100 text-orange-800">
+                {scopedSummary.needsReviewCount + scopedInboxActionable + scopedPendingAvailability.length + requestedAmendments.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="publish">
+            <span className="mr-1 text-muted-foreground">5</span>
+            <Send className="h-3.5 w-3.5 mr-1" />Finalize
+          </TabsTrigger>
         </TabsList>
 
-        {/* ============ READINESS ============ */}
+        {/* ============ FORECAST ============ */}
+        <TabsContent value="forecast" className="mt-4 space-y-4">
+          <ForecastPanel month={month} />
+        </TabsContent>
+
+        {/* ============ READINESS (Overview) ============ */}
         <TabsContent value="readiness" className="mt-4 space-y-4">
           <ReadinessPanel
             month={month}
@@ -2770,7 +2788,6 @@ export default function SchedulingWorkbenchPage({
                 )}
               </TabsTrigger>
               <TabsTrigger value="cost"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost audit</TabsTrigger>
-              <TabsTrigger value="forecast"><TrendingUp className="h-3.5 w-3.5 mr-1" />Forecast</TabsTrigger>
             </TabsList>
 
             <TabsContent value="coverage" className="mt-4 space-y-4">
@@ -2822,9 +2839,6 @@ export default function SchedulingWorkbenchPage({
               />
             </TabsContent>
 
-            <TabsContent value="forecast" className="mt-4 space-y-4">
-              <ForecastPanel month={month} />
-            </TabsContent>
           </Tabs>
         </TabsContent>
 
