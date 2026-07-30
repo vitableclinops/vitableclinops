@@ -206,6 +206,20 @@ import {
   isAugust2026Month,
 } from '@/lib/scheduling/august2026';
 
+// Shared status-tone tokens, reused across the ~55 Workbench panels so the
+// same "which color means what" language (red = blocked/critical, amber =
+// needs attention, emerald = clean/good, blue = informational, purple =
+// locked/in-progress, orange = secondary warning) reads consistently instead
+// of being reimplemented slightly differently in each panel. Mirrors the
+// TONE_* pattern already used in OpsDashboardPage.tsx.
+const TONE_RED = 'border-red-200 bg-red-50 text-red-800';
+const TONE_AMBER = 'border-amber-200 bg-amber-50 text-amber-800';
+const TONE_ORANGE = 'border-orange-200 bg-orange-50 text-orange-800';
+const TONE_EMERALD = 'border-emerald-200 bg-emerald-50 text-emerald-800';
+const TONE_BLUE = 'border-blue-200 bg-blue-50 text-blue-800';
+const TONE_PURPLE = 'border-purple-200 bg-purple-50 text-purple-800';
+const TONE_SLATE = 'border-slate-200 bg-slate-50 text-slate-700';
+
 // Derived from today so the workbench always opens on the current cycle rather
 // than drifting to a stale hard-coded month — the tool is a monthly pipeline.
 const isoMonthStart = (year: number, monthIndex0: number): string =>
@@ -501,9 +515,9 @@ type IntakeBranch = {
 };
 
 const intakeBranchStyles: Record<IntakeBranchKind, string> = {
-  blocked: 'border-red-200 bg-red-50 text-red-800',
-  flagged: 'border-amber-200 bg-amber-50 text-amber-800',
-  clean: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  blocked: TONE_RED,
+  flagged: TONE_AMBER,
+  clean: TONE_EMERALD,
 };
 
 const blockingIntakeIssue = (warning: string) =>
@@ -2193,7 +2207,7 @@ export default function SchedulingWorkbenchPage({
           {recalculationLocked ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-900">
+                <div className={cn('inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium', TONE_AMBER)}>
                   <Lock className="h-4 w-4 mr-1" />
                   Allocation closed
                 </div>
@@ -3471,7 +3485,7 @@ function HubTaskGuide({
               onClick={tile.onClick}
               className={cn(
                 'flex flex-col items-start gap-1 rounded-md border px-3 py-2 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/60',
-                tile.active ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white',
+                tile.active ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-card',
               )}
             >
               <div className="flex w-full items-start justify-between gap-2">
@@ -3484,7 +3498,7 @@ function HubTaskGuide({
                 {tile.where}
                 <ArrowRight className="h-3 w-3" />
               </span>
-              <span className="text-[11px] text-muted-foreground">Owner: {tile.owner}</span>
+              <span className="text-xs text-muted-foreground">Owner: {tile.owner}</span>
             </button>
           ))}
         </div>
@@ -3597,17 +3611,17 @@ function SchedulingPipelinePanel({
                 {isLoading ? 'Loading scheduling workflow' : title}
               </div>
               {lockedFromRecalc && (
-                <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
+                <Badge className={cn('hover:bg-amber-100', TONE_AMBER)}>
                   Allocation closed
                 </Badge>
               )}
               {openAmendments.length > 0 && (
-                <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">
+                <Badge className={cn('hover:bg-purple-100', TONE_PURPLE)}>
                   {openAmendments.length} open amendment{openAmendments.length === 1 ? '' : 's'}
                 </Badge>
               )}
               {stage === 'review' && reviewBlockerCount > 0 && (
-                <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                <Badge className={cn('hover:bg-red-100', TONE_RED)}>
                   {reviewBlockerCount} before lock
                 </Badge>
               )}
@@ -3615,8 +3629,8 @@ function SchedulingPipelinePanel({
                 <Badge
                   className={cn(
                     publishChecklistComplete
-                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
-                      : 'bg-blue-100 text-blue-800 hover:bg-blue-100',
+                      ? cn(TONE_EMERALD, 'hover:bg-emerald-100')
+                      : cn(TONE_BLUE, 'hover:bg-blue-100'),
                   )}
                 >
                   {ehrDoneCount}/{publishRows.length} EHR confirmed
@@ -3641,7 +3655,7 @@ function SchedulingPipelinePanel({
                               ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
                               : isDone
                                 ? 'border-slate-200 bg-slate-50 text-slate-600'
-                                : 'border-slate-200 bg-white text-slate-700',
+                                : 'border-slate-200 bg-card text-slate-700',
                           )}
                         >
                           {isDone && <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
@@ -3662,31 +3676,31 @@ function SchedulingPipelinePanel({
             {activeBuild && (
               <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
                 <div className="rounded-md border bg-slate-50 px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Draft rows</div>
+                  <div className="text-xs text-muted-foreground">Draft rows</div>
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : buildRows.length.toLocaleString()}
                   </div>
                 </div>
-                <div className="rounded-md border bg-emerald-50 px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Accepted</div>
+                <div className={cn('rounded-md border px-3 py-2', TONE_EMERALD)}>
+                  <div className="text-xs text-muted-foreground">Accepted</div>
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : `${formatHours(publishHours)}h`}
                   </div>
                 </div>
-                <div className="rounded-md border bg-red-50 px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Cut</div>
+                <div className={cn('rounded-md border px-3 py-2', TONE_RED)}>
+                  <div className="text-xs text-muted-foreground">Cut</div>
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : `${formatHours(cutHours)}h`}
                   </div>
                 </div>
-                <div className="rounded-md border bg-white px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Providers</div>
+                <div className="rounded-md border bg-slate-50 px-3 py-2">
+                  <div className="text-xs text-muted-foreground">Providers</div>
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : publishProviderCount.toLocaleString()}
                   </div>
                 </div>
-                <div className="rounded-md border bg-white px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">Frozen dates</div>
+                <div className="rounded-md border bg-slate-50 px-3 py-2">
+                  <div className="text-xs text-muted-foreground">Frozen dates</div>
                   <div className="text-sm font-semibold">{isLoadingBuildRows ? 'Loading' : dateSpan}</div>
                 </div>
               </div>
@@ -3695,9 +3709,7 @@ function SchedulingPipelinePanel({
               <div
                 className={cn(
                   'flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs',
-                  reviewBlockerCount > 0
-                    ? 'border-red-200 bg-red-50 text-red-900'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-900',
+                  reviewBlockerCount > 0 ? TONE_RED : TONE_EMERALD,
                 )}
               >
                 <span className="font-medium">Before lock</span>
@@ -3711,9 +3723,7 @@ function SchedulingPipelinePanel({
               <div
                 className={cn(
                   'flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs',
-                  publishChecklistComplete
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                    : 'border-blue-200 bg-blue-50 text-blue-900',
+                  publishChecklistComplete ? TONE_EMERALD : TONE_BLUE,
                 )}
               >
                 <span className="font-medium">Before published</span>
@@ -3820,7 +3830,7 @@ function SchedulingPipelinePanel({
           </div>
         </div>
         {activeBuild && (
-          <div className="mt-3 text-[11px] text-muted-foreground">
+          <div className="mt-3 text-xs text-muted-foreground">
             Created {formatRelativeTime(activeBuild.created_at)}
             {activeBuild.created_by_label ? ` by ${activeBuild.created_by_label}` : ''}
             {activeBuild.locked_at ? ` · locked ${formatRelativeTime(activeBuild.locked_at)}` : ''}
@@ -4284,12 +4294,12 @@ function ProviderStatusSearchPanel({
                 </div>
                 <div className="flex flex-wrap gap-1 md:justify-end">
                   {selectedHasTimeCorrection && (
-                    <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                    <Badge variant="outline" className={TONE_EMERALD}>
                       <CheckCircle2 className="mr-1 h-3 w-3" />
                       Times updated
                     </Badge>
                   )}
-                  <Badge variant="outline" className="bg-white">
+                  <Badge variant="outline">
                     {reviewLabel}
                   </Badge>
                 </div>
@@ -4345,10 +4355,10 @@ function ProviderStatusMetric({
   sub?: string;
 }) {
   return (
-    <div className="rounded-md border bg-white px-2 py-2">
-      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+    <div className="rounded-md border bg-card px-2 py-2">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
       <div className="mt-1 min-h-8 text-sm font-semibold leading-tight">{value}</div>
-      {sub && <div className="text-[11px] leading-tight text-muted-foreground">{sub}</div>}
+      {sub && <div className="text-xs leading-tight text-muted-foreground">{sub}</div>}
     </div>
   );
 }
@@ -4607,11 +4617,11 @@ type ReasonTag = {
 };
 
 const REASON_TAG_STYLES: Record<NonNullable<ReasonTag['tone']>, string> = {
-  amber: 'border-amber-200 bg-amber-50 text-amber-800',
-  blue: 'border-blue-200 bg-blue-50 text-blue-800',
-  red: 'border-red-200 bg-red-50 text-red-800',
-  slate: 'border-slate-200 bg-slate-50 text-slate-700',
-  emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  amber: TONE_AMBER,
+  blue: TONE_BLUE,
+  red: TONE_RED,
+  slate: TONE_SLATE,
+  emerald: TONE_EMERALD,
 };
 
 const reasonTagsForText = (raw: string | null | undefined): ReasonTag[] => {
@@ -9582,13 +9592,14 @@ function ReadinessPanel({
     label: 'Checking' | 'Blocked' | 'Action Needed' | 'Ready to Publish' | 'Publishing' | 'Complete';
     tone: string;
   };
+  const READY_TONE = 'bg-emerald-100 text-emerald-800 border-emerald-200';
   const readiness: Readiness = (() => {
     if (checksLoading) return { label: 'Checking', tone: 'bg-slate-100 text-slate-700 border-slate-200' };
     if (activeBlockers.length > 0) return { label: 'Blocked', tone: 'bg-red-100 text-red-800 border-red-200' };
     if (missingCount > 0) return { label: 'Action Needed', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
-    if (publishingComplete) return { label: 'Complete', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+    if (publishingComplete) return { label: 'Complete', tone: READY_TONE };
     if (homebasePct > 0 || ehrPct > 0) return { label: 'Publishing', tone: 'bg-blue-100 text-blue-800 border-blue-200' };
-    return { label: 'Ready to Publish', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+    return { label: 'Ready to Publish', tone: READY_TONE };
   })();
 
   const { blocker, nextAction, nextActionJump, nextCategory, nextDisabled } = useMemo<{
@@ -9867,6 +9878,10 @@ function ReadinessPanel({
     loading?: boolean;
   };
 
+  // Soft tones reused by more than one action-center item below.
+  const TONE_AMBER_SOFT = 'border-amber-200 bg-amber-50/70';
+  const TONE_PURPLE_SOFT = 'border-purple-200 bg-purple-50/70';
+
   const actionItems = useMemo<ActionCenterItem[]>(() => {
     const out: ActionCenterItem[] = [];
     if (blockedIntakeCount > 0) {
@@ -9890,7 +9905,7 @@ function ReadinessPanel({
         badge: 'Parallel review',
         action: 'Open Intake',
         onClick: () => onJumpToAvailability('submissions'),
-        tone: 'border-amber-200 bg-amber-50/70',
+        tone: TONE_AMBER_SOFT,
       });
     }
     if (pendingSubmissionCount > 0) {
@@ -9904,7 +9919,7 @@ function ReadinessPanel({
         badge: recalculationLocked ? 'Amendment review' : 'Run allocation',
         action: recalculationLocked ? 'Open Amendments' : 'Open Allocation Runs',
         onClick: recalculationLocked ? () => onJumpToReview('amendments') : () => onJumpToReview('recalculate'),
-        tone: recalculationLocked ? 'border-purple-200 bg-purple-50/70' : 'border-blue-200 bg-blue-50/60',
+        tone: recalculationLocked ? TONE_PURPLE_SOFT : 'border-blue-200 bg-blue-50/60',
         disabled: isReevaluating,
         loading: isReevaluating,
       });
@@ -9942,7 +9957,7 @@ function ReadinessPanel({
         badge: 'Clear before publish',
         action: 'Open Amendments',
         onClick: () => onJumpToReview('amendments'),
-        tone: 'border-purple-200 bg-purple-50/70',
+        tone: TONE_PURPLE_SOFT,
       });
     }
     if (unmatchedCount > 0) {
@@ -9954,7 +9969,7 @@ function ReadinessPanel({
         badge: 'Fix match',
         action: 'Open Unmatched',
         onClick: () => onJumpToAvailability('unmatched'),
-        tone: 'border-amber-200 bg-amber-50/70',
+        tone: TONE_AMBER_SOFT,
       });
     }
     if (declinedCount > 0) {
@@ -10023,9 +10038,9 @@ function ReadinessPanel({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="text-xs text-right max-w-[260px]">
+            <div className="text-xs text-right max-w-64">
               <div className="font-medium">One next action</div>
-              <Badge variant="outline" className="mt-1 bg-white/70 text-[11px]">
+              <Badge variant="outline" className="mt-1 bg-background/70 text-xs">
                 {nextCategory}
               </Badge>
               <div className="opacity-90">{nextAction}</div>
@@ -10091,7 +10106,7 @@ function ReadinessPanel({
         </CardHeader>
         <CardContent>
           {actionItems.length === 0 ? (
-            <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <div className={cn('flex items-start gap-2 rounded-md border px-3 py-2 text-xs', TONE_EMERALD)}>
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               No pending review actions for {formatMonthLabel(month)}. Use Publish when the gate is ready.
             </div>
@@ -10104,15 +10119,15 @@ function ReadinessPanel({
                       <div className="text-xs font-medium text-muted-foreground">{item.label}</div>
                       <div className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</div>
                     </div>
-                    <Badge variant="outline" className="bg-white text-[11px]">
+                    <Badge variant="outline" className="bg-background/80 text-xs">
                       {item.badge}
                     </Badge>
                   </div>
-                  <div className="mt-2 min-h-[36px] text-xs text-muted-foreground">{item.detail}</div>
+                  <div className="mt-2 min-h-9 text-xs text-muted-foreground">{item.detail}</div>
                   <Button
                     size="sm"
                     variant="outline"
-                    className="mt-3 h-8 bg-white/80"
+                    className="mt-3 h-8 bg-background/80"
                     onClick={item.onClick}
                     disabled={item.disabled}
                   >
@@ -10208,7 +10223,7 @@ function ReadinessPanel({
                     <div className="text-xs font-medium text-red-800">Short states</div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {shortStateRows.slice(0, 6).map(row => (
-                        <Badge key={row.state} variant="outline" className="bg-white/80 text-red-800">
+                        <Badge key={row.state} variant="outline" className="bg-background/80 text-red-800">
                           {row.state} {row.shortage.toFixed(0)} hrs short
                         </Badge>
                       ))}
@@ -10218,7 +10233,7 @@ function ReadinessPanel({
                     <div className="text-xs font-medium text-blue-800">Remaining extra by state</div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {surplusStateRows.slice(0, 6).map(row => (
-                        <Badge key={row.state} variant="outline" className="bg-white/80 text-blue-800">
+                        <Badge key={row.state} variant="outline" className="bg-background/80 text-blue-800">
                           {row.state} +{row.surplus.toFixed(0)} hrs
                         </Badge>
                       ))}
@@ -10522,10 +10537,10 @@ function OperatorBlockersCard({
               </div>
             ) : (
               hardBlockers.map(item => (
-                <div key={item.label} className="rounded-md border border-red-200 bg-red-50 p-2">
+                <div key={item.label} className={cn('rounded-md border p-2', TONE_RED)}>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-sm font-medium text-red-800">{item.label}</div>
-                    <Badge variant="outline" className="bg-white text-[11px]">
+                    <Badge variant="outline" className="bg-background text-xs">
                       {item.category}
                     </Badge>
                   </div>
@@ -10535,7 +10550,7 @@ function OperatorBlockersCard({
                       {item.action}
                     </Button>
                     {item.overrideable === false ? (
-                      <Badge variant="outline" className="h-7 bg-white text-[11px]">
+                      <Badge variant="outline" className="h-7 bg-background text-xs">
                         Required
                       </Badge>
                     ) : isAdmin && (
@@ -10565,10 +10580,10 @@ function OperatorBlockersCard({
               {overriddenBlockers.map(item => {
                 const ov = blockerOverrides[item.key];
                 return (
-                  <div key={item.key} className="rounded-md border border-emerald-200 bg-emerald-50 p-2">
+                  <div key={item.key} className={cn('rounded-md border p-2', TONE_EMERALD)}>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-sm font-medium text-emerald-900">{item.label}</div>
-                      <Badge variant="outline" className="bg-white text-[11px]">
+                      <Badge variant="outline" className="bg-background text-xs">
                         Override applied
                       </Badge>
                     </div>
@@ -10601,10 +10616,10 @@ function OperatorBlockersCard({
               <div className="text-xs text-muted-foreground">No chase list items right now.</div>
             ) : (
               softWarnings.map(item => (
-                <div key={item.label} className="rounded-md border border-amber-200 bg-amber-50 p-2">
+                <div key={item.label} className={cn('rounded-md border p-2', TONE_AMBER)}>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-sm font-medium text-amber-900">{item.label}</div>
-                    <Badge variant="outline" className="bg-white text-[11px]">
+                    <Badge variant="outline" className="bg-background text-xs">
                       {item.category}
                     </Badge>
                   </div>
