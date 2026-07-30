@@ -4921,7 +4921,7 @@ function AvailabilitySubmissionsPanel({
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       <Badge variant="outline" className={cn('font-medium', intakeBranchStyles[intakeBranch.kind])}>
                         {intakeBranch.label}
                       </Badge>
@@ -4943,21 +4943,21 @@ function AvailabilitySubmissionsPanel({
                     <TableCell className="align-top text-xs">
                       <div>{shiftTypes || '—'}</div>
                       {submissionIntent && (
-                        <Badge variant="outline" className="mt-1 border-blue-200 bg-blue-50 text-blue-800">
+                        <Badge variant="outline" className={cn('mt-1', TONE_BLUE)}>
                           {submissionIntent}
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {formatAvailabilityRows(parsed.recurring_virtual, 'recurring')}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {formatAvailabilityRows(parsed.one_off_virtual, 'dated')}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {formatAvailabilityRows(parsed.in_home_clinic, 'dated')}
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {formatAvailabilityRows(parsed.unavailable_dates, 'unavailable')}
                       <div className="mt-1 text-muted-foreground">
                         Last-minute: {parsed.last_minute_ok == null ? '—' : parsed.last_minute_ok ? 'yes' : 'no'}
@@ -4981,9 +4981,9 @@ function AvailabilitySubmissionsPanel({
                           <Badge
                             variant="outline"
                             className={cn(
-                              row.human_review_state === 'parked' && 'border-amber-200 bg-amber-50 text-amber-800',
-                              row.human_review_state === 'approved' && 'border-emerald-200 bg-emerald-50 text-emerald-800',
-                              row.human_review_state === 'pending' && 'border-blue-200 bg-blue-50 text-blue-800',
+                              row.human_review_state === 'parked' && TONE_AMBER,
+                              row.human_review_state === 'approved' && TONE_EMERALD,
+                              row.human_review_state === 'pending' && TONE_BLUE,
                             )}
                           >
                             {row.human_review_state === 'parked'
@@ -5004,7 +5004,7 @@ function AvailabilitySubmissionsPanel({
                       )}
                       {hasTimeCorrection && (
                         <div className="mt-1">
-                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                          <Badge variant="outline" className={TONE_EMERALD}>
                             <CheckCircle2 className="mr-1 h-3 w-3" />
                             Times updated
                           </Badge>
@@ -5079,13 +5079,13 @@ function AvailabilitySubmissionsPanel({
                             </Button>
                           </div>
                         ) : (
-                          <Badge variant="outline" className="bg-amber-50 text-amber-800">
+                          <Badge variant="outline" className={TONE_AMBER}>
                             Link provider first
                           </Badge>
                         )
                       ) : (
                         hasTimeCorrection ? (
-                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+                          <Badge variant="outline" className={TONE_EMERALD}>
                             Updated
                           </Badge>
                         ) : (
@@ -8641,7 +8641,7 @@ function DeclinedHoursPanel({
                         {formatHours(sub.declined_hours)}
                       </span>
                     </TableCell>
-                    <TableCell className="align-top text-xs max-w-[220px]">
+                    <TableCell className="align-top text-xs max-w-56">
                       {eligibleStates.length > 0 ? (
                         <>
                           <div className="flex flex-wrap gap-1">
@@ -9085,7 +9085,7 @@ function TimeOffPanel({
                       <Badge
                         key={`${range.startIso}-${range.endIso}-${i}`}
                         variant="outline"
-                        className="bg-amber-50 border-amber-200 text-amber-900 font-normal"
+                        className={cn(TONE_AMBER, 'font-normal')}
                       >
                         {formatRange(range.startIso, range.endIso)}
                       </Badge>
