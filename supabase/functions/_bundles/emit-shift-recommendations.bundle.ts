@@ -1714,6 +1714,9 @@ const POLICY_CUT_REASON = 'Cut — below minimum shift length policy';
 
 const FRIDAY_SCARCE_START_MIN = 12 * 60;
 const OPERATIONAL_BLOCK_MINUTES = 30;
+// Published shifts are never shorter than one hour; a trim that would leave a
+// 30-minute stub gives the half hour back instead.
+const MIN_PUBLISHED_SHIFT_MINUTES = 60;
 
 export function scarceCoverageWindowForSlot(slot: Pick<ExpandedSlot, 'date' | 'endMin'>): string | null {
   const day = dayOfWeekUtc(slot.date);
@@ -1900,7 +1903,15 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
       );
     }
 
-    const cutMinutes = cutTailMinutes.get(slot) ?? 0;
+    const rawCutMinutes = cutTailMinutes.get(slot) ?? 0;
+    const slotMinutes = Math.max(0, slot.endMin - slot.startMin);
+    const cutMinutes = rawCutMinutes <= 0
+      ? 0
+      : rawCutMinutes >= slotMinutes
+        ? slotMinutes
+        : slotMinutes - rawCutMinutes < MIN_PUBLISHED_SHIFT_MINUTES
+          ? (slotMinutes >= MIN_PUBLISHED_SHIFT_MINUTES ? slotMinutes - MIN_PUBLISHED_SHIFT_MINUTES : 0)
+          : rawCutMinutes;
     const publishEndMin = Math.max(slot.startMin, slot.endMin - cutMinutes);
     const rows: ShiftRecommendationRow[] = [];
 
