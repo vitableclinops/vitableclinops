@@ -9,8 +9,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
     const body = await req.json().catch(() => ({}));
-    const { provider_name, from_month, to_month, dry_run } = body as {
-      provider_name?: string; from_month?: string; to_month?: string; dry_run?: boolean;
+    const { provider_name, from_month, to_month, dry_run, submission_id } = body as {
+      provider_name?: string; from_month?: string; to_month?: string; dry_run?: boolean; submission_id?: string;
     };
     if (!provider_name || !from_month || !to_month) {
       return new Response(JSON.stringify({ error: 'provider_name, from_month, to_month required (YYYY-MM-01)' }), {
@@ -21,12 +21,13 @@ Deno.serve(async (req) => {
     const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY')!;
     const sb = createClient(url, key);
 
-    const { data: subs, error: selErr } = await sb
+    let query = sb
       .from('schedule_submissions')
       .select('id, provider_id, provider_name, target_month, decision_status, submitted_at, raw_requested_hours, parsed_shifts')
       .ilike('provider_name', `%${provider_name}%`)
-      .eq('target_month', from_month)
-      .order('submitted_at', { ascending: false });
+      .eq('target_month', from_month);
+    if (submission_id) query = query.eq('id', submission_id);
+    const { data: subs, error: selErr } = await query.order('submitted_at', { ascending: false });
     if (selErr) throw selErr;
     if (!subs?.length) {
       return new Response(JSON.stringify({ error: 'No matching submission', provider_name, from_month }), {
