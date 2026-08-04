@@ -3564,6 +3564,17 @@ function SchedulingPipelinePanel({
   ).size;
   const publishHours = publishRows.reduce((sum, row) => sum + Number(row.hours ?? 0), 0);
   const cutHours = cutRows.reduce((sum, row) => sum + Number(row.hours ?? 0), 0);
+  // Split accepted hours by service line so ClinOps can read telehealth and
+  // mental health capacity separately (they are staffed against different
+  // demand models).
+  const mentalHealthPublishHours = publishRows.reduce(
+    (sum, row) =>
+      isMentalHealthProvider(null, row.provider_name ?? null)
+        ? sum + Number(row.hours ?? 0)
+        : sum,
+    0,
+  );
+  const telehealthPublishHours = publishHours - mentalHealthPublishHours;
   const homebaseDoneCount = publishRows.filter(isHomebaseDone).length;
   const ehrDoneCount = publishRows.filter(isEhrDone).length;
   const publishChecklistComplete =
@@ -3689,6 +3700,12 @@ function SchedulingPipelinePanel({
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : `${formatHours(publishHours)}h`}
                   </div>
+                  {!isLoadingBuildRows && (
+                    <div className="text-[11px] text-muted-foreground leading-tight mt-0.5">
+                      Telehealth {formatHours(telehealthPublishHours)}h · Mental health{' '}
+                      {formatHours(mentalHealthPublishHours)}h
+                    </div>
+                  )}
                 </div>
                 <div className={cn('rounded-md border px-3 py-2', TONE_RED)}>
                   <div className="text-xs text-muted-foreground">Cut</div>
