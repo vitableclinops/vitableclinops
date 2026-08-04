@@ -2983,6 +2983,13 @@ export default function SchedulingWorkbenchPage({
                         humanReviewState: sub?.human_review_state,
                       });
                       const ehrBulkBlocked = totalShifts > 0 && ehrDone === 0 && hbDone < totalShifts;
+                      const totalRowHours = flats.reduce((sum, s) => sum + Number(s.hours ?? 0), 0);
+                      const hbHours = flats
+                        .filter(isHomebaseDone)
+                        .reduce((sum, s) => sum + Number(s.hours ?? 0), 0);
+                      const ehrHours = flats
+                        .filter(isEhrDone)
+                        .reduce((sum, s) => sum + Number(s.hours ?? 0), 0);
                       return (
                         <Fragment key={row.provider_id}>
                           <TableRow
@@ -3016,9 +3023,19 @@ export default function SchedulingWorkbenchPage({
                             </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
                               <ShiftProgress done={hbDone} total={totalShifts} tone="homebase" />
+                              {totalShifts > 0 && (
+                                <div className="mt-1 text-[11px] text-muted-foreground tabular-nums">
+                                  {hbHours.toFixed(1)}h of {totalRowHours.toFixed(1)}h added
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
                               <ShiftProgress done={ehrDone} total={totalShifts} tone="ehr" />
+                              {totalShifts > 0 && (
+                                <div className="mt-1 text-[11px] text-muted-foreground tabular-nums">
+                                  {ehrHours.toFixed(1)}h of {totalRowHours.toFixed(1)}h added
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex justify-end gap-1">
