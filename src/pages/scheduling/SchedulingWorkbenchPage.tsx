@@ -1777,11 +1777,18 @@ export default function SchedulingWorkbenchPage({
   }, [cutShiftRows, scopedRows]);
   const scopedSummary = useMemo(() => {
     const totalShifts = scopedFlatAccepted.length;
+    const sumHours = (rows: typeof scopedFlatAccepted) =>
+      rows.reduce((sum, s) => sum + Number(s.hours ?? 0), 0);
+    const homebaseRows = scopedFlatAccepted.filter(isHomebaseDone);
+    const ehrRows = scopedFlatAccepted.filter(isEhrDone);
     return {
       totalProviders: scopedPublishRows.length,
       totalShifts,
-      homebaseShifts: scopedFlatAccepted.filter(isHomebaseDone).length,
-      ehrShifts: scopedFlatAccepted.filter(isEhrDone).length,
+      homebaseShifts: homebaseRows.length,
+      ehrShifts: ehrRows.length,
+      totalHours: sumHours(scopedFlatAccepted),
+      homebaseHours: sumHours(homebaseRows),
+      ehrHours: sumHours(ehrRows),
       declinedCount: scopedDeclined.length,
       needsReviewCount: scopedNeedsReview.length,
       missingCount: scopedMissing.length,
@@ -2880,17 +2887,17 @@ export default function SchedulingWorkbenchPage({
             <SummaryCard
               label="Shifts to publish"
               value={scopedSummary.totalShifts.toString()}
-              sub={`${scopedSummary.totalProviders} provider${scopedSummary.totalProviders === 1 ? '' : 's'}`}
+              sub={`${scopedSummary.totalHours.toFixed(1)}h · ${scopedSummary.totalProviders} provider${scopedSummary.totalProviders === 1 ? '' : 's'}`}
             />
             <SummaryCard
-              label="Posted to Homebase"
-              value={`${scopedSummary.totalShifts ? Math.round((scopedSummary.homebaseShifts / scopedSummary.totalShifts) * 100) : 0}%`}
-              sub={`${scopedSummary.homebaseShifts} of ${scopedSummary.totalShifts} shifts`}
+              label="Hours added to Homebase"
+              value={`${scopedSummary.homebaseHours.toFixed(1)}h`}
+              sub={`of ${scopedSummary.totalHours.toFixed(1)}h · ${scopedSummary.homebaseShifts}/${scopedSummary.totalShifts} shifts (${scopedSummary.totalHours ? Math.round((scopedSummary.homebaseHours / scopedSummary.totalHours) * 100) : 0}%)`}
             />
             <SummaryCard
-              label="Posted to EHR"
-              value={`${scopedSummary.totalShifts ? Math.round((scopedSummary.ehrShifts / scopedSummary.totalShifts) * 100) : 0}%`}
-              sub={`${scopedSummary.ehrShifts} of ${scopedSummary.totalShifts} shifts`}
+              label="Hours added to EHR"
+              value={`${scopedSummary.ehrHours.toFixed(1)}h`}
+              sub={`of ${scopedSummary.totalHours.toFixed(1)}h · ${scopedSummary.ehrShifts}/${scopedSummary.totalShifts} shifts (${scopedSummary.totalHours ? Math.round((scopedSummary.ehrHours / scopedSummary.totalHours) * 100) : 0}%)`}
             />
             <SummaryCard label="Declined" value={scopedSummary.declinedCount.toString()} />
           </div>
@@ -2976,6 +2983,13 @@ export default function SchedulingWorkbenchPage({
                         humanReviewState: sub?.human_review_state,
                       });
                       const ehrBulkBlocked = totalShifts > 0 && ehrDone === 0 && hbDone < totalShifts;
+                      const totalRowHours = flats.reduce((sum, s) => sum + Number(s.hours ?? 0), 0);
+                      const hbHours = flats
+                        .filter(isHomebaseDone)
+                        .reduce((sum, s) => sum + Number(s.hours ?? 0), 0);
+                      const ehrHours = flats
+                        .filter(isEhrDone)
+                        .reduce((sum, s) => sum + Number(s.hours ?? 0), 0);
                       return (
                         <Fragment key={row.provider_id}>
                           <TableRow
@@ -3009,9 +3023,19 @@ export default function SchedulingWorkbenchPage({
                             </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
                               <ShiftProgress done={hbDone} total={totalShifts} tone="homebase" />
+                              {totalShifts > 0 && (
+                                <div className="mt-1 text-[11px] text-muted-foreground tabular-nums">
+                                  {hbHours.toFixed(1)}h of {totalRowHours.toFixed(1)}h added
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
                               <ShiftProgress done={ehrDone} total={totalShifts} tone="ehr" />
+                              {totalShifts > 0 && (
+                                <div className="mt-1 text-[11px] text-muted-foreground tabular-nums">
+                                  {ehrHours.toFixed(1)}h of {totalRowHours.toFixed(1)}h added
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex justify-end gap-1">
