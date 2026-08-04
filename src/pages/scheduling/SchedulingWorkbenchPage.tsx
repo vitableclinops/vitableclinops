@@ -3564,6 +3564,17 @@ function SchedulingPipelinePanel({
   ).size;
   const publishHours = publishRows.reduce((sum, row) => sum + Number(row.hours ?? 0), 0);
   const cutHours = cutRows.reduce((sum, row) => sum + Number(row.hours ?? 0), 0);
+  // Split accepted hours by service line so ClinOps can read telehealth and
+  // mental health capacity separately (they are staffed against different
+  // demand models).
+  const mentalHealthPublishHours = publishRows.reduce(
+    (sum, row) =>
+      isMentalHealthProvider(null, row.provider_name ?? null)
+        ? sum + Number(row.hours ?? 0)
+        : sum,
+    0,
+  );
+  const telehealthPublishHours = publishHours - mentalHealthPublishHours;
   const homebaseDoneCount = publishRows.filter(isHomebaseDone).length;
   const ehrDoneCount = publishRows.filter(isEhrDone).length;
   const publishChecklistComplete =
