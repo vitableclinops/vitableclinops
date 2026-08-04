@@ -1777,11 +1777,18 @@ export default function SchedulingWorkbenchPage({
   }, [cutShiftRows, scopedRows]);
   const scopedSummary = useMemo(() => {
     const totalShifts = scopedFlatAccepted.length;
+    const sumHours = (rows: typeof scopedFlatAccepted) =>
+      rows.reduce((sum, s) => sum + Number(s.hours ?? 0), 0);
+    const homebaseRows = scopedFlatAccepted.filter(isHomebaseDone);
+    const ehrRows = scopedFlatAccepted.filter(isEhrDone);
     return {
       totalProviders: scopedPublishRows.length,
       totalShifts,
-      homebaseShifts: scopedFlatAccepted.filter(isHomebaseDone).length,
-      ehrShifts: scopedFlatAccepted.filter(isEhrDone).length,
+      homebaseShifts: homebaseRows.length,
+      ehrShifts: ehrRows.length,
+      totalHours: sumHours(scopedFlatAccepted),
+      homebaseHours: sumHours(homebaseRows),
+      ehrHours: sumHours(ehrRows),
       declinedCount: scopedDeclined.length,
       needsReviewCount: scopedNeedsReview.length,
       missingCount: scopedMissing.length,
