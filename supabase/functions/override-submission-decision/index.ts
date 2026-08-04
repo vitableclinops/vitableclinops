@@ -69,6 +69,42 @@ Deno.serve(async (req) => {
       });
     }
 
+    // mode === 'set_review_state' → set/clear the manual human_review_state lock
+    // on the latest active submission for a provider+month. Pass review_state:null
+    // to unlock so the evaluator/emitter can process it again.
+    // body: { mode, provider_name, target_month, review_state }
+    if (mode === 'set_review_state') {
+      if (!provider_name || !target_month) {
+        return new Response(JSON.stringify({ error: 'provider_name, target_month required' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const reviewState = (body.review_state ?? null) as string | null;
+      const sbR = createClient(url, key);
+      const { data: subsR, error: selR } = await sbR
+        .from('schedule_submissions')
+        .select('id, provider_name, human_review_state')
+        .eq('target_month', target_month)
+        .ilike('provider_name', `%${provider_name}%`)
+        .neq('decision_status', 'superseded')
+        .order('submitted_at', { ascending: false });
+      if (selR) throw selR;
+      if (!subsR || !subsR.length) {
+        return new Response(JSON.stringify({ error: 'No active submission', provider_name }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const ids = (subsR as any[]).map(s => s.id);
+      const { error: updR } = await sbR
+        .from('schedule_submissions')
+        .update({ human_review_state: reviewState })
+        .in('id', ids);
+      if (updR) throw updR;
+      return new Response(JSON.stringify({ ok: true, updated: ids, review_state: reviewState }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // mode === 'set_effective_hours' → cap the latest submission's
     // effective_hours_used_for_forecast for a provider, so the allocator treats
     // them as if they only requested `hours`. Does NOT re-run evaluator/emit —
