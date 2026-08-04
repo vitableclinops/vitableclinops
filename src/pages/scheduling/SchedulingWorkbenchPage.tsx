@@ -3700,6 +3700,12 @@ function SchedulingPipelinePanel({
                   <div className="text-sm font-semibold">
                     {isLoadingBuildRows ? 'Loading' : `${formatHours(publishHours)}h`}
                   </div>
+                  {!isLoadingBuildRows && (
+                    <div className="text-[11px] text-muted-foreground leading-tight mt-0.5">
+                      Telehealth {formatHours(telehealthPublishHours)}h · Mental health{' '}
+                      {formatHours(mentalHealthPublishHours)}h
+                    </div>
+                  )}
                 </div>
                 <div className={cn('rounded-md border px-3 py-2', TONE_RED)}>
                   <div className="text-xs text-muted-foreground">Cut</div>
