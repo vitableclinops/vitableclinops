@@ -2887,17 +2887,17 @@ export default function SchedulingWorkbenchPage({
             <SummaryCard
               label="Shifts to publish"
               value={scopedSummary.totalShifts.toString()}
-              sub={`${scopedSummary.totalProviders} provider${scopedSummary.totalProviders === 1 ? '' : 's'}`}
+              sub={`${scopedSummary.totalHours.toFixed(1)}h · ${scopedSummary.totalProviders} provider${scopedSummary.totalProviders === 1 ? '' : 's'}`}
             />
             <SummaryCard
-              label="Posted to Homebase"
-              value={`${scopedSummary.totalShifts ? Math.round((scopedSummary.homebaseShifts / scopedSummary.totalShifts) * 100) : 0}%`}
-              sub={`${scopedSummary.homebaseShifts} of ${scopedSummary.totalShifts} shifts`}
+              label="Hours added to Homebase"
+              value={`${scopedSummary.homebaseHours.toFixed(1)}h`}
+              sub={`of ${scopedSummary.totalHours.toFixed(1)}h · ${scopedSummary.homebaseShifts}/${scopedSummary.totalShifts} shifts (${scopedSummary.totalHours ? Math.round((scopedSummary.homebaseHours / scopedSummary.totalHours) * 100) : 0}%)`}
             />
             <SummaryCard
-              label="Posted to EHR"
-              value={`${scopedSummary.totalShifts ? Math.round((scopedSummary.ehrShifts / scopedSummary.totalShifts) * 100) : 0}%`}
-              sub={`${scopedSummary.ehrShifts} of ${scopedSummary.totalShifts} shifts`}
+              label="Hours added to EHR"
+              value={`${scopedSummary.ehrHours.toFixed(1)}h`}
+              sub={`of ${scopedSummary.totalHours.toFixed(1)}h · ${scopedSummary.ehrShifts}/${scopedSummary.totalShifts} shifts (${scopedSummary.totalHours ? Math.round((scopedSummary.ehrHours / scopedSummary.totalHours) * 100) : 0}%)`}
             />
             <SummaryCard label="Declined" value={scopedSummary.declinedCount.toString()} />
           </div>
