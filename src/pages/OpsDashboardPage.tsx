@@ -254,7 +254,7 @@ function StatusBadge({ status }: { status: WeekStatus }) {
     case 'low':      return <StatusChip tone="pending"  label="LOW" />;
     case 'critical': return <StatusChip tone="warning"  label="CRITICAL" />;
     case 'zero':     return <StatusChip tone="error"    label="ZERO" />;
-    case 'no_data':  return <StatusChip tone="inactive" label="NO DATA" />;
+    case 'no_data':  return <StatusChip tone="inactive" label="NOT REPORTED" />;
   }
 }
 
@@ -592,7 +592,7 @@ export default function OpsDashboardPage() {
             <KpiCard title="Low"           value={kpis.low}      icon={MinusCircle}   color="bg-yellow-500" />
             <KpiCard title="Critical"      value={kpis.critical} icon={AlertTriangle} color="bg-orange-500" />
             <KpiCard title="Zero"          value={kpis.zero}     icon={XCircle}       color="bg-destructive" />
-            <KpiCard title="No Data"       value={kpis.noData}   icon={MinusCircle}   color="bg-muted-foreground" />
+            <KpiCard title="Not reported"  value={kpis.noData}   icon={MinusCircle}   color="bg-muted-foreground" />
           </div>
 
           {isAdmin && <CoverageRecommendationsCard />}
