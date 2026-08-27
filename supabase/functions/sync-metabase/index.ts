@@ -173,13 +173,37 @@ Deno.serve(async (req: Request) => {
     return json({ error: `Metabase auth failed: ${err}` }, 502);
   }
 
+  // Optional subset filter: POST { "only": ["Same & Next Day"] } or ?only=...
+  // Running all reports in one invocation can exceed the worker memory limit,
+  // so callers can slice the work into smaller batches.
+  let onlyFilters: string[] = [];
+  try {
+    const url = new URL(req.url);
+    const qp = url.searchParams.get('only');
+    if (qp) onlyFilters = qp.split(',').map((s) => s.trim()).filter(Boolean);
+    if (onlyFilters.length === 0 && req.method === 'POST') {
+      const parsed = await req.json().catch(() => null);
+      const raw = parsed && typeof parsed === 'object' ? (parsed as any).only : null;
+      if (Array.isArray(raw)) onlyFilters = raw.map(String);
+      else if (typeof raw === 'string') onlyFilters = [raw];
+    }
+  } catch { /* no body / bad JSON → run everything */ }
+
+  const selectedReports = onlyFilters.length > 0
+    ? REPORTS.filter((r) =>
+        onlyFilters.some((f) =>
+          r.name.toLowerCase().includes(f.toLowerCase()) || String(r.cardId ?? '') === f,
+        ))
+    : REPORTS;
+
   const today = new Date().toISOString().slice(0, 10);
   const results: Record<string, unknown> = {};
   let totalProcessed = 0;
   let totalFailed = 0;
   let reportFailures = 0;
 
-  for (const report of REPORTS) {
+  for (const report of selectedReports) {
+
     try {
       // Use pinned card ID if available, otherwise fuzzy-search by name
       const cardId = report.cardId ?? await findCardId(token, report.name);
