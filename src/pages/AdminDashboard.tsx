@@ -236,8 +236,9 @@ const AdminDashboard = () => {
                     </span>
                   )}
                   {coverage.noData > 0 && (
-                    <span className="text-muted-foreground">{coverage.noData} no data</span>
+                    <span className="text-muted-foreground">{coverage.noData} not reported</span>
                   )}
+
                   <ArrowRight className="h-3 w-3 text-muted-foreground ml-auto" />
                 </div>
               )}
