@@ -77,12 +77,33 @@ function useOpsData(date: string, buffer: number) {
     queryFn: async (): Promise<StateOpsRow[]> => {
       const weekStart = getMonday(date);
 
+      // Slot imports lag behind by a day or more. If the requested date has
+      // no rows, fall back to the most recent date on/before it so states
+      // show real numbers instead of "NO DATA".
+      let slotDate = date;
+      const { data: dateProbe } = await supabase
+        .from('state_leftover_slots')
+        .select('slot_date')
+        .eq('slot_date', date)
+        .in('window_type', ['historical', 'forecast'])
+        .limit(1);
+      if (!dateProbe || dateProbe.length === 0) {
+        const { data: latest } = await supabase
+          .from('state_leftover_slots')
+          .select('slot_date')
+          .lte('slot_date', date)
+          .in('window_type', ['historical', 'forecast'])
+          .order('slot_date', { ascending: false })
+          .limit(1);
+        if (latest?.[0]?.slot_date) slotDate = latest[0].slot_date;
+      }
+
       const [activationsRes, slotsRes, slaRes, forecastRes] = await Promise.all([
         supabase.from('state_activation').select('state_abbreviation, is_active'),
         supabase
           .from('state_leftover_slots')
           .select('state_abbreviation, unfilled_slots, window_type')
-          .eq('slot_date', date)
+          .eq('slot_date', slotDate)
           .in('window_type', ['historical', 'forecast']),
         supabase
           .from('state_sla_attainment')
@@ -93,6 +114,7 @@ function useOpsData(date: string, buffer: number) {
           .select('state_abbreviation, projected_visits')
           .eq('week_start', weekStart),
       ]);
+
 
       const activations = activationsRes.data ?? [];
 
