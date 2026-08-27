@@ -236,16 +236,18 @@ Deno.serve(async (req: Request) => {
   }
 
   const status: 'success' | 'partial' | 'error' =
-    reportFailures === REPORTS.length ? 'error'
+    selectedReports.length === 0 ? 'error'
+    : reportFailures === selectedReports.length ? 'error'
     : reportFailures > 0 ? 'partial'
     : 'success';
 
   await finalizeRun(status, {
     rows_processed: totalProcessed,
     rows_failed: totalFailed,
-    error_message: reportFailures > 0 ? `${reportFailures}/${REPORTS.length} reports failed` : undefined,
+    error_message: reportFailures > 0 ? `${reportFailures}/${selectedReports.length} reports failed` : undefined,
     details: results,
   });
+
 
   return json({ ok: status !== 'error', date: today, status, results });
 });
