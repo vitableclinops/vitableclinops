@@ -30,18 +30,34 @@ function useOpsCoverage() {
   return useQuery({
     queryKey: ['ops_coverage_summary', today],
     queryFn: async () => {
+      // Slot imports lag by a day or more, so anchor on the most recent
+      // date that actually has data (on/before today) instead of showing
+      // every state as "no data".
+      const { data: latestRows } = await supabase
+        .from('state_leftover_slots')
+        .select('slot_date')
+        .lte('slot_date', today)
+        .in('window_type', ['historical', 'forecast'])
+        .order('slot_date', { ascending: false })
+        .limit(1);
+      const asOf = latestRows?.[0]?.slot_date ?? today;
+
       const [activationRes, slotsRes] = await Promise.all([
         supabase.from('state_activation').select('state_abbreviation').eq('is_active', true),
         supabase
           .from('state_leftover_slots')
-          .select('state_abbreviation, unfilled_slots')
-          .eq('slot_date', today)
-          .eq('window_type', 'historical'),
+          .select('state_abbreviation, unfilled_slots, window_type')
+          .eq('slot_date', asOf)
+          .in('window_type', ['historical', 'forecast']),
       ]);
       const activeStates = new Set((activationRes.data ?? []).map((r: any) => r.state_abbreviation));
-      const slotMap = new Map<string, number>(
-        (slotsRes.data ?? []).map((r: any) => [r.state_abbreviation, r.unfilled_slots])
-      );
+      const slotMap = new Map<string, number>();
+      for (const r of (slotsRes.data ?? []) as any[]) {
+        // Prefer actuals when both windows exist for the same state.
+        if (r.window_type === 'historical' || !slotMap.has(r.state_abbreviation)) {
+          slotMap.set(r.state_abbreviation, r.unfilled_slots ?? 0);
+        }
+      }
       let ok = 0, low = 0, critical = 0, zero = 0, noData = 0;
       for (const state of activeStates) {
         if (!slotMap.has(state)) { noData++; continue; }
@@ -51,11 +67,12 @@ function useOpsCoverage() {
         else if (s >= 5) low++;
         else critical++;
       }
-      return { total: activeStates.size, ok, low, critical, zero, noData, date: today };
+      return { total: activeStates.size, ok, low, critical, zero, noData, date: asOf, isStale: asOf !== today };
     },
     staleTime: 5 * 60_000,
   });
 }
+
 
 const OPS_LINKS = [
   { label: 'Ops Dashboard', icon: Activity,    href: '/admin/ops',                  color: 'text-primary' },
