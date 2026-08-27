@@ -210,7 +210,10 @@ const AdminDashboard = () => {
                   className="flex items-center gap-3 px-3 py-2 rounded-lg border bg-muted/30 mb-3 cursor-pointer hover:bg-muted/50 transition-colors text-xs"
                   onClick={() => navigate('/admin/ops')}
                 >
-                  <span className="text-muted-foreground font-medium">Today's coverage</span>
+                  <span className="text-muted-foreground font-medium">
+                    {coverage.isStale ? `Coverage (as of ${coverage.date})` : "Today's coverage"}
+                  </span>
+
                   <span className="text-muted-foreground">·</span>
                   {coverage.ok > 0 && (
                     <span className="flex items-center gap-1 text-emerald-600 font-semibold">
