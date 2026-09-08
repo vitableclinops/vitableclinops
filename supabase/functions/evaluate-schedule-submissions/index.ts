@@ -1982,13 +1982,39 @@ Deno.serve(async (req: Request) => {
         }).map(allocation => [allocation.id, allocation]),
       );
 
+      // Tier-model overlay: from October 2026 on, ClinOps allocates from a
+      // per-provider plan sheet. The plan target is a hard cap and the stated
+      // survey min/max per week are hard bounds, so the equity result is
+      // clamped before it becomes a decision.
+      const hourPlan = monthlyHourPlanFor(targetMonth);
+      const planClampByKey = new Map<string, PlanClampResult>();
+      if (hourPlan) {
+        for (const candidate of monthCandidates) {
+          const entry = planEntryFor(hourPlan, candidate.latest.provider_name);
+          if (!entry) continue;
+          const allocation = equityAllocationsByKey.get(candidate.key);
+          if (!allocation) continue;
+          planClampByKey.set(candidate.key, clampToHourPlan(entry, {
+            effectiveHours: candidate.effectiveHours,
+            allocatedHours: allocation.acceptedHours,
+            allocations: allocation.allocations.map(a => ({ state: a.state, hours: a.hours })),
+            stateGaps: candidate.gapByState
+              .filter(gap => !gap.missingDemand)
+              .map(gap => ({ state: gap.state, gapHours: gap.gapHours })),
+          }));
+        }
+      }
+
       for (const candidate of monthCandidates) {
         try {
           const allocation = equityAllocationsByKey.get(candidate.key);
           if (!allocation) {
             throw new Error(`equity allocation missing for ${candidate.key}`);
           }
-          const accepted = roundEval2(allocation.acceptedHours);
+          const planEntry = hourPlan ? planEntryFor(hourPlan, candidate.latest.provider_name) : null;
+          const planClamp = planClampByKey.get(candidate.key) ?? null;
+          const accepted = roundEval2(planClamp ? planClamp.acceptedHours : allocation.acceptedHours);
+          const acceptedAllocations = planClamp ? planClamp.allocations : allocation.allocations;
           const forecastDeclined = roundEval2(Math.max(0, candidate.effectiveHours - accepted));
           const declined = roundEval2(forecastDeclined + candidate.oohDeclined + candidate.policyDeclined);
           const needsManualReview = Boolean(allocation.manualReviewReason);
