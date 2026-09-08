@@ -92,7 +92,7 @@ const OCTOBER_2026_ENTRIES: MonthlyHourPlanEntry[] = [
   { name: 'Tylene Williams', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 9, notes: '' },
   { name: 'Bee Chang', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 0, notes: 'Offboarded' },
 
-  { name: 'Stephanie Lumsden', tier: 'Tier 3 (ad hoc pool)', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 15, notes: 'Kept per DirectShifts contract' },
+  { name: 'Stephanie Lumsden', tier: 'Tier 3 (ad hoc pool)', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 0, notes: 'Offboarded' },
   { name: 'Anabel Garcia Gomez', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
   { name: 'Jacqueline Veress', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
   { name: 'Nora Lueth', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
