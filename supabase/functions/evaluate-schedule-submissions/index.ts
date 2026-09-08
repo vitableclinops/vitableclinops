@@ -115,6 +115,13 @@ import {
   type ProviderPriority,
 } from '../_shared/providerPriority.ts';
 import { canonicalName } from '../_shared/nameNormalization.ts';
+import {
+  clampToHourPlan,
+  monthlyHourPlanFor,
+  planEntryFor,
+  type MonthlyHourPlanEntry,
+  type PlanClampResult,
+} from '../_shared/monthlyHourPlan.ts';
 
 // Supabase's generated client generics collapse table writes to `never`
 // without an explicit broad schema here.
@@ -635,6 +642,24 @@ function slotHours(slot: ForecastSlot): number {
 
 function sumSlotHours(slots: ForecastSlot[]): number {
   return roundEval2(slots.reduce((sum, slot) => sum + slotHours(slot), 0));
+}
+
+function pushHourPlanNotes(
+  noteParts: string[],
+  entry: MonthlyHourPlanEntry | null,
+  clamp: PlanClampResult | null,
+) {
+  if (!entry || !clamp) return;
+  noteParts.push('hour_plan=tier_model');
+  noteParts.push(`hour_plan_tier=${entry.tier}`);
+  noteParts.push(`hour_plan_target=${entry.targetHours}h`);
+  noteParts.push(`hour_plan_cap=${clamp.capHours}h`);
+  noteParts.push(`hour_plan_floor=${clamp.floorHours}h`);
+  noteParts.push(`hour_plan_adjustment=${clamp.adjustment}`);
+  if (entry.minHoursPerWeek != null) noteParts.push(`survey_min_per_week=${entry.minHoursPerWeek}h`);
+  if (entry.maxHoursPerWeek != null) noteParts.push(`survey_max_per_week=${entry.maxHoursPerWeek}h`);
+  if (clamp.flags.length) noteParts.push(`hour_plan_flags=${clamp.flags.join(',')}`);
+  if (entry.notes) noteParts.push(`hour_plan_note=${entry.notes.replace(/;/g, ',')}`);
 }
 
 function pushProviderPriorityNotes(
@@ -2101,9 +2126,10 @@ Deno.serve(async (req: Request) => {
           noteParts.push(
             'base_state_demand=' + candidate.gapByState.map(g => `${g.state}:${g.missingDemand ? 'no_data' : roundEval2(g.baseDemandHours) + 'h'}`).join(','),
           );
-          if (allocation.allocations.length) {
-            noteParts.push('alloc=' + allocation.allocations.map(a => `${a.state}:${a.hours}h`).join(','));
+          if (acceptedAllocations.length) {
+            noteParts.push('alloc=' + acceptedAllocations.map(a => `${a.state}:${a.hours}h`).join(','));
           }
+          pushHourPlanNotes(noteParts, planEntry, planClamp);
           if (candidate.missingDemandStates.length) {
             noteParts.push(`missing_demand=${candidate.missingDemandStates.join(',')}`);
           }
@@ -2140,7 +2166,7 @@ Deno.serve(async (req: Request) => {
               protectedForecastTimeline: candidate.allocationPolicy === 'august_2026' ? [] : candidate.scarceCoverageTimeline,
               declinedHours: forecastDeclined,
               declineAll: status === 'declined',
-              allocations: allocation.allocations,
+              allocations: acceptedAllocations,
               decisionRunId,
             });
             await writeShiftRecommendations(supabase, candidate.groupSubs.map(s => s.id), recRows);
@@ -2168,7 +2194,13 @@ Deno.serve(async (req: Request) => {
             status,
             accepted_hours: accepted,
             declined_hours: declined,
-            allocations: allocation.allocations,
+            allocations: acceptedAllocations,
+            hour_plan_tier: planEntry?.tier ?? null,
+            hour_plan_target_hours: planEntry?.targetHours ?? null,
+            hour_plan_cap_hours: planClamp?.capHours ?? null,
+            hour_plan_floor_hours: planClamp?.floorHours ?? null,
+            hour_plan_adjustment: planClamp?.adjustment ?? null,
+            hour_plan_flags: planClamp?.flags ?? [],
             provider_priority: candidate.providerPriority.key,
             cohort: candidate.equityCohort,
             directshifts_target_share: allocation.directshiftsTargetShare,
@@ -2190,8 +2222,8 @@ Deno.serve(async (req: Request) => {
             validation_report: candidate.validation.report,
           });
 
-          if (accepted > 0 && allocation.allocations.length) {
-            for (const a of allocation.allocations) {
+          if (accepted > 0 && acceptedAllocations.length) {
+            for (const a of acceptedAllocations) {
               const dKey = `${a.state}_${targetMonth}`;
               committedByKey.set(dKey, (committedByKey.get(dKey) ?? 0) + a.hours);
             }
