@@ -60,6 +60,7 @@ SHARED_FILES=(
   "$SHARED_DIR/submissionTimeline.ts"
   "$SHARED_DIR/providerPriority.ts"
   "$SHARED_DIR/equityAllocation.ts"
+  "$SHARED_DIR/monthlyHourPlan.ts"
 )
 
 strip_local_imports() {
