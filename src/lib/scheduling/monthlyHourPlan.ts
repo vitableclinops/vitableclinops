@@ -168,6 +168,13 @@ export type PlanClampResult = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const roundQuarter = (n: number) => Math.round(n * 4) / 4;
 
+/** Snap to the 0.25h scheduling grid without ever crossing the hard cap. */
+const quantizeToQuarter = (value: number, cap: number) => {
+  const q = roundQuarter(value);
+  if (q > cap) return Math.max(0, Math.floor(cap * 4) / 4);
+  return Math.max(0, q);
+};
+
 export function monthlyCapFor(entry: MonthlyHourPlanEntry): number {
   const surveyMax = entry.maxHoursPerWeek == null
     ? Number.POSITIVE_INFINITY
@@ -212,7 +219,7 @@ export function clampToHourPlan(
   let accepted = before;
   if (accepted > effectiveCap) accepted = effectiveCap;
   if (accepted < floor) accepted = floor;
-  accepted = round2(Math.max(0, accepted));
+  accepted = quantizeToQuarter(Math.max(0, accepted), effectiveCap);
 
   let adjustment: PlanClampResult['adjustment'] = 'none';
   if (accepted < before - 0.001) adjustment = 'capped';
