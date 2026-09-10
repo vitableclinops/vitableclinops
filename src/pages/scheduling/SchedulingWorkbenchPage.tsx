@@ -3598,7 +3598,18 @@ function SchedulingPipelinePanel({
         : sum,
     0,
   );
-  const telehealthPublishHours = publishHours - mentalHealthPublishHours;
+  // In-home / clinic shifts are staffed outside the telehealth demand target,
+  // so they get their own line instead of inflating "Telehealth".
+  const inHomeClinicPublishHours = publishRows.reduce(
+    (sum, row) =>
+      !isMentalHealthProvider(null, row.provider_name ?? null) &&
+      row.shift_type === 'in_home_clinic'
+        ? sum + Number(row.hours ?? 0)
+        : sum,
+    0,
+  );
+  const telehealthPublishHours =
+    publishHours - mentalHealthPublishHours - inHomeClinicPublishHours;
   const homebaseDoneCount = publishRows.filter(isHomebaseDone).length;
   const ehrDoneCount = publishRows.filter(isEhrDone).length;
   const publishChecklistComplete =
@@ -3726,7 +3737,8 @@ function SchedulingPipelinePanel({
                   </div>
                   {!isLoadingBuildRows && (
                     <div className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                      Telehealth {formatHours(telehealthPublishHours)}h · Mental health{' '}
+                      Telehealth (virtual) {formatHours(telehealthPublishHours)}h · In-home /
+                      clinic {formatHours(inHomeClinicPublishHours)}h · Mental health{' '}
                       {formatHours(mentalHealthPublishHours)}h
                     </div>
                   )}
