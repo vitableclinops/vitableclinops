@@ -48,6 +48,10 @@ Deno.serve(async (req: Request) => {
       total_hours?: number;
       shape_from_month?: string;
       replace?: boolean;
+      /** Also write daily demand_forecast rows for the month (what the allocator reads). */
+      write_daily?: boolean;
+      /** Build rows from the month's existing state_demand_targets. */
+      daily_from_targets?: boolean;
     } | null;
 
     if (!body?.month || !/^\d{4}-\d{2}(-\d{2})?$/.test(body.month)) {
