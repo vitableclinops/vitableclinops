@@ -190,6 +190,18 @@ export function monthlyCapFor(entry: MonthlyHourPlanEntry): number {
   return round2(Math.min(entry.targetHours, surveyMax));
 }
 
+/**
+ * Soft ceiling: the plan target may stretch by PLAN_SOFT_CAP_MULTIPLIER, but
+ * the provider's own stated weekly maximum stays a hard limit.
+ */
+export function monthlySoftCeilingFor(entry: MonthlyHourPlanEntry): number {
+  const surveyMax = entry.maxHoursPerWeek == null
+    ? Number.POSITIVE_INFINITY
+    : entry.maxHoursPerWeek * WEEKS_PER_MONTH;
+  return round2(Math.min(entry.targetHours * PLAN_SOFT_CAP_MULTIPLIER, surveyMax));
+}
+
+
 export function monthlyFloorFor(entry: MonthlyHourPlanEntry): number {
   if (entry.minHoursPerWeek == null) return 0;
   return round2(entry.minHoursPerWeek * WEEKS_PER_MONTH);
