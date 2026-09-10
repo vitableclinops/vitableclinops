@@ -36,8 +36,10 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const url = Deno.env.get('CLINOPS_SUPABASE_URL');
-    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
+    // Runs either from the Lovable project (cross-project creds) or from
+    // inside ClinOps itself (its own service role).
+    const url = Deno.env.get('CLINOPS_SUPABASE_URL') ?? Deno.env.get('SUPABASE_URL');
+    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!url || !key) return json({ error: 'ClinOps credentials are not configured' }, 500);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const supabase = createClient<any, 'public', any>(url, key);
@@ -48,6 +50,10 @@ Deno.serve(async (req: Request) => {
       total_hours?: number;
       shape_from_month?: string;
       replace?: boolean;
+      /** Also write daily demand_forecast rows for the month (what the allocator reads). */
+      write_daily?: boolean;
+      /** Build rows from the month's existing state_demand_targets. */
+      daily_from_targets?: boolean;
     } | null;
 
     if (!body?.month || !/^\d{4}-\d{2}(-\d{2})?$/.test(body.month)) {
@@ -81,6 +87,19 @@ Deno.serve(async (req: Request) => {
       if (shapeTotal <= 0) return json({ error: `No demand targets found for ${shapeMonth}` }, 400);
       const factor = Number(body.total_hours) / shapeTotal;
       rows = shape.map(r => ({ state: r.state, hours: round2(r.hours * factor) }));
+    } else if (body.daily_from_targets) {
+      const { data, error } = await supabase
+        .from('state_demand_targets')
+        .select('state, monthly_hours_target')
+        .eq('month', month);
+      if (error) return json({ error: error.message }, 500);
+      rows = (data ?? [])
+        .map((r: { state: string; monthly_hours_target: number | string }) => ({
+          state: r.state,
+          hours: Number(r.monthly_hours_target) || 0,
+        }))
+        .filter(r => r.hours > 0);
+      if (rows.length === 0) return json({ error: `No demand targets found for ${month}` }, 400);
     } else {
       return json({ error: 'Provide rows[] or total_hours + shape_from_month' }, 400);
     }
@@ -104,11 +123,61 @@ Deno.serve(async (req: Request) => {
       .upsert(records, { onConflict: 'state,month' });
     if (error) return json({ error: error.message }, 500);
 
+    // The allocator reads daily demand_forecast rows (via v_monthly_demand),
+    // not state_demand_targets. Spread each state's monthly hours across the
+    // month: weekdays carry twice the weight of weekend days, matching the
+    // shape produced by compute-demand-forecast.
+    let dailyRows = 0;
+    if (body.write_daily || body.daily_from_targets) {
+      const [y, m] = month.split('-').map(Number);
+      const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const days: Array<{ date: string; weight: number }> = [];
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        const dow = dt.getUTCDay();
+        days.push({
+          date: `${month.slice(0, 8)}${String(d).padStart(2, '0')}`,
+          weight: dow === 0 || dow === 6 ? 1 : 2,
+        });
+      }
+      const weightTotal = days.reduce((s, d) => s + d.weight, 0);
+      const runId = crypto.randomUUID();
+      const computedAt = new Date().toISOString();
+      const forecast = rows.flatMap(r =>
+        days.map(d => ({
+          date: d.date,
+          state: r.state,
+          projected_visits: Math.round(((r.hours * d.weight) / weightTotal) * 1e6) / 1e6,
+          forecast_run_id: runId,
+          is_baseline: true,
+          computed_at: computedAt,
+        })),
+      );
+
+      const monthEnd = `${month.slice(0, 8)}${String(daysInMonth).padStart(2, '0')}`;
+      const del = await supabase
+        .from('demand_forecast')
+        .delete()
+        .gte('date', month)
+        .lte('date', monthEnd);
+      if (del.error) return json({ error: del.error.message }, 500);
+
+      for (let i = 0; i < forecast.length; i += 500) {
+        const chunk = forecast.slice(i, i + 500);
+        const ins = await supabase
+          .from('demand_forecast')
+          .insert(chunk);
+        if (ins.error) return json({ error: ins.error.message }, 500);
+        dailyRows += chunk.length;
+      }
+    }
+
     return json({
       ok: true,
       month,
       states: records.length,
       total_hours: round2(rows.reduce((s, r) => s + r.hours, 0)),
+      daily_forecast_rows: dailyRows,
     });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
