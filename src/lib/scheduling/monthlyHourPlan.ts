@@ -168,12 +168,20 @@ export type PlanClampResult = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const roundQuarter = (n: number) => Math.round(n * 4) / 4;
 
-/** Snap to the 0.25h scheduling grid without ever crossing the hard cap. */
+/**
+ * Plan caps are SOFT: when demand remains and the provider actually submitted
+ * the hours, we allow the allocator to exceed the plan target by up to this
+ * multiplier. Hard ceilings still apply (submitted hours, state demand).
+ */
+export const PLAN_SOFT_CAP_MULTIPLIER = 1.25;
+
+/** Snap to the 0.25h scheduling grid without ever crossing the ceiling. */
 const quantizeToQuarter = (value: number, cap: number) => {
   const q = roundQuarter(value);
   if (q > cap) return Math.max(0, Math.floor(cap * 4) / 4);
   return Math.max(0, q);
 };
+
 
 export function monthlyCapFor(entry: MonthlyHourPlanEntry): number {
   const surveyMax = entry.maxHoursPerWeek == null
