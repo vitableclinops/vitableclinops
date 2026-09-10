@@ -166,7 +166,7 @@ Deno.serve(async (req: Request) => {
         const chunk = forecast.slice(i, i + 500);
         const ins = await supabase
           .from('demand_forecast')
-          .upsert(chunk, { onConflict: 'date,state' });
+          .insert(chunk);
         if (ins.error) return json({ error: ins.error.message }, 500);
         dailyRows += chunk.length;
       }
