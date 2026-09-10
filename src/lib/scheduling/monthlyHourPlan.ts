@@ -75,7 +75,7 @@ const OCTOBER_2026_ENTRIES: MonthlyHourPlanEntry[] = [
   { name: 'Andrea Shepherd', tier: 'Tier 1 - Other', designation: 'NP', minHoursPerWeek: 10, maxHoursPerWeek: 10, targetHours: 43, notes: 'Newly licensed DE DC WA OK VT CT; NC & AZ pending' },
 
   { name: 'Desire Brown', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 48, notes: '72% July fill - strong performer' },
-  { name: 'Sara Hammond', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 60, notes: 'Raised for October fill' },
+  { name: 'Sara Hammond', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 30, notes: 'Raised for October fill' },
   { name: 'Nicole Shiko', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 44, notes: '69% July fill - strong performer' },
   { name: 'Steve Rutagarama', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 43, notes: '' },
   { name: 'Brittney Afram', tier: 'Tier 2', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 80, notes: '74% July fill. Raised — 50-state provider, large submitted availability' },
@@ -96,7 +96,7 @@ const OCTOBER_2026_ENTRIES: MonthlyHourPlanEntry[] = [
   { name: 'Nora Lueth', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
   { name: 'Moensania Phillips', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 20, notes: 'Ad hoc pool, raised for October fill' },
   { name: 'Elizabeth Davis', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
-  { name: 'Akosua Norgbey', tier: 'Tier 3 (ad hoc pool)', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 35, notes: 'Ad hoc pool, raised for October fill. DirectShifts' },
+  { name: 'Akosua Norgbey', tier: 'Tier 3 (ad hoc pool)', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 24, notes: 'Ad hoc pool, raised for October fill. DirectShifts' },
   { name: 'Whitney Gibbs', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 10, notes: 'Not guaranteed hours. Flagged for review' },
   { name: 'Matia Kilgore', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 0, notes: 'Offboarded' },
   { name: 'Laura Maleknia', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 0, notes: 'Offboarded' },
