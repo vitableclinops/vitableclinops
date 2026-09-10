@@ -233,7 +233,7 @@ export function clampToHourPlan(
   const submitted = Math.max(0, round2(input.effectiveHours));
   const planCap = round2(Math.min(cap, submitted));
   // Soft ceiling: plan target may stretch, but never past submitted hours.
-  const ceiling = round2(Math.min(cap * PLAN_SOFT_CAP_MULTIPLIER, submitted));
+  const ceiling = round2(Math.min(monthlySoftCeilingFor(entry), submitted));
   if (statedFloor > 0 && submitted < statedFloor) {
     flags.push('submitted_below_survey_min');
   }
