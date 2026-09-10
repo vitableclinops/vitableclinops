@@ -36,8 +36,10 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const url = Deno.env.get('CLINOPS_SUPABASE_URL');
-    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
+    // Runs either from the Lovable project (cross-project creds) or from
+    // inside ClinOps itself (its own service role).
+    const url = Deno.env.get('CLINOPS_SUPABASE_URL') ?? Deno.env.get('SUPABASE_URL');
+    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!url || !key) return json({ error: 'ClinOps credentials are not configured' }, 500);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const supabase = createClient<any, 'public', any>(url, key);
