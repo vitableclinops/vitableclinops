@@ -81,6 +81,19 @@ Deno.serve(async (req: Request) => {
       if (shapeTotal <= 0) return json({ error: `No demand targets found for ${shapeMonth}` }, 400);
       const factor = Number(body.total_hours) / shapeTotal;
       rows = shape.map(r => ({ state: r.state, hours: round2(r.hours * factor) }));
+    } else if (body.daily_from_targets) {
+      const { data, error } = await supabase
+        .from('state_demand_targets')
+        .select('state, monthly_hours_target')
+        .eq('month', month);
+      if (error) return json({ error: error.message }, 500);
+      rows = (data ?? [])
+        .map((r: { state: string; monthly_hours_target: number | string }) => ({
+          state: r.state,
+          hours: Number(r.monthly_hours_target) || 0,
+        }))
+        .filter(r => r.hours > 0);
+      if (rows.length === 0) return json({ error: `No demand targets found for ${month}` }, 400);
     } else {
       return json({ error: 'Provide rows[] or total_hours + shape_from_month' }, 400);
     }
