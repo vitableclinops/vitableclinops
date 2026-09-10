@@ -3737,7 +3737,8 @@ function SchedulingPipelinePanel({
                   </div>
                   {!isLoadingBuildRows && (
                     <div className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                      Telehealth {formatHours(telehealthPublishHours)}h · Mental health{' '}
+                      Telehealth (virtual) {formatHours(telehealthPublishHours)}h · In-home /
+                      clinic {formatHours(inHomeClinicPublishHours)}h · Mental health{' '}
                       {formatHours(mentalHealthPublishHours)}h
                     </div>
                   )}
