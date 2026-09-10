@@ -23,6 +23,7 @@ const MENTAL_HEALTH_PROVIDER_OVERRIDES = new Map<string, MentalHealthServiceLine
   ['matthew vasquez', 'mh_coaching'],
   ['jamie fuentes', 'mh_coaching'],
   ['jennifer yost', 'mh_coaching'],
+  ['jen yost', 'mh_coaching'],
   ['esha shah', 'mh_coaching'],
   ['liana griebsch', 'mh_coaching'],
   ['li griebsch', 'mh_coaching'],
