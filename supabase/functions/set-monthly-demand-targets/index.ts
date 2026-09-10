@@ -121,11 +121,61 @@ Deno.serve(async (req: Request) => {
       .upsert(records, { onConflict: 'state,month' });
     if (error) return json({ error: error.message }, 500);
 
+    // The allocator reads daily demand_forecast rows (via v_monthly_demand),
+    // not state_demand_targets. Spread each state's monthly hours across the
+    // month: weekdays carry twice the weight of weekend days, matching the
+    // shape produced by compute-demand-forecast.
+    let dailyRows = 0;
+    if (body.write_daily || body.daily_from_targets) {
+      const [y, m] = month.split('-').map(Number);
+      const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const days: Array<{ date: string; weight: number }> = [];
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        const dow = dt.getUTCDay();
+        days.push({
+          date: `${month.slice(0, 8)}${String(d).padStart(2, '0')}`,
+          weight: dow === 0 || dow === 6 ? 1 : 2,
+        });
+      }
+      const weightTotal = days.reduce((s, d) => s + d.weight, 0);
+      const runId = crypto.randomUUID();
+      const computedAt = new Date().toISOString();
+      const forecast = rows.flatMap(r =>
+        days.map(d => ({
+          date: d.date,
+          state: r.state,
+          projected_visits: Math.round(((r.hours * d.weight) / weightTotal) * 1e6) / 1e6,
+          forecast_run_id: runId,
+          is_baseline: true,
+          computed_at: computedAt,
+        })),
+      );
+
+      const monthEnd = `${month.slice(0, 8)}${String(daysInMonth).padStart(2, '0')}`;
+      const del = await supabase
+        .from('demand_forecast')
+        .delete()
+        .gte('date', month)
+        .lte('date', monthEnd);
+      if (del.error) return json({ error: del.error.message }, 500);
+
+      for (let i = 0; i < forecast.length; i += 500) {
+        const chunk = forecast.slice(i, i + 500);
+        const ins = await supabase
+          .from('demand_forecast')
+          .upsert(chunk, { onConflict: 'date,state' });
+        if (ins.error) return json({ error: ins.error.message }, 500);
+        dailyRows += chunk.length;
+      }
+    }
+
     return json({
       ok: true,
       month,
       states: records.length,
       total_hours: round2(rows.reduce((s, r) => s + r.hours, 0)),
+      daily_forecast_rows: dailyRows,
     });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
