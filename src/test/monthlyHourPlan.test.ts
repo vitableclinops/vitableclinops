@@ -15,9 +15,10 @@ const entry = (name: string) => {
 };
 
 describe('October 2026 hour plan', () => {
-  it('sums to the 1,765 hour October target', () => {
+  it('stays at or below the 1,765 hour October target (offboarding frees hours)', () => {
     const total = OCTOBER_2026_HOUR_PLAN.entries.reduce((s, e) => s + e.targetHours, 0);
-    expect(total).toBe(OCTOBER_2026_HOUR_PLAN.totalTargetHours);
+    expect(total).toBeLessThanOrEqual(OCTOBER_2026_HOUR_PLAN.totalTargetHours);
+    expect(total).toBeGreaterThan(1700);
   });
 
   it('resolves by month with or without the day component', () => {
@@ -34,16 +35,17 @@ describe('October 2026 hour plan', () => {
 });
 
 describe('clampToHourPlan', () => {
-  it('caps allocation at the plan target', () => {
+  it('allows a soft stretch above the plan target when demand and hours exist', () => {
     const result = clampToHourPlan(entry('Shannon Greco'), {
       effectiveHours: 60,
       allocatedHours: 55,
       allocations: [{ state: 'PA', hours: 55 }],
       stateGaps: [{ state: 'PA', gapHours: 200 }],
     });
-    expect(result.acceptedHours).toBe(33);
+    expect(result.acceptedHours).toBe(41.25); // 33 plan target x 1.25 soft ceiling
     expect(result.adjustment).toBe('capped');
-    expect(result.allocations.reduce((s, a) => s + a.hours, 0)).toBe(33);
+    expect(result.flags).toContain('plan_soft_cap_exceeded');
+    expect(result.allocations.reduce((s, a) => s + a.hours, 0)).toBe(41.25);
   });
 
   it('never exceeds the stated weekly maximum', () => {
@@ -89,7 +91,7 @@ describe('clampToHourPlan', () => {
       allocations: [{ state: 'PA', hours: 200 }],
       stateGaps: [{ state: 'PA', gapHours: 400 }],
     });
-    expect(result.acceptedHours).toBe(125);
+    expect(result.acceptedHours).toBe(156.25); // 125 x 1.25 soft ceiling
     expect(result.flags).toContain('plan_target_below_survey_min');
   });
 
