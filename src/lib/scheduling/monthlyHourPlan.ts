@@ -197,9 +197,11 @@ export function monthlyFloorFor(entry: MonthlyHourPlanEntry): number {
 
 /**
  * Clamp an equity-allocator result to the provider's plan row.
- * The cap is hard; the floor is applied only up to the cap and the hours the
- * provider actually submitted, and any shortfall is flagged rather than
- * silently invented.
+ * The plan cap is SOFT: the allocator may go up to PLAN_SOFT_CAP_MULTIPLIER x
+ * the plan target as long as the provider submitted those hours and demand
+ * remains. The floor is applied only up to that ceiling and the hours the
+ * provider actually submitted; any shortfall is flagged rather than silently
+ * invented.
  */
 export function clampToHourPlan(
   entry: MonthlyHourPlanEntry,
@@ -217,17 +219,21 @@ export function clampToHourPlan(
   }
 
   const submitted = Math.max(0, round2(input.effectiveHours));
-  const effectiveCap = round2(Math.min(cap, submitted));
+  const planCap = round2(Math.min(cap, submitted));
+  // Soft ceiling: plan target may stretch, but never past submitted hours.
+  const ceiling = round2(Math.min(cap * PLAN_SOFT_CAP_MULTIPLIER, submitted));
   if (statedFloor > 0 && submitted < statedFloor) {
     flags.push('submitted_below_survey_min');
   }
 
-  const floor = round2(Math.min(statedFloor, effectiveCap));
+  const floor = round2(Math.min(statedFloor, ceiling));
   const before = round2(Math.max(0, input.allocatedHours));
   let accepted = before;
-  if (accepted > effectiveCap) accepted = effectiveCap;
+  if (accepted > ceiling) accepted = ceiling;
   if (accepted < floor) accepted = floor;
-  accepted = quantizeToQuarter(Math.max(0, accepted), effectiveCap);
+  accepted = quantizeToQuarter(Math.max(0, accepted), ceiling);
+
+  if (accepted > planCap + 0.001) flags.push('plan_soft_cap_exceeded');
 
   let adjustment: PlanClampResult['adjustment'] = 'none';
   if (accepted < before - 0.001) adjustment = 'capped';
@@ -236,12 +242,13 @@ export function clampToHourPlan(
   return {
     acceptedHours: accepted,
     allocations: rebalanceAllocations(input.allocations, accepted, input.stateGaps ?? []),
-    capHours: effectiveCap,
+    capHours: planCap,
     floorHours: floor,
     adjustment,
     flags,
   };
 }
+
 
 /** Scale a per-state allocation list to a new total, respecting remaining demand. */
 export function rebalanceAllocations(
