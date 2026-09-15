@@ -3,14 +3,17 @@
 --
 -- Single source of truth for state-level visit-availability service
 -- levels. Until now these rules lived in Notion prose and were
--- re-hardcoded in at least seven places across this repo and the
--- warehouse (see the MD-only state list duplicated in
--- src/constants/stateRestrictions.ts, src/lib/scheduling/coverage.ts,
--- src/lib/scheduling/dailyCoverageRouting.ts,
+-- re-hardcoded in eleven places across this repo and the warehouse:
+-- the same eight-state list appears as MD_ONLY_STATES in
+-- src/lib/scheduling/coverage.ts, src/lib/scheduling/dailyCoverageRouting.ts,
 -- supabase/functions/_shared/dailyCoverageRouting.ts,
--- supabase/functions/evaluate-schedule-submissions/index.ts,
--- supabase/functions/same-next-day-coverage-alert/index.ts, and the
--- `md_only` VALUES clause in Metabase question 3951).
+-- supabase/functions/evaluate-schedule-submissions/index.ts and its
+-- _bundles copy; as NP_PROHIBITED_STATES in
+-- src/constants/stateRestrictions.ts, supabase/functions/coverage-copilot,
+-- compute-availability-slots, compute-coverage-recommendations and
+-- compute-license-utilization; as PHYSICIAN_ONLY_STATES in
+-- supabase/functions/same-next-day-coverage-alert/index.ts; and as the
+-- `md_only` VALUES clause in Metabase question 3951.
 --
 -- The rules are effective-dated so a past alert can be explained with
 -- the thresholds that were live when it fired, rather than the ones

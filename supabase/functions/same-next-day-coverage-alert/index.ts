@@ -8,6 +8,15 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  breachesPolicyFloor,
+  checkPolicyFloors,
+  getSlaTierRule,
+  isSlaPhysicianOnlyState,
+  loadSlaTierRules,
+  type PolicyFloorBreach,
+  type SlaTierRules,
+} from '../_shared/slaTiers.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,7 +46,6 @@ const MEMBER_POPULATION_SEARCH_TERMS = [
 ];
 const SLOTS_PER_PROVIDER_HOUR = 2;
 const AD_HOC_WEEKLY_VISIT_THRESHOLD = 7;
-const PHYSICIAN_ONLY_STATES = new Set(['IN', 'GA', 'AL', 'MS', 'MO', 'TN', 'SC', 'LA']);
 const PHYSICIAN_PROFESSIONS = new Set(['md', 'do', 'physician']);
 const SLACK_API_URL = 'https://slack.com/api/chat.postMessage';
 const SLACK_UPDATE_API_URL = 'https://slack.com/api/chat.update';
@@ -194,6 +202,19 @@ type AlertState = {
   tomorrow_status: AlertStatus;
   coverage_status: AlertStatus;
   status: AlertStatus;
+  /** SLA policy fields, from public.sla_tier_by_state_current. */
+  sla_tier: string | null;
+  physician_only: boolean;
+  min_slots_window: number | null;
+  min_slots_sameday: number | null;
+  /**
+   * Shortfall against each policy floor, or null where the policy sets no
+   * such floor. Stored so a past alert can be explained without having to
+   * reconstruct which thresholds were live.
+   */
+  policy_window_shortfall: number | null;
+  policy_sameday_shortfall: number | null;
+  policy_floor_breached: boolean;
   staffing_mode: StaffingMode;
   ad_hoc_owner: string;
   sla_pct: number | null;
@@ -434,13 +455,25 @@ async function buildAlertResult(
   const monthlyVisits = buildMonthlyVisitMap(monthlyRows);
   const sla = buildSlaMap(slaRows);
   const memberPopulation = memberPopulationResult.members;
+
+  // SLA tiers, physician-only flags and policy floors come from
+  // public.sla_tier_by_state_current so a policy change takes effect without
+  // redeploying this function. On a read failure this falls back to a
+  // built-in copy and warns, rather than losing the physician-only rule.
+  const slaRuleResult = await loadSlaTierRules(supabase);
+  const slaRules = slaRuleResult.rules;
+  if (slaRuleResult.warning) warnings.push(slaRuleResult.warning);
   let providerProfessionByName = new Map<string, string | null>();
   if (!options.fastPath) {
     const providerProfessionResult = await loadProviderProfessionByName(supabase);
     if (providerProfessionResult.warning) warnings.push(providerProfessionResult.warning);
     providerProfessionByName = providerProfessionResult.professions;
   }
-  const activationByState = buildActivationMap(activation.deficitStates, providerProfessionByName);
+  const activationByState = buildActivationMap(
+    activation.deficitStates,
+    providerProfessionByName,
+    slaRules,
+  );
   const optIns = contactPreferences
     .filter((preference) => preference.status === 'yes')
     .map(({ name, email }) => ({ name, email, profession: null, states: [], relevant_states: [] }));
@@ -466,11 +499,27 @@ async function buildAlertResult(
     const todayStatus = statusForCoverage(stateSlots.today, target);
     const tomorrowStatus = statusForCoverage(stateSlots.tomorrow, target);
     const coverageStatus = worstStatus(todayStatus, tomorrowStatus);
-    const status = staffingMode === 'ad_hoc' ? 'ok' : coverageStatus;
+    const demandStatus = staffingMode === 'ad_hoc' ? 'ok' : coverageStatus;
+
+    // The demand-derived target above scales with observed volume, so a
+    // low-volume state can sit at "ok" with almost no slots. The SLA policy
+    // floor is a commitment that does not scale, so it is checked
+    // separately and applied after the ad-hoc suppression: a state we have
+    // promised same-day coverage in should not be silently muted for being
+    // small. Only the 12 tier-1/tier-2 states carry a floor; within_48h
+    // states have none and are unaffected.
+    const slaRule = getSlaTierRule(slaRules, state);
+    const policyFloors = checkPolicyFloors(slaRule, stateSlots.today, stateSlots.tomorrow);
+    const policyBreached = breachesPolicyFloor(policyFloors);
+    const status = policyBreached
+      ? worstStatus(demandStatus, policyFloorSeverity(slaRule, policyFloors))
+      : demandStatus;
 
     if (staffingMode === 'proactive' && (status === 'critical' || status === 'low')) {
       metabaseFlaggedStates.add(state);
     }
+    // A policy breach needs outreach even in an ad-hoc state.
+    if (policyBreached) metabaseFlaggedStates.add(state);
 
     return {
       state,
@@ -489,6 +538,13 @@ async function buildAlertResult(
       tomorrow_status: tomorrowStatus,
       coverage_status: coverageStatus,
       status,
+      sla_tier: slaRule?.tier ?? null,
+      physician_only: slaRule?.physicianOnly ?? false,
+      min_slots_window: slaRule?.minSlotsWindow ?? null,
+      min_slots_sameday: slaRule?.minSlotsSameDay ?? null,
+      policy_window_shortfall: policyFloors.windowShortfall,
+      policy_sameday_shortfall: policyFloors.sameDayShortfall,
+      policy_floor_breached: policyBreached,
       staffing_mode: staffingMode,
       ad_hoc_owner: adHocOwnerForState(state),
       sla_pct: sla.get(state) ?? null,
@@ -515,7 +571,7 @@ async function buildAlertResult(
     warnings.push(providerLookupWarning);
   } else {
     try {
-      relevantOptIns = await enrichOptInsWithLicensedStates(supabase, optIns, flaggedStates);
+      relevantOptIns = await enrichOptInsWithLicensedStates(supabase, optIns, flaggedStates, slaRules);
     } catch (err) {
       providerLookupWarning = `Opted-in provider lookup unavailable: ${compactErrorMessage(err)}`;
       warnings.push(providerLookupWarning);
@@ -531,6 +587,7 @@ async function buildAlertResult(
         supabase,
         contactPreferences,
         flaggedStates,
+        slaRules,
       );
     } catch (err) {
       warnings.push(`Confirm-only provider lookup unavailable: ${compactErrorMessage(err)}`);
@@ -863,6 +920,7 @@ async function enrichOptInsWithLicensedStates(
   supabase: { from: (table: string) => any },
   optIns: OptInProvider[],
   flaggedStates: Set<string>,
+  slaRules: SlaTierRules,
 ): Promise<OptInProvider[]> {
   if (optIns.length === 0 || flaggedStates.size === 0) return [];
 
@@ -927,7 +985,7 @@ async function enrichOptInsWithLicensedStates(
       const profession = nullableString(provider?.profession);
       const states = (statesByProvider.get(providerId) ?? []).sort();
       const relevantStates = states.filter((state) =>
-        flaggedStates.has(state) && canPracticeInAlertState(profession, state)
+        flaggedStates.has(state) && canPracticeInAlertState(slaRules, profession, state)
       );
       return {
         ...optIn,
@@ -971,6 +1029,7 @@ async function fetchNonOptedInEligibleProviders(
   supabase: { from: (table: string) => any },
   contactPreferences: ContactPreference[],
   flaggedStates: Set<string>,
+  slaRules: SlaTierRules,
 ): Promise<Map<string, NonOptedInProvider[]>> {
   const states = [...flaggedStates].sort();
   const byState = new Map<string, NonOptedInProvider[]>();
@@ -1032,7 +1091,7 @@ async function fetchNonOptedInEligibleProviders(
     if (exemptProviderIds.has(providerId)) continue;
     if (/test|maddi/i.test(name)) continue;
     if (isPermanentlyExcluded(name)) continue;
-    if (!canPracticeInAlertState(profession, state)) continue;
+    if (!canPracticeInAlertState(slaRules, profession, state)) continue;
 
     const preference = lookupContactPreference(preferenceIndex, name, email);
     if (preference?.status === 'yes') continue;
@@ -1208,6 +1267,7 @@ function buildMemberPopulationMap(rows: Row[]) {
 function buildActivationMap(
   deficitStates: Array<{ state: string; candidates: ActivationCandidate[] }>,
   providerProfessionByName: Map<string, string | null>,
+  slaRules: SlaTierRules,
 ) {
   const byState = new Map<string, ActivationCandidate[]>();
 
@@ -1218,7 +1278,7 @@ function buildActivationMap(
         ...candidate,
         profession: candidate.profession ?? providerProfessionByName.get(canonicalName(candidate.provider_name)) ?? null,
       }))
-      .filter((candidate) => canPracticeInAlertState(candidate.profession, row.state))
+      .filter((candidate) => canPracticeInAlertState(slaRules, candidate.profession, row.state))
       .slice(0, 5);
     byState.set(row.state, candidates);
   }
@@ -1552,7 +1612,7 @@ function getRoutingStates(result: AlertResult) {
 }
 
 function formatStateRoutingLine(state: AlertState) {
-  const physicianLabel = PHYSICIAN_ONLY_STATES.has(state.state) ? ' - physician-only' : '';
+  const physicianLabel = state.physician_only ? ' - physician-only' : '';
   const stateLabel = escapeSlack(`${state.state}${physicianLabel}`);
   const slotLabel = `${state.today_slots} slots today / ${state.tomorrow_slots} tomorrow`;
   const memberLabel = formatMemberPopulationForSlack(state.member_population);
@@ -1598,7 +1658,7 @@ function formatConfirmOnlyLine(state: AlertState) {
   const suffix = state.non_opted_in_providers.length > 5
     ? `; +${state.non_opted_in_providers.length - 5} more`
     : '';
-  return `- *${escapeSlack(`${state.state}${physicianOnlyNote(state.state)}`)}* - ${providers.join('; ')}${suffix}`;
+  return `- *${escapeSlack(`${state.state}${physicianOnlyNote(state.physician_only)}`)}* - ${providers.join('; ')}${suffix}`;
 }
 
 async function findExistingSlackAlert(
@@ -1896,8 +1956,8 @@ function unknownToStringArray(value: unknown): string[] {
   return [];
 }
 
-function canPracticeInAlertState(profession: string | null, state: string) {
-  if (!PHYSICIAN_ONLY_STATES.has(state)) return true;
+function canPracticeInAlertState(rules: SlaTierRules, profession: string | null, state: string) {
+  if (!isSlaPhysicianOnlyState(rules, state)) return true;
   return isPhysicianProfession(profession);
 }
 
@@ -1905,8 +1965,8 @@ function isPhysicianProfession(profession: string | null) {
   return PHYSICIAN_PROFESSIONS.has(String(profession ?? '').trim().toLowerCase());
 }
 
-function physicianOnlyNote(state: string) {
-  return PHYSICIAN_ONLY_STATES.has(state) ? ' physician-only' : '';
+function physicianOnlyNote(physicianOnly: boolean) {
+  return physicianOnly ? ' physician-only' : '';
 }
 
 function shouldUseAdHocRouting(weeklyVisits: number) {
@@ -1915,6 +1975,22 @@ function shouldUseAdHocRouting(weeklyVisits: number) {
 
 function adHocOwnerForState(state: string) {
   return AD_HOC_OWNER_BY_STATE[state] ?? 'Shanta';
+}
+
+/**
+ * How severe a policy-floor breach is.
+ *
+ * A same-day state with no open slot today has already broken the
+ * member-facing promise ("a visit should be available today"), so that is
+ * critical. Falling short of the wider window minimum is a risk rather than
+ * a present failure, so it is low.
+ */
+function policyFloorSeverity(
+  rule: { tier: string } | undefined,
+  floors: PolicyFloorBreach,
+): AlertStatus {
+  if (rule?.tier === 'same_day' && (floors.sameDayShortfall ?? 0) > 0) return 'critical';
+  return 'low';
 }
 
 function statusForCoverage(availableSlots: number, targetSlots: number): AlertStatus {
