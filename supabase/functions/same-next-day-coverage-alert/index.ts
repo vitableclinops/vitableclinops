@@ -424,60 +424,27 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function buildAlertResult(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  today: string,
-  tomorrow: string,
-  options: BuildAlertOptions = { fastPath: false },
-): Promise<AlertResult> {
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
-  const warnings: string[] = [];
-  const [metabaseToken, activation, contactPreferences] = await Promise.all([
-    getMetabaseToken(),
-    options.fastPath
-      ? Promise.resolve({
-        dataSource: 'daily' as DataSource,
-        deficitStates: [],
-        warning: 'Activation candidate lookup skipped on scheduled fast path',
-      })
-      : fetchActivationCandidates(supabaseUrl, serviceRoleKey),
-    options.fastPath ? Promise.resolve([]) : fetchJotformContactPreferences(today),
-  ]);
-  const [slotRows, monthlyRows, slaRows, memberPopulationResult] = await Promise.all([
-    fetchMetabaseCard(CARD_SLOTS, metabaseToken),
-    fetchMetabaseCard(CARD_MONTHLY_VISITS, metabaseToken),
-    fetchMetabaseCard(CARD_SLA, metabaseToken),
-    fetchMemberPopulationMap(metabaseToken),
-  ]);
+/**
+ * Build the per-state alert rows from already-fetched inputs.
+ *
+ * Extracted from buildAlertResult so the scoring logic is reachable
+ * without network access: it is pure, which makes it testable and lets a
+ * preview render the real rows from captured inputs.
+ */
+type BuildAlertStatesInput = {
+  slots: Map<string, { today: number; tomorrow: number }>;
+  monthlyVisits: Map<string, number>;
+  sla: Map<string, number>;
+  memberPopulation: Map<string, number>;
+  activationByState: Map<string, ActivationCandidate[]>;
+  slaRules: SlaTierRules;
+};
 
-  const slots = buildSlotMap(slotRows, today, tomorrow);
-  const monthlyVisits = buildMonthlyVisitMap(monthlyRows);
-  const sla = buildSlaMap(slaRows);
-  const memberPopulation = memberPopulationResult.members;
-
-  // SLA tiers, physician-only flags and policy floors come from
-  // public.sla_tier_by_state_current so a policy change takes effect without
-  // redeploying this function. On a read failure this falls back to a
-  // built-in copy and warns, rather than losing the physician-only rule.
-  const slaRuleResult = await loadSlaTierRules(supabase);
-  const slaRules = slaRuleResult.rules;
-  if (slaRuleResult.warning) warnings.push(slaRuleResult.warning);
-  let providerProfessionByName = new Map<string, string | null>();
-  if (!options.fastPath) {
-    const providerProfessionResult = await loadProviderProfessionByName(supabase);
-    if (providerProfessionResult.warning) warnings.push(providerProfessionResult.warning);
-    providerProfessionByName = providerProfessionResult.professions;
-  }
-  const activationByState = buildActivationMap(
-    activation.deficitStates,
-    providerProfessionByName,
-    slaRules,
-  );
-  const optIns = contactPreferences
-    .filter((preference) => preference.status === 'yes')
-    .map(({ name, email }) => ({ name, email, profession: null, states: [], relevant_states: [] }));
-
+export function buildAlertStates(input: BuildAlertStatesInput): {
+  states: AlertState[];
+  metabaseFlaggedStates: Set<string>;
+} {
+  const { slots, monthlyVisits, sla, memberPopulation, activationByState, slaRules } = input;
   const metabaseFlaggedStates = new Set<string>();
   const allStates = new Set<string>([
     ...slots.keys(),
@@ -554,6 +521,71 @@ async function buildAlertResult(
     } satisfies AlertState;
   });
 
+  return { states, metabaseFlaggedStates };
+}
+
+async function buildAlertResult(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  today: string,
+  tomorrow: string,
+  options: BuildAlertOptions = { fastPath: false },
+): Promise<AlertResult> {
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const warnings: string[] = [];
+  const [metabaseToken, activation, contactPreferences] = await Promise.all([
+    getMetabaseToken(),
+    options.fastPath
+      ? Promise.resolve({
+        dataSource: 'daily' as DataSource,
+        deficitStates: [],
+        warning: 'Activation candidate lookup skipped on scheduled fast path',
+      })
+      : fetchActivationCandidates(supabaseUrl, serviceRoleKey),
+    options.fastPath ? Promise.resolve([]) : fetchJotformContactPreferences(today),
+  ]);
+  const [slotRows, monthlyRows, slaRows, memberPopulationResult] = await Promise.all([
+    fetchMetabaseCard(CARD_SLOTS, metabaseToken),
+    fetchMetabaseCard(CARD_MONTHLY_VISITS, metabaseToken),
+    fetchMetabaseCard(CARD_SLA, metabaseToken),
+    fetchMemberPopulationMap(metabaseToken),
+  ]);
+
+  const slots = buildSlotMap(slotRows, today, tomorrow);
+  const monthlyVisits = buildMonthlyVisitMap(monthlyRows);
+  const sla = buildSlaMap(slaRows);
+  const memberPopulation = memberPopulationResult.members;
+
+  // SLA tiers, physician-only flags and policy floors come from
+  // public.sla_tier_by_state_current so a policy change takes effect without
+  // redeploying this function. On a read failure this falls back to a
+  // built-in copy and warns, rather than losing the physician-only rule.
+  const slaRuleResult = await loadSlaTierRules(supabase);
+  const slaRules = slaRuleResult.rules;
+  if (slaRuleResult.warning) warnings.push(slaRuleResult.warning);
+  let providerProfessionByName = new Map<string, string | null>();
+  if (!options.fastPath) {
+    const providerProfessionResult = await loadProviderProfessionByName(supabase);
+    if (providerProfessionResult.warning) warnings.push(providerProfessionResult.warning);
+    providerProfessionByName = providerProfessionResult.professions;
+  }
+  const activationByState = buildActivationMap(
+    activation.deficitStates,
+    providerProfessionByName,
+    slaRules,
+  );
+  const optIns = contactPreferences
+    .filter((preference) => preference.status === 'yes')
+    .map(({ name, email }) => ({ name, email, profession: null, states: [], relevant_states: [] }));
+
+  const { states, metabaseFlaggedStates } = buildAlertStates({
+    slots,
+    monthlyVisits,
+    sla,
+    memberPopulation,
+    activationByState,
+    slaRules,
+  });
   const proactiveStates = new Set(states
     .filter((state) => state.staffing_mode === 'proactive')
     .map((state) => state.state));
