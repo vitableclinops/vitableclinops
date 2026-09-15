@@ -175,47 +175,94 @@ export function isSlaPhysicianOnlyState(rules: SlaTierRules, state: string): boo
 export interface PolicyFloorBreach {
   /** Open slots across the state's horizon fell under min_slots_window. */
   windowShortfall: number | null;
-  /** Open slots today fell under min_slots_sameday. */
+  /**
+   * Open slots TODAY fell under min_slots_sameday.
+   *
+   * Null means either the state has no same-day floor, or the caller could
+   * not supply a same-day-only count. Those are different situations, so
+   * `sameDayMeasurable` distinguishes them.
+   */
   sameDayShortfall: number | null;
+  /**
+   * False when the state has a same-day floor that could NOT be evaluated
+   * because no same-day-only slot count was available. A caller must not
+   * read this as "the floor is met".
+   */
+  sameDayMeasurable: boolean;
+}
+
+export interface PolicyFloorInput {
+  /**
+   * Open slots in the state's SLA window.
+   *
+   * IMPORTANT: this is a window total, not a single day. Metabase card 2431
+   * (`same_next_day_available_slots`) already reports the today+tomorrow
+   * window as a single value per date, verified against the availability
+   * fact table across 408 state-days (95% exact match, versus 9% for a
+   * same-day-only reading). Pass that value directly — do NOT add the
+   * "today" and "tomorrow" rows together, which double-counts tomorrow.
+   */
+  windowSlots: number;
+  /**
+   * Open slots TODAY only, or null when unavailable.
+   *
+   * The card above cannot supply this: its per-date value spans two days.
+   * The underlying model does expose a true per-day `available_slots`
+   * column, but no parameterless card surfaces it for the current date.
+   * Pass null rather than substituting the window total, which would make
+   * the same-day floor unfalsifiable.
+   */
+  sameDaySlots: number | null;
 }
 
 /**
  * Compare open slots against the policy floors for a state.
  *
  * Two separate tests, mirroring Metabase question 3951: the window minimum
- * is counted across the horizon (today + tomorrow for same_day and
- * next_day), while the same-day minimum applies to today alone. A single
- * combined threshold can pass while a state has almost no same-day
- * capacity, which breaks the member-facing promise.
+ * is counted across the SLA window, while the same-day minimum applies to
+ * today alone. A single combined threshold can pass while a state has
+ * almost no same-day capacity, which breaks the member-facing promise.
  *
- * next_day states are explicitly "excluding same-day", so their window
- * count uses tomorrow only and they have no same-day floor.
+ * KNOWN OVER-COUNT FOR next_day STATES
+ * The policy sets their minimum as "2 visits, excluding same-day", but the
+ * available window metric spans today and tomorrow together and cannot be
+ * narrowed to tomorrow alone. Their window check is therefore more
+ * generous than the policy: it can pass on same-day slots that the policy
+ * would exclude. It never produces a false breach, only a missed one.
  *
  * Returns null shortfalls where the policy sets no minimum, so a caller can
  * distinguish "met the floor" from "there is no floor".
  */
 export function checkPolicyFloors(
   rule: SlaTierRule | undefined,
-  todaySlots: number,
-  tomorrowSlots: number,
+  input: PolicyFloorInput,
 ): PolicyFloorBreach {
-  if (!rule) return { windowShortfall: null, sameDayShortfall: null };
+  if (!rule) {
+    return { windowShortfall: null, sameDayShortfall: null, sameDayMeasurable: true };
+  }
 
-  const today = Number.isFinite(todaySlots) ? todaySlots : 0;
-  const tomorrow = Number.isFinite(tomorrowSlots) ? tomorrowSlots : 0;
+  const windowSlots = Number.isFinite(input.windowSlots) ? input.windowSlots : 0;
 
   let windowShortfall: number | null = null;
   if (rule.minSlotsWindow !== null) {
-    const inWindow = rule.tier === 'next_day' ? tomorrow : today + tomorrow;
-    windowShortfall = inWindow < rule.minSlotsWindow ? rule.minSlotsWindow - inWindow : 0;
+    windowShortfall = windowSlots < rule.minSlotsWindow
+      ? rule.minSlotsWindow - windowSlots
+      : 0;
   }
 
   let sameDayShortfall: number | null = null;
+  let sameDayMeasurable = true;
   if (rule.minSlotsSameDay !== null) {
-    sameDayShortfall = today < rule.minSlotsSameDay ? rule.minSlotsSameDay - today : 0;
+    if (input.sameDaySlots === null || !Number.isFinite(input.sameDaySlots)) {
+      sameDayMeasurable = false;
+    } else {
+      sameDayShortfall = input.sameDaySlots < rule.minSlotsSameDay
+        ? rule.minSlotsSameDay - input.sameDaySlots
+        : 0;
+    }
   }
 
-  return { windowShortfall, sameDayShortfall };
+  return { windowShortfall, sameDayShortfall, sameDayMeasurable };
 }
 
 /** True when any policy floor the state actually has is unmet. */

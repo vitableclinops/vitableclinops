@@ -215,6 +215,11 @@ type AlertState = {
   policy_window_shortfall: number | null;
   policy_sameday_shortfall: number | null;
   policy_floor_breached: boolean;
+  /**
+   * False when this state has a same-day floor that could not be checked
+   * for lack of a same-day-only slot count. Not the same as "floor met".
+   */
+  policy_sameday_measurable: boolean;
   staffing_mode: StaffingMode;
   ad_hoc_owner: string;
   sla_pct: number | null;
@@ -475,8 +480,21 @@ export function buildAlertStates(input: BuildAlertStatesInput): {
     // promised same-day coverage in should not be silently muted for being
     // small. Only the 12 tier-1/tier-2 states carry a floor; within_48h
     // states have none and are unaffected.
+    // stateSlots.today is the value card 2431 reports for today's date, which
+    // is the today+tomorrow WINDOW total, not a single day (verified against
+    // the availability fact table over 408 state-days: 95% exact match for
+    // the window reading, 9% for a same-day-only reading). So it is passed
+    // as windowSlots, and NOT added to stateSlots.tomorrow, which would
+    // double-count tomorrow and pull in the day after.
+    //
+    // No parameterless card exposes a true same-day-only count, so the
+    // same-day floor is reported as unmeasurable rather than silently
+    // evaluated against a two-day number, which would never fail.
     const slaRule = getSlaTierRule(slaRules, state);
-    const policyFloors = checkPolicyFloors(slaRule, stateSlots.today, stateSlots.tomorrow);
+    const policyFloors = checkPolicyFloors(slaRule, {
+      windowSlots: stateSlots.today,
+      sameDaySlots: null,
+    });
     const policyBreached = breachesPolicyFloor(policyFloors);
     const status = policyBreached
       ? worstStatus(demandStatus, policyFloorSeverity(slaRule, policyFloors))
@@ -512,6 +530,7 @@ export function buildAlertStates(input: BuildAlertStatesInput): {
       policy_window_shortfall: policyFloors.windowShortfall,
       policy_sameday_shortfall: policyFloors.sameDayShortfall,
       policy_floor_breached: policyBreached,
+      policy_sameday_measurable: policyFloors.sameDayMeasurable,
       staffing_mode: staffingMode,
       ad_hoc_owner: adHocOwnerForState(state),
       sla_pct: sla.get(state) ?? null,

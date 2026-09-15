@@ -67,55 +67,83 @@ Deno.test('isSlaPhysicianOnlyState normalizes input and defaults unknown states 
 
 // --- policy floors --------------------------------------------------------
 
-Deno.test('same_day counts the window across today and tomorrow', () => {
-  // PA floor is 5 across the window, 1 today.
-  assertEquals(checkPolicyFloors(rule('PA'), 3, 2), { windowShortfall: 0, sameDayShortfall: 0 });
-  assertEquals(checkPolicyFloors(rule('PA'), 1, 1), { windowShortfall: 3, sameDayShortfall: 0 });
+Deno.test('window check uses the window total as given, without re-adding days', () => {
+  // PA floor is 5 across the window. Card 2431 already reports the
+  // today+tomorrow window as one value, so it is passed straight through.
+  assertEquals(
+    checkPolicyFloors(rule('PA'), { windowSlots: 5, sameDaySlots: null }).windowShortfall,
+    0,
+  );
+  assertEquals(
+    checkPolicyFloors(rule('PA'), { windowSlots: 2, sameDaySlots: null }).windowShortfall,
+    3,
+  );
 });
 
-Deno.test('same_day flags a broken same-day promise even when the window is fine', () => {
-  // 0 today, 9 tomorrow: window of 9 clears the floor of 5, but there is
-  // no visit available today, which is the actual promise.
-  const floors = checkPolicyFloors(rule('PA'), 0, 9);
+Deno.test('a same-day floor with no same-day count is unmeasurable, not met', () => {
+  const floors = checkPolicyFloors(rule('PA'), { windowSlots: 49, sameDaySlots: null });
   assertEquals(floors.windowShortfall, 0);
-  assertEquals(floors.sameDayShortfall, 1);
-  assertEquals(breachesPolicyFloor(floors), true);
-});
-
-Deno.test('next_day excludes same-day from its window', () => {
-  // MD floor is 2, counted on tomorrow only. 5 today / 1 tomorrow is short.
-  const floors = checkPolicyFloors(rule('MD'), 5, 1);
-  assertEquals(floors.windowShortfall, 1);
   assertEquals(floors.sameDayShortfall, null);
-  assertEquals(breachesPolicyFloor(floors), true);
-});
-
-Deno.test('next_day with no slots today still passes on tomorrow alone', () => {
-  const floors = checkPolicyFloors(rule('MD'), 0, 2);
-  assertEquals(floors.windowShortfall, 0);
+  assertEquals(floors.sameDayMeasurable, false);
+  // Crucially this must not be reported as a breach, nor as a pass.
   assertEquals(breachesPolicyFloor(floors), false);
 });
 
+Deno.test('a same-day floor is evaluated when a same-day count is supplied', () => {
+  const met = checkPolicyFloors(rule('PA'), { windowSlots: 49, sameDaySlots: 8 });
+  assertEquals(met.sameDayShortfall, 0);
+  assertEquals(met.sameDayMeasurable, true);
+
+  // 0 slots today against a window of 49: the window passes but the
+  // member-facing same-day promise is broken.
+  const broken = checkPolicyFloors(rule('PA'), { windowSlots: 49, sameDaySlots: 0 });
+  assertEquals(broken.windowShortfall, 0);
+  assertEquals(broken.sameDayShortfall, 1);
+  assertEquals(breachesPolicyFloor(broken), true);
+});
+
+Deno.test('next_day has no same-day floor so it is always measurable', () => {
+  const floors = checkPolicyFloors(rule('MD'), { windowSlots: 1, sameDaySlots: null });
+  assertEquals(floors.windowShortfall, 1);
+  assertEquals(floors.sameDayShortfall, null);
+  assertEquals(floors.sameDayMeasurable, true);
+  assertEquals(breachesPolicyFloor(floors), true);
+});
+
 Deno.test('within_48h has no floors to breach', () => {
-  const floors = checkPolicyFloors(rule('CA'), 0, 0);
-  assertEquals(floors, { windowShortfall: null, sameDayShortfall: null });
+  const floors = checkPolicyFloors(rule('CA'), { windowSlots: 0, sameDaySlots: 0 });
+  assertEquals(floors.windowShortfall, null);
+  assertEquals(floors.sameDayShortfall, null);
   assertEquals(breachesPolicyFloor(floors), false);
 });
 
 Deno.test('VA uses its lower window floor', () => {
-  assertEquals(checkPolicyFloors(rule('VA'), 1, 1).windowShortfall, 0);
-  assertEquals(checkPolicyFloors(rule('VA'), 0, 1).windowShortfall, 1);
+  assertEquals(
+    checkPolicyFloors(rule('VA'), { windowSlots: 2, sameDaySlots: null }).windowShortfall,
+    0,
+  );
+  assertEquals(
+    checkPolicyFloors(rule('VA'), { windowSlots: 1, sameDaySlots: null }).windowShortfall,
+    1,
+  );
 });
 
 Deno.test('an unknown state has no floors rather than defaulting to a tier', () => {
-  const floors = checkPolicyFloors(getSlaTierRule(rules, 'ZZ'), 0, 0);
-  assertEquals(floors, { windowShortfall: null, sameDayShortfall: null });
+  const floors = checkPolicyFloors(getSlaTierRule(rules, 'ZZ'), {
+    windowSlots: 0,
+    sameDaySlots: 0,
+  });
+  assertEquals(floors.windowShortfall, null);
+  assertEquals(floors.sameDayShortfall, null);
 });
 
-Deno.test('non-finite slot counts are treated as zero rather than propagating NaN', () => {
-  const floors = checkPolicyFloors(rule('PA'), Number.NaN, 2);
-  assertEquals(floors.windowShortfall, 3);
-  assertEquals(floors.sameDayShortfall, 1);
+Deno.test('non-finite counts are treated as zero / unmeasurable rather than NaN', () => {
+  const floors = checkPolicyFloors(rule('PA'), {
+    windowSlots: Number.NaN,
+    sameDaySlots: Number.NaN,
+  });
+  assertEquals(floors.windowShortfall, 5);
+  assertEquals(floors.sameDayMeasurable, false);
 });
 
 // --- loader ---------------------------------------------------------------
