@@ -4073,6 +4073,54 @@ export type Database = {
         }
         Relationships: []
       }
+      sla_tier_by_state: {
+        Row: {
+          created_at: string
+          effective_from: string
+          effective_to: string | null
+          horizon_days: number
+          id: string
+          min_slots_sameday: number | null
+          min_slots_window: number | null
+          notes: string | null
+          physician_only: boolean
+          sla_tier: string
+          source: string | null
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          effective_from: string
+          effective_to?: string | null
+          horizon_days: number
+          id?: string
+          min_slots_sameday?: number | null
+          min_slots_window?: number | null
+          notes?: string | null
+          physician_only?: boolean
+          sla_tier: string
+          source?: string | null
+          state: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          effective_from?: string
+          effective_to?: string | null
+          horizon_days?: number
+          id?: string
+          min_slots_sameday?: number | null
+          min_slots_window?: number | null
+          notes?: string | null
+          physician_only?: boolean
+          sla_tier?: string
+          source?: string | null
+          state?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       state_activation: {
         Row: {
           created_at: string
@@ -5196,6 +5244,19 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sla_tier_by_state_current: {
+        Row: {
+          effective_from: string | null
+          horizon_days: number | null
+          min_slots_sameday: number | null
+          min_slots_window: number | null
+          physician_only: boolean | null
+          sla_tier: string | null
+          source: string | null
+          state: string | null
+        }
+        Relationships: []
       }
     }
     Functions: {
