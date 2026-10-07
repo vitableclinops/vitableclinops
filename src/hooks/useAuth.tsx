@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode, type Context } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
@@ -20,7 +20,12 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// Reuse one context instance across hot reloads so a reloaded module doesn't
+// orphan consumers from the already-mounted provider.
+const authCtxStore = globalThis as unknown as { __vitableAuthContext?: React.Context<AuthContextType | undefined> };
+const AuthContext =
+  authCtxStore.__vitableAuthContext ??
+  (authCtxStore.__vitableAuthContext = createContext<AuthContextType | undefined>(undefined));
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
