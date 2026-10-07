@@ -20,7 +20,12 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// Reuse one context instance across hot reloads so a reloaded module doesn't
+// orphan consumers from the already-mounted provider.
+const authCtxStore = globalThis as unknown as { __vitableAuthContext?: React.Context<AuthContextType | undefined> };
+const AuthContext =
+  authCtxStore.__vitableAuthContext ??
+  (authCtxStore.__vitableAuthContext = createContext<AuthContextType | undefined>(undefined));
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
