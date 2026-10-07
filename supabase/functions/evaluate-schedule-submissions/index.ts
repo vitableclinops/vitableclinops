@@ -105,6 +105,16 @@ import {
   type SchedulingEquityPolicy,
   type SchedulingEquityStateGap,
 } from '../_shared/equityAllocation.ts';
+
+// ClinOps-approved per-provider lifts of the 75% submitted-hours soft cap.
+const SOFT_CAP_LIFTS: Record<string, string[]> = {
+  '2026-11': ['brittney afram', 'risheet patel'],
+};
+function softCapLiftedFor(month: string | null | undefined, name: string | null | undefined): boolean {
+  if (!month || !name) return false;
+  const n = name.toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  return (SOFT_CAP_LIFTS[month.slice(0, 7)] ?? []).some(x => n.includes(x.split(' ')[0]) && n.includes(x.split(' ').slice(-1)[0]));
+}
 import {
   compareProviderAllocationPriority,
   isDirectShiftsProvider,
@@ -1990,6 +2000,7 @@ Deno.serve(async (req: Request) => {
         floorHours: candidate.allocationPolicy === 'august_2026' ? 0 : candidate.equityFloorHours,
         directShiftsNp: candidate.isAugustDirectShiftsNp,
         submittedOnTime: candidate.submittedOnTimeForAugust,
+        softCapShare: softCapLiftedFor(targetMonth, candidate.latest.provider_name) ? 1 : undefined,
         eligibleStates: candidate.gapByState
           .filter(gap => !gap.missingDemand)
           .map(gap => ({
