@@ -79,6 +79,7 @@
  *     → evaluate just that provider's pending groups
  */
 
+import { loadLockedMonths } from '../_shared/scheduleMonthLock.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   buildSubmissionTimeline,
@@ -857,6 +858,7 @@ Deno.serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const monthFilter = url.searchParams.get('target_month');
+  const forceLocked = url.searchParams.get('force_locked') === '1';
   const providerFilter = url.searchParams.get('provider_id');
   const useUtilizationTieBreak = parseBooleanFlag(
     url.searchParams.get('use_utilization') ??
@@ -883,6 +885,10 @@ Deno.serve(async (req: Request) => {
   const decisions: Array<Record<string, unknown>> = [];
 
   try {
+    const lockedMonths = forceLocked ? new Set<string>() : await loadLockedMonths(supabase);
+    if (monthFilter && lockedMonths.has(monthFilter.slice(0, 10))) {
+      return new Response(JSON.stringify({ ok: false, locked: true, message: `Schedule for ${monthFilter} is locked; pass force_locked=1 to override.` }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     // ── Find groups (provider, target_month) that need work ─────────────
     let pendingQuery = supabase
       .from('schedule_submissions')
@@ -914,6 +920,7 @@ Deno.serve(async (req: Request) => {
     const groupKeys = new Set<string>();
     for (const r of pendingRows ?? []) {
       if (!r.provider_id || !r.target_month) continue;
+      if (lockedMonths.has(String(r.target_month).slice(0, 10))) continue;
       if (!monthFilter && !providerFilter && r.target_month < currentMonth) continue;
       groupKeys.add(`${r.provider_id}|${r.target_month}`);
     }
