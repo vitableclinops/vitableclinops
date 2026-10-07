@@ -111,8 +111,30 @@ export const OCTOBER_2026_HOUR_PLAN: MonthlyHourPlan = {
   entries: OCTOBER_2026_ENTRIES,
 };
 
+
+/**
+ * November 2026: same tiers as October. ClinOps asked to raise every
+ * provider's cap so the network can reach the full 1,690h telehealth target;
+ * targets are lifted 3x so state demand and submitted hours become the limit.
+ * Stated weekly max stays a hard bound. Providers out for November get 0.
+ */
+const NOVEMBER_2026_OUT = new Set(['kimberly truong', 'anabel gomez', 'anabel garcia gomez', 'daniyel barton', 'ramon trinidad', 'margo mulgrew', 'margaret mulgrew']);
+
+export const NOVEMBER_2026_HOUR_PLAN: MonthlyHourPlan = {
+  month: '2026-11-01',
+  totalTargetHours: 1690,
+  policyVersion: 'tier_model_2026_11_raised',
+  entries: OCTOBER_2026_ENTRIES.map(e => {
+    const out = NOVEMBER_2026_OUT.has(canonicalName(e.name)) || NOVEMBER_2026_OUT.has(e.name.toLowerCase());
+    return out
+      ? { ...e, targetHours: 0, notes: 'Not providing November hours' }
+      : { ...e, targetHours: Math.max(e.targetHours * 3, 40), notes: `${e.notes} | Nov: cap raised to fill 1,690h` };
+  }),
+};
+
 const PLANS_BY_MONTH = new Map<string, MonthlyHourPlan>([
   [OCTOBER_2026_HOUR_PLAN.month, OCTOBER_2026_HOUR_PLAN],
+  [NOVEMBER_2026_HOUR_PLAN.month, NOVEMBER_2026_HOUR_PLAN],
 ]);
 
 const normalizeMonth = (month: string) =>
