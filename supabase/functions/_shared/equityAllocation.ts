@@ -35,6 +35,8 @@ export type SchedulingEquityCandidate = {
   floorHours: number;
   directShiftsNp?: boolean;
   submittedOnTime?: boolean;
+  /** Per-provider override of the submitted-hours soft cap share (1 = no cap). */
+  softCapShare?: number;
   eligibleStates: SchedulingEquityState[];
 };
 
@@ -124,7 +126,7 @@ export function allocateSchedulingEquity({
       allocations: [],
       providerAcceptancePct: 0,
       equityFloor: candidate.floorHours > 0 ? 'unmet_no_gap' : 'unmet_no_valid_shift',
-      softCapHours: equityRound2(candidate.effectiveHours * softCapShare),
+      softCapHours: equityRound2(candidate.effectiveHours * (candidate.softCapShare ?? softCapShare)),
       softCapExceeded: false,
       directshiftsTargetShare: equityRound2(directshiftsTargetShare * 100),
       directshiftsShareAfter: 0,

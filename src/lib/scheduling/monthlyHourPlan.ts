@@ -124,6 +124,10 @@ export const NOVEMBER_2026_HOUR_PLAN: MonthlyHourPlan = {
   policyVersion: 'tier_model_2026_11_raised',
   entries: OCTOBER_2026_ENTRIES.map(e => {
     const out = NOVEMBER_2026_OUT.has(canonicalName(e.name)) || NOVEMBER_2026_OUT.has(e.name.toLowerCase());
+    if (e.name === 'Sara Hammond') {
+      // ClinOps set Sara to exactly 40h for November.
+      return { ...e, targetHours: 40, minHoursPerWeek: 40 / WEEKS_PER_MONTH, maxHoursPerWeek: 40 / WEEKS_PER_MONTH, notes: 'Nov: set to 40h by ClinOps' };
+    }
     return out
       ? { ...e, targetHours: 0, notes: 'Not providing November hours' }
       : { ...e, targetHours: Math.max(e.targetHours * 3, 40), notes: `${e.notes} | Nov: cap raised to fill 1,690h` };
