@@ -22,6 +22,7 @@
  *     -> all current+future-month submissions with a decision
  */
 
+import { loadLockedMonths } from '../_shared/scheduleMonthLock.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   buildSubmissionTimeline,
@@ -275,6 +276,7 @@ Deno.serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const monthFilter = url.searchParams.get('target_month');
+  const forceLocked = url.searchParams.get('force_locked') === '1';
   const providerFilter = url.searchParams.get('provider_id');
 
   const counters = {
@@ -288,6 +290,10 @@ Deno.serve(async (req: Request) => {
   const errors: Array<{ submission_id: string; error: string }> = [];
 
   try {
+    const lockedMonths = forceLocked ? new Set<string>() : await loadLockedMonths(supabase);
+    if (monthFilter && lockedMonths.has(monthFilter.slice(0, 10))) {
+      return new Response(JSON.stringify({ ok: false, locked: true, message: `Schedule for ${monthFilter} is locked; pass force_locked=1 to override.` }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     let q = supabase
       .from('schedule_submissions')
       .select('id, provider_id, provider_name, target_month, parsed_shifts, decision_status, accepted_hours, declined_hours, decision_notes, submitted_at, decision_run_id, human_review_state');
@@ -308,6 +314,7 @@ Deno.serve(async (req: Request) => {
     const groups = new Map<string, Submission[]>();
     for (const s of subs) {
       if (!s.provider_id) continue;
+      if (lockedMonths.has(String(s.target_month).slice(0, 10))) continue;
       const k = `${s.provider_id}|${s.target_month}`;
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k)!.push(s);
