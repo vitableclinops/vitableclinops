@@ -438,6 +438,14 @@ function snapToOperationalWindow(
   return { startMin: snappedStart, endMin: snappedEnd };
 }
 
+/** Monday (YYYY-MM-DD) of the week containing dateIso. */
+export function weekStartIso(dateIso: string): string {
+  const [y, m, d] = dateIso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7));
+  return dt.toISOString().slice(0, 10);
+}
+
 function dayOfWeekUtc(dateIso: string): number {
   const [y, m, d] = dateIso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
@@ -447,7 +455,7 @@ function dayOfWeekUtc(dateIso: string): number {
  * Cut/publish row generator shared by evaluator and emitter.
  *
  * Forecast slots (recurring_virtual / virtual_oneoff) participate in the
- * cut budget: latest-first, cut until `declinedHours` is approximately
+ * cut budget: week-balanced (fullest week first, latest slot within it), cut until `declinedHours` is approximately
  * satisfied using 30-minute operational boundaries. Protected forecast slots
  * are skipped by monthly oversupply trims, which lets the evaluator preserve
  * scarce coverage windows before cutting less useful hours. In-home/clinic
@@ -474,13 +482,39 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
   const cutCandidates = args.declineAll
     ? args.forecastTimeline
     : args.forecastTimeline.filter(slot => !protectedForecastSlots.has(slot));
-  const sortedDesc = [...cutCandidates].sort((a, b) =>
-    b.date.localeCompare(a.date) || b.startMin - a.startMin,
-  );
+  // Week-balanced trim (Oct 2026): instead of cutting strictly latest-first
+  // (which emptied the back half of the month for heavily oversubmitted
+  // providers), each cut comes from the week that currently keeps the most
+  // forecast hours; within that week the latest slot is cut first. Ties go to
+  // the later week, so single-week inputs behave exactly like latest-first.
   const cutTailMinutes = new Map<ExpandedSlot, number>();
   let remainingCutMinutes = Math.max(0, Math.round(cutBudgetTotal * 60));
-  for (const slot of sortedDesc) {
-    if (remainingCutMinutes <= 0) break;
+  const weekKept = new Map<string, number>();
+  for (const slot of args.forecastTimeline) {
+    const wk = weekStartIso(slot.date);
+    weekKept.set(wk, (weekKept.get(wk) ?? 0) + Math.max(0, slot.endMin - slot.startMin));
+  }
+  const queues = new Map<string, ExpandedSlot[]>();
+  for (const slot of cutCandidates) {
+    const wk = weekStartIso(slot.date);
+    if (!queues.has(wk)) queues.set(wk, []);
+    queues.get(wk)!.push(slot);
+  }
+  for (const q of queues.values()) {
+    q.sort((a, b) => b.date.localeCompare(a.date) || b.startMin - a.startMin);
+  }
+  while (remainingCutMinutes > 0) {
+    let bestWeek: string | null = null;
+    for (const [wk, q] of queues) {
+      if (q.length === 0) continue;
+      if (
+        bestWeek === null ||
+        (weekKept.get(wk) ?? 0) > (weekKept.get(bestWeek) ?? 0) ||
+        ((weekKept.get(wk) ?? 0) === (weekKept.get(bestWeek) ?? 0) && wk > bestWeek)
+      ) bestWeek = wk;
+    }
+    if (bestWeek === null) break;
+    const slot = queues.get(bestWeek)!.shift()!;
     const slotMinutes = Math.max(0, slot.endMin - slot.startMin);
     const cutMinutes = roundCutMinutesToOperationalBlock(
       Math.min(slotMinutes, remainingCutMinutes),
@@ -489,6 +523,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     if (cutMinutes > 0) {
       cutTailMinutes.set(slot, cutMinutes);
       remainingCutMinutes -= cutMinutes;
+      weekKept.set(bestWeek, (weekKept.get(bestWeek) ?? 0) - cutMinutes);
     }
   }
 
