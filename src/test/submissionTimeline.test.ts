@@ -781,3 +781,22 @@ function stripVolatile(rows: ShiftRecommendationRow[]): Omit<ShiftRecommendation
       a.end_min - b.end_min,
     );
 }
+
+describe('week-balanced oversupply trim', () => {
+  it('spreads cuts across weeks instead of emptying the end of the month', () => {
+    // Mon–Fri 2h shifts for 4 weeks of Nov 2026 (40h); cut 16h.
+    const dates: string[] = [];
+    for (const wk of [2, 9, 16, 23]) for (let d = 0; d < 5; d++) dates.push(`2026-11-${String(wk + d).padStart(2, '0')}`);
+    const slots = dates.map(date => ({ date, startMin: 540, endMin: 660, source: {} as never }));
+    const rows = buildShiftRecommendationRows({
+      providerId: 'p', providerName: 'P', targetMonth: '2026-11-01',
+      timeline: slots, forecastTimeline: slots,
+      declinedHours: 16, declineAll: false,
+      allocations: [{ state: 'GA', hours: 24 }], decisionRunId: 'r',
+    });
+    const keptByWeek = [2, 9, 16, 23].map(start =>
+      rows.filter(r => r.recommendation === 'publish' && +r.shift_date.slice(8) >= start && +r.shift_date.slice(8) < start + 7)
+        .reduce((s, r) => s + r.hours, 0));
+    expect(keptByWeek).toEqual([6, 6, 6, 6]);
+  });
+});
