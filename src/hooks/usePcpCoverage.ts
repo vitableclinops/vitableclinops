@@ -26,7 +26,7 @@ export function usePcpCoverage(enabled: boolean) {
     enabled,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const [snap, profiles, med, runs] = await Promise.all([
+      const [snap, profiles, med, runs, ext] = await Promise.all([
         supabase.from('metabase_raw_exports').select('rows, pulled_at')
           .eq('report_key', 'pcp_coverage_by_provider_id')
           .order('pulled_at', { ascending: false }).limit(1).maybeSingle(),
@@ -35,6 +35,8 @@ export function usePcpCoverage(enabled: boolean) {
         supabase.from('sync_runs').select('status, started_at, error_message, details')
           .eq('function_name', 'sync-pcp-coverage')
           .order('started_at', { ascending: false }).limit(20),
+        // Agency-imported NPIs are an identity source too; Medallion membership is never required.
+        (supabase as any).from('external_providers').select('profile_id, npi').not('profile_id', 'is', null).range(0, 9999),
       ]);
       if (snap.error) throw snap.error;
       const runList = (runs.data ?? []).filter((r: any) => (r.details?.mode ?? 'refresh') === 'refresh');
@@ -42,7 +44,7 @@ export function usePcpCoverage(enabled: boolean) {
       const last = runList[0];
       const rows = (snap.data?.rows as unknown as EhrCoverageRow[]) ?? [];
       const { identities, statesByProfile } = matchEhrCoverage(
-        rows, (profiles.data ?? []) as any, (med.data ?? []) as any,
+        rows, (profiles.data ?? []) as any, [...(med.data ?? []), ...((ext as any).data ?? [])] as any,
       );
       return {
         statesByProfile,
