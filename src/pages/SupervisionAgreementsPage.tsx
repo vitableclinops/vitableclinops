@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertTriangle, FileText } from 'lucide-react';
 import { MEDALLION_STALE_HOURS, agreementTypeLabel, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
-import { formatRelativeTime } from '@/lib/utils';
+import { formatRelativeTime } from '@/hooks/useDataFreshness';
 
 export default function SupervisionAgreementsPage() {
   const { profile, user } = useAuth();
@@ -92,7 +92,7 @@ export default function SupervisionAgreementsPage() {
                       return (
                         <TableRow key={a.medallion_agreement_id}>
                           <TableCell className="font-medium">
-                            {a.profile_id ? <Link className="hover:underline" to={`/directory?provider=${a.profile_id}`}>{a.provider}</Link> : a.provider}
+                            {a.provider}
                             {stale && <p className="text-xs text-warning flex items-center gap-1"><AlertTriangle className="h-3 w-3" />Stale · last returned {formatRelativeTime(a.last_returned_at!)}</p>}
                           </TableCell>
                           <TableCell>{a.supervisor_name ?? '—'}{a.supervisor_npi && <p className="text-xs text-muted-foreground">NPI {a.supervisor_npi}</p>}</TableCell>

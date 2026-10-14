@@ -48,6 +48,12 @@ Deno.serve(async (req) => {
   }
   if (cronOk) {
     triggerSource = 'scheduled';
+    // pg_cron runs in UTC at 10:15 and 11:15; only the one that lands at 5 AM Chicago proceeds,
+    // so the refresh stays at 5:15 AM America/Chicago across daylight saving changes.
+    const chicagoHour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
+    if (chicagoHour !== 5 && new URL(req.url).searchParams.get('any_hour') !== '1') {
+      return json({ skipped: true, reason: `Not 5 AM in Chicago (hour ${chicagoHour})` });
+    }
   } else {
     const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
     if (!token) return json({ error: 'Sign in required' }, 401);
