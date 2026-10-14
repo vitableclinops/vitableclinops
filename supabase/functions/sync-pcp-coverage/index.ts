@@ -46,7 +46,16 @@ Deno.serve(async (req) => {
   const syncSecret = Deno.env.get('SYNC_SECRET');
   const srk = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const auth = req.headers.get('authorization') ?? '';
-  const ok = (!!syncSecret && req.headers.get('x-sync-secret') === syncSecret) || auth === `Bearer ${srk}`;
+  let ok = (!!syncSecret && req.headers.get('x-sync-secret') === syncSecret) || auth === `Bearer ${srk}`;
+  if (!ok && auth.startsWith('Bearer ')) {
+    // Signed-in admins may trigger a refresh from the directory.
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, srk);
+    const { data: u } = await admin.auth.getUser(auth.slice(7));
+    if (u?.user) {
+      const { data: isAdmin } = await admin.rpc('has_role', { _user_id: u.user.id, _role: 'admin' });
+      ok = isAdmin === true;
+    }
+  }
   if (!ok) return json({ error: 'Unauthorized' }, 401);
 
   const url = new URL(req.url);
