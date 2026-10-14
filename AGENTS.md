@@ -1,3 +1,6 @@
 
 - Scheduling re-runs (evaluate/emit edge functions) skip months whose workflow stage is locked or published; override only with `force_locked=1`. Why: protects hand-edited, approved schedules from being overwritten.
 - Oversupply trims in buildShiftRecommendationRows are week-balanced (cut from the fullest week, latest slot first within it); keep src/lib and _shared copies identical. Why: latest-first cutting emptied the end of the month for oversubmitted providers.
+- Provider Directory Medallion data flows: pg_cron (main) -> sync-medallion-directory (main, writes only medallion_* tables + medallion_sync_runs) -> medallion-directory-fetch (scheduling backend, GET-only, holds MEDALLION_API_KEY). Why: the key lives only on the scheduling backend and the directory must never overwrite local profiles/agreements automatically.
+- Medallion sync never treats "not returned" as termination; links providers only by exact Medallion ID; conflicts are stored, not applied. Why: inactive providers are hidden by Medallion's default list and their detail endpoints 404.
+- Sync freshness is computed from last successful full apply run timestamps (computeEntityHealth), not self-reported job status. Why: detects jobs that never start.

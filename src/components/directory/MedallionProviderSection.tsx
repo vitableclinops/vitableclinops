@@ -38,7 +38,7 @@ export function MedallionProviderSection({ profileId, medallionId }: { profileId
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0 max-w-full overflow-hidden">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           {m?.last_returned_at ? `Last returned by Medallion ${formatRelativeTime(m.last_returned_at)}` : 'Not returned by the last Medallion refresh.'}
@@ -88,7 +88,7 @@ export function MedallionProviderSection({ profileId, medallionId }: { profileId
                     <td className="pr-2 capitalize">{a.agreement_type ?? '—'}</td>
                     <td className="pr-2">{a.source_status ?? '—'}</td>
                     <td className="pr-2 whitespace-nowrap">{a.start_date ?? '?'} → {a.end_date ?? 'open'}</td>
-                    <td className="text-xs">{a.document_title ?? '—'}</td>
+                    <td className="text-xs break-all">{a.document_title ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
