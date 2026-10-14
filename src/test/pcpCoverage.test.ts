@@ -37,8 +37,8 @@ describe('PCP coverage exclusions (Metabase question 2940 rules)', () => {
     expect(pcpCoverageStatesFor(map, 'Matthew Vasquez')).toEqual([]);
   });
 
-  it('matches profiles with credentials suffixes to bare query names', () => {
+  it('matches "Last, First" profile names to bare query names', () => {
     const map = buildPcpCoverageMap([{ State: 'TX', 'Provider Full Name': 'Anabel Garcia' }]);
-    expect(pcpCoverageStatesFor(map, 'Anabel Garcia FNP-C')).toEqual(['TX']);
+    expect(pcpCoverageStatesFor(map, 'Garcia, Anabel')).toEqual(['TX']);
   });
 });
