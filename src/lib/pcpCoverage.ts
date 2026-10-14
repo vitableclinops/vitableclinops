@@ -43,6 +43,8 @@ export interface EhrIdentity {
   /** Matched by NPI but the EHR name differs from the directory name. */
   nameDiffers: boolean;
   reason: string;
+  /** Directory records an ambiguous identity could belong to. */
+  candidateProfileIds?: string[];
 }
 
 /** Former employees: excluded from current coverage, history retained. */
@@ -94,7 +96,7 @@ export function matchEhrCoverage(
     const ex = FORMER_STAFF_EHR_EXCLUSIONS[ehrId];
     if (ex) {
       identities.push(npis.length === 1 && npis[0] === ex.npi
-        ? { ...base, status: 'excluded', reason: 'Former employee — excluded from current coverage' }
+        ? { ...base, profileId: (() => { const c = [...(npiToProfiles.get(ex.npi) ?? [])]; return c.length === 1 ? c[0] : null; })(), status: 'excluded', reason: 'Former employee — excluded from current coverage' }
         : { ...base, status: 'ambiguous', reason: `Excluded EHR ID but NPI does not match the verified ${ex.npi}` });
       continue;
     }
@@ -102,7 +104,7 @@ export function matchEhrCoverage(
     if (npis.length > 1) { identities.push({ ...base, status: 'ambiguous', reason: 'EHR record has more than one NPI' }); continue; }
     const cands = [...(npiToProfiles.get(npis[0]) ?? [])];
     if (cands.length === 0) { identities.push({ ...base, status: 'unmatched', reason: 'NPI not found in directory or Medallion' }); continue; }
-    if (cands.length > 1) { identities.push({ ...base, status: 'ambiguous', reason: 'NPI belongs to more than one directory record' }); continue; }
+    if (cands.length > 1) { identities.push({ ...base, candidateProfileIds: cands, status: 'ambiguous', reason: 'NPI belongs to more than one directory record' }); continue; }
     const pid = cands[0];
     const nameDiffers = canonicalName(nameById.get(pid)) !== canonicalName(g.name);
     if (OUT_OF_SCOPE_PROFILE_IDS[pid]) {
@@ -118,7 +120,7 @@ export function matchEhrCoverage(
     claims.set(i.profileId, [...(claims.get(i.profileId) ?? []), i]);
   }
   for (const list of claims.values()) if (list.length > 1) {
-    for (const i of list) { i.status = 'ambiguous'; i.reason = 'Several EHR IDs share this directory record'; }
+    for (const i of list) { i.candidateProfileIds = [i.profileId!]; i.status = 'ambiguous'; i.reason = 'Several EHR IDs share this directory record'; }
   }
 
   const statesByProfile = new Map<string, string[]>();
@@ -134,4 +136,37 @@ export function isSnapshotStale(pulledAt: string | null | undefined, now: Date =
   const t = new Date(pulledAt).getTime();
   if (Number.isNaN(t)) return true;
   return now.getTime() - t > PCP_STALE_AFTER_HOURS * 3600_000;
+}
+
+/** Professions in scope of the query (provider_type = NursePractitioner). */
+const IN_SCOPE_PROFESSIONS = new Set(['NP', 'APN']);
+
+export type PcpCellKind = 'states' | 'not_applicable' | 'needs_review' | 'excluded' | 'none_returned' | 'unavailable';
+export interface PcpCell { kind: PcpCellKind; text: string; states: string[]; detail: string }
+
+/**
+ * Per-provider cell for Active PCP Telemedicine States. "Not applicable" is
+ * only used when the provider's recorded profession is outside the query's
+ * scope — never inferred from absence in the result.
+ */
+export function pcpCellFor(
+  profile: { id: string; profession: string | null; npi_number: string | null },
+  data: { identities: EhrIdentity[] } | null | undefined,
+): PcpCell {
+  const mk = (kind: PcpCellKind, text: string, detail: string, states: string[] = []): PcpCell => ({ kind, text, detail, states });
+  if (OUT_OF_SCOPE_PROFILE_IDS[profile.id]) return mk('excluded', 'Excluded', OUT_OF_SCOPE_PROFILE_IDS[profile.id]);
+  if (!data) return mk('unavailable', 'Unavailable', 'No coverage snapshot could be loaded');
+  const mine = data.identities.filter((i) => i.profileId === profile.id || i.candidateProfileIds?.includes(profile.id));
+  const ex = mine.find((i) => i.status === 'excluded');
+  if (ex) return mk('excluded', 'Excluded', ex.reason);
+  const amb = mine.find((i) => i.status === 'ambiguous');
+  if (amb) return mk('needs_review', 'Identity needs review', amb.reason);
+  const m = mine.find((i) => i.status === 'matched');
+  if (m) return m.nameDiffers
+    ? mk('needs_review', m.states.join(', '), `Matched by NPI; EHR name "${m.ehrName}" differs — name review needed`, m.states)
+    : mk('states', m.states.join(', '), 'Matched by NPI', m.states);
+  if (!profile.profession) return mk('unavailable', 'Unavailable', 'Profession not recorded, so scope cannot be determined');
+  if (!IN_SCOPE_PROFESSIONS.has(profile.profession)) return mk('not_applicable', 'Not applicable', 'Profession is outside PCP telemedicine (query covers nurse practitioners only)');
+  if (!normNpi(profile.npi_number)) return mk('needs_review', 'Identity needs review', 'No NPI on this record, so it cannot be linked to the EHR');
+  return mk('none_returned', 'No coverage returned', 'NPI not present in the latest query result');
 }

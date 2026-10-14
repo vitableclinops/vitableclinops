@@ -70,7 +70,6 @@ export function MedallionProviderSection({ profileId, medallionId }: { profileId
                 : <span className="text-warning">Latest lookup failed; nothing saved earlier</span>)}
         </Field>
         <Field label="Licensed States (Medallion, active)">{states.length ? states.join(', ') : '—'}</Field>
-        <Field label="Active States in Vitable EHR"><Badge variant="outline">Not connected</Badge></Field>
       </div>
 
       <Separator />

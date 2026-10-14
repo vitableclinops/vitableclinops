@@ -487,7 +487,6 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
               } />
               <InfoRow label="Languages" value={provider.languages} />
               <InfoRow label="Licensed States" value={medallionStates.length ? medallionStates.join(', ') : null} />
-              <InfoRow label="Active States in Vitable EHR" value="Not connected" />
               <InfoRow label="Home State" value={provider.address_state} />
             </div>
             {provider.bio && (

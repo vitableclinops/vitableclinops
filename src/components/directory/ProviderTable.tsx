@@ -1,3 +1,4 @@
+import type { PcpCell } from '@/lib/pcpCoverage';
 import {
   Table,
   TableBody,
@@ -38,8 +39,15 @@ export interface ProviderTableData {
   pod_lead_name: string | null;
   /** Summary of fields where Medallion disagrees with our record (admin only). */
   medallion_conflicts?: string | null;
-  /** Active PCP telemedicine states from the EHR, linked by verified NPI (admin only). */
-  pcp_coverage_states?: string | null;
+  /** Active PCP Telemedicine States cell (admin only). */
+  pcp_coverage?: PcpCell | null;
+}
+
+const PCP_TOOLTIP = 'PCP telemedicine coverage states from Metabase: current records returned by our read-only query (same source and scope as question 2940), linked by verified NPI, with explicit exclusions applied. The source is_active meaning is pending data-owner confirmation.';
+
+function PcpCellView({ cell }: { cell: PcpCell }) {
+  const tone = cell.kind === 'states' ? '' : cell.kind === 'needs_review' ? 'text-warning' : 'text-muted-foreground';
+  return <span className={`text-sm ${tone}`} title={cell.detail}>{cell.text}{cell.kind === 'needs_review' && cell.states.length > 0 ? ' ⚠' : ''}</span>;
 }
 
 interface ProviderTableProps {
@@ -146,8 +154,7 @@ export const ProviderTable = ({
             <TableHead>NPI</TableHead>
             <SortHeader column="employment_type" label="Employment" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <SortHeader column="actively_licensed_states" label="Licensed States" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
-            {isAdmin && <TableHead title="From the EHR, linked by verified NPI. Blank means not in this query's scope — not inactive or unlicensed.">Active PCP Telemedicine States</TableHead>}
-            {isAdmin && <TableHead>EHR Active States</TableHead>}
+            {isAdmin && <TableHead title={PCP_TOOLTIP}>Active PCP Telemedicine States</TableHead>}
             <TableHead>Home State</TableHead>
             {isAdmin && <SortHeader column="activation_status" label="Activation" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
             {isAdmin && <SortHeader column="employment_status" label="Status" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
@@ -216,11 +223,10 @@ export const ProviderTable = ({
                 {isAdmin && (
                   <TableCell>
                     <span className="text-sm max-w-[180px] truncate block">
-                      {provider.pcp_coverage_states || <span className="text-muted-foreground" title="Not in this query's scope (not inactive or unlicensed)">—</span>}
+                      {provider.pcp_coverage ? <PcpCellView cell={provider.pcp_coverage} /> : null}
                     </span>
                   </TableCell>
                 )}
-                {isAdmin && <TableCell><span className="text-xs text-muted-foreground">Not connected</span></TableCell>}
                 <TableCell>{provider.address_state || '-'}</TableCell>
                 {isAdmin && <TableCell>{getActivationBadge(provider.activation_status)}</TableCell>}
                 {isAdmin && <TableCell>{getStatusBadge(provider.employment_status)}</TableCell>}

@@ -63,6 +63,13 @@ Deno.serve(async (req) => {
   if (req.method === 'POST') body = (await req.json().catch(() => ({}))) ?? {};
   const mode = String(url.searchParams.get('mode') ?? body.mode ?? 'refresh');
 
+  // pg_cron fires at 10:45 and 11:45 UTC; only the run landing at 5 AM
+  // America/Chicago proceeds, so the refresh stays at 5:45 AM CT across DST.
+  if (body.source === 'pg_cron' && url.searchParams.get('any_hour') !== '1') {
+    const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
+    if (hour !== 5) return json({ skipped: true, reason: `Chicago hour ${hour} != 5` });
+  }
+
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, srk);
   const startedAt = Date.now();
   const { data: run } = await supabase.from('sync_runs')
