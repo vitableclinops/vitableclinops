@@ -577,6 +577,12 @@ const ProviderDirectoryPage = () => {
                     ))}
                   </div>
                 ) : viewMode === 'table' ? (
+                  <>
+                  {isAdmin && pcpCoverage?.pulledDate && (
+                    <p className="text-xs text-muted-foreground mb-2">
+                      PCP Coverage column from the Metabase PCP State Coverage report, pulled {pcpCoverage.pulledDate}.
+                    </p>
+                  )}
                   <ProviderTable
                     providers={tableData}
                     onRowClick={handleRowClick}
