@@ -20,7 +20,7 @@ export default function SupervisionAgreementsPage() {
 
   const provName = useMemo(() => {
     const m = new Map<string, string>();
-    (data?.providers ?? []).forEach((p) => m.set(p.medallion_id, p.preferred_name || p.full_name || '—'));
+    (data?.providers ?? []).forEach((p) => m.set(p.medallion_id, p.full_name || '—'));
     return m;
   }, [data]);
 
