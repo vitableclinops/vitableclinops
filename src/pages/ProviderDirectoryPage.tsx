@@ -22,6 +22,9 @@ import { ProviderFilters } from '@/components/directory/ProviderFilters';
 import { ProviderTable, ProviderTableData } from '@/components/directory/ProviderTable';
 import { ProviderDetailModal } from '@/components/directory/ProviderDetailModal';
 import { SupervisionAgreementsTable } from '@/components/directory/SupervisionAgreementsTable';
+import { ExternalImportPanel } from '@/components/directory/ExternalImportPanel';
+import { useExternalDirectoryData } from '@/hooks/useExternalImport';
+import { summarizeLicenses } from '@/lib/externalImport';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
@@ -217,6 +220,7 @@ const ProviderDirectoryPage = () => {
 
   // Medallion-sourced licensed states / languages for linked providers
   const { data: medallion } = useMedallionDirectoryData(isAdmin);
+  const { data: external } = useExternalDirectoryData(isAdmin);
   const { data: pcpCoverage, isLoading: pcpCoverageLoading } = usePcpCoverage(isAdmin);
 
   // Provider readiness data for management tab
@@ -407,7 +411,14 @@ const ProviderDirectoryPage = () => {
     employment_status: p.employment_status,
     employment_type: (p as FullProvider).employment_type || null,
     agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
-    actively_licensed_states: (() => { const st = activeLicensedStates(medallion?.licensesByProfile.get(p.id)); return st.length ? st.join(', ') : null; })(),
+    actively_licensed_states: (() => {
+      const st = activeLicensedStates(medallion?.licensesByProfile.get(p.id));
+      if (st.length) return st.join(', ');
+      // Agency-imported providers: validated license rows only; incomplete inventories say so.
+      const ext = !medallion?.byProfile.get(p.id) ? external?.byProfile.get(p.id) : undefined;
+      if (ext) return `${summarizeLicenses(ext.licenses, ext.licenseInventory).label} · agency`;
+      return null;
+    })(),
     pcp_coverage: isAdmin
       ? pcpCellFor({ id: p.id, profession: p.profession, npi_number: p.npi_number }, pcpCoverageLoading ? undefined : pcpCoverage)
       : null,
@@ -485,11 +496,19 @@ const ProviderDirectoryPage = () => {
                   <Activity className="h-4 w-4" />
                   Medallion sync
                 </TabsTrigger>
+                <TabsTrigger value="agency-import" className="gap-2">
+                  <Upload className="h-4 w-4" />
+                  Agency import
+                </TabsTrigger>
               </TabsList>
 
               {/* Supervision Tab - Medallion agreements across all providers */}
               <TabsContent value="management" className="space-y-6">
                 <SupervisionAgreementsTable />
+              </TabsContent>
+
+              <TabsContent value="agency-import">
+                <ExternalImportPanel />
               </TabsContent>
 
               <TabsContent value="medallion">
