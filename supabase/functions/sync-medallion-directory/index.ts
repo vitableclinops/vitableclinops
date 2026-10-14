@@ -16,7 +16,7 @@
  *   scope: 'full' | 'provider'            (default 'full')
  *   medallion_id | profile_id             (scope=provider)
  *
- * Auth: admin user JWT, or x-sync-secret header (scheduled runs).
+ * Auth: admin user JWT, or x-medallion-cron header matching internal_cron_tokens (pg_cron).
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
@@ -40,8 +40,13 @@ Deno.serve(async (req) => {
   // ── Auth ────────────────────────────────────────────────────────────────
   let triggeredBy: string | null = null;
   let triggerSource = 'manual';
-  const syncSecret = Deno.env.get('SYNC_SECRET');
-  if (syncSecret && req.headers.get('x-sync-secret') === syncSecret) {
+  const cronHeader = req.headers.get('x-medallion-cron');
+  let cronOk = false;
+  if (cronHeader && cronHeader.length > 20) {
+    const { data: tok } = await admin.from('internal_cron_tokens').select('token').eq('name', 'medallion_directory').maybeSingle();
+    cronOk = !!tok?.token && tok.token === cronHeader;
+  }
+  if (cronOk) {
     triggerSource = 'scheduled';
   } else {
     const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
