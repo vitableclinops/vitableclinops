@@ -102,3 +102,42 @@ describe('Snapshot staleness', () => {
     expect(isSnapshotStale(null, now)).toBe(true);
   });
 });
+
+import { pcpCellFor } from '@/lib/pcpCoverage';
+describe('Active PCP Telemedicine States cell states', () => {
+  const data = matchEhrCoverage([
+    row('e1', 'Akosua Norgbey', '1831574011', 'PA'),
+    row('e3', 'Anabel Garcia', '1538695283', 'TX'),
+    row('e4', 'Dup', '1111111111', 'OH'),
+    row('8fa1e0f2-5227-4c3a-a5cd-ed9809dbe86a', 'Lastasha Jackson', '1356911325', 'PA'),
+  ], profiles);
+  it('shows states for a verified match', () => {
+    expect(pcpCellFor({ id: 'p-akosua', profession: 'NP', npi_number: '1831574011' }, data).text).toBe('PA');
+  });
+  it('flags a name-differs match for review but keeps its states', () => {
+    expect(pcpCellFor({ id: 'p-anabel', profession: 'NP', npi_number: '1538695283' }, data)).toMatchObject({ kind: 'needs_review', states: ['TX'] });
+  });
+  it('flags ambiguous candidates for review', () => {
+    expect(pcpCellFor({ id: 'p-dup1', profession: 'NP', npi_number: '1111111111' }, data).kind).toBe('needs_review');
+  });
+  it('shows explicit exclusions', () => {
+    expect(pcpCellFor({ id: 'p-lastasha', profession: 'NP', npi_number: '1356911325' }, data).kind).toBe('excluded');
+    expect(pcpCellFor({ id: 'a3917d41-d677-4110-bf05-d7115879ef53', profession: 'health_coach', npi_number: null }, data).kind).toBe('excluded');
+  });
+  it('uses Not applicable only for a recorded out-of-scope profession', () => {
+    expect(pcpCellFor({ id: 'x', profession: 'MD', npi_number: '1' }, data).text).toBe('Not applicable');
+    expect(pcpCellFor({ id: 'x', profession: null, npi_number: '1' }, data).kind).toBe('unavailable');
+  });
+  it('separates no-NPI (review) from NPI-not-returned', () => {
+    expect(pcpCellFor({ id: 'x', profession: 'NP', npi_number: null }, data).kind).toBe('needs_review');
+    expect(pcpCellFor({ id: 'x', profession: 'NP', npi_number: '1234567890' }, data).kind).toBe('none_returned');
+  });
+  it('is unavailable when no snapshot loaded', () => {
+    expect(pcpCellFor({ id: 'p-akosua', profession: 'NP', npi_number: '1831574011' }, null).kind).toBe('unavailable');
+  });
+  it('the 10:45/11:45 UTC pair lands on 5:45 AM Chicago in both summer and winter', () => {
+    const h = (iso: string) => Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }).format(new Date(iso)));
+    expect([h('2026-10-14T10:45:00Z'), h('2026-10-14T11:45:00Z')]).toEqual([5, 6]);
+    expect([h('2026-11-10T10:45:00Z'), h('2026-11-10T11:45:00Z')]).toEqual([4, 5]);
+  });
+});
