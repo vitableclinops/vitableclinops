@@ -2133,6 +2133,24 @@ export type Database = {
         }
         Relationships: []
       }
+      internal_cron_tokens: {
+        Row: {
+          created_at: string
+          name: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          name: string
+          token?: string
+        }
+        Update: {
+          created_at?: string
+          name?: string
+          token?: string
+        }
+        Relationships: []
+      }
       kb_articles: {
         Row: {
           category: string
@@ -2582,6 +2600,363 @@ export type Database = {
         }
         Relationships: []
       }
+      medallion_collab_agreements: {
+        Row: {
+          agreement_type: string | null
+          document_id: string | null
+          document_title: string | null
+          end_date: string | null
+          last_returned_at: string | null
+          local_agreement_id: string | null
+          local_match_notes: string | null
+          medallion_agreement_id: string
+          medallion_provider_id: string
+          profile_id: string | null
+          source_status: string | null
+          start_date: string | null
+          state: string | null
+          supervisor_license_number: string | null
+          supervisor_medallion_id: string | null
+          supervisor_name: string | null
+          supervisor_npi: string | null
+          supervisor_profession: string | null
+          supervisor_profile_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          agreement_type?: string | null
+          document_id?: string | null
+          document_title?: string | null
+          end_date?: string | null
+          last_returned_at?: string | null
+          local_agreement_id?: string | null
+          local_match_notes?: string | null
+          medallion_agreement_id: string
+          medallion_provider_id: string
+          profile_id?: string | null
+          source_status?: string | null
+          start_date?: string | null
+          state?: string | null
+          supervisor_license_number?: string | null
+          supervisor_medallion_id?: string | null
+          supervisor_name?: string | null
+          supervisor_npi?: string | null
+          supervisor_profession?: string | null
+          supervisor_profile_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agreement_type?: string | null
+          document_id?: string | null
+          document_title?: string | null
+          end_date?: string | null
+          last_returned_at?: string | null
+          local_agreement_id?: string | null
+          local_match_notes?: string | null
+          medallion_agreement_id?: string
+          medallion_provider_id?: string
+          profile_id?: string | null
+          source_status?: string | null
+          start_date?: string | null
+          state?: string | null
+          supervisor_license_number?: string | null
+          supervisor_medallion_id?: string | null
+          supervisor_name?: string | null
+          supervisor_npi?: string | null
+          supervisor_profession?: string | null
+          supervisor_profile_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "medallion_collab_agreements_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "medallion_collab_agreements_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "medallion_collab_agreements_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "medallion_collab_agreements_supervisor_profile_id_fkey"
+            columns: ["supervisor_profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "medallion_collab_agreements_supervisor_profile_id_fkey"
+            columns: ["supervisor_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "medallion_collab_agreements_supervisor_profile_id_fkey"
+            columns: ["supervisor_profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      medallion_licenses: {
+        Row: {
+          certificate_type: string | null
+          expiration_date: string | null
+          issue_date: string | null
+          last_returned_at: string | null
+          license_number: string | null
+          medallion_license_id: string
+          medallion_modified: string | null
+          medallion_provider_id: string | null
+          profile_id: string | null
+          rx_authority: string | null
+          state: string
+          status: string | null
+          updated_at: string
+          using_compact: boolean | null
+          verified: boolean | null
+        }
+        Insert: {
+          certificate_type?: string | null
+          expiration_date?: string | null
+          issue_date?: string | null
+          last_returned_at?: string | null
+          license_number?: string | null
+          medallion_license_id: string
+          medallion_modified?: string | null
+          medallion_provider_id?: string | null
+          profile_id?: string | null
+          rx_authority?: string | null
+          state: string
+          status?: string | null
+          updated_at?: string
+          using_compact?: boolean | null
+          verified?: boolean | null
+        }
+        Update: {
+          certificate_type?: string | null
+          expiration_date?: string | null
+          issue_date?: string | null
+          last_returned_at?: string | null
+          license_number?: string | null
+          medallion_license_id?: string
+          medallion_modified?: string | null
+          medallion_provider_id?: string | null
+          profile_id?: string | null
+          rx_authority?: string | null
+          state?: string
+          status?: string | null
+          updated_at?: string
+          using_compact?: boolean | null
+          verified?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "medallion_licenses_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "medallion_licenses_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "medallion_licenses_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      medallion_providers: {
+        Row: {
+          conflicts: Json
+          detail_state: string
+          email: string | null
+          first_name: string | null
+          full_name: string | null
+          has_collab_flag: boolean | null
+          is_nlc_active: boolean | null
+          is_prescribing: boolean | null
+          languages: string[] | null
+          last_name: string | null
+          last_returned_at: string | null
+          match_method: string
+          match_notes: string | null
+          medallion_employment_status: string | null
+          medallion_employment_type: string | null
+          medallion_id: string
+          medallion_last_updated: string | null
+          npi: string | null
+          preferred_name: string | null
+          primary_specialty: string | null
+          primary_taxonomy: string | null
+          profession: string | null
+          profile_id: string | null
+          secondary_specialty: string | null
+          secondary_taxonomy: string | null
+          start_date: string | null
+          termination_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          conflicts?: Json
+          detail_state?: string
+          email?: string | null
+          first_name?: string | null
+          full_name?: string | null
+          has_collab_flag?: boolean | null
+          is_nlc_active?: boolean | null
+          is_prescribing?: boolean | null
+          languages?: string[] | null
+          last_name?: string | null
+          last_returned_at?: string | null
+          match_method?: string
+          match_notes?: string | null
+          medallion_employment_status?: string | null
+          medallion_employment_type?: string | null
+          medallion_id: string
+          medallion_last_updated?: string | null
+          npi?: string | null
+          preferred_name?: string | null
+          primary_specialty?: string | null
+          primary_taxonomy?: string | null
+          profession?: string | null
+          profile_id?: string | null
+          secondary_specialty?: string | null
+          secondary_taxonomy?: string | null
+          start_date?: string | null
+          termination_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          conflicts?: Json
+          detail_state?: string
+          email?: string | null
+          first_name?: string | null
+          full_name?: string | null
+          has_collab_flag?: boolean | null
+          is_nlc_active?: boolean | null
+          is_prescribing?: boolean | null
+          languages?: string[] | null
+          last_name?: string | null
+          last_returned_at?: string | null
+          match_method?: string
+          match_notes?: string | null
+          medallion_employment_status?: string | null
+          medallion_employment_type?: string | null
+          medallion_id?: string
+          medallion_last_updated?: string | null
+          npi?: string | null
+          preferred_name?: string | null
+          primary_specialty?: string | null
+          primary_taxonomy?: string | null
+          profession?: string | null
+          profile_id?: string | null
+          secondary_specialty?: string | null
+          secondary_taxonomy?: string | null
+          start_date?: string | null
+          termination_date?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "medallion_providers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "medallion_providers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "medallion_providers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      medallion_sync_runs: {
+        Row: {
+          details: Json
+          entity: string
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          medallion_provider_id: string | null
+          mode: string
+          rows_failed: number
+          rows_returned: number
+          rows_written: number
+          scope: string
+          started_at: string
+          status: string
+          trigger_source: string
+          triggered_by: string | null
+        }
+        Insert: {
+          details?: Json
+          entity: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          medallion_provider_id?: string | null
+          mode?: string
+          rows_failed?: number
+          rows_returned?: number
+          rows_written?: number
+          scope?: string
+          started_at?: string
+          status?: string
+          trigger_source?: string
+          triggered_by?: string | null
+        }
+        Update: {
+          details?: Json
+          entity?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          medallion_provider_id?: string | null
+          mode?: string
+          rows_failed?: number
+          rows_returned?: number
+          rows_written?: number
+          scope?: string
+          started_at?: string
+          status?: string
+          trigger_source?: string
+          triggered_by?: string | null
+        }
+        Relationships: []
+      }
       meeting_attendees: {
         Row: {
           assigned_slot: string | null
@@ -2955,6 +3330,8 @@ export type Database = {
           chart_review_folder_url: string | null
           created_at: string
           credentials: string | null
+          directory_visibility: string
+          directory_visibility_reason: string | null
           email: string
           emergency_contact_name: string | null
           emergency_contact_phone: string | null
@@ -3016,6 +3393,8 @@ export type Database = {
           chart_review_folder_url?: string | null
           created_at?: string
           credentials?: string | null
+          directory_visibility?: string
+          directory_visibility_reason?: string | null
           email: string
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
@@ -3077,6 +3456,8 @@ export type Database = {
           chart_review_folder_url?: string | null
           created_at?: string
           credentials?: string | null
+          directory_visibility?: string
+          directory_visibility_reason?: string | null
           email?: string
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null

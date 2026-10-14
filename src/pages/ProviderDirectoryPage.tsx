@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, DollarSign, Pencil, Check, X, Download } from 'lucide-react';
+import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -22,10 +22,12 @@ import { ProviderFilters } from '@/components/directory/ProviderFilters';
 import { ProviderTable, ProviderTableData } from '@/components/directory/ProviderTable';
 import { ProviderDetailModal } from '@/components/directory/ProviderDetailModal';
 import { ManagementTable } from '@/components/directory/ManagementTable';
+import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
+import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { useProviderReadiness } from '@/hooks/useProviderReadiness';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn, downloadCSV } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import type { Provider } from '@/types';
 
 interface FullProvider {
@@ -92,54 +94,6 @@ interface DirectoryProvider {
   address_state: string | null;
 }
 
-// ── DirectShifts default hourly rates by credential ──────────────────────────
-const DS_RATES: Record<string, number> = {
-  NP: 125, APRN: 125, APN: 125,
-  LPC: 105, LCSW: 105, MFT: 105,
-  MD: 175, DO: 175,
-};
-const EMP_RATES: Record<string, number> = {
-  NP: 85, APRN: 85, APN: 85,
-  LPC: 72, LCSW: 72, MFT: 72,
-  MD: 120, DO: 120,
-};
-
-function getDSRate(credentials: string | null | undefined): number {
-  const cred = (credentials ?? '').toUpperCase().split('/')[0].trim();
-  return DS_RATES[cred] ?? 100;
-}
-function getEmpRate(credentials: string | null | undefined): number {
-  const cred = (credentials ?? '').toUpperCase().split('/')[0].trim();
-  return EMP_RATES[cred] ?? 80;
-}
-
-// ── Ops data hook ─────────────────────────────────────────────────────────────
-function useOpsRoster() {
-  return useQuery({
-    queryKey: ['ops_roster'],
-    queryFn: async () => {
-      const [opsInfoRes, homebaseEmpRes] = await Promise.all([
-        supabase
-          .from('provider_ops_info')
-          .select('profile_id, hourly_rate, employment_type, contractor_org'),
-        supabase
-          .from('homebase_employees')
-          .select('profile_id, homebase_id, match_confidence')
-          .not('profile_id', 'is', null),
-      ]);
-
-      const opsInfoByProfile = new Map<string, any>(
-        (opsInfoRes.data ?? []).map((r: any) => [r.profile_id, r])
-      );
-      const homebaseByProfile = new Map<string, any>(
-        (homebaseEmpRes.data ?? []).map((r: any) => [r.profile_id, r])
-      );
-
-      return { opsInfoByProfile, homebaseByProfile };
-    },
-    staleTime: 5 * 60_000,
-  });
-}
 
 const ProviderDirectoryPage = () => {
   const navigate = useNavigate();
@@ -149,7 +103,7 @@ const ProviderDirectoryPage = () => {
   // Determine initial tab from URL or default based on role
   const tabParam = searchParams.get('tab');
   const isAdmin = roles.includes('admin');
-  const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : tabParam === 'ops' ? 'ops' : 'management') : 'directory';
+  const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : tabParam === 'medallion' ? 'medallion' : 'management') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -162,7 +116,7 @@ const ProviderDirectoryPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [stateFilter, setStateFilter] = useState('all');
   const [professionFilter, setProfessionFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('hide_termed');
+  const [statusFilter, setStatusFilter] = useState('active');
   const [employmentTypeFilter, setEmploymentTypeFilter] = useState('all');
   const [agencyFilter, setAgencyFilter] = useState('all');
   
@@ -259,45 +213,12 @@ const ProviderDirectoryPage = () => {
     staleTime: 5 * 60_000,
   });
 
+  // Medallion-sourced licensed states / languages for linked providers
+  const { data: medallion } = useMedallionDirectoryData(isAdmin);
+
   // Provider readiness data for management tab
   const { data: readinessData, isLoading: readinessLoading } = useProviderReadiness();
 
-  // Ops roster data (rates + Homebase IDs)
-  const { data: opsData } = useOpsRoster();
-  const opsInfoByProfile = opsData?.opsInfoByProfile ?? new Map();
-  const homebaseByProfile = opsData?.homebaseByProfile ?? new Map();
-
-  // Ops search + inline editing
-  const [opsSearch, setOpsSearch] = useState('');
-  const [editingOpsId, setEditingOpsId] = useState<string | null>(null);
-  const [editRate, setEditRate] = useState('');
-  const [editEmpType, setEditEmpType] = useState('');
-  const [editContractorOrg, setEditContractorOrg] = useState('');
-
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  const upsertOpsInfo = useMutation({
-    mutationFn: async ({
-      profileId, hourly_rate, employment_type, contractor_org,
-    }: { profileId: string; hourly_rate: number | null; employment_type: string; contractor_org: string }) => {
-      const { error } = await supabase
-        .from('provider_ops_info')
-        .upsert({
-          profile_id: profileId,
-          hourly_rate,
-          employment_type,
-          contractor_org: contractor_org || null,
-        }, { onConflict: 'profile_id' });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ops_roster'] });
-      setEditingOpsId(null);
-      toast({ title: 'Saved' });
-    },
-    onError: (e: Error) => toast({ title: 'Save failed', description: e.message, variant: 'destructive' }),
-  });
 
 
   // Extract unique values for filter dropdowns
@@ -445,12 +366,12 @@ const ProviderDirectoryPage = () => {
     setSearchQuery('');
     setStateFilter('all');
     setProfessionFilter('all');
-    setStatusFilter('hide_termed');
+    setStatusFilter('active');
     setEmploymentTypeFilter('all');
     setAgencyFilter('all');
   };
 
-  const hasActiveFilters = searchQuery !== '' || stateFilter !== 'all' || professionFilter !== 'all' || statusFilter !== 'hide_termed' || employmentTypeFilter !== 'all' || agencyFilter !== 'all';
+  const hasActiveFilters = searchQuery !== '' || stateFilter !== 'all' || professionFilter !== 'all' || statusFilter !== 'active' || employmentTypeFilter !== 'all' || agencyFilter !== 'all';
 
   const getProviderInitials = (name: string | null) => {
     if (!name) return '?';
@@ -484,14 +405,14 @@ const ProviderDirectoryPage = () => {
     employment_status: p.employment_status,
     employment_type: (p as FullProvider).employment_type || null,
     agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
-    actively_licensed_states: null, // Derived from provider_state_status now
+    actively_licensed_states: (() => { const st = activeLicensedStates(medallion?.licensesByProfile.get(p.id)); return st.length ? st.join(', ') : null; })(),
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
     has_collaborative_agreements: isAdmin ? (p as FullProvider).has_collaborative_agreements : null,
     activation_status: isAdmin ? ((p as any).activation_status || null) : null,
     collaborative_physician: null, // Derived from collaborative_agreements now
     renewal_handling: isAdmin ? ((p as any).renewal_handling || null) : null,
-    languages: isAdmin ? ((p as any).languages || null) : null,
+    languages: isAdmin ? (medallion?.byProfile.get(p.id)?.languages?.join(', ') || (p as any).languages || null) : null,
     pod_name: null,
     pod_lead_id: isAdmin ? ((p as any).pod_lead_id || null) : null,
     pod_lead_name: isAdmin ? (podLeadMap.get((p as any).pod_lead_id) || null) : null,
@@ -552,9 +473,9 @@ const ProviderDirectoryPage = () => {
                   <Users className="h-4 w-4" />
                   Directory
                 </TabsTrigger>
-                <TabsTrigger value="ops" className="gap-2">
+                <TabsTrigger value="medallion" className="gap-2">
                   <Activity className="h-4 w-4" />
-                  Ops
+                  Medallion sync
                 </TabsTrigger>
               </TabsList>
 
@@ -573,6 +494,14 @@ const ProviderDirectoryPage = () => {
                     initialSearch={searchParams.get('search') || ''}
                   />
                 )}
+              </TabsContent>
+
+              <TabsContent value="medallion">
+                <MedallionSyncPanel
+                  reviewProfiles={providers
+                    .filter((p: any) => p.directory_visibility === 'review')
+                    .map((p: any) => ({ id: p.id, full_name: p.full_name, email: p.email, directory_visibility_reason: p.directory_visibility_reason }))}
+                />
               </TabsContent>
 
               {/* Directory Tab - Contact/Profile focused view */}
@@ -687,214 +616,6 @@ const ProviderDirectoryPage = () => {
                     ))}
                   </div>
                 )}
-              </TabsContent>
-              {/* Ops Tab — rates, Homebase IDs, employment type */}
-              <TabsContent value="ops" className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <Input
-                    placeholder="Search providers…"
-                    value={opsSearch}
-                    onChange={(e) => setOpsSearch(e.target.value)}
-                    className="max-w-64"
-                  />
-                  <Button variant="outline" size="sm" onClick={() => navigate('/admin/contractor-strategy')}>
-                    <DollarSign className="h-4 w-4 mr-2" />
-                    Contractor Strategy
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5 ml-auto"
-                    onClick={() => {
-                      const rows = providers
-                        .filter((p) => p.employment_status !== 'termed')
-                        .filter((p) => !opsSearch || (p.full_name ?? '').toLowerCase().includes(opsSearch.toLowerCase()))
-                        .map((p) => {
-                          const opsInfo = opsInfoByProfile.get(p.id);
-                          const hbEmp = homebaseByProfile.get(p.id);
-                          const empType = opsInfo?.employment_type ?? p.employment_type ?? 'employee';
-                          return {
-                            name: p.full_name ?? '',
-                            credentials: p.credentials ?? p.profession ?? '',
-                            employment_type: empType,
-                            contractor_org: opsInfo?.contractor_org ?? (p.agency_id ? 'Agency' : ''),
-                            hourly_rate: opsInfo?.hourly_rate != null ? Number(opsInfo.hourly_rate) : '',
-                            homebase_id: hbEmp?.homebase_id ?? '',
-                          };
-                        });
-                      downloadCSV(rows, 'provider-ops.csv');
-                    }}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    Export
-                  </Button>
-                </div>
-                <Card>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-muted/50">
-                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Provider</th>
-                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Credential</th>
-                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Employment</th>
-                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Contractor Org</th>
-                          <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Hourly Rate</th>
-                          <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">DS Default</th>
-                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Homebase ID</th>
-                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Match</th>
-                          <th className="px-4 py-2.5" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {providers
-                          .filter((p) => p.employment_status !== 'termed')
-                          .filter((p) =>
-                            !opsSearch ||
-                            (p.full_name ?? '').toLowerCase().includes(opsSearch.toLowerCase())
-                          )
-                          .map((p) => {
-                            const opsInfo = opsInfoByProfile.get(p.id);
-                            const hbEmp = homebaseByProfile.get(p.id);
-                            const empType = opsInfo?.employment_type ?? p.employment_type ?? 'employee';
-                            const isDS = opsInfo?.contractor_org === 'DirectShifts' ||
-                              p.agency_id !== null;
-                            const isEditing = editingOpsId === p.id;
-                            return (
-                              <tr key={p.id} className={cn('group border-b transition-colors', isEditing ? 'bg-muted/50' : 'hover:bg-muted/30')}>
-                                <td className="px-4 py-2.5 font-medium">
-                                  {p.full_name ?? '—'}
-                                </td>
-                                <td className="px-4 py-2.5 text-muted-foreground">
-                                  {p.credentials ?? p.profession ?? '—'}
-                                </td>
-                                <td className="px-4 py-2.5">
-                                  {isEditing ? (
-                                    <Select value={editEmpType} onValueChange={setEditEmpType}>
-                                      <SelectTrigger className="h-7 text-xs w-28">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="employee">employee</SelectItem>
-                                        <SelectItem value="contractor">contractor</SelectItem>
-                                        <SelectItem value="per_diem">per_diem</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <Badge
-                                      variant={empType === 'contractor' ? 'outline' : 'secondary'}
-                                      className="text-xs"
-                                    >
-                                      {empType}
-                                    </Badge>
-                                  )}
-                                </td>
-                                <td className="px-4 py-2.5 text-sm">
-                                  {isEditing ? (
-                                    <Input
-                                      value={editContractorOrg}
-                                      onChange={(e) => setEditContractorOrg(e.target.value)}
-                                      placeholder="Org name…"
-                                      className="h-7 text-xs w-32"
-                                    />
-                                  ) : (
-                                    opsInfo?.contractor_org ?? (p.agency_id ? 'Agency' : '—')
-                                  )}
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-mono">
-                                  {isEditing ? (
-                                    <Input
-                                      value={editRate}
-                                      onChange={(e) => setEditRate(e.target.value)}
-                                      placeholder="0"
-                                      className="h-7 text-xs w-20 text-right"
-                                      type="number"
-                                      min={0}
-                                    />
-                                  ) : opsInfo?.hourly_rate != null
-                                    ? `$${Number(opsInfo.hourly_rate).toFixed(0)}/hr`
-                                    : <span className="text-muted-foreground text-xs">not set</span>}
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-mono text-muted-foreground text-xs">
-                                  {isDS || empType === 'contractor'
-                                    ? `$${getDSRate(p.credentials)}/hr`
-                                    : `$${getEmpRate(p.credentials)}/hr`}
-                                </td>
-                                <td className="px-4 py-2.5 font-mono text-xs">
-                                  {hbEmp?.homebase_id ?? <span className="text-muted-foreground">—</span>}
-                                </td>
-                                <td className="px-4 py-2.5">
-                                  {hbEmp ? (
-                                    <Badge
-                                      variant="outline"
-                                      className={
-                                        hbEmp.match_confidence === 'email' || hbEmp.match_confidence === 'name_exact'
-                                          ? 'border-emerald-300 text-emerald-700 text-xs'
-                                          : 'text-xs'
-                                      }
-                                    >
-                                      {hbEmp.match_confidence}
-                                    </Badge>
-                                  ) : (
-                                    <span className="text-xs text-muted-foreground">unmatched</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-2.5">
-                                  <div className="flex items-center gap-1">
-                                    {isEditing ? (
-                                      <>
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          aria-label="Save changes"
-                                          title="Save"
-                                          className="h-6 w-6"
-                                          onClick={() => upsertOpsInfo.mutate({
-                                            profileId: p.id,
-                                            hourly_rate: editRate ? Number(editRate) : null,
-                                            employment_type: editEmpType,
-                                            contractor_org: editContractorOrg,
-                                          })}
-                                          disabled={upsertOpsInfo.isPending}
-                                        >
-                                          <Check className="h-3.5 w-3.5 text-emerald-600" />
-                                        </Button>
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          aria-label="Cancel editing"
-                                          title="Cancel"
-                                          className="h-6 w-6"
-                                          onClick={() => setEditingOpsId(null)}
-                                        >
-                                          <X className="h-3.5 w-3.5 text-muted-foreground" />
-                                        </Button>
-                                      </>
-                                    ) : (
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        aria-label="Edit ops info"
-                                        title="Edit ops info"
-                                        className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                                        onClick={() => {
-                                          setEditingOpsId(p.id);
-                                          setEditRate(opsInfo?.hourly_rate != null ? String(Number(opsInfo.hourly_rate)) : '');
-                                          setEditEmpType(empType);
-                                          setEditContractorOrg(opsInfo?.contractor_org ?? '');
-                                        }}
-                                      >
-                                        <Pencil className="h-3.5 w-3.5" />
-                                      </Button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
               </TabsContent>
 
             </Tabs>

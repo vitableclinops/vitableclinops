@@ -93,8 +93,8 @@ export const ProviderFilters = ({
           <SelectValue placeholder="Status" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All Status</SelectItem>
-          <SelectItem value="hide_termed">Hide Terminated</SelectItem>
+          <SelectItem value="all">All (incl. history)</SelectItem>
+          <SelectItem value="hide_termed">Active + Inactive</SelectItem>
           <SelectItem value="active">Active</SelectItem>
           <SelectItem value="inactive">Inactive</SelectItem>
           <SelectItem value="termed">Terminated</SelectItem>
