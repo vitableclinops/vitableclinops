@@ -217,6 +217,7 @@ const ProviderDirectoryPage = () => {
 
   // Medallion-sourced licensed states / languages for linked providers
   const { data: medallion } = useMedallionDirectoryData(isAdmin);
+  const { data: pcpCoverage } = usePcpCoverage(isAdmin);
 
   // Provider readiness data for management tab
   const { data: readinessData, isLoading: readinessLoading } = useProviderReadiness();
@@ -408,6 +409,9 @@ const ProviderDirectoryPage = () => {
     employment_type: (p as FullProvider).employment_type || null,
     agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
     actively_licensed_states: (() => { const st = activeLicensedStates(medallion?.licensesByProfile.get(p.id)); return st.length ? st.join(', ') : null; })(),
+    pcp_coverage_states: isAdmin
+      ? (() => { const st = pcpCoverageStatesFor(pcpCoverage?.byName, p.full_name); return st.length ? st.join(', ') : null; })()
+      : null,
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
     has_collaborative_agreements: isAdmin ? (p as FullProvider).has_collaborative_agreements : null,
