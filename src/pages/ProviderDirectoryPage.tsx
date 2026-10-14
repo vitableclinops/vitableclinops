@@ -25,6 +25,7 @@ import { SupervisionAgreementsTable } from '@/components/directory/SupervisionAg
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
+import { pcpCellFor } from '@/lib/pcpCoverage';
 import { PcpCoverageStatus } from '@/components/directory/PcpCoverageStatus';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -216,7 +217,7 @@ const ProviderDirectoryPage = () => {
 
   // Medallion-sourced licensed states / languages for linked providers
   const { data: medallion } = useMedallionDirectoryData(isAdmin);
-  const { data: pcpCoverage } = usePcpCoverage(isAdmin);
+  const { data: pcpCoverage, isLoading: pcpCoverageLoading } = usePcpCoverage(isAdmin);
 
   // Provider readiness data for management tab
 
@@ -407,8 +408,8 @@ const ProviderDirectoryPage = () => {
     employment_type: (p as FullProvider).employment_type || null,
     agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
     actively_licensed_states: (() => { const st = activeLicensedStates(medallion?.licensesByProfile.get(p.id)); return st.length ? st.join(', ') : null; })(),
-    pcp_coverage_states: isAdmin
-      ? (() => { const st = pcpCoverage?.statesByProfile.get(p.id); return st?.length ? st.join(', ') : null; })()
+    pcp_coverage: isAdmin
+      ? pcpCellFor({ id: p.id, profession: p.profession, npi_number: p.npi_number }, pcpCoverageLoading ? undefined : pcpCoverage)
       : null,
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
