@@ -153,14 +153,32 @@ async function fetchAgreements(id: string) {
   };
 }
 
+// Accept only callers holding this backend's service-role key. The key is
+// verified by using it against this backend's own REST API (signature check).
+async function isServiceCaller(req: Request): Promise<boolean> {
+  const auth = req.headers.get('authorization') ?? '';
+  const token = auth.replace(/^Bearer\s+/i, '');
+  if (!token) return false;
+  const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (svc && token === svc) return true;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (payload?.role !== 'service_role') return false;
+    const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/rest/v1/sync_runs?select=id&limit=1`, {
+      headers: { apikey: token, Authorization: `Bearer ${token}` },
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 Deno.serve(async (req) => {
-  const auth = req.headers.get('authorization') ?? '';
-  const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!svc || auth !== `Bearer ${svc}`) return json({ error: 'unauthorized' }, 401);
+  if (!(await isServiceCaller(req))) return json({ error: 'unauthorized' }, 401);
 
   calls = 0;
   const url = new URL(req.url);
