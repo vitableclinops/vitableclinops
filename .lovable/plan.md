@@ -1,70 +1,59 @@
-## Goal
+# External provider (agency) import — mapping review + dry-run importer
 
-Turn every issue card in the Homebase Schedule reconciliation map (`/admin/homebase-schedule`, day detail) from a passive "here's what's wrong" message into an inline action so an admin can resolve or override it without leaving the page.
+## Template review: changes to make before sending to the agency
 
-## Issue types and the new inline actions
+The workbook is well structured (3 data sheets, stable external IDs, no example people). These adjustments are needed so it maps cleanly:
 
-Each issue card gets a row of action buttons appropriate to its type. Resolutions are persisted so the issue clears (or is visibly muted) after sync.
+| # | Sheet / header | Issue | Change |
+|---|---|---|---|
+| 1 | Agreements `name` | Ambiguous (provider or supervisor?) | Rename to `supervisor_name` |
+| 2 | Agreements `license_number` | Same header as Licenses `license_number`, different meaning | Rename to `supervisor_license_number` |
+| 3 | Providers `agency_name` | Template assumes "DirectShift"; our agency record is **DirectShifts** | Use exact "DirectShifts" (dropdown); unknown agency names are rejected |
+| 4 | Providers `profession` | Template example `health_coach`; app uses `mental_health_coach` | Dropdown: NP, RN, MD, DO, LPC, LCSW, mental_health_coach |
+| 5 | Providers `employment_status` | App only has active/termed; inactive/onboarding/unknown have no local equivalent | Rename to `agency_reported_status`; stored as agency-reported only, never written to our employment status |
+| 6 | Providers `employment_type` | All agency people are already "Agency-Supplied" locally | Rename to `agency_classification`; stored for reference, does not change our classification |
+| 7 | Providers address block | No `country` or `address_type` on our profiles; home addresses must not sit on the shared profile | Keep headers; stored in a separate restricted address record (see below) |
+| 8 | Providers | Medallion has `secondary_taxonomy`; template doesn't | Add optional `secondary_taxonomy` |
+| 9 | All sheets | Dropdowns only cover rows 2–31 | Extend validation to row 1000; add 10-digit NPI and date validation |
+| 10 | Licenses `status` | `superceded` (Medallion spelling) | Keep; importer also accepts `superseded` |
 
-### 1. `missing_homebase` — approved in Lovable, no Homebase shift
-- **Open in Homebase** — deep link to the Homebase scheduler for that date.
-- **Mark fixed (re-sync)** — runs the Homebase sync for the affected date range and re-checks.
-- **Override: ignore** — writes a reconciliation override so the issue is dismissed for that approved shift (with optional note). Audit logged.
+I will produce the corrected workbook as a file for you to send.
 
-### 2. `unmatched_homebase_employee` — Homebase shift with no linked provider
-- **Link to provider…** — opens an inline combobox listing ClinOps providers. On select, we:
-  - Update `homebase_employees.provider_id` for that employee, and
-  - Upsert into `provider_name_mappings` so future syncs stay matched.
-- **Sync now** to re-run reconciliation after linking.
-- (Abiah Grant–style fixes happen here without leaving the page.)
+## Source ownership (enforced by the importer)
 
-### 3. `extra_homebase` — Homebase shift that isn't approved in Lovable
-- **Request admin approval** — creates a `schedule_submissions`-style override request / agreement task assigned to the workbench admin so it can be approved into the published schedule.
-- **Accept into Lovable (override)** — directly marks the Homebase shift as accepted (admin-only) for users with admin role; writes an override row tagged `accept_homebase`.
-- **Open in Homebase** — to remove the shift on the Homebase side.
+```text
+Internal providers  -> details/licenses/agreements: Medallion (read-only to import)
+External providers  -> details/licenses/agreements: verified agency import
+Both groups         -> Active PCP Telemedicine States: Metabase only
+Local Vitable       -> termination, employment classification, workflow stage
+```
 
-### 4. `time_mismatch` — same provider/day, different times
-- **Accept Homebase time** — override that records Homebase as source of truth; the issue clears and the published view shows the Homebase time.
-- **Accept Lovable time** — override that flags Homebase to be updated; issue downgrades to a "waiting on Homebase update" yellow chip with an Open-in-Homebase link.
-- **Acknowledge / snooze** — dismiss until the next sync.
+- A row whose NPI or email belongs to a Medallion-linked provider is a **conflict**, never applied.
+- Termed locally stays termed; agency "active" never reactivates.
+- No spreadsheet field touches coverage states or EHR records; there is no coverage column to import.
 
-### 5. `homebase_unpublished` / `homebase_unscheduled` (yellow)
-- **Open in Homebase** + **Acknowledge** (snooze until next sync).
+## How it works
 
-## Data model
+1. **Upload** on the Provider Directory (admin-only "Agency import" button).
+2. **Dry run preview** (nothing saved): per sheet — new, updated (field-by-field before/after), unchanged, missing required fields, invalid values, identity conflicts (NPI on another record, Medallion-owned provider, duplicate external IDs, license/agreement pointing to unknown provider).
+3. **Import** only after review; records keyed by agency + external ID, so reimports update instead of duplicate.
+4. Blank cells are skipped (never clear data); rows missing from a later file are left alone.
 
-New table `schedule_reconciliation_overrides`:
-- `issue_key` (text, unique) — deterministic key derived from `(type, date, provider_id, approved_shift_id, homebase_shift_id)` — same key used to render the card.
-- `issue_type` (text, matches `ReconciliationIssueType`).
-- `resolution` (text enum: `ignored`, `accept_homebase`, `accept_lovable`, `acknowledged`, `pending_admin_approval`, `mapped_employee`).
-- `note` (text, nullable).
-- `date_key` (date), `provider_id` (uuid, nullable), `approved_shift_id` (text, nullable), `homebase_shift_id` (text, nullable).
-- `created_by` (uuid → profiles.id), timestamps.
-- RLS: admin + pod_lead can read/write; service_role full. GRANTs to `authenticated` + `service_role`.
+## Directory and Supervision views
 
-The reconciliation builder in `HomebaseSchedulePage.tsx` joins overrides by `issue_key` and either hides the issue, downgrades severity, or shows a "Resolved by <name>" footer with an "Undo" button.
+- External providers appear in the same Directory table with a "Source: DirectShifts import" badge; internal ones keep "Medallion".
+- Licensed States and license count come from validated license rows: active + verified, state registrations only (DEA/controlled not counted as states). Partial/unknown inventory shows "incomplete" instead of a definitive number; `not_applicable` with no rows shows "Not applicable".
+- Supervision tab shows agency agreements alongside Medallion ones, same columns, with source shown.
+- PCP coverage matching adds the external provider NPI as an identity source — Medallion membership not required. Existing scope (NP only), exclusions and termination rules unchanged.
+- Addresses: practice address visible to admins/pod leads; mailing/home admin-only. Address without a type is rejected.
 
-## UI changes (scoped to `src/pages/HomebaseSchedulePage.tsx`)
+## Demonstration
 
-- Extract the day issue card into `DayIssueCard` and add an `IssueActions` row.
-- New `LinkEmployeeDialog` (Command/Combobox over providers).
-- New `OverrideConfirmDialog` (shared) for ignore / accept-homebase / accept-lovable / acknowledge with optional note.
-- Each action is a TanStack mutation that:
-  1. Writes the override row (or updates `homebase_employees` + `provider_name_mappings` for the link case).
-  2. Invalidates the reconciliation queries.
-  3. Toasts success.
-- Admin-only gating via `useAuth().hasRole('admin')` on destructive actions (accept-into-Lovable, accept-homebase-time). Pod leads can acknowledge + link employees but not override times.
+Since the template has no real rows, the dry run will be shown with (a) the empty template (header check passes, 0 changes) and (b) a fictional test file in automated tests only — covering adds, reimport with no duplicates, blank-cell preservation, termination precedence, Medallion conflict, and NPI conflict. No real import, no publishing.
 
-## Out of scope (this pass)
+## Technical details
 
-- Writing back into Homebase via API (we link out instead — Homebase API write coverage isn't built yet).
-- Changing the Coverage Workbench tabs; only the Homebase Schedule reconciliation map gets the inline actions.
-
-## Files to touch
-
-- `supabase/migrations/<new>_schedule_reconciliation_overrides.sql` — new table, GRANTs, RLS.
-- `src/integrations/supabase/types.ts` — add the new table type manually (per project convention).
-- `src/pages/HomebaseSchedulePage.tsx` — issue card + actions + override join.
-- `src/hooks/useReconciliationOverrides.ts` (new) — fetch + mutations.
-- `src/components/scheduling/LinkEmployeeDialog.tsx` (new).
-- `src/components/scheduling/IssueOverrideDialog.tsx` (new).
+- New tables: `external_providers` (agency_id, external_provider_id unique; profile_id link; agency-reported fields; inventory statuses; verified_as_of/by), `external_licenses` (agency_id, external_license_id unique), `external_agreements` (agency_id, external_agreement_id unique), `external_provider_addresses` (address_type enum practice/mailing/home; RLS: practice → admin/pod_lead, others → admin), `external_import_runs` (file name, counts, diff JSON, dry_run flag). Admin-only RLS + grants.
+- Pure parse/diff module in `src/lib/externalImport.ts` (SheetJS parsing, header alias map for both old and new header names) with vitest coverage; commit through a `apply-external-import` edge function that recomputes the diff server-side and applies only non-blank, non-conflicting fields.
+- New profiles are created only for unmatched external providers after explicit confirmation in the preview; matching to existing profiles is by exact NPI or agency+external ID, never by name.
+- `matchEhrCoverage` gains an external-NPI candidate source.
