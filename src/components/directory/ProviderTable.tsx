@@ -160,7 +160,7 @@ export const ProviderTable = ({
         <TableBody>
           {providers.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={isAdmin ? 13 : 6} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={isAdmin ? 14 : 6} className="text-center py-8 text-muted-foreground">
                 No providers found matching your filters
               </TableCell>
             </TableRow>

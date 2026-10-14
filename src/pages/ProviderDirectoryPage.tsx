@@ -24,6 +24,8 @@ import { ProviderDetailModal } from '@/components/directory/ProviderDetailModal'
 import { ManagementTable } from '@/components/directory/ManagementTable';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
+import { usePcpCoverage } from '@/hooks/usePcpCoverage';
+import { pcpCoverageStatesFor } from '@/lib/pcpCoverage';
 import { useProviderReadiness } from '@/hooks/useProviderReadiness';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
