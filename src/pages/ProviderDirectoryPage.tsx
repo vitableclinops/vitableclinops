@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, DollarSign, Pencil, Check, X, Download } from 'lucide-react';
+import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -25,7 +25,7 @@ import { ManagementTable } from '@/components/directory/ManagementTable';
 import { useProviderReadiness } from '@/hooks/useProviderReadiness';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn, downloadCSV } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import type { Provider } from '@/types';
 
 interface FullProvider {
