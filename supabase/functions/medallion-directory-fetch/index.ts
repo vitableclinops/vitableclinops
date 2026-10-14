@@ -137,7 +137,9 @@ function normLicense(l: J) {
 
 async function fetchAgreements(id: string) {
   const r = await getAll(`/api/v1/org/providers/${id}/collaborative-agreements/?limit=100`);
-  if (!r.ok) return { state: 'failed', error: r.error, rows: [] };
+  // Medallion returns 404 on child endpoints for inactive providers: that is
+  // "not available", not a retrieval failure.
+  if (!r.ok) return { state: r.error === 'HTTP 404' ? 'not_available' : 'failed', error: r.error, rows: [] };
   return {
     state: 'ok',
     rows: r.rows.map((a) => ({
@@ -236,17 +238,19 @@ Deno.serve(async (req) => {
   const providerRows: J[] = [];
   const agreements: J = {};
   let detailFailed = 0;
+  let agreementsFailed = 0;
   for (const [id, p] of seen) {
     const detail = await fetchDetail(id);
-    if (detail.state !== 'ok') detailFailed++;
+    if (detail.state === 'failed') detailFailed++;
     providerRows.push({ ...normProvider(p), detail });
     agreements[id] = await fetchAgreements(id);
+    if (agreements[id].state === 'failed') agreementsFailed++;
   }
   const lic = await getAll('/api/v1/org/licenses/?limit=100');
   return json({
     ok: listErrors.length === 0 && lic.ok && detailFailed === 0, mode, calls,
     providers: { ok: listErrors.length === 0, error: listErrors.join('; ') || undefined, rows: providerRows, list_counts: listCounts, detail_failed: detailFailed },
     licenses: { ok: lic.ok, error: lic.error, rows: lic.rows.map(normLicense), pages: lic.pages },
-    agreements: { by_provider: agreements },
+    agreements: { by_provider: agreements, failed: agreementsFailed },
   });
 });
