@@ -38,6 +38,8 @@ export interface ProviderTableData {
   pod_lead_name: string | null;
   /** Summary of fields where Medallion disagrees with our record (admin only). */
   medallion_conflicts?: string | null;
+  /** PCP coverage states from Metabase question 2940 (admin only). */
+  pcp_coverage_states?: string | null;
 }
 
 interface ProviderTableProps {
@@ -144,6 +146,7 @@ export const ProviderTable = ({
             <TableHead>NPI</TableHead>
             <SortHeader column="employment_type" label="Employment" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <SortHeader column="actively_licensed_states" label="Licensed States" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
+            {isAdmin && <TableHead>PCP Coverage</TableHead>}
             {isAdmin && <TableHead>EHR Active States</TableHead>}
             <TableHead>Home State</TableHead>
             {isAdmin && <SortHeader column="activation_status" label="Activation" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
@@ -157,7 +160,7 @@ export const ProviderTable = ({
         <TableBody>
           {providers.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={isAdmin ? 13 : 6} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={isAdmin ? 14 : 6} className="text-center py-8 text-muted-foreground">
                 No providers found matching your filters
               </TableCell>
             </TableRow>
@@ -210,6 +213,13 @@ export const ProviderTable = ({
                     {provider.actively_licensed_states || '-'}
                   </span>
                 </TableCell>
+                {isAdmin && (
+                  <TableCell>
+                    <span className="text-sm max-w-[180px] truncate block">
+                      {provider.pcp_coverage_states || <span className="text-muted-foreground">—</span>}
+                    </span>
+                  </TableCell>
+                )}
                 {isAdmin && <TableCell><span className="text-xs text-muted-foreground">Not connected</span></TableCell>}
                 <TableCell>{provider.address_state || '-'}</TableCell>
                 {isAdmin && <TableCell>{getActivationBadge(provider.activation_status)}</TableCell>}

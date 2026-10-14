@@ -24,6 +24,8 @@ import { ProviderDetailModal } from '@/components/directory/ProviderDetailModal'
 import { ManagementTable } from '@/components/directory/ManagementTable';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
+import { usePcpCoverage } from '@/hooks/usePcpCoverage';
+import { pcpCoverageStatesFor } from '@/lib/pcpCoverage';
 import { useProviderReadiness } from '@/hooks/useProviderReadiness';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -215,6 +217,7 @@ const ProviderDirectoryPage = () => {
 
   // Medallion-sourced licensed states / languages for linked providers
   const { data: medallion } = useMedallionDirectoryData(isAdmin);
+  const { data: pcpCoverage } = usePcpCoverage(isAdmin);
 
   // Provider readiness data for management tab
   const { data: readinessData, isLoading: readinessLoading } = useProviderReadiness();
@@ -406,6 +409,9 @@ const ProviderDirectoryPage = () => {
     employment_type: (p as FullProvider).employment_type || null,
     agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
     actively_licensed_states: (() => { const st = activeLicensedStates(medallion?.licensesByProfile.get(p.id)); return st.length ? st.join(', ') : null; })(),
+    pcp_coverage_states: isAdmin
+      ? (() => { const st = pcpCoverageStatesFor(pcpCoverage?.byName, p.full_name); return st.length ? st.join(', ') : null; })()
+      : null,
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
     has_collaborative_agreements: isAdmin ? (p as FullProvider).has_collaborative_agreements : null,
@@ -571,6 +577,12 @@ const ProviderDirectoryPage = () => {
                     ))}
                   </div>
                 ) : viewMode === 'table' ? (
+                  <>
+                  {isAdmin && pcpCoverage?.pulledDate && (
+                    <p className="text-xs text-muted-foreground mb-2">
+                      PCP Coverage column from the Metabase PCP State Coverage report, pulled {pcpCoverage.pulledDate}.
+                    </p>
+                  )}
                   <ProviderTable
                     providers={tableData}
                     onRowClick={handleRowClick}
@@ -579,6 +591,7 @@ const ProviderDirectoryPage = () => {
                     sortDirection={sortDirection}
                     onSort={handleSort}
                   />
+                  </>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredProviders.map(provider => (
