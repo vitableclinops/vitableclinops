@@ -15,6 +15,13 @@
       "when": 1792002032481,
       "tag": "0001_internal_cron_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792002076321,
+      "tag": "0002_directory_view_hide_excluded",
+      "breakpoints": true
     }
   ]
 }
