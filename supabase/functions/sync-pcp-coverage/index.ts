@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
     const coverage = await run(`
       select c.provider_id, c.original_provider_id, c.provider_full_name, c.state, p.npi
       from ${T} c
-      left join dbt_production.stg_asclepius__providers p on p.provider_id = c.provider_id
+      left join dbt_production.int_providers_w_primary_role p on p.provider_id = c.provider_id
       where c.is_active = true
         and c.covered_appointment_type = 'Telemedicine'
         and c.provider_type = 'NursePractitioner'
