@@ -10,6 +10,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { MedallionProviderSection } from '@/components/directory/MedallionProviderSection';
+import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -162,6 +164,8 @@ const EditableField = ({
 );
 
 export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalProps) => {
+  const { data: medallionData } = useMedallionDirectoryData(!!provider);
+  const medallionStates = provider ? activeLicensedStates(medallionData?.licensesByProfile.get(provider.id)) : [];
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
@@ -343,13 +347,18 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
         </DialogHeader>
 
         <Tabs defaultValue="professional" className="mt-4">
-          <TabsList className="w-full grid grid-cols-5">
+          <TabsList className="w-full grid grid-cols-6">
             <TabsTrigger value="professional">Professional</TabsTrigger>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="licenses">Licenses</TabsTrigger>
             <TabsTrigger value="personal">Personal</TabsTrigger>
             <TabsTrigger value="employment">Employment</TabsTrigger>
+            <TabsTrigger value="medallion">Medallion</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="medallion" className="mt-4">
+            <MedallionProviderSection profileId={provider.id} medallionId={provider.medallion_id} />
+          </TabsContent>
 
           {/* Professional Tab */}
           <TabsContent value="professional" className="mt-4 space-y-4">
@@ -477,7 +486,8 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                 provider.renewal_handling || 'Not Set'
               } />
               <InfoRow label="Languages" value={provider.languages} />
-              <InfoRow label="Licensed States" value={null} />
+              <InfoRow label="Licensed States" value={medallionStates.length ? medallionStates.join(', ') : null} />
+              <InfoRow label="Active States in Vitable EHR" value="Not connected" />
               <InfoRow label="Home State" value={provider.address_state} />
             </div>
             {provider.bio && (

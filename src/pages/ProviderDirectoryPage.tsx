@@ -22,6 +22,8 @@ import { ProviderFilters } from '@/components/directory/ProviderFilters';
 import { ProviderTable, ProviderTableData } from '@/components/directory/ProviderTable';
 import { ProviderDetailModal } from '@/components/directory/ProviderDetailModal';
 import { ManagementTable } from '@/components/directory/ManagementTable';
+import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
+import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { useProviderReadiness } from '@/hooks/useProviderReadiness';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -101,7 +103,7 @@ const ProviderDirectoryPage = () => {
   // Determine initial tab from URL or default based on role
   const tabParam = searchParams.get('tab');
   const isAdmin = roles.includes('admin');
-  const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : 'management') : 'directory';
+  const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : tabParam === 'medallion' ? 'medallion' : 'management') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -210,6 +212,9 @@ const ProviderDirectoryPage = () => {
     },
     staleTime: 5 * 60_000,
   });
+
+  // Medallion-sourced licensed states / languages for linked providers
+  const { data: medallion } = useMedallionDirectoryData(isAdmin);
 
   // Provider readiness data for management tab
   const { data: readinessData, isLoading: readinessLoading } = useProviderReadiness();
@@ -400,14 +405,14 @@ const ProviderDirectoryPage = () => {
     employment_status: p.employment_status,
     employment_type: (p as FullProvider).employment_type || null,
     agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
-    actively_licensed_states: null, // Derived from provider_state_status now
+    actively_licensed_states: (() => { const st = activeLicensedStates(medallion?.licensesByProfile.get(p.id)); return st.length ? st.join(', ') : null; })(),
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
     has_collaborative_agreements: isAdmin ? (p as FullProvider).has_collaborative_agreements : null,
     activation_status: isAdmin ? ((p as any).activation_status || null) : null,
     collaborative_physician: null, // Derived from collaborative_agreements now
     renewal_handling: isAdmin ? ((p as any).renewal_handling || null) : null,
-    languages: isAdmin ? ((p as any).languages || null) : null,
+    languages: isAdmin ? (medallion?.byProfile.get(p.id)?.languages?.join(', ') || (p as any).languages || null) : null,
     pod_name: null,
     pod_lead_id: isAdmin ? ((p as any).pod_lead_id || null) : null,
     pod_lead_name: isAdmin ? (podLeadMap.get((p as any).pod_lead_id) || null) : null,
@@ -468,6 +473,10 @@ const ProviderDirectoryPage = () => {
                   <Users className="h-4 w-4" />
                   Directory
                 </TabsTrigger>
+                <TabsTrigger value="medallion" className="gap-2">
+                  <Activity className="h-4 w-4" />
+                  Medallion sync
+                </TabsTrigger>
               </TabsList>
 
               {/* Management Tab - Real data driven */}
@@ -485,6 +494,14 @@ const ProviderDirectoryPage = () => {
                     initialSearch={searchParams.get('search') || ''}
                   />
                 )}
+              </TabsContent>
+
+              <TabsContent value="medallion">
+                <MedallionSyncPanel
+                  reviewProfiles={providers
+                    .filter((p: any) => p.directory_visibility === 'review')
+                    .map((p: any) => ({ id: p.id, full_name: p.full_name, email: p.email, directory_visibility_reason: p.directory_visibility_reason }))}
+                />
               </TabsContent>
 
               {/* Directory Tab - Contact/Profile focused view */}
