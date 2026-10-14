@@ -111,25 +111,52 @@ Deno.serve(async (req) => {
       return json(out);
     }
 
-    // refresh: re-run 2940's own filters but break out by provider ID instead
-    // of counting it. Built from the card's MBQL so 2940 itself is unchanged.
-    const breakout = body.breakout ?? url.searchParams.get('breakout');
-    if (!dq.query || !breakout) throw new Error('ID query not configured: provide breakout field refs');
-    const q = structuredClone(dq);
-    q.query.breakout = JSON.parse(String(typeof breakout === 'string' ? breakout : JSON.stringify(breakout)));
-    delete q.query.aggregation;
-    const res = await mb(token, '/api/dataset', { method: 'POST', body: JSON.stringify(q) });
-    const cols: string[] = res.data.cols.map((c: any) => c.display_name ?? c.name);
-    const rows = (res.data.rows as unknown[][]).map((r) => Object.fromEntries(cols.map((c, i) => [c, r[i] == null ? null : String(r[i])])));
+    // refresh: read-only SELECT using question 2940's scope filters (current
+    // rows, Telemedicine, NursePractitioner, Primary Care Provider) but keeping
+    // the EHR provider_id and NPI instead of counting them. 2940 is unchanged.
+    // The name-based not-in list from 2940 is NOT applied here: exclusions are
+    // applied in the app against verified identities.
+    const run = async (sql: string) => {
+      const r = await mb(token, '/api/dataset', {
+        method: 'POST',
+        body: JSON.stringify({ database: card.database_id, type: 'native', native: { query: sql } }),
+      });
+      const cols: string[] = r.data.cols.map((c: any) => c.name);
+      return {
+        truncated: !!r.data.rows_truncated,
+        rows: (r.data.rows as unknown[][]).map((row) =>
+          Object.fromEntries(cols.map((c, i) => [c, row[i] == null ? null : String(row[i])]))),
+      };
+    };
+    const T = 'dbt_production.int_provider_coverage_non_aggregated';
+    const coverage = await run(`
+      select c.provider_id, c.original_provider_id, c.provider_full_name, c.state, p.npi
+      from ${T} c
+      left join dbt_production.stg_asclepius__providers p on p.provider_id = c.provider_id
+      where c.is_active = true
+        and c.covered_appointment_type = 'Telemedicine'
+        and c.provider_type = 'NursePractitioner'
+        and c.provider_role_category = 'Primary Care Provider'
+      group by 1,2,3,4,5
+      order by 3,4`);
+    const fresh = await run(`
+      select max(combined_fivetran_start_at_est) as latest_change_at,
+             count(*) filter (where is_active) as active_rows,
+             count(*) filter (where is_active and combined_fivetran_end_at_est is not null) as active_with_end,
+             count(*) filter (where not is_active and combined_fivetran_end_at_est is null) as inactive_without_end,
+             count(*) filter (where is_active and coalesce(provider_deleted_in, false)) as active_but_deleted
+      from ${T}`);
+    const rows = coverage.rows;
     if (rows.length === 0) throw new Error('Query returned 0 rows — keeping previous snapshot');
-    if (res.data.rows_truncated) throw new Error('Result truncated at 2,000 rows — keeping previous snapshot');
+    if (coverage.truncated) throw new Error('Result truncated at 2,000 rows — keeping previous snapshot');
     const today = new Date().toISOString().slice(0, 10);
     const { error } = await supabase.from('metabase_raw_exports').upsert(
       { report_key: REPORT_KEY, pulled_date: today, rows, row_count: rows.length, pulled_at: new Date().toISOString() },
       { onConflict: 'report_key,pulled_date' });
     if (error) throw new Error(error.message);
-    await finish('success', { rows_processed: rows.length, details: { mode, cols } });
-    return json({ ok: true, rows: rows.length, cols });
+    const freshness = fresh.rows[0] ?? {};
+    await finish('success', { rows_processed: rows.length, details: { mode, freshness } });
+    return json({ ok: true, rows: rows.length, freshness });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await finish('error', { error_message: msg });
