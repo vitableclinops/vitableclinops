@@ -25,7 +25,7 @@ import { SupervisionAgreementsTable } from '@/components/directory/SupervisionAg
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
-import { pcpCoverageStatesFor } from '@/lib/pcpCoverage';
+import { PcpCoverageStatus } from '@/components/directory/PcpCoverageStatus';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -408,7 +408,7 @@ const ProviderDirectoryPage = () => {
     agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
     actively_licensed_states: (() => { const st = activeLicensedStates(medallion?.licensesByProfile.get(p.id)); return st.length ? st.join(', ') : null; })(),
     pcp_coverage_states: isAdmin
-      ? (() => { const st = pcpCoverageStatesFor(pcpCoverage?.byName, p.full_name); return st.length ? st.join(', ') : null; })()
+      ? (() => { const st = pcpCoverage?.statesByProfile.get(p.id); return st?.length ? st.join(', ') : null; })()
       : null,
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
@@ -564,11 +564,7 @@ const ProviderDirectoryPage = () => {
                   </div>
                 ) : viewMode === 'table' ? (
                   <>
-                  {isAdmin && pcpCoverage?.pulledDate && (
-                    <p className="text-xs text-muted-foreground mb-2">
-                      PCP Coverage column from the Metabase PCP State Coverage report, pulled {pcpCoverage.pulledDate}.
-                    </p>
-                  )}
+                  {isAdmin && <PcpCoverageStatus data={pcpCoverage ?? null} />}
                   <ProviderTable
                     providers={tableData}
                     onRowClick={handleRowClick}

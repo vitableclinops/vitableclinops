@@ -38,7 +38,7 @@ export interface ProviderTableData {
   pod_lead_name: string | null;
   /** Summary of fields where Medallion disagrees with our record (admin only). */
   medallion_conflicts?: string | null;
-  /** PCP coverage states from Metabase question 2940 (admin only). */
+  /** Active PCP telemedicine states from the EHR, linked by verified NPI (admin only). */
   pcp_coverage_states?: string | null;
 }
 
@@ -146,7 +146,7 @@ export const ProviderTable = ({
             <TableHead>NPI</TableHead>
             <SortHeader column="employment_type" label="Employment" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <SortHeader column="actively_licensed_states" label="Licensed States" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
-            {isAdmin && <TableHead>PCP Coverage</TableHead>}
+            {isAdmin && <TableHead title="From the EHR, linked by verified NPI. Blank means not in this query's scope — not inactive or unlicensed.">Active PCP Telemedicine States</TableHead>}
             {isAdmin && <TableHead>EHR Active States</TableHead>}
             <TableHead>Home State</TableHead>
             {isAdmin && <SortHeader column="activation_status" label="Activation" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
@@ -216,7 +216,7 @@ export const ProviderTable = ({
                 {isAdmin && (
                   <TableCell>
                     <span className="text-sm max-w-[180px] truncate block">
-                      {provider.pcp_coverage_states || <span className="text-muted-foreground">—</span>}
+                      {provider.pcp_coverage_states || <span className="text-muted-foreground" title="Not in this query's scope (not inactive or unlicensed)">—</span>}
                     </span>
                   </TableCell>
                 )}
