@@ -40,6 +40,7 @@ export interface MedallionLicenseRow {
 
 export interface MedallionAgreementRow {
   medallion_agreement_id: string;
+  medallion_provider_id: string;
   profile_id: string | null;
   supervisor_name: string | null;
   supervisor_npi: string | null;
@@ -49,9 +50,17 @@ export interface MedallionAgreementRow {
   agreement_type: string | null;
   start_date: string | null;
   end_date: string | null;
+  document_id: string | null;
   document_title: string | null;
   local_agreement_id: string | null;
   local_match_notes: string | null;
+  last_returned_at: string | null;
+}
+
+/** Medallion's primary/backup flag; anything missing or unrecognised is shown as Unknown, never guessed. */
+export function agreementTypeLabel(t: string | null | undefined): 'Primary' | 'Backup' | 'Unknown' {
+  const v = (t ?? '').trim().toLowerCase();
+  return v === 'primary' ? 'Primary' : v === 'backup' ? 'Backup' : 'Unknown';
 }
 
 export interface MedallionSyncRun {
