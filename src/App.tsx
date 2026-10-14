@@ -15,7 +15,6 @@ import TaskDetailView from "./pages/TaskDetailView";
 
 import StateCompliancePage from "./pages/StateCompliancePage";
 import CollaborativeAgreementsPage from "./pages/CollaborativeAgreementsPage";
-import SupervisionAgreementsPage from "./pages/SupervisionAgreementsPage";
 import SystemSettingsPage from "./pages/SystemSettingsPage";
 import ProviderIntakePage from "./pages/ProviderIntakePage";
 import PhysicianPortal from "./pages/PhysicianPortal";
@@ -175,11 +174,6 @@ const App = () => (
             <Route path="/admin/states" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <StateCompliancePage />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/supervision" element={
-              <ProtectedRoute requiredRoles={['admin']}>
-                <SupervisionAgreementsPage />
               </ProtectedRoute>
             } />
             <Route path="/admin/agreements" element={

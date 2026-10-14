@@ -21,12 +21,11 @@ import {
 import { ProviderFilters } from '@/components/directory/ProviderFilters';
 import { ProviderTable, ProviderTableData } from '@/components/directory/ProviderTable';
 import { ProviderDetailModal } from '@/components/directory/ProviderDetailModal';
-import { ManagementTable } from '@/components/directory/ManagementTable';
+import { SupervisionAgreementsTable } from '@/components/directory/SupervisionAgreementsTable';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCoverageStatesFor } from '@/lib/pcpCoverage';
-import { useProviderReadiness } from '@/hooks/useProviderReadiness';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -220,7 +219,6 @@ const ProviderDirectoryPage = () => {
   const { data: pcpCoverage } = usePcpCoverage(isAdmin);
 
   // Provider readiness data for management tab
-  const { data: readinessData, isLoading: readinessLoading } = useProviderReadiness();
 
 
 
@@ -476,7 +474,7 @@ const ProviderDirectoryPage = () => {
               <TabsList>
                 <TabsTrigger value="management" className="gap-2">
                   <Shield className="h-4 w-4" />
-                  Management
+                  Supervision
                 </TabsTrigger>
                 <TabsTrigger value="directory" className="gap-2">
                   <Users className="h-4 w-4" />
@@ -488,21 +486,9 @@ const ProviderDirectoryPage = () => {
                 </TabsTrigger>
               </TabsList>
 
-              {/* Management Tab - Real data driven */}
+              {/* Supervision Tab - Medallion agreements across all providers */}
               <TabsContent value="management" className="space-y-6">
-                {readinessLoading ? (
-                  <Card>
-                    <CardContent className="py-12 text-center text-muted-foreground">
-                      Loading provider readiness data...
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <ManagementTable
-                    providers={(readinessData || []).filter(p => p.employment_status !== 'termed')}
-                    agencyMap={agencyMap}
-                    initialSearch={searchParams.get('search') || ''}
-                  />
-                )}
+                <SupervisionAgreementsTable />
               </TabsContent>
 
               <TabsContent value="medallion">

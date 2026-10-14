@@ -103,7 +103,6 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'States & Compliance', icon: MapPin, href: '/admin/states', roles: ['admin'] },
       { label: 'Agreements', icon: Shield, href: '/admin/agreements', roles: ['admin', 'physician'] },
-      { label: 'Supervision (Medallion)', icon: Users, href: '/admin/supervision', roles: ['admin'] },
       { label: 'License Optimizer', icon: Sliders, href: '/admin/license-optimizer', roles: ['admin'] },
       { label: 'Data Quality', icon: ShieldCheck, href: '/admin/data-quality', roles: ['admin'] },
     ],
