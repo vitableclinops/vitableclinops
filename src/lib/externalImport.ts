@@ -102,7 +102,7 @@ export function rowsFromMatrix(sheet: SheetName, matrix: unknown[][], issues: st
 }
 
 export function parseWorkbook(data: ArrayBuffer): ParsedWorkbook {
-  const wb = XLSX.read(data, { type: 'array', cellDates: true });
+  const wb = XLSX.read(new Uint8Array(data), { type: 'array', cellDates: true });
   const issues: string[] = [];
   const sheets = {} as Record<SheetName, Row[]>;
   for (const name of ['Providers', 'Licenses', 'Agreements'] as SheetName[]) {
