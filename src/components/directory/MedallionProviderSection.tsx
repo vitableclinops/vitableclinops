@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { formatRelativeTime } from '@/hooks/useDataFreshness';
-import { activeLicensedStates, useMedallionDirectoryData, useRunMedallionSync } from '@/hooks/useMedallionDirectory';
+import { activeLicensedStates, agreementTypeLabel, useMedallionDirectoryData, useRunMedallionSync } from '@/hooks/useMedallionDirectory';
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div>
