@@ -82,8 +82,23 @@ Deno.serve(async (req) => {
     const card = await mb(token, `/api/card/${SOURCE_CARD}`);
     const dq = card.dataset_query ?? {};
 
+    if (mode === 'tables') {
+      // Read-only discovery: list warehouse tables whose name matches a term.
+      const term = String(body.term ?? 'provider').toLowerCase();
+      const meta = await mb(token, `/api/database/${card.database_id}/metadata?skip_fields=true`);
+      const db = await mb(token, `/api/database/${card.database_id}`);
+      const tables = (meta.tables ?? []).filter((t: any) => String(t.name).toLowerCase().includes(term))
+        .map((t: any) => ({ id: t.id, name: `${t.schema}.${t.name}` }));
+      await finish('success', { details: { mode } });
+      return json({ engine: db.engine, tables });
+    }
+    if (mode === 'table') {
+      const meta = await mb(token, `/api/table/${Number(body.table_id)}/query_metadata`);
+      await finish('success', { details: { mode } });
+      return json({ table: `${meta.schema}.${meta.name}`, fields: (meta.fields ?? []).map((f: any) => `${f.id}:${f.name}:${f.base_type}`) });
+    }
     if (mode === 'inspect') {
-      const tableId = dq?.query?.['source-table'] ?? card.table_id;
+      const tableId = dq?.stages?.[0]?.['source-table'] ?? dq?.query?.['source-table'] ?? card.table_id;
       let fields: unknown = null;
       if (typeof tableId === 'number') {
         const meta = await mb(token, `/api/table/${tableId}/query_metadata`);
