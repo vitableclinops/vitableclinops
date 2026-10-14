@@ -26,7 +26,6 @@ import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCoverageStatesFor } from '@/lib/pcpCoverage';
-import { useProviderReadiness } from '@/hooks/useProviderReadiness';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -220,7 +219,6 @@ const ProviderDirectoryPage = () => {
   const { data: pcpCoverage } = usePcpCoverage(isAdmin);
 
   // Provider readiness data for management tab
-  const { data: readinessData, isLoading: readinessLoading } = useProviderReadiness();
 
 
 
