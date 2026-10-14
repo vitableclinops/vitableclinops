@@ -617,7 +617,6 @@ const ProviderDirectoryPage = () => {
                   </div>
                 )}
               </TabsContent>
-              </TabsContent>
 
             </Tabs>
           ) : (
