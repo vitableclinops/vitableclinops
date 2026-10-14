@@ -96,7 +96,7 @@ export function matchEhrCoverage(
     const ex = FORMER_STAFF_EHR_EXCLUSIONS[ehrId];
     if (ex) {
       identities.push(npis.length === 1 && npis[0] === ex.npi
-        ? { ...base, status: 'excluded', reason: 'Former employee — excluded from current coverage' }
+        ? { ...base, profileId: (() => { const c = [...(npiToProfiles.get(ex.npi) ?? [])]; return c.length === 1 ? c[0] : null; })(), status: 'excluded', reason: 'Former employee — excluded from current coverage' }
         : { ...base, status: 'ambiguous', reason: `Excluded EHR ID but NPI does not match the verified ${ex.npi}` });
       continue;
     }
