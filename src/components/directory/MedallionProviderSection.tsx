@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { formatRelativeTime } from '@/hooks/useDataFreshness';
-import { activeLicensedStates, useMedallionDirectoryData, useRunMedallionSync } from '@/hooks/useMedallionDirectory';
+import { activeLicensedStates, agreementTypeLabel, useMedallionDirectoryData, useRunMedallionSync } from '@/hooks/useMedallionDirectory';
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div>
@@ -65,7 +65,9 @@ export function MedallionProviderSection({ profileId, medallionId }: { profileId
           {!m ? '—'
             : m.detail_state === 'ok' ? (m.languages?.length ? m.languages.join(', ') : <span className="text-muted-foreground">Empty in Medallion</span>)
             : m.detail_state === 'not_available' ? <span className="text-muted-foreground">Not available (inactive in Medallion)</span>
-            : <span className="text-destructive">Couldn't retrieve</span>}
+            : (m.languages?.length
+                ? <span>{m.languages.join(', ')} <span className="text-xs text-warning">(saved earlier — latest lookup failed)</span></span>
+                : <span className="text-warning">Latest lookup failed; nothing saved earlier</span>)}
         </Field>
         <Field label="Licensed States (Medallion, active)">{states.length ? states.join(', ') : '—'}</Field>
         <Field label="Active States in Vitable EHR"><Badge variant="outline">Not connected</Badge></Field>
@@ -85,7 +87,7 @@ export function MedallionProviderSection({ profileId, medallionId }: { profileId
                   <tr key={a.medallion_agreement_id}>
                     <td className="py-1 pr-2">{a.state ?? '—'}</td>
                     <td className="pr-2">{a.supervisor_name ?? '—'}{a.supervisor_npi ? <span className="text-xs text-muted-foreground"> · NPI {a.supervisor_npi}</span> : null}</td>
-                    <td className="pr-2 capitalize">{a.agreement_type ?? '—'}</td>
+                    <td className="pr-2">{agreementTypeLabel(a.agreement_type)}{a.last_returned_at && m?.last_returned_at && a.last_returned_at < m.last_returned_at ? <span className="block text-xs text-warning">Stale · not refreshed in latest lookup</span> : null}</td>
                     <td className="pr-2">{a.source_status ?? '—'}</td>
                     <td className="pr-2 whitespace-nowrap">{a.start_date ?? '?'} → {a.end_date ?? 'open'}</td>
                     <td className="text-xs break-all">{a.document_title ?? '—'}</td>

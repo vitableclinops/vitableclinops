@@ -36,6 +36,8 @@ export interface ProviderTableData {
   pod_name: string | null;
   pod_lead_id: string | null;
   pod_lead_name: string | null;
+  /** Summary of fields where Medallion disagrees with our record (admin only). */
+  medallion_conflicts?: string | null;
 }
 
 interface ProviderTableProps {
@@ -180,6 +182,11 @@ export const ProviderTable = ({
                       <span className="font-medium">
                         {provider.preferred_name || provider.full_name || 'Unknown'}
                       </span>
+                      {provider.medallion_conflicts ? (
+                        <Badge variant="outline" className="ml-2 text-[10px] border-warning text-warning" title={provider.medallion_conflicts}>
+                          Differs from Medallion
+                        </Badge>
+                      ) : null}
                       {provider.primary_specialty && (
                         <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>
                       )}

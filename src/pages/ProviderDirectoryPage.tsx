@@ -416,6 +416,9 @@ const ProviderDirectoryPage = () => {
     pod_name: null,
     pod_lead_id: isAdmin ? ((p as any).pod_lead_id || null) : null,
     pod_lead_name: isAdmin ? (podLeadMap.get((p as any).pod_lead_id) || null) : null,
+    medallion_conflicts: isAdmin
+      ? ((medallion?.byProfile.get(p.id)?.conflicts ?? []).map(c => `${c.field.replace(/_/g, ' ')}: ours ${c.local ?? '—'}, Medallion ${c.medallion ?? '—'}`).join('; ') || null)
+      : null,
   }));
 
   const handleRowClick = (provider: ProviderTableData) => {
