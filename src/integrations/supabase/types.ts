@@ -1873,6 +1873,400 @@ export type Database = {
           },
         ]
       }
+      external_agreements: {
+        Row: {
+          agency_id: string
+          collaborative_agreement_status: string | null
+          collaborative_agreement_type: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          created_at: string
+          document_reference: string | null
+          document_title: string | null
+          external_agreement_id: string
+          external_provider_id: string
+          id: string
+          last_import_run_id: string | null
+          notes: string | null
+          supervision_end_date: string | null
+          supervision_start_date: string | null
+          supervision_state: string | null
+          supervisor_external_id: string | null
+          supervisor_license_number: string | null
+          supervisor_name: string | null
+          supervisor_npi: string | null
+          supervisor_profession: string | null
+          updated_at: string
+          verified_as_of: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          agency_id: string
+          collaborative_agreement_status?: string | null
+          collaborative_agreement_type?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          document_reference?: string | null
+          document_title?: string | null
+          external_agreement_id: string
+          external_provider_id: string
+          id?: string
+          last_import_run_id?: string | null
+          notes?: string | null
+          supervision_end_date?: string | null
+          supervision_start_date?: string | null
+          supervision_state?: string | null
+          supervisor_external_id?: string | null
+          supervisor_license_number?: string | null
+          supervisor_name?: string | null
+          supervisor_npi?: string | null
+          supervisor_profession?: string | null
+          updated_at?: string
+          verified_as_of?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          agency_id?: string
+          collaborative_agreement_status?: string | null
+          collaborative_agreement_type?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          document_reference?: string | null
+          document_title?: string | null
+          external_agreement_id?: string
+          external_provider_id?: string
+          id?: string
+          last_import_run_id?: string | null
+          notes?: string | null
+          supervision_end_date?: string | null
+          supervision_start_date?: string | null
+          supervision_state?: string | null
+          supervisor_external_id?: string | null
+          supervisor_license_number?: string | null
+          supervisor_name?: string | null
+          supervisor_npi?: string | null
+          supervisor_profession?: string | null
+          updated_at?: string
+          verified_as_of?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_agreements_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_import_runs: {
+        Row: {
+          agency_id: string | null
+          counts: Json
+          created_at: string
+          created_by: string | null
+          diff: Json
+          dry_run: boolean
+          file_name: string | null
+          id: string
+        }
+        Insert: {
+          agency_id?: string | null
+          counts?: Json
+          created_at?: string
+          created_by?: string | null
+          diff?: Json
+          dry_run?: boolean
+          file_name?: string | null
+          id?: string
+        }
+        Update: {
+          agency_id?: string | null
+          counts?: Json
+          created_at?: string
+          created_by?: string | null
+          diff?: Json
+          dry_run?: boolean
+          file_name?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_import_runs_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_licenses: {
+        Row: {
+          agency_id: string
+          certificate_type: string | null
+          created_at: string
+          document_reference: string | null
+          expiration_basis: string | null
+          expiration_date: string | null
+          external_license_id: string
+          external_provider_id: string
+          id: string
+          issue_date: string | null
+          last_import_run_id: string | null
+          license_number: string | null
+          registration: string | null
+          rx_authority: string | null
+          state: string | null
+          status: string | null
+          updated_at: string
+          using_compact: string | null
+          verification_source: string | null
+          verification_status: string | null
+          verified_as_of: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          agency_id: string
+          certificate_type?: string | null
+          created_at?: string
+          document_reference?: string | null
+          expiration_basis?: string | null
+          expiration_date?: string | null
+          external_license_id: string
+          external_provider_id: string
+          id?: string
+          issue_date?: string | null
+          last_import_run_id?: string | null
+          license_number?: string | null
+          registration?: string | null
+          rx_authority?: string | null
+          state?: string | null
+          status?: string | null
+          updated_at?: string
+          using_compact?: string | null
+          verification_source?: string | null
+          verification_status?: string | null
+          verified_as_of?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          agency_id?: string
+          certificate_type?: string | null
+          created_at?: string
+          document_reference?: string | null
+          expiration_basis?: string | null
+          expiration_date?: string | null
+          external_license_id?: string
+          external_provider_id?: string
+          id?: string
+          issue_date?: string | null
+          last_import_run_id?: string | null
+          license_number?: string | null
+          registration?: string | null
+          rx_authority?: string | null
+          state?: string | null
+          status?: string | null
+          updated_at?: string
+          using_compact?: string | null
+          verification_source?: string | null
+          verification_status?: string | null
+          verified_as_of?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_licenses_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_provider_addresses: {
+        Row: {
+          address_city: string | null
+          address_line_1: string | null
+          address_line_2: string | null
+          address_state: string | null
+          address_type: string
+          agency_id: string
+          country: string | null
+          created_at: string
+          external_provider_id: string
+          id: string
+          last_import_run_id: string | null
+          postal_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          address_city?: string | null
+          address_line_1?: string | null
+          address_line_2?: string | null
+          address_state?: string | null
+          address_type: string
+          agency_id: string
+          country?: string | null
+          created_at?: string
+          external_provider_id: string
+          id?: string
+          last_import_run_id?: string | null
+          postal_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address_city?: string | null
+          address_line_1?: string | null
+          address_line_2?: string | null
+          address_state?: string | null
+          address_type?: string
+          agency_id?: string
+          country?: string | null
+          created_at?: string
+          external_provider_id?: string
+          id?: string
+          last_import_run_id?: string | null
+          postal_code?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_provider_addresses_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_providers: {
+        Row: {
+          agency_classification: string | null
+          agency_id: string
+          agency_reported_status: string | null
+          agreement_inventory_status: string | null
+          created_at: string
+          credentials: string | null
+          email: string | null
+          employment_end_date: string | null
+          employment_start_date: string | null
+          external_provider_id: string
+          first_name: string | null
+          id: string
+          languages: string[] | null
+          last_import_run_id: string | null
+          last_name: string | null
+          license_inventory_status: string | null
+          npi: string | null
+          phone_number: string | null
+          practice_restrictions: string | null
+          preferred_name: string | null
+          primary_specialty: string | null
+          primary_taxonomy: string | null
+          profession: string | null
+          profile_id: string | null
+          secondary_specialty: string | null
+          secondary_taxonomy: string | null
+          updated_at: string
+          verified_as_of: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          agency_classification?: string | null
+          agency_id: string
+          agency_reported_status?: string | null
+          agreement_inventory_status?: string | null
+          created_at?: string
+          credentials?: string | null
+          email?: string | null
+          employment_end_date?: string | null
+          employment_start_date?: string | null
+          external_provider_id: string
+          first_name?: string | null
+          id?: string
+          languages?: string[] | null
+          last_import_run_id?: string | null
+          last_name?: string | null
+          license_inventory_status?: string | null
+          npi?: string | null
+          phone_number?: string | null
+          practice_restrictions?: string | null
+          preferred_name?: string | null
+          primary_specialty?: string | null
+          primary_taxonomy?: string | null
+          profession?: string | null
+          profile_id?: string | null
+          secondary_specialty?: string | null
+          secondary_taxonomy?: string | null
+          updated_at?: string
+          verified_as_of?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          agency_classification?: string | null
+          agency_id?: string
+          agency_reported_status?: string | null
+          agreement_inventory_status?: string | null
+          created_at?: string
+          credentials?: string | null
+          email?: string | null
+          employment_end_date?: string | null
+          employment_start_date?: string | null
+          external_provider_id?: string
+          first_name?: string | null
+          id?: string
+          languages?: string[] | null
+          last_import_run_id?: string | null
+          last_name?: string | null
+          license_inventory_status?: string | null
+          npi?: string | null
+          phone_number?: string | null
+          practice_restrictions?: string | null
+          preferred_name?: string | null
+          primary_specialty?: string | null
+          primary_taxonomy?: string | null
+          profession?: string | null
+          profile_id?: string | null
+          secondary_specialty?: string | null
+          secondary_taxonomy?: string | null
+          updated_at?: string
+          verified_as_of?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_providers_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_providers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_providers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_providers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hiring_candidates: {
         Row: {
           candidate_name: string
