@@ -8,6 +8,13 @@
       "when": 1792001612481,
       "tag": "0000_medallion_directory_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792002032481,
+      "tag": "0001_internal_cron_tokens",
+      "breakpoints": true
     }
   ]
 }
