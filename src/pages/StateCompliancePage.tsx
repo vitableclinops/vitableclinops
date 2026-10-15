@@ -77,7 +77,9 @@ const StateCompliancePage = () => {
 
   const { profile, roles } = useAuth();
   const { allData: complianceAllData, loading: complianceLoading, refetch: refetchCompliance } = useStateCompliance();
-  const userRole = roles[0] || 'admin';
+  // A user may hold several roles; admin takes precedence so edit access
+  // doesn't depend on the order roles come back from the database.
+  const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'admin');
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
 
