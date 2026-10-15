@@ -492,7 +492,7 @@ export default function AgreementDetailPage() {
                 <div className="mb-6 p-4 rounded-lg border border-destructive/40 bg-destructive/10">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="h-5 w-5 text-destructive" />
-                    <span className="font-medium">Why this agreement is invalid</span>
+                    <span className="font-medium">Agreement Invalid</span>
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
                     {invalidation?.reason || 'Marked invalid by the nightly agreement check (no reason recorded).'}
