@@ -238,6 +238,41 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
     enabled: !!provider,
   });
 
+  // Fetch this provider's invalid agreements with the reason each was
+  // invalidated, from the agreement audit log (action 'auto_invalidated').
+  const { data: invalidAgreements = [] } = useQuery({
+    queryKey: ['provider-invalid-agreements', provider?.id],
+    queryFn: async () => {
+      if (!provider) return [];
+      const { data: links, error: linkError } = await supabase
+        .from('agreement_providers')
+        .select('agreement_id, collaborative_agreements(id, state_abbreviation, physician_name, workflow_status)')
+        .eq('provider_id', provider.id);
+      if (linkError) throw linkError;
+      const invalid = (links || [])
+        .map((row: any) => row.collaborative_agreements)
+        .filter((a: any) => a && a.workflow_status === 'invalid');
+      if (invalid.length === 0) return [];
+      const ids = invalid.map((a: any) => a.id);
+      const { data: logs, error: logError } = await supabase
+        .from('agreement_audit_log')
+        .select('entity_id, action, changes, created_at')
+        .eq('entity_type', 'agreement')
+        .in('entity_id', ids)
+        .order('created_at', { ascending: false });
+      if (logError) throw logError;
+      return invalid.map((a: any) => {
+        const entry = (logs || []).find((l: any) => l.entity_id === a.id && l.action === 'auto_invalidated');
+        return {
+          ...a,
+          reason: (entry?.changes as any)?.reason || null,
+          invalidatedAt: entry?.created_at || null,
+        };
+      });
+    },
+    enabled: !!provider,
+  });
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!provider) return;
@@ -375,6 +410,30 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                 No documentation on file for {missingDocAgreements.length} active agreement{missingDocAgreements.length > 1 ? 's' : ''}
                 {' '}— {missingDocAgreements.map((a: any) => `${a.state_abbreviation} (${a.physician_name || 'Unassigned'})`).join(', ')}.
               </span>
+            </div>
+          </div>
+        )}
+
+        {invalidAgreements.length > 0 && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div className="text-sm space-y-1.5">
+              <span className="font-medium">
+                {invalidAgreements.length} invalid agreement{invalidAgreements.length > 1 ? 's' : ''}
+              </span>
+              <ul className="list-disc pl-4 text-muted-foreground space-y-1">
+                {invalidAgreements.map((a: any) => (
+                  <li key={a.id}>
+                    <span className="font-medium text-foreground">{a.state_abbreviation} ({a.physician_name || 'Unassigned'})</span>
+                    {' '}— {a.reason || 'Marked invalid by the nightly agreement check (no reason recorded).'}
+                    {a.invalidatedAt && (
+                      <span className="block text-xs">
+                        Flagged {new Date(a.invalidatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         )}
