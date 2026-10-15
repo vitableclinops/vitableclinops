@@ -218,6 +218,26 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
     enabled: !!provider,
   });
 
+  // Fetch this provider's active agreements to surface missing requirements
+  // (currently: agreements with no documentation on file — same rule as the
+  // "Missing Docs" status square on the agreements page).
+  const { data: missingDocAgreements = [] } = useQuery({
+    queryKey: ['provider-missing-requirements', provider?.id],
+    queryFn: async () => {
+      if (!provider) return [];
+      const { data, error } = await supabase
+        .from('agreement_providers')
+        .select('agreement_id, collaborative_agreements(id, state_abbreviation, physician_name, workflow_status, agreement_document_url, medallion_document_url)')
+        .eq('provider_id', provider.id)
+        .eq('is_active', true);
+      if (error) throw error;
+      return (data || [])
+        .map((row: any) => row.collaborative_agreements)
+        .filter((a: any) => a && a.workflow_status === 'active' && !a.agreement_document_url && !a.medallion_document_url);
+    },
+    enabled: !!provider,
+  });
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!provider) return;
