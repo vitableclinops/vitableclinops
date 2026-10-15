@@ -49,6 +49,7 @@ import {
   UserMinus,
   Info,
   ChevronDown,
+  X,
 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
