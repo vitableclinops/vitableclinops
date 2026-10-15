@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { getCollabRequirementLabel, type CollabRequirementType } from '@/constants/stateRestrictions';
 import { Link } from 'react-router-dom';
 import { ExternalLink, Search, ChevronDown, ChevronUp, CheckCircle2, XCircle, Minus, Pencil, Save, X } from 'lucide-react';
@@ -82,7 +82,7 @@ const EditableTextCell = ({ value, onChange, placeholder }: { value: string; onC
   />
 );
 
-const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange }: RequirementsMatrixTableProps) => {
+const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange, initialEditAbbr }: RequirementsMatrixTableProps) => {
   const [search, setSearch] = useState('');
   const [caFilter, setCaFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [nlcFilter, setNlcFilter] = useState<'all' | 'yes' | 'no'>('all');
