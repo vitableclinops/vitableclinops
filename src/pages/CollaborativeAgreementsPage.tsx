@@ -13,7 +13,6 @@ import { TransferWorkflowCard } from '@/components/agreements/TransferWorkflowCa
 import { CompletedTransfersTab } from '@/components/agreements/CompletedTransfersTab';
 import { AdminTaskQueue } from '@/components/agreements/AdminTaskQueue';
 import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard';
-import { LicenseMismatchReview } from '@/components/agreements/LicenseMismatchReview';
 import { useAgreementTransfers } from '@/hooks/useAgreementTransfers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -786,9 +785,6 @@ const CollaborativeAgreementsPage = () => {
                 <Mail className="h-4 w-4" />
                 Notifications
               </TabsTrigger>
-              <TabsTrigger value="license-review" className="gap-2 px-4">
-                License Review
-              </TabsTrigger>
             </TabsList>
 
             {/* All Agreements Tab */}
@@ -1433,10 +1429,6 @@ const CollaborativeAgreementsPage = () => {
                   </Button>
                 </CardContent>
               </Card>
-            </TabsContent>
-
-            <TabsContent value="license-review">
-              <LicenseMismatchReview />
             </TabsContent>
 
             {/* Notifications Tab */}
