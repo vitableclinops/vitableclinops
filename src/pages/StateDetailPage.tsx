@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { InitiateLicensureDialog } from '@/components/licensure/InitiateLicensureDialog';
 import { useAllLicensureApplications, useStateTemplates } from '@/hooks/useLicensureApplications';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { RelatedLinksCard } from '@/components/navigation/RelatedLinksCard';
