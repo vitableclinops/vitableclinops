@@ -89,7 +89,7 @@ const defaultValues: ProviderFormValues = {
 export default function AdminAddProviderPage() {
   const navigate = useNavigate();
   const { profile, roles } = useAuth();
-  const userRole = roles[0] || 'admin';
+  const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'admin');
   const userName = profile?.full_name || profile?.email || 'Admin';
   const userEmail = profile?.email || '';
 

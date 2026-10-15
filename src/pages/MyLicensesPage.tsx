@@ -18,7 +18,7 @@ export default function MyLicensesPage() {
 
   const userName = profile?.full_name || 'Provider';
   const userEmail = profile?.email || '';
-  const userRole = roles[0] || 'provider';
+  const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'provider');
 
   const fetchData = async () => {
     if (!profile?.id) return;

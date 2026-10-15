@@ -65,7 +65,7 @@ export default function EnhancementRegistryPage() {
     });
   };
 
-  const userRole = roles[0] || 'admin';
+  const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'admin');
   const userName = profile?.full_name || profile?.email || 'User';
   const userEmail = profile?.email || '';
 

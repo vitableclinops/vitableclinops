@@ -150,7 +150,7 @@ export default function SystemSettingsPage() {
   const [showGuide, setShowGuide] = useState(false);
   const [newMappingProfileId, setNewMappingProfileId] = useState('');
 
-  const userRole = roles[0] || 'provider';
+  const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'provider');
   const userName = profile?.full_name || profile?.email || 'User';
   const userEmail = profile?.email || '';
 

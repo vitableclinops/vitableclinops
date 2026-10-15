@@ -150,7 +150,7 @@ export default function ScheduledHoursPage() {
   return (
     <div className="min-h-screen flex w-full bg-background">
       <AppSidebar
-        userRole={roles[0] ?? 'admin'}
+        userRole={roles.includes('admin') ? 'admin' : (roles[0] ?? 'admin')}
         userName={profile?.full_name ?? ''}
         userEmail={user?.email ?? ''}
       />
