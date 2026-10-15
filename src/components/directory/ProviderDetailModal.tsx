@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FileText, ExternalLink, Pencil, Save, X, Link2 } from 'lucide-react';
+import { FileText, ExternalLink, Pencil, Save, X, Link2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const PROFESSION_OPTIONS = [
@@ -365,6 +365,19 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
             </div>
           </DialogTitle>
         </DialogHeader>
+
+        {missingDocAgreements.length > 0 && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <span className="font-medium">Missing requirements:</span>{' '}
+              <span className="text-muted-foreground">
+                No documentation on file for {missingDocAgreements.length} active agreement{missingDocAgreements.length > 1 ? 's' : ''}
+                {' '}— {missingDocAgreements.map((a: any) => `${a.state_abbreviation} (${a.physician_name || 'Unassigned'})`).join(', ')}.
+              </span>
+            </div>
+          </div>
+        )}
 
         <Tabs defaultValue="professional" className="mt-4">
           <TabsList className="w-full grid grid-cols-6">
