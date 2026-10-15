@@ -77,6 +77,7 @@ export default function AgreementDetailPage() {
   const [transferOpen, setTransferOpen] = useState(false);
   const [physicians, setPhysicians] = useState<{ id: string; name: string; email: string }[]>([]);
   const [advancing, setAdvancing] = useState(false);
+  const [invalidation, setInvalidation] = useState<{ reason: string | null; at: string } | null>(null);
   const [editingTask, setEditingTask] = useState<TaskDialogTask | null>(null);
 
   const taskToDashboardItem = (task: AgreementTask): TaskDialogTask => ({
@@ -127,6 +128,19 @@ export default function AgreementDetailPage() {
     ]);
 
     if (agreementRes.data) setAgreement(agreementRes.data);
+    if (agreementRes.data?.workflow_status === 'invalid') {
+      const { data: invLog } = await supabase
+        .from('agreement_audit_log')
+        .select('changes, created_at')
+        .eq('entity_id', agreementId)
+        .eq('action', 'auto_invalidated')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setInvalidation(invLog ? { reason: (invLog.changes as any)?.reason || null, at: invLog.created_at } : { reason: null, at: '' });
+    } else {
+      setInvalidation(null);
+    }
     if (providersRes.data) setProviders(providersRes.data);
     if (meetingsRes.data) setMeetings(meetingsRes.data);
     if (physiciansRes.data) {
@@ -472,6 +486,24 @@ export default function AgreementDetailPage() {
                   )}
                 </div>
               </div>
+
+              {/* Invalid reason banner */}
+              {agreement.workflow_status === 'invalid' && (
+                <div className="mb-6 p-4 rounded-lg border border-destructive/40 bg-destructive/10">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                    <span className="font-medium">Why this agreement is invalid</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {invalidation?.reason || 'Marked invalid by the nightly agreement check (no reason recorded).'}
+                    {invalidation?.at && (
+                      <span className="block text-xs mt-1">
+                        Flagged {format(new Date(invalidation.at), 'MMM d, yyyy h:mm a')} by the nightly agreement check.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
 
               {/* Blocker Banner */}
               {(['in_progress', 'pending_setup', 'pending_signatures', 'termination_initiated'].includes(agreement.workflow_status)) && pendingRequiredTasks.length > 0 && (
@@ -1239,6 +1271,9 @@ function AuditHistory({ agreementId }: { agreementId: string }) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium capitalize">{log.action.replace(/_/g, ' ')}</p>
+                  {(log.changes as any)?.reason && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{(log.changes as any).reason}</p>
+                  )}
                   {log.performed_by_name && (
                     <p className="text-xs text-muted-foreground">by {log.performed_by_name}</p>
                   )}
