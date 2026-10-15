@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { InitiateLicensureDialog } from '@/components/licensure/InitiateLicensureDialog';
 import { useAllLicensureApplications, useStateTemplates } from '@/hooks/useLicensureApplications';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { RelatedLinksCard } from '@/components/navigation/RelatedLinksCard';
@@ -67,6 +67,7 @@ interface ProviderLicense {
 
 export default function StateDetailPage() {
   const { stateAbbr } = useParams<{ stateAbbr: string }>();
+  const navigate = useNavigate();
   const { profile, roles } = useAuth();
   const { allData: complianceData, getStateCompliance, loading: complianceLoading } = useStateCompliance();
   
@@ -285,7 +286,7 @@ export default function StateDetailPage() {
                   <FileText className="h-4 w-4 mr-2" />
                   Initiate Licensure
                 </Button>
-                <Button variant="outline">
+                <Button variant="outline" onClick={() => navigate(`/admin/states?tab=requirements&edit=${stateAbbr?.toUpperCase()}`)}>
                   <Edit className="h-4 w-4 mr-2" />
                   Edit State
                 </Button>
@@ -780,7 +781,7 @@ export default function StateDetailPage() {
                   },
                   {
                     label: 'State Compliance Data',
-                    href: '/admin/states',
+                    href: `/admin/states?tab=requirements&edit=${stateAbbr?.toUpperCase()}`,
                     icon: Shield,
                     description: 'Edit compliance requirements',
                   },
