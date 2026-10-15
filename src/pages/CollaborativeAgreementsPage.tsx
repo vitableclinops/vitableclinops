@@ -643,6 +643,8 @@ const CollaborativeAgreementsPage = () => {
               subtitle={`${uniqueStates.length} states covered`}
               icon={FileText}
               variant="success"
+              onClick={() => handleStatCardClick('active')}
+              active={statFilter === 'active'}
             />
             <StatCard
               title="Upcoming Meetings"
@@ -650,6 +652,8 @@ const CollaborativeAgreementsPage = () => {
               subtitle="Next 14 days"
               icon={Calendar}
               variant={upcomingMeetings > 0 ? 'warning' : 'default'}
+              onClick={() => handleStatCardClick('upcoming_meetings')}
+              active={statFilter === 'upcoming_meetings'}
             />
             <StatCard
               title="Renewals Due"
@@ -657,6 +661,8 @@ const CollaborativeAgreementsPage = () => {
               subtitle="Next 30 days"
               icon={Clock}
               variant={renewalsDue > 0 ? 'danger' : 'success'}
+              onClick={() => handleStatCardClick('renewals')}
+              active={statFilter === 'renewals'}
             />
             <StatCard
               title="Missing Docs"
@@ -664,6 +670,8 @@ const CollaborativeAgreementsPage = () => {
               subtitle="Need documentation"
               icon={AlertTriangle}
               variant={agreementsWithoutDocument > 0 ? 'danger' : 'success'}
+              onClick={() => handleStatCardClick('missing_docs')}
+              active={statFilter === 'missing_docs'}
             />
             <StatCard
               title="Total Providers"
