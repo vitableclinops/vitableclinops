@@ -414,6 +414,30 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
           </div>
         )}
 
+        {invalidAgreements.length > 0 && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div className="text-sm space-y-1.5">
+              <span className="font-medium">
+                {invalidAgreements.length} invalid agreement{invalidAgreements.length > 1 ? 's' : ''}
+              </span>
+              <ul className="list-disc pl-4 text-muted-foreground space-y-1">
+                {invalidAgreements.map((a: any) => (
+                  <li key={a.id}>
+                    <span className="font-medium text-foreground">{a.state_abbreviation} ({a.physician_name || 'Unassigned'})</span>
+                    {' '}— {a.reason || 'Marked invalid by the nightly agreement check (no reason recorded).'}
+                    {a.invalidatedAt && (
+                      <span className="block text-xs">
+                        Flagged {new Date(a.invalidatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
         <Tabs defaultValue="professional" className="mt-4">
           <TabsList className="w-full grid grid-cols-6">
             <TabsTrigger value="professional">Professional</TabsTrigger>
