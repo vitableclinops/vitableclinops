@@ -59,8 +59,16 @@ const StateCompliancePage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
+  const editParam = searchParams.get('edit');
   
-  const [activeMainTab, setActiveMainTab] = useState(tabParam === 'compliance' ? 'compliance' : 'states');
+  const [activeMainTab, setActiveMainTab] = useState(
+    tabParam && ['states', 'requirements', 'templates', 'compliance'].includes(tabParam) ? tabParam : 'states'
+  );
+  const [editAbbr, setEditAbbr] = useState<string | null>(editParam);
+  const openStateEditor = (abbr: string) => {
+    setEditAbbr(abbr);
+    setActiveMainTab('requirements');
+  };
   
   // State Directory state
   const [states, setStates] = useState<State[]>(initialStates);

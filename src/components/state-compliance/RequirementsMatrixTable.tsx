@@ -191,9 +191,9 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange,
     setCaFilter('all');
     setNlcFilter('all');
     startEditing(target);
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       document.querySelector(`[data-state-abbr="${target.state_abbreviation}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    });
+    }, 150);
   }, [loading, isAdmin, initialEditAbbr, data, startEditing]);
 
   const caRequiredCount = data.filter(s => s.ca_required).length;
@@ -204,7 +204,6 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange,
   }
 
   const isEditing = (id: string) => editingId === id;
-  void autoEditDone;
 
   return (
     <div className="space-y-4">
