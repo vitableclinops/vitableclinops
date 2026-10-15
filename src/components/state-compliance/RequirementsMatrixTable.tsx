@@ -31,6 +31,8 @@ interface RequirementsMatrixTableProps {
   loading: boolean;
   isAdmin?: boolean;
   onDataChange?: () => void;
+  /** State abbreviation to open in edit mode on load. */
+  initialEditAbbr?: string | null;
 }
 
 type SortField = 'state_name' | 'ca_required' | 'rxr_required' | 'nlc' | 'fpa_status' | 'ca_meeting_cadence';
@@ -178,6 +180,22 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange,
       return 0;
     });
 
+  // Deep link (e.g. ?tab=requirements&edit=TX): open that state's row in edit mode once.
+  const autoEditDone = useRef(false);
+  useEffect(() => {
+    if (autoEditDone.current || loading || !isAdmin || !initialEditAbbr || data.length === 0) return;
+    const target = data.find(s => s.state_abbreviation.toUpperCase() === initialEditAbbr.toUpperCase());
+    if (!target) return;
+    autoEditDone.current = true;
+    setSearch('');
+    setCaFilter('all');
+    setNlcFilter('all');
+    startEditing(target);
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-state-abbr="${target.state_abbreviation}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  }, [loading, isAdmin, initialEditAbbr, data, startEditing]);
+
   const caRequiredCount = data.filter(s => s.ca_required).length;
   const nlcCount = data.filter(s => s.nlc).length;
 
@@ -186,6 +204,7 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange,
   }
 
   const isEditing = (id: string) => editingId === id;
+  void autoEditDone;
 
   return (
     <div className="space-y-4">
@@ -288,7 +307,7 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange,
             {filtered.map(state => {
               const editing = isEditing(state.id);
               return (
-                <TableRow key={state.id} className={cn("hover:bg-muted/30", editing && "bg-primary/5")}>
+                <TableRow key={state.id} data-state-abbr={state.state_abbreviation} className={cn("hover:bg-muted/30", editing && "bg-primary/5")}>
                   <TableCell>
                     <Link 
                       to={`/states/${state.state_abbreviation}`}
