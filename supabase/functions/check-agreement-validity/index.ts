@@ -95,20 +95,47 @@ Deno.serve(async (req) => {
         if (!ap.is_active || !ap.provider_id) continue;
 
         // Check if provider has at least one valid license for this state
-        const { data: licenses } = await supabase
+        const { data: licenses, error: licErr } = await supabase
           .from("provider_licenses")
           .select("status, expiration_date, license_type")
           .eq("profile_id", ap.provider_id)
           .eq("state_abbreviation", agreement.state_abbreviation);
 
-        // Provider needs at least one active/verified license that isn't expired
+        // Never invalidate on a failed lookup (caused the Feb 21 mass false positives)
+        if (licErr) {
+          results.errors.push(`License lookup ${agreement.id}: ${licErr.message}`);
+          continue;
+        }
+
         const hasValidLicense = (licenses || []).some(
           (lic) =>
             (lic.status === "active" || lic.status === "verified") &&
             (!lic.expiration_date || lic.expiration_date >= today)
         );
 
-        const licenseExpired = !hasValidLicense;
+        if (hasValidLicense) continue;
+
+        // Medallion is the source of truth for licensing — consult it before invalidating
+        const { data: medLic, error: medErr } = await supabase
+          .from("medallion_licenses")
+          .select("status, expiration_date")
+          .eq("profile_id", ap.provider_id)
+          .eq("state", agreement.state_abbreviation);
+
+        if (medErr) {
+          results.errors.push(`Medallion lookup ${agreement.id}: ${medErr.message}`);
+          continue;
+        }
+
+        const medallionValid = (medLic || []).some(
+          (l) => l.status === "active" && (!l.expiration_date || l.expiration_date >= today)
+        );
+        if (medallionValid) {
+          (results as any).keptByMedallion = ((results as any).keptByMedallion || 0) + 1;
+          continue;
+        }
+
+        const licenseExpired = true;
 
         if (licenseExpired) {
           // Invalidate the agreement
