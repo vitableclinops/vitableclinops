@@ -65,6 +65,11 @@ import type { Tables } from '@/integrations/supabase/types';
 type DbAgreement = Tables<'collaborative_agreements'>;
 type DbProvider = Tables<'agreement_providers'>;
 
+// Clickable status-square filters. Kept in the URL so clicking a square reloads
+// the page with the filter applied (and the filtered view can be shared/bookmarked).
+type StatFilter = 'all' | 'active' | 'upcoming_meetings' | 'renewals' | 'missing_docs';
+const STAT_FILTER_VALUES: StatFilter[] = ['all', 'active', 'upcoming_meetings', 'renewals', 'missing_docs'];
+
 // Helper functions for date calculations
 // Note: Next meeting dates are now pulled from scheduled meetings in the database,
 // not auto-calculated from cadence. Cadence is shown for reference only.
@@ -158,7 +163,9 @@ const CollaborativeAgreementsPage = () => {
   const [physicianFilter, setPhysicianFilter] = useState<string>('all');
   const [showGuide, setShowGuide] = useState(false);
   const [meetingFilter, setMeetingFilter] = useState<string>('all');
-  const [statFilter, setStatFilter] = useState<'all' | 'active' | 'upcoming_meetings' | 'renewals' | 'missing_docs'>('all');
+  const statParam = searchParams.get('stat');
+  const statFilter: StatFilter =
+    statParam && STAT_FILTER_VALUES.includes(statParam as StatFilter) ? (statParam as StatFilter) : 'all';
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'all-agreements');
   const [wizardOpen, setWizardOpen] = useState(false);
   const [meetingWizardOpen, setMeetingWizardOpen] = useState(false);
@@ -337,9 +344,22 @@ const CollaborativeAgreementsPage = () => {
     return matchesSearch && matchesStatus && matchesState && matchesPhysician && matchesMeeting && matchesStat;
   });
 
-  const handleStatCardClick = (filter: typeof statFilter) => {
-    setStatFilter(prev => prev === filter ? 'all' : filter);
-    setActiveTab('all-agreements');
+  // Navigating with the filter in the URL forces a fresh load of the page, so the
+  // list is always rebuilt from current data rather than patched in place.
+  const goToStatFilter = (filter: StatFilter) => {
+    const next = new URLSearchParams(searchParams);
+    if (filter === 'all') {
+      next.delete('stat');
+    } else {
+      next.set('stat', filter);
+    }
+    next.delete('tab');
+    const qs = next.toString();
+    window.location.assign(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  };
+
+  const handleStatCardClick = (filter: StatFilter) => {
+    goToStatFilter(statFilter === filter ? 'all' : filter);
   };
 
   // Bulk selection helpers
@@ -834,7 +854,7 @@ const CollaborativeAgreementsPage = () => {
                     variant="secondary"
                     size="sm"
                     className="h-10 gap-1.5"
-                    onClick={() => setStatFilter('all')}
+                    onClick={() => goToStatFilter('all')}
                   >
                     {statFilter === 'active' && 'Active agreements'}
                     {statFilter === 'upcoming_meetings' && 'Upcoming meetings'}
