@@ -378,16 +378,18 @@ const StateCompliancePage = () => {
                                   </div>
                                 </div>
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label="Edit state compliance"
-                                title="Edit"
-                                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
+                              {userRole === 'admin' && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Edit ${state.name} requirements`}
+                                  title="Edit"
+                                  className="opacity-60 group-hover:opacity-100 transition-opacity"
+                                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); openStateEditor(state.abbreviation); }}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </CardHeader>
                           <CardContent className="space-y-4">
@@ -497,7 +499,7 @@ const StateCompliancePage = () => {
 
             {/* Requirements Matrix Tab */}
             <TabsContent value="requirements" className="space-y-6">
-              <RequirementsMatrixTable data={complianceAllData} loading={complianceLoading} isAdmin={userRole === 'admin'} onDataChange={refetchCompliance} />
+              <RequirementsMatrixTable key={editAbbr ?? 'none'} data={complianceAllData} loading={complianceLoading} isAdmin={userRole === 'admin'} onDataChange={refetchCompliance} initialEditAbbr={editAbbr} />
             </TabsContent>
 
             {/* Licensure Templates Tab */}

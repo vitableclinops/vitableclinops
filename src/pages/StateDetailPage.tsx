@@ -285,7 +285,7 @@ export default function StateDetailPage() {
                   <FileText className="h-4 w-4 mr-2" />
                   Initiate Licensure
                 </Button>
-                <Button variant="outline">
+                <Button variant="outline" onClick={() => navigate(`/admin/states?tab=requirements&edit=${stateAbbr?.toUpperCase()}`)}>
                   <Edit className="h-4 w-4 mr-2" />
                   Edit State
                 </Button>
