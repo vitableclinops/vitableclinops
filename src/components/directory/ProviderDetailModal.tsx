@@ -491,6 +491,11 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                       {agreementCount > 0 ? `${agreementCount} active` : 'None'}
                     </Badge>
                     <span className="text-sm text-muted-foreground">Collab Agreements</span>
+                    {missingDocAgreements.length > 0 && (
+                      <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+                        {missingDocAgreements.length} missing docs
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={provider.auto_renew_licenses ? 'default' : 'secondary'}>
