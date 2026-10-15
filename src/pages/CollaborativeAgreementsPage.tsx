@@ -157,6 +157,7 @@ const CollaborativeAgreementsPage = () => {
   const [physicianFilter, setPhysicianFilter] = useState<string>('all');
   const [showGuide, setShowGuide] = useState(false);
   const [meetingFilter, setMeetingFilter] = useState<string>('all');
+  const [statFilter, setStatFilter] = useState<'all' | 'active' | 'upcoming_meetings' | 'renewals' | 'missing_docs'>('all');
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'all-agreements');
   const [wizardOpen, setWizardOpen] = useState(false);
   const [meetingWizardOpen, setMeetingWizardOpen] = useState(false);
@@ -320,8 +321,25 @@ const CollaborativeAgreementsPage = () => {
       }
     }
     
-    return matchesSearch && matchesStatus && matchesState && matchesPhysician && matchesMeeting;
+    // Stat card filter logic (clickable status squares)
+    let matchesStat = true;
+    if (statFilter === 'active') {
+      matchesStat = agreement.isActive;
+    } else if (statFilter === 'upcoming_meetings') {
+      matchesStat = agreement.isActive && agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting >= 0 && agreement.daysUntilMeeting <= 14;
+    } else if (statFilter === 'renewals') {
+      matchesStat = agreement.isActive && agreement.daysUntilRenewal !== null && agreement.daysUntilRenewal <= 30;
+    } else if (statFilter === 'missing_docs') {
+      matchesStat = agreement.isActive && !agreement.documentUrl && !agreement.medallionDocumentUrl;
+    }
+
+    return matchesSearch && matchesStatus && matchesState && matchesPhysician && matchesMeeting && matchesStat;
   });
+
+  const handleStatCardClick = (filter: typeof statFilter) => {
+    setStatFilter(prev => prev === filter ? 'all' : filter);
+    setActiveTab('all-agreements');
+  };
 
   // Bulk selection helpers
   const isAllSelected = filteredFlatAgreements.length > 0 && 
