@@ -49,6 +49,7 @@ import {
   UserMinus,
   Info,
   ChevronDown,
+  X,
 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -157,6 +158,7 @@ const CollaborativeAgreementsPage = () => {
   const [physicianFilter, setPhysicianFilter] = useState<string>('all');
   const [showGuide, setShowGuide] = useState(false);
   const [meetingFilter, setMeetingFilter] = useState<string>('all');
+  const [statFilter, setStatFilter] = useState<'all' | 'active' | 'upcoming_meetings' | 'renewals' | 'missing_docs'>('all');
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'all-agreements');
   const [wizardOpen, setWizardOpen] = useState(false);
   const [meetingWizardOpen, setMeetingWizardOpen] = useState(false);
@@ -320,8 +322,25 @@ const CollaborativeAgreementsPage = () => {
       }
     }
     
-    return matchesSearch && matchesStatus && matchesState && matchesPhysician && matchesMeeting;
+    // Stat card filter logic (clickable status squares)
+    let matchesStat = true;
+    if (statFilter === 'active') {
+      matchesStat = agreement.isActive;
+    } else if (statFilter === 'upcoming_meetings') {
+      matchesStat = agreement.isActive && agreement.daysUntilMeeting !== null && agreement.daysUntilMeeting >= 0 && agreement.daysUntilMeeting <= 14;
+    } else if (statFilter === 'renewals') {
+      matchesStat = agreement.isActive && agreement.daysUntilRenewal !== null && agreement.daysUntilRenewal <= 30;
+    } else if (statFilter === 'missing_docs') {
+      matchesStat = agreement.isActive && !agreement.documentUrl && !agreement.medallionDocumentUrl;
+    }
+
+    return matchesSearch && matchesStatus && matchesState && matchesPhysician && matchesMeeting && matchesStat;
   });
+
+  const handleStatCardClick = (filter: typeof statFilter) => {
+    setStatFilter(prev => prev === filter ? 'all' : filter);
+    setActiveTab('all-agreements');
+  };
 
   // Bulk selection helpers
   const isAllSelected = filteredFlatAgreements.length > 0 && 
@@ -625,6 +644,8 @@ const CollaborativeAgreementsPage = () => {
               subtitle={`${uniqueStates.length} states covered`}
               icon={FileText}
               variant="success"
+              onClick={() => handleStatCardClick('active')}
+              active={statFilter === 'active'}
             />
             <StatCard
               title="Upcoming Meetings"
@@ -632,6 +653,8 @@ const CollaborativeAgreementsPage = () => {
               subtitle="Next 14 days"
               icon={Calendar}
               variant={upcomingMeetings > 0 ? 'warning' : 'default'}
+              onClick={() => handleStatCardClick('upcoming_meetings')}
+              active={statFilter === 'upcoming_meetings'}
             />
             <StatCard
               title="Renewals Due"
@@ -639,6 +662,8 @@ const CollaborativeAgreementsPage = () => {
               subtitle="Next 30 days"
               icon={Clock}
               variant={renewalsDue > 0 ? 'danger' : 'success'}
+              onClick={() => handleStatCardClick('renewals')}
+              active={statFilter === 'renewals'}
             />
             <StatCard
               title="Missing Docs"
@@ -646,6 +671,8 @@ const CollaborativeAgreementsPage = () => {
               subtitle="Need documentation"
               icon={AlertTriangle}
               variant={agreementsWithoutDocument > 0 ? 'danger' : 'success'}
+              onClick={() => handleStatCardClick('missing_docs')}
+              active={statFilter === 'missing_docs'}
             />
             <StatCard
               title="Total Providers"
@@ -801,6 +828,21 @@ const CollaborativeAgreementsPage = () => {
                     <SelectItem value="none">None scheduled</SelectItem>
                   </SelectContent>
                 </Select>
+
+                {statFilter !== 'all' && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-10 gap-1.5"
+                    onClick={() => setStatFilter('all')}
+                  >
+                    {statFilter === 'active' && 'Active agreements'}
+                    {statFilter === 'upcoming_meetings' && 'Upcoming meetings'}
+                    {statFilter === 'renewals' && 'Renewals due'}
+                    {statFilter === 'missing_docs' && 'Missing docs'}
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
 
                 {(searchQuery || statusFilter !== 'all' || stateFilter !== 'all' || physicianFilter !== 'all' || meetingFilter !== 'all') && (
                   <Button

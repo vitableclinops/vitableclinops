@@ -12,6 +12,8 @@ interface StatCardProps {
   };
   variant?: 'default' | 'success' | 'warning' | 'danger';
   className?: string;
+  onClick?: () => void;
+  active?: boolean;
 }
 
 const variantStyles = {
@@ -27,10 +29,23 @@ export function StatCard({
   subtitle, 
   icon: Icon,
   variant = 'default',
-  className 
+  className,
+  onClick,
+  active
 }: StatCardProps) {
   return (
-    <div className={cn('stat-card', className)}>
+    <div
+      className={cn(
+        'stat-card',
+        onClick && 'cursor-pointer transition-shadow hover:shadow-md',
+        active && 'ring-2 ring-primary',
+        className
+      )}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+    >
       <div className="flex items-start justify-between">
         <div className="space-y-1">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
