@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FileText, ExternalLink, Pencil, Save, X, Link2 } from 'lucide-react';
+import { FileText, ExternalLink, Pencil, Save, X, Link2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const PROFESSION_OPTIONS = [
@@ -218,6 +218,26 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
     enabled: !!provider,
   });
 
+  // Fetch this provider's active agreements to surface missing requirements
+  // (currently: agreements with no documentation on file — same rule as the
+  // "Missing Docs" status square on the agreements page).
+  const { data: missingDocAgreements = [] } = useQuery({
+    queryKey: ['provider-missing-requirements', provider?.id],
+    queryFn: async () => {
+      if (!provider) return [];
+      const { data, error } = await supabase
+        .from('agreement_providers')
+        .select('agreement_id, collaborative_agreements(id, state_abbreviation, physician_name, workflow_status, agreement_document_url, medallion_document_url)')
+        .eq('provider_id', provider.id)
+        .eq('is_active', true);
+      if (error) throw error;
+      return (data || [])
+        .map((row: any) => row.collaborative_agreements)
+        .filter((a: any) => a && a.workflow_status === 'active' && !a.agreement_document_url && !a.medallion_document_url);
+    },
+    enabled: !!provider,
+  });
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!provider) return;
@@ -346,6 +366,19 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
           </DialogTitle>
         </DialogHeader>
 
+        {missingDocAgreements.length > 0 && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <span className="font-medium">Missing requirements:</span>{' '}
+              <span className="text-muted-foreground">
+                No documentation on file for {missingDocAgreements.length} active agreement{missingDocAgreements.length > 1 ? 's' : ''}
+                {' '}— {missingDocAgreements.map((a: any) => `${a.state_abbreviation} (${a.physician_name || 'Unassigned'})`).join(', ')}.
+              </span>
+            </div>
+          </div>
+        )}
+
         <Tabs defaultValue="professional" className="mt-4">
           <TabsList className="w-full grid grid-cols-6">
             <TabsTrigger value="professional">Professional</TabsTrigger>
@@ -458,6 +491,11 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                       {agreementCount > 0 ? `${agreementCount} active` : 'None'}
                     </Badge>
                     <span className="text-sm text-muted-foreground">Collab Agreements</span>
+                    {missingDocAgreements.length > 0 && (
+                      <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+                        {missingDocAgreements.length} missing docs
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={provider.auto_renew_licenses ? 'default' : 'secondary'}>
