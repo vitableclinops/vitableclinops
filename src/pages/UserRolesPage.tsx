@@ -51,7 +51,7 @@ export default function UserRolesPage() {
   const [statusTarget, setStatusTarget] = useState<{ user: UserWithRoles; nextStatus: 'active' | 'inactive' } | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  const userRole = roles[0] || 'provider';
+  const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'provider');
   const userName = profile?.full_name || profile?.email || 'User';
   const userEmail = profile?.email || '';
 

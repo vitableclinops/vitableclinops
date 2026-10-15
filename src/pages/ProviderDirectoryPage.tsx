@@ -130,7 +130,7 @@ const ProviderDirectoryPage = () => {
   const [sortColumn, setSortColumn] = useState('full_name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const userRole = roles[0] || 'provider';
+  const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'provider');
   const userName = profile?.full_name || profile?.email || 'User';
   const userEmail = profile?.email || '';
 

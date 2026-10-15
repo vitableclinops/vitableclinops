@@ -18,7 +18,7 @@ const TaskDetailView = () => {
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(true);
 
-  const userRole = (roles[0] || 'admin') as UserRole;
+  const userRole = (roles.includes('admin') ? 'admin' : (roles[0] || 'admin')) as UserRole;
   const userName = profile?.full_name || profile?.email || '';
   const userEmail = profile?.email || '';
   const isAdmin = roles.includes('admin');

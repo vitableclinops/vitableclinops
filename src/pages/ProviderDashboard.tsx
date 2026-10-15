@@ -100,7 +100,7 @@ const ProviderDashboard = () => {
     fetchDashboardData();
   }, [profile?.id]);
 
-  const userRole = roles[0] || 'provider';
+  const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'provider');
   const userName = profile?.full_name || 'Provider';
   const userEmail = profile?.email || '';
   const firstName = profile?.first_name || userName.split(' ')[0];

@@ -172,7 +172,7 @@ export default function ActivationQueuePage() {
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar
-        userRole={roles[0] || 'admin'}
+        userRole={roles.includes('admin') ? 'admin' : (roles[0] || 'admin')}
         userName={profile?.full_name || 'User'}
         userEmail={profile?.email || ''}
         userAvatarUrl={profile?.avatar_url || undefined}

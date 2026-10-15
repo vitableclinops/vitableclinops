@@ -20,7 +20,7 @@ export default function MyPodPage() {
   const isPodLead = roles.includes('pod_lead');
   const userName = profile?.full_name || 'User';
   const userEmail = profile?.email || '';
-  const userRole = roles[0] || 'provider';
+  const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'provider');
 
   useEffect(() => {
     if (!profile?.id || !isPodLead) return;
