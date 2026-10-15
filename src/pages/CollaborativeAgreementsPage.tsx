@@ -828,6 +828,21 @@ const CollaborativeAgreementsPage = () => {
                   </SelectContent>
                 </Select>
 
+                {statFilter !== 'all' && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-10 gap-1.5"
+                    onClick={() => setStatFilter('all')}
+                  >
+                    {statFilter === 'active' && 'Active agreements'}
+                    {statFilter === 'upcoming_meetings' && 'Upcoming meetings'}
+                    {statFilter === 'renewals' && 'Renewals due'}
+                    {statFilter === 'missing_docs' && 'Missing docs'}
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+
                 {(searchQuery || statusFilter !== 'all' || stateFilter !== 'all' || physicianFilter !== 'all' || meetingFilter !== 'all') && (
                   <Button
                     variant="ghost"
