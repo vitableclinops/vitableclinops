@@ -702,7 +702,7 @@ const CollaborativeAgreementsPage = () => {
           )}
 
           {/* Stats Grid */}
-          <div className="grid gap-4 md:grid-cols-5 mb-8">
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 mb-8">
             <StatCard
               title="Active Agreements"
               value={activeAgreementsCount}
@@ -746,23 +746,71 @@ const CollaborativeAgreementsPage = () => {
               icon={Users}
               variant="default"
             />
+            <StatCard
+              title="Incomplete"
+              value={incompleteAgreements.length}
+              subtitle="Need fixing"
+              icon={AlertTriangle}
+              variant={incompleteAgreements.length > 0 ? 'danger' : 'success'}
+              onClick={() => { setSelectedIncompleteId(null); setIncompleteOpen(true); }}
+            />
           </div>
 
-          {/* Data Integrity Warning */}
-          {incompleteAgreements.length > 0 && (
-            <div className="mb-6 flex items-start gap-3 p-4 rounded-lg border border-destructive/30 bg-destructive/5">
-              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-destructive">
-                  {incompleteAgreements.length} incomplete agreement{incompleteAgreements.length !== 1 ? 's' : ''} detected
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  These agreements have no provider assigned. Open each agreement and link a provider from the directory to maintain referential integrity.
-                  {incompleteAgreements.map(a => ` · ${a.state_abbreviation} (${a.physician_name || 'Unknown physician'})`).join('')}
-                </p>
+          <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Incomplete agreements ({incompleteAgreements.length})</DialogTitle>
+                <DialogDescription>Click an agreement to see why it's incomplete and how to fix it.</DialogDescription>
+              </DialogHeader>
+              {incompleteAgreements.length === 0 && (
+                <p className="text-sm text-muted-foreground">Nothing to fix — all agreements are complete.</p>
+              )}
+              <div className="space-y-2">
+                {incompleteAgreements.map(a => {
+                  const { linked, issues } = getIncompleteIssues(a);
+                  const open = selectedIncompleteId === a.id;
+                  return (
+                    <div key={a.id} className="rounded-lg border">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between gap-3 p-3 text-left hover:bg-muted/50"
+                        onClick={() => setSelectedIncompleteId(open ? null : a.id)}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {linked.map(p => p.provider_name).join(', ') || 'No provider'} — {a.state_abbreviation}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{a.physician_name || 'No physician'}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {getWorkflowBadge(a.workflow_status)}
+                          <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+                        </div>
+                      </button>
+                      {open && (
+                        <div className="border-t p-3 space-y-3 bg-muted/20">
+                          {issues.map((i, idx) => (
+                            <div key={idx} className="text-sm">
+                              <p className="font-medium text-destructive">Why: {i.reason}</p>
+                              <p className="text-muted-foreground">How to fix: {i.fix}</p>
+                            </div>
+                          ))}
+                          <div className="flex flex-wrap gap-2">
+                            {hasRole('admin') && issues.some(i => i.action === 'sync') && (
+                              <Button size="sm" onClick={() => syncProviderToAgreement(a)}>Fill in provider details</Button>
+                            )}
+                            <Button size="sm" variant="outline" asChild>
+                              <Link to={`/admin/agreements/${a.id}`}>Open agreement</Link>
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-          )}
+            </DialogContent>
+          </Dialog>
 
           {/* How to use guide */}
           <Collapsible open={showGuide} onOpenChange={setShowGuide} className="mb-4">
