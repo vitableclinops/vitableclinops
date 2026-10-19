@@ -177,6 +177,8 @@ const CollaborativeAgreementsPage = () => {
 
   // Document upload dialog
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [incompleteOpen, setIncompleteOpen] = useState(false);
+  const [selectedIncompleteId, setSelectedIncompleteId] = useState<string | null>(null);
   const [selectedFlatAgreement, setSelectedFlatAgreement] = useState<FlattenedAgreement | null>(null);
   const [documentUrl, setDocumentUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -243,6 +245,49 @@ const CollaborativeAgreementsPage = () => {
 
   // Incomplete agreements (shell records with no provider assigned)
   const incompleteAgreements = dbAgreements.filter(a => !a.provider_name && !a.provider_email);
+
+  const getIncompleteIssues = (a: DbAgreement) => {
+    const linked = dbProviders.filter(p => p.agreement_id === a.id && p.is_active);
+    const issues: { reason: string; fix: string; action?: 'sync' }[] = [];
+    if (linked.length === 0) {
+      issues.push({
+        reason: 'No provider is linked to this agreement.',
+        fix: 'Open the agreement and add the provider from the directory. If it was never used, it can be deleted.',
+      });
+    } else {
+      issues.push({
+        reason: `The agreement record is missing the provider's name and email, even though ${linked.map(p => p.provider_name).join(', ')} is linked.`,
+        fix: 'Click "Fill in provider details" to copy the linked provider onto the agreement.',
+        action: 'sync',
+      });
+    }
+    if (!a.physician_name) {
+      issues.push({ reason: 'No supervising physician is listed.', fix: 'Open the agreement and assign the supervising physician.' });
+    }
+    if (['cancelled', 'terminated'].includes(a.workflow_status) || a.terminated_at) {
+      issues.push({
+        reason: `This agreement is ${a.workflow_status === 'cancelled' ? 'cancelled' : 'terminated'}.`,
+        fix: 'It no longer needs to be fixed — it can be deleted if it was a duplicate or left as history.',
+      });
+    }
+    return { linked, issues };
+  };
+
+  const syncProviderToAgreement = async (a: DbAgreement) => {
+    const p = dbProviders.find(x => x.agreement_id === a.id && x.is_active);
+    if (!p) return;
+    const { error } = await supabase
+      .from('collaborative_agreements')
+      .update({ provider_name: p.provider_name, provider_email: p.provider_email, provider_id: p.provider_id } as any)
+      .eq('id', a.id);
+    if (error) {
+      toast({ title: 'Could not update agreement', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Provider details filled in', description: `${p.provider_name} — ${a.state_abbreviation}` });
+    setSelectedIncompleteId(null);
+    fetchDbAgreements();
+  };
 
   // Each agreement row now represents one provider–physician–state combo directly
   // Exclude cancelled agreements from the list entirely
