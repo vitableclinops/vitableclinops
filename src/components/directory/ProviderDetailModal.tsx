@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -21,8 +21,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FileText, ExternalLink, Pencil, Save, X, Link2, AlertTriangle } from 'lucide-react';
+import { FileText, ExternalLink, Pencil, Save, X, Link2, AlertTriangle, Upload, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 const PROFESSION_OPTIONS = [
   'NP',
@@ -168,8 +169,62 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
   const medallionStates = provider ? activeLicensedStates(medallionData?.licensesByProfile.get(provider.id)) : [];
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user, profile } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Record<string, any>>({});
+  const [uploadTarget, setUploadTarget] = useState<any | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Upload a signed agreement document straight from the missing-docs banner.
+  // Stores the file in the task-documents bucket and links it on the agreement,
+  // which clears the "missing doc" flag (same field the agreements page checks).
+  const handleAgreementDocUpload = async (file: File) => {
+    if (!uploadTarget) return;
+    setUploading(true);
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `${uploadTarget.id}/agreement-doc/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('task-documents')
+        .upload(storagePath, file);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = await supabase.storage
+        .from('task-documents')
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10); // 10-year URL
+      const docUrl = urlData?.signedUrl || storagePath;
+
+      const { error: updateError } = await supabase
+        .from('collaborative_agreements')
+        .update({ agreement_document_url: docUrl })
+        .eq('id', uploadTarget.id);
+      if (updateError) throw updateError;
+
+      await supabase.from('agreement_audit_log').insert({
+        entity_type: 'agreement',
+        entity_id: uploadTarget.id,
+        action: 'document_uploaded',
+        changes: { file_name: file.name, source: 'provider_directory' },
+        performed_by: user?.id || null,
+        performed_by_name: profile?.full_name || user?.email || 'Unknown',
+      });
+
+      toast({
+        title: 'Document uploaded',
+        description: `${uploadTarget.state_abbreviation} agreement now has documentation on file.`,
+      });
+      setUploadTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['provider-missing-requirements', provider?.id] });
+      queryClient.invalidateQueries({ queryKey: ['agreements'] });
+    } catch (err: any) {
+      console.error('Agreement doc upload error:', err);
+      toast({ title: 'Upload failed', description: err.message || 'Could not upload the document.', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const { agencies } = useAgencies();
 
@@ -408,8 +463,21 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
               <span className="font-medium">Missing requirements:</span>{' '}
               <span className="text-muted-foreground">
                 No documentation on file for {missingDocAgreements.length} active agreement{missingDocAgreements.length > 1 ? 's' : ''}
-                {' '}— {missingDocAgreements.map((a: any) => `${a.state_abbreviation} (${a.physician_name || 'Unassigned'})`).join(', ')}.
+                {' '}— click one to upload the document:
               </span>
+              <div className="flex flex-wrap gap-2 mt-1.5">
+                {missingDocAgreements.map((a: any) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => setUploadTarget(a)}
+                    className="inline-flex items-center gap-1 rounded-md border border-amber-500/50 bg-background px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-500/20 transition-colors"
+                  >
+                    <Upload className="h-3 w-3" />
+                    {a.state_abbreviation} ({a.physician_name || 'Unassigned'})
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -785,6 +853,51 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
           </TabsContent>
         </Tabs>
       </DialogContent>
+
+      {/* Upload dialog for satisfying a missing-document requirement */}
+      <Dialog open={!!uploadTarget} onOpenChange={(open) => { if (!open && !uploading) setUploadTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Upload agreement document</DialogTitle>
+          </DialogHeader>
+          {uploadTarget && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Upload the signed agreement document for{' '}
+                <span className="font-medium text-foreground">
+                  {uploadTarget.state_abbreviation} ({uploadTarget.physician_name || 'Unassigned'})
+                </span>
+                . This satisfies the missing documentation requirement.
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleAgreementDocUpload(file);
+                }}
+              />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full"
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Uploading…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" /> Choose file
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 };
