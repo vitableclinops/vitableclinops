@@ -43,6 +43,13 @@
       "when": 1792425126342,
       "tag": "0005_tighten_matching_contractor_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792425267351,
+      "tag": "0006_admin_edit_signed_in_view",
+      "breakpoints": true
     }
   ]
 }
