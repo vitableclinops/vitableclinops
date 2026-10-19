@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
@@ -49,6 +49,8 @@ import {
   RefreshCw,
   ArrowLeftRight,
   Paperclip,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -79,6 +81,8 @@ export default function AgreementDetailPage() {
   const [advancing, setAdvancing] = useState(false);
   const [invalidation, setInvalidation] = useState<{ reason: string | null; at: string } | null>(null);
   const [editingTask, setEditingTask] = useState<TaskDialogTask | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const taskToDashboardItem = (task: AgreementTask): TaskDialogTask => ({
     id: task.id,
