@@ -256,6 +256,54 @@ export default function AgreementDetailPage() {
     }
   };
 
+  // Upload a signed agreement document directly on the agreement page.
+  // Same flow as the provider page: stores the file in the task-documents
+  // bucket and links it on the agreement, clearing the "missing doc" flag.
+  const handleAgreementDocUpload = async (file: File) => {
+    if (!agreement) return;
+    setUploading(true);
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `${agreement.id}/agreement-doc/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('task-documents')
+        .upload(storagePath, file);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = await supabase.storage
+        .from('task-documents')
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10); // 10-year URL
+      const docUrl = urlData?.signedUrl || storagePath;
+
+      const { error: updateError } = await supabase
+        .from('collaborative_agreements')
+        .update({ agreement_document_url: docUrl })
+        .eq('id', agreement.id);
+      if (updateError) throw updateError;
+
+      await supabase.from('agreement_audit_log').insert({
+        entity_type: 'agreement',
+        entity_id: agreement.id,
+        action: 'document_uploaded',
+        changes: { file_name: file.name, source: 'agreement_detail_page' },
+        performed_by: profile?.id || null,
+        performed_by_name: profile?.full_name || 'Unknown',
+      });
+
+      toast({
+        title: 'Document uploaded',
+        description: `${agreement.state_abbreviation} agreement now has documentation on file.`,
+      });
+      await fetchData();
+    } catch (err: any) {
+      console.error('Agreement doc upload error:', err);
+      toast({ title: 'Upload failed', description: err.message || 'Could not upload the document.', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const activeProviders = providers.filter(p => p.is_active);
   const terminatedProviders = providers.filter(p => !p.is_active);
   const upcomingMeetings = meetings.filter(m => m.status === 'scheduled' && new Date(m.scheduled_date) >= new Date());
