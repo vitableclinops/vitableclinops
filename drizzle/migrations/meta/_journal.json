@@ -57,6 +57,13 @@
       "when": 1792425341567,
       "tag": "0007_tighten_storage_read_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792425377773,
+      "tag": "0008_fix_trigger_search_path",
+      "breakpoints": true
     }
   ]
 }
