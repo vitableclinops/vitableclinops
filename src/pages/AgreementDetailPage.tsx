@@ -670,7 +670,7 @@ export default function AgreementDetailPage() {
                         </div>
                       </div>
 
-                      {agreement.agreement_document_url && (
+                      {agreement.agreement_document_url ? (
                         <>
                           <Separator className="my-4" />
                           <Button variant="outline" asChild>
@@ -681,7 +681,26 @@ export default function AgreementDetailPage() {
                             </a>
                           </Button>
                         </>
-                      )}
+                      ) : hasRole('admin') ? (
+                        <>
+                          <Separator className="my-4" />
+                          <Button
+                            variant="outline"
+                            disabled={uploading}
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            {uploading ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4 mr-2" />
+                            )}
+                            Upload Agreement Document
+                          </Button>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            No agreement document on file. Upload the signed document to clear the missing-doc flag.
+                          </p>
+                        </>
+                      ) : null}
                     </CardContent>
                   </Card>
 
@@ -1133,6 +1152,16 @@ export default function AgreementDetailPage() {
         />
       )}
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleAgreementDocUpload(file);
+        }}
+      />
       <TaskDialog
         task={editingTask}
         open={!!editingTask}
