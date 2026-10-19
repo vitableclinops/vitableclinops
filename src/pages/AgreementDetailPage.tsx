@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
@@ -49,6 +49,8 @@ import {
   RefreshCw,
   ArrowLeftRight,
   Paperclip,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -79,6 +81,8 @@ export default function AgreementDetailPage() {
   const [advancing, setAdvancing] = useState(false);
   const [invalidation, setInvalidation] = useState<{ reason: string | null; at: string } | null>(null);
   const [editingTask, setEditingTask] = useState<TaskDialogTask | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const taskToDashboardItem = (task: AgreementTask): TaskDialogTask => ({
     id: task.id,
@@ -249,6 +253,54 @@ export default function AgreementDetailPage() {
       refetchTasks();
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to reopen task', variant: 'destructive' });
+    }
+  };
+
+  // Upload a signed agreement document directly on the agreement page.
+  // Same flow as the provider page: stores the file in the task-documents
+  // bucket and links it on the agreement, clearing the "missing doc" flag.
+  const handleAgreementDocUpload = async (file: File) => {
+    if (!agreement) return;
+    setUploading(true);
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `${agreement.id}/agreement-doc/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('task-documents')
+        .upload(storagePath, file);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = await supabase.storage
+        .from('task-documents')
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10); // 10-year URL
+      const docUrl = urlData?.signedUrl || storagePath;
+
+      const { error: updateError } = await supabase
+        .from('collaborative_agreements')
+        .update({ agreement_document_url: docUrl })
+        .eq('id', agreement.id);
+      if (updateError) throw updateError;
+
+      await supabase.from('agreement_audit_log').insert({
+        entity_type: 'agreement',
+        entity_id: agreement.id,
+        action: 'document_uploaded',
+        changes: { file_name: file.name, source: 'agreement_detail_page' },
+        performed_by: profile?.id || null,
+        performed_by_name: profile?.full_name || 'Unknown',
+      });
+
+      toast({
+        title: 'Document uploaded',
+        description: `${agreement.state_abbreviation} agreement now has documentation on file.`,
+      });
+      await fetchData();
+    } catch (err: any) {
+      console.error('Agreement doc upload error:', err);
+      toast({ title: 'Upload failed', description: err.message || 'Could not upload the document.', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -618,7 +670,7 @@ export default function AgreementDetailPage() {
                         </div>
                       </div>
 
-                      {agreement.agreement_document_url && (
+                      {agreement.agreement_document_url ? (
                         <>
                           <Separator className="my-4" />
                           <Button variant="outline" asChild>
@@ -629,7 +681,26 @@ export default function AgreementDetailPage() {
                             </a>
                           </Button>
                         </>
-                      )}
+                      ) : hasRole('admin') ? (
+                        <>
+                          <Separator className="my-4" />
+                          <Button
+                            variant="outline"
+                            disabled={uploading}
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            {uploading ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4 mr-2" />
+                            )}
+                            Upload Agreement Document
+                          </Button>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            No agreement document on file. Upload the signed document to clear the missing-doc flag.
+                          </p>
+                        </>
+                      ) : null}
                     </CardContent>
                   </Card>
 
@@ -1081,6 +1152,16 @@ export default function AgreementDetailPage() {
         />
       )}
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleAgreementDocUpload(file);
+        }}
+      />
       <TaskDialog
         task={editingTask}
         open={!!editingTask}
