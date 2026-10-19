@@ -177,6 +177,8 @@ const CollaborativeAgreementsPage = () => {
 
   // Document upload dialog
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [incompleteOpen, setIncompleteOpen] = useState(false);
+  const [selectedIncompleteId, setSelectedIncompleteId] = useState<string | null>(null);
   const [selectedFlatAgreement, setSelectedFlatAgreement] = useState<FlattenedAgreement | null>(null);
   const [documentUrl, setDocumentUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -243,6 +245,49 @@ const CollaborativeAgreementsPage = () => {
 
   // Incomplete agreements (shell records with no provider assigned)
   const incompleteAgreements = dbAgreements.filter(a => !a.provider_name && !a.provider_email);
+
+  const getIncompleteIssues = (a: DbAgreement) => {
+    const linked = dbProviders.filter(p => p.agreement_id === a.id && p.is_active);
+    const issues: { reason: string; fix: string; action?: 'sync' }[] = [];
+    if (linked.length === 0) {
+      issues.push({
+        reason: 'No provider is linked to this agreement.',
+        fix: 'Open the agreement and add the provider from the directory. If it was never used, it can be deleted.',
+      });
+    } else {
+      issues.push({
+        reason: `The agreement record is missing the provider's name and email, even though ${linked.map(p => p.provider_name).join(', ')} is linked.`,
+        fix: 'Click "Fill in provider details" to copy the linked provider onto the agreement.',
+        action: 'sync',
+      });
+    }
+    if (!a.physician_name) {
+      issues.push({ reason: 'No supervising physician is listed.', fix: 'Open the agreement and assign the supervising physician.' });
+    }
+    if (['cancelled', 'terminated'].includes(a.workflow_status) || a.terminated_at) {
+      issues.push({
+        reason: `This agreement is ${a.workflow_status === 'cancelled' ? 'cancelled' : 'terminated'}.`,
+        fix: 'It no longer needs to be fixed — it can be deleted if it was a duplicate or left as history.',
+      });
+    }
+    return { linked, issues };
+  };
+
+  const syncProviderToAgreement = async (a: DbAgreement) => {
+    const p = dbProviders.find(x => x.agreement_id === a.id && x.is_active);
+    if (!p) return;
+    const { error } = await supabase
+      .from('collaborative_agreements')
+      .update({ provider_name: p.provider_name, provider_email: p.provider_email, provider_id: p.provider_id } as any)
+      .eq('id', a.id);
+    if (error) {
+      toast({ title: 'Could not update agreement', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Provider details filled in', description: `${p.provider_name} — ${a.state_abbreviation}` });
+    setSelectedIncompleteId(null);
+    fetchDbAgreements();
+  };
 
   // Each agreement row now represents one provider–physician–state combo directly
   // Exclude cancelled agreements from the list entirely
@@ -657,7 +702,7 @@ const CollaborativeAgreementsPage = () => {
           )}
 
           {/* Stats Grid */}
-          <div className="grid gap-4 md:grid-cols-5 mb-8">
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 mb-8">
             <StatCard
               title="Active Agreements"
               value={activeAgreementsCount}
@@ -701,23 +746,71 @@ const CollaborativeAgreementsPage = () => {
               icon={Users}
               variant="default"
             />
+            <StatCard
+              title="Incomplete"
+              value={incompleteAgreements.length}
+              subtitle="Need fixing"
+              icon={AlertTriangle}
+              variant={incompleteAgreements.length > 0 ? 'danger' : 'success'}
+              onClick={() => { setSelectedIncompleteId(null); setIncompleteOpen(true); }}
+            />
           </div>
 
-          {/* Data Integrity Warning */}
-          {incompleteAgreements.length > 0 && (
-            <div className="mb-6 flex items-start gap-3 p-4 rounded-lg border border-destructive/30 bg-destructive/5">
-              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-destructive">
-                  {incompleteAgreements.length} incomplete agreement{incompleteAgreements.length !== 1 ? 's' : ''} detected
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  These agreements have no provider assigned. Open each agreement and link a provider from the directory to maintain referential integrity.
-                  {incompleteAgreements.map(a => ` · ${a.state_abbreviation} (${a.physician_name || 'Unknown physician'})`).join('')}
-                </p>
+          <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Incomplete agreements ({incompleteAgreements.length})</DialogTitle>
+                <DialogDescription>Click an agreement to see why it's incomplete and how to fix it.</DialogDescription>
+              </DialogHeader>
+              {incompleteAgreements.length === 0 && (
+                <p className="text-sm text-muted-foreground">Nothing to fix — all agreements are complete.</p>
+              )}
+              <div className="space-y-2">
+                {incompleteAgreements.map(a => {
+                  const { linked, issues } = getIncompleteIssues(a);
+                  const open = selectedIncompleteId === a.id;
+                  return (
+                    <div key={a.id} className="rounded-lg border">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between gap-3 p-3 text-left hover:bg-muted/50"
+                        onClick={() => setSelectedIncompleteId(open ? null : a.id)}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {linked.map(p => p.provider_name).join(', ') || 'No provider'} — {a.state_abbreviation}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{a.physician_name || 'No physician'}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {getWorkflowBadge(a.workflow_status)}
+                          <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+                        </div>
+                      </button>
+                      {open && (
+                        <div className="border-t p-3 space-y-3 bg-muted/20">
+                          {issues.map((i, idx) => (
+                            <div key={idx} className="text-sm">
+                              <p className="font-medium text-destructive">Why: {i.reason}</p>
+                              <p className="text-muted-foreground">How to fix: {i.fix}</p>
+                            </div>
+                          ))}
+                          <div className="flex flex-wrap gap-2">
+                            {hasRole('admin') && issues.some(i => i.action === 'sync') && (
+                              <Button size="sm" onClick={() => syncProviderToAgreement(a)}>Fill in provider details</Button>
+                            )}
+                            <Button size="sm" variant="outline" asChild>
+                              <Link to={`/admin/agreements/${a.id}`}>Open agreement</Link>
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-          )}
+            </DialogContent>
+          </Dialog>
 
           {/* How to use guide */}
           <Collapsible open={showGuide} onOpenChange={setShowGuide} className="mb-4">
