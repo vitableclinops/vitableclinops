@@ -1,6 +1,8 @@
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
 import { 
   MapPin, 
@@ -64,6 +66,37 @@ export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
             </p>
           </div>
         </label>
+        {formData.skipProcess && (
+          <div className="mt-4 space-y-3 border-t pt-3">
+            <p className="text-sm font-medium">Signed agreement (optional)</p>
+            <div className="space-y-1">
+              <Label htmlFor="wiz-doc-file" className="text-xs">Upload file</Label>
+              <Input
+                id="wiz-doc-file"
+                type="file"
+                accept=".pdf,.doc,.docx,image/*"
+                onChange={(e) => updateFormData?.({ documentFile: e.target.files?.[0] ?? null })}
+              />
+              {formData.documentFile instanceof File && (
+                <p className="text-xs text-muted-foreground">Selected: {formData.documentFile.name}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="wiz-doc-link" className="text-xs">Or paste a link (e.g. Box)</Label>
+              <Input
+                id="wiz-doc-link"
+                type="url"
+                placeholder="https://..."
+                value={formData.documentLink ?? ''}
+                disabled={formData.documentFile instanceof File}
+                onChange={(e) => updateFormData?.({ documentLink: e.target.value })}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Without a document, the agreement will show as "Missing docs" until one is added.
+            </p>
+          </div>
+        )}
       </Card>
 
       <Card className="p-4 bg-muted/30">

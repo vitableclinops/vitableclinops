@@ -52,6 +52,8 @@ export interface AgreementFormData {
 
   // Skip tasks + emails, add as Active
   skipProcess?: boolean;
+  documentFile?: File | null;
+  documentLink?: string;
 }
 
 const STEPS = [
@@ -82,6 +84,8 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
     chartReviewFrequency: '',
     providerMessage: '',
     skipProcess: false,
+    documentFile: null,
+    documentLink: '',
   };
 
   const [formData, setFormData] = useState<AgreementFormData>(DEFAULT_FORM);
@@ -97,7 +101,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
   }, []);
   const persistValue: PersistedWizard = {
     step: currentStep,
-    form: { ...formData, startDate: formData.startDate?.toISOString() },
+    form: { ...formData, documentFile: null, startDate: formData.startDate?.toISOString() },
   };
   const { clearSaved } = useFormPersist('agreement-wizard', persistValue, restoreWizard);
 
@@ -176,6 +180,45 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
           skipProcess: !!formData.skipProcess,
         }
       );
+
+      if (formData.skipProcess && newAgreement?.id) {
+        try {
+          let docUrl: string | null = null;
+          let fileName: string | null = null;
+          const file = formData.documentFile;
+          if (file instanceof File) {
+            const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const storagePath = `${newAgreement.id}/agreement-doc/${Date.now()}-${safeName}`;
+            const { error: upErr } = await supabase.storage.from('task-documents').upload(storagePath, file);
+            if (upErr) throw upErr;
+            const { data: urlData } = await supabase.storage
+              .from('task-documents')
+              .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10);
+            docUrl = urlData?.signedUrl || storagePath;
+            fileName = file.name;
+          } else if (formData.documentLink?.trim()) {
+            docUrl = formData.documentLink.trim();
+          }
+          if (docUrl) {
+            const { error: updErr } = await supabase
+              .from('collaborative_agreements')
+              .update({ agreement_document_url: docUrl })
+              .eq('id', newAgreement.id);
+            if (updErr) throw updErr;
+            await supabase.from('agreement_audit_log').insert({
+              entity_type: 'agreement',
+              entity_id: newAgreement.id,
+              action: 'document_uploaded',
+              changes: { file_name: fileName, link: fileName ? null : docUrl, source: 'new_agreement_wizard' },
+            });
+          }
+        } catch (docErr) {
+          console.error('Agreement document attach failed:', docErr);
+          toast.error('Agreement added, but the document could not be attached', {
+            description: 'Open the agreement and use Upload Agreement Document.',
+          });
+        }
+      }
 
       if (formData.skipProcess) {
         toast.success('Agreement added — Active', {
