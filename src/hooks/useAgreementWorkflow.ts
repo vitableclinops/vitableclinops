@@ -214,8 +214,9 @@ export const useAgreementWorkflow = () => {
   const createAgreementWithTasks = useCallback(async (
     agreementData: Record<string, any>,
     providers: Array<{ id?: string; name: string; email: string; npi?: string }>,
-    options?: { chartReviewRequired?: boolean; meetingCadence?: string; providerMessage?: string }
+    options?: { chartReviewRequired?: boolean; meetingCadence?: string; providerMessage?: string; skipProcess?: boolean }
   ) => {
+    const skip = !!options?.skipProcess;
     // Compute next_renewal_date from start_date + renewal_cadence
     let computedRenewalDate: string | null = null;
     if (agreementData.start_date && agreementData.renewal_cadence) {
@@ -257,10 +258,8 @@ export const useAgreementWorkflow = () => {
       if (providersError) throw providersError;
     }
 
-    // Step 3: Generate setup tasks for this new agreement
-    // Note: Transfer task re-parenting is handled by the DB trigger
-    // (auto_create_agreement_on_task_complete), so we always generate fresh tasks here.
-    {
+    // Step 3: Generate setup tasks (skipped when steps were already done outside the app)
+    if (!skip) {
       const setupTasks = getSetupTasks(
         agreement.id,
         agreementData.state_abbreviation,
@@ -304,12 +303,15 @@ export const useAgreementWorkflow = () => {
       { step_number: 5, step_name: 'Active', step_description: 'Agreement is active and in effect', status: 'pending', agreement_id: agreement.id },
     ];
 
-    await supabase.from('agreement_workflow_steps').insert(workflowSteps);
+    const nowIso = new Date().toISOString();
+    await supabase.from('agreement_workflow_steps').insert(
+      skip ? workflowSteps.map(s => ({ ...s, status: 'completed', completed_at: nowIso })) : workflowSteps
+    );
 
-    // Step 5: Transition to in_progress (NOT active)
+    // Step 5: Transition to in_progress, or straight to active when skipping the process
     await supabase
       .from('collaborative_agreements')
-      .update({ workflow_status: 'in_progress' })
+      .update({ workflow_status: skip ? 'active' : 'in_progress' } as any)
       .eq('id', agreement.id);
 
     // Step 6: Log creation
@@ -320,7 +322,8 @@ export const useAgreementWorkflow = () => {
       changes: {
         state: agreementData.state_abbreviation,
         source: 'wizard',
-        initial_status: 'in_progress',
+        initial_status: skip ? 'active' : 'in_progress',
+        ...(skip ? { skipped_process: true, note: 'Added directly — steps already completed; no tasks or emails sent' } : {}),
       },
     });
 

@@ -49,6 +49,9 @@ export interface AgreementFormData {
   
   // Provider Message
   providerMessage: string;
+
+  // Skip tasks + emails, add as Active
+  skipProcess?: boolean;
 }
 
 const STEPS = [
@@ -78,6 +81,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
     chartReviewRequired: true,
     chartReviewFrequency: '',
     providerMessage: '',
+    skipProcess: false,
   };
 
   const [formData, setFormData] = useState<AgreementFormData>(DEFAULT_FORM);
@@ -169,15 +173,22 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
         {
           chartReviewRequired: formData.chartReviewRequired,
           meetingCadence: formData.meetingCadence,
+          skipProcess: !!formData.skipProcess,
         }
       );
 
-      toast.success('Agreement created — In Progress', {
-        description: `Required tasks have been generated for ${formData.selectedState.name}. Complete all tasks to activate.`,
-      });
+      if (formData.skipProcess) {
+        toast.success('Agreement added — Active', {
+          description: 'No tasks were created and no emails were sent.',
+        });
+      } else {
+        toast.success('Agreement created — In Progress', {
+          description: `Required tasks have been generated for ${formData.selectedState.name}. Complete all tasks to activate.`,
+        });
+      }
 
       // Fire Email 1 (initiation) — non-blocking; failures appear in collab_email_log.
-      if (newAgreement?.id) {
+      if (newAgreement?.id && !formData.skipProcess) {
         supabase.functions
           .invoke('send-collab-email', {
             body: { agreementId: newAgreement.id, emailId: 'email_1_initiation' },
