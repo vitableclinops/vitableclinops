@@ -64,6 +64,13 @@
       "when": 1792425377773,
       "tag": "0008_fix_trigger_search_path",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793040569537,
+      "tag": "0009_auto_fill_agreement_provider",
+      "breakpoints": true
     }
   ]
 }
