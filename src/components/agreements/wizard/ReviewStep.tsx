@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { format } from 'date-fns';
 import { 
   MapPin, 
@@ -21,7 +22,7 @@ interface ReviewStepProps {
   updateFormData?: (updates: Partial<AgreementFormData>) => void;
 }
 
-export const ReviewStep = ({ formData }: ReviewStepProps) => {
+export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
   const stateCode = formData.selectedState?.abbreviation;
 
   // Check whether this state has collab email requirements configured.
@@ -49,6 +50,22 @@ export const ReviewStep = ({ formData }: ReviewStepProps) => {
 
   return (
     <div className="space-y-4">
+      <Card className="p-4 border-primary/40">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <Checkbox
+            checked={!!formData.skipProcess}
+            onCheckedChange={(v) => updateFormData?.({ skipProcess: v === true })}
+            className="mt-0.5"
+          />
+          <div>
+            <p className="text-sm font-medium">Steps already done — just add the agreement</p>
+            <p className="text-xs text-muted-foreground">
+              Adds it as Active right away. No tasks are created and no emails go to staff, providers or the physician.
+            </p>
+          </div>
+        </label>
+      </Card>
+
       <Card className="p-4 bg-muted/30">
         <p className="text-sm text-muted-foreground">
           Review the agreement details below. Once created, the agreement will be in 
