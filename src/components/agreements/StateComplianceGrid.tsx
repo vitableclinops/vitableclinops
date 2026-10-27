@@ -217,6 +217,8 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
         physicians={selectedStateInfo?.physicians}
         providerCount={selectedStateInfo?.activeProviders.length}
         agreementCount={selectedStateInfo?.agreements.length}
+        agreements={selectedStateInfo?.agreements}
+        providers={selectedStateInfo?.activeProviders}
       />
     </>
   );

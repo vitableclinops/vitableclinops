@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ExternalLink, Edit2, Save, X, FileText, Users, Shield, Calendar, CheckCircle, AlertCircle } from 'lucide-react';
+import { ExternalLink, Edit2, Save, X, FileText, Users, Shield, Calendar, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,20 +23,89 @@ interface StateProfileModalProps {
   physicians?: string[];
   providerCount?: number;
   agreementCount?: number;
+  agreements?: AgreementRow[];
+  providers?: ProviderRow[];
 }
+
+interface AgreementRow {
+  id: string;
+  provider_name?: string | null;
+  provider_email?: string | null;
+  physician_name?: string | null;
+  workflow_status?: string | null;
+  agreement_document_url?: string | null;
+  medallion_document_url?: string | null;
+  terminated_at?: string | null;
+  state_abbreviation?: string | null;
+}
+
+interface ProviderRow {
+  provider_name?: string | null;
+  is_active?: boolean | null;
+  agreement_id?: string | null;
+}
+
+const ACTIVE_EXCLUDED_STATUSES = ['cancelled', 'terminated', 'termination_initiated', 'invalid'];
 
 export const StateProfileModal = ({
   open,
   onOpenChange,
+
   stateData,
   onUpdate,
   physicians = [],
   providerCount = 0,
   agreementCount = 0,
+  agreements = [],
+  providers = [],
 }: StateProfileModalProps) => {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [expandedStat, setExpandedStat] = useState<'agreements' | 'providers' | 'physicians' | null>(null);
+
+  // Only active, non-terminated/cancelled agreements count as active
+  const activeAgreements = agreements.filter(
+    (a) => !ACTIVE_EXCLUDED_STATUSES.includes(a.workflow_status || '') && !a.terminated_at
+  );
+  const activeProviderList = providers.filter((p) => p.is_active !== false);
+
+  // Group active agreements by provider (unique names) and by physician
+  const providerGroups = (() => {
+    const map = new Map<string, AgreementRow[]>();
+    activeAgreements.forEach((a) => {
+      const name = a.provider_name || a.provider_email || 'Unassigned';
+      const entry = map.get(name);
+      if (entry) {
+        entry.push(a);
+      } else {
+        map.set(name, [a]);
+      }
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  })();
+
+  const physicianGroups = (() => {
+    const map = new Map<string, { agreements: AgreementRow[]; providerNames: Set<string> }>();
+    activeAgreements.forEach((a) => {
+      const name = a.physician_name || 'Unassigned';
+      const entry = map.get(name) || { agreements: [], providerNames: new Set<string>() };
+      entry.agreements.push(a);
+      if (a.provider_name) entry.providerNames.add(a.provider_name);
+      map.set(name, entry);
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  })();
+
+  const statCounts = {
+    agreements: agreements.length > 0 ? activeAgreements.length : agreementCount,
+    providers: providers.length > 0 ? activeProviderList.length : providerCount,
+    physicians: agreements.length > 0 ? physicianGroups.length : physicians.length,
+  };
+
+  const toggleStat = (stat: 'agreements' | 'providers' | 'physicians') => {
+    setExpandedStat((prev) => (prev === stat ? null : stat));
+  };
   
   // Form state
   const [formData, setFormData] = useState<Partial<StateCompliance>>({});
@@ -155,19 +225,129 @@ export const StateProfileModal = ({
           <TabsContent value="requirements" className="space-y-6 mt-4">
             {/* Quick Stats */}
             <div className="grid grid-cols-3 gap-4">
-              <div className="p-4 rounded-lg bg-muted/50 text-center">
-                <p className="text-2xl font-bold text-primary">{agreementCount}</p>
-                <p className="text-xs text-muted-foreground">Active Agreements</p>
-              </div>
-              <div className="p-4 rounded-lg bg-muted/50 text-center">
-                <p className="text-2xl font-bold text-success">{providerCount}</p>
-                <p className="text-xs text-muted-foreground">Providers</p>
-              </div>
-              <div className="p-4 rounded-lg bg-muted/50 text-center">
-                <p className="text-2xl font-bold">{physicians.length}</p>
-                <p className="text-xs text-muted-foreground">Physicians</p>
-              </div>
+              <button
+                type="button"
+                className="p-4 rounded-lg bg-muted/50 text-center hover:bg-muted/80 transition-colors cursor-pointer"
+                onClick={() => toggleStat('agreements')}
+              >
+                <p className="text-2xl font-bold text-primary">{statCounts.agreements}</p>
+                <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                  Active Agreements
+                  <ChevronDown className={`h-3 w-3 transition-transform ${expandedStat === 'agreements' ? 'rotate-180' : ''}`} />
+                </p>
+              </button>
+              <button
+                type="button"
+                className="p-4 rounded-lg bg-muted/50 text-center hover:bg-muted/80 transition-colors cursor-pointer"
+                onClick={() => toggleStat('providers')}
+              >
+                <p className="text-2xl font-bold text-success">{statCounts.providers}</p>
+                <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                  Providers
+                  <ChevronDown className={`h-3 w-3 transition-transform ${expandedStat === 'providers' ? 'rotate-180' : ''}`} />
+                </p>
+              </button>
+              <button
+                type="button"
+                className="p-4 rounded-lg bg-muted/50 text-center hover:bg-muted/80 transition-colors cursor-pointer"
+                onClick={() => toggleStat('physicians')}
+              >
+                <p className="text-2xl font-bold">{statCounts.physicians}</p>
+                <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                  Physicians
+                  <ChevronDown className={`h-3 w-3 transition-transform ${expandedStat === 'physicians' ? 'rotate-180' : ''}`} />
+                </p>
+              </button>
             </div>
+
+            {expandedStat === 'agreements' && (
+              <div className="rounded-lg border divide-y max-h-64 overflow-y-auto">
+                {statCounts.agreements === 0 && (
+                  <p className="p-4 text-sm text-muted-foreground">No active agreements in this state</p>
+                )}
+                {activeAgreements.map((a) => {
+                  const hasDoc = Boolean(a.agreement_document_url || a.medallion_document_url);
+                  return (
+                    <Link
+                      key={a.id}
+                      to={`/admin/agreements/${a.id}`}
+                      className="flex items-center justify-between gap-2 p-3 hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{a.provider_name || a.provider_email || 'Unassigned'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          with Dr. {a.physician_name || 'Unassigned'}{a.state_abbreviation ? ` (${a.state_abbreviation})` : ''}
+                        </p>
+                      </div>
+                      <div className="shrink-0">
+                        {hasDoc ? (
+                          <Badge variant="outline" className="gap-1 text-[10px]">
+                            <FileText className="h-3 w-3" />
+                            Doc on file
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive" className="gap-1 text-[10px]">
+                            <AlertCircle className="h-3 w-3" />
+                            Missing doc
+                          </Badge>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+
+            {expandedStat === 'providers' && (
+              <div className="rounded-lg border divide-y max-h-64 overflow-y-auto">
+                {statCounts.providers === 0 && (
+                  <p className="p-4 text-sm text-muted-foreground">No active providers in this state</p>
+                )}
+                {providerGroups.map(([name, ags]) => (
+                  <div key={name} className="flex items-center justify-between gap-2 p-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {ags.map((a) => `Dr. ${a.physician_name || 'Unassigned'}${a.state_abbreviation ? ` (${a.state_abbreviation})` : ''}`).join(', ')}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      {ags.length} agreement{ags.length !== 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {expandedStat === 'physicians' && (
+              <div className="rounded-lg border divide-y max-h-64 overflow-y-auto">
+                {statCounts.physicians === 0 && (
+                  <p className="p-4 text-sm text-muted-foreground">No supervising physicians in this state</p>
+                )}
+                {physicianGroups.map(([name, group]) => (
+                  <div key={name} className="flex items-center justify-between gap-2 p-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <span className="text-xs font-medium text-primary">
+                          {name.split(' ').map((n) => n[0]).slice(0, 2).join('')}
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">Dr. {name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {group.providerNames.size > 0
+                            ? `Supervising ${Array.from(group.providerNames).join(', ')}`
+                            : 'No providers assigned'}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      {group.agreements.length} agreement{group.agreements.length !== 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <Separator />
 
