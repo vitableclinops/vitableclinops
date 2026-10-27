@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ExternalLink, Edit2, Save, X, FileText, Users, Shield, Calendar, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -63,6 +63,11 @@ export const StateProfileModal = ({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [expandedStat, setExpandedStat] = useState<'agreements' | 'providers' | 'physicians' | null>(null);
+
+  // Start each state's popup closed rather than inheriting the last one's open dropdown
+  useEffect(() => {
+    if (open) setExpandedStat(null);
+  }, [open]);
 
   // Only active, non-terminated/cancelled agreements count as active
   const activeAgreements = agreements.filter(
