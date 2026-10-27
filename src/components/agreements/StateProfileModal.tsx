@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ExternalLink, Edit2, Save, X, FileText, Users, Shield, Calendar, CheckCircle, AlertCircle } from 'lucide-react';
+import { ExternalLink, Edit2, Save, X, FileText, Users, Shield, Calendar, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,7 +23,29 @@ interface StateProfileModalProps {
   physicians?: string[];
   providerCount?: number;
   agreementCount?: number;
+  agreements?: AgreementRow[];
+  providers?: ProviderRow[];
 }
+
+interface AgreementRow {
+  id: string;
+  provider_name?: string | null;
+  provider_email?: string | null;
+  physician_name?: string | null;
+  workflow_status?: string | null;
+  agreement_document_url?: string | null;
+  medallion_document_url?: string | null;
+  terminated_at?: string | null;
+  state_abbreviation?: string | null;
+}
+
+interface ProviderRow {
+  provider_name?: string | null;
+  is_active?: boolean | null;
+  agreement_id?: string | null;
+}
+
+const ACTIVE_EXCLUDED_STATUSES = ['cancelled', 'terminated', 'termination_initiated', 'invalid'];
 
 export const StateProfileModal = ({
   open,
