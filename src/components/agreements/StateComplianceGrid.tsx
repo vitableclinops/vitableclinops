@@ -171,9 +171,10 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                   </p>
                   <div className="space-y-2">
                     {state.physicians.map((physician) => {
-                      const agreement = state.agreements.find(a => a.physician_name === physician);
-                      const providerCount = state.activeProviders.filter(
-                        p => p.agreement_id === agreement?.id
+                      const providerCount = state.activeProviders.filter(p =>
+                        state.agreements.some(
+                          a => a.id === p.agreement_id && a.physician_name === physician
+                        )
                       ).length;
 
                       return (
