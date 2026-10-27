@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ExternalLink, Edit2, Save, X, FileText, Users, Shield, Calendar, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -64,25 +64,32 @@ export const StateProfileModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [expandedStat, setExpandedStat] = useState<'agreements' | 'providers' | 'physicians' | null>(null);
 
+  // Start each state's popup closed rather than inheriting the last one's open dropdown
+  useEffect(() => {
+    if (open) setExpandedStat(null);
+  }, [open]);
+
   // Only active, non-terminated/cancelled agreements count as active
   const activeAgreements = agreements.filter(
     (a) => !ACTIVE_EXCLUDED_STATUSES.includes(a.workflow_status || '') && !a.terminated_at
   );
-  const activeProviderList = providers.filter((p) => p.is_active !== false);
-
-  // Group active agreements by provider (unique names) and by physician
+  // Providers come only from active agreements, deduped by email (or name when no email)
   const providerGroups = (() => {
-    const map = new Map<string, AgreementRow[]>();
+    const map = new Map<string, { name: string; agreements: AgreementRow[] }>();
     activeAgreements.forEach((a) => {
+      const key = (a.provider_email || a.provider_name || '').trim().toLowerCase();
+      if (!key) return;
       const name = a.provider_name || a.provider_email || 'Unassigned';
-      const entry = map.get(name);
+      const entry = map.get(key);
       if (entry) {
-        entry.push(a);
+        entry.agreements.push(a);
       } else {
-        map.set(name, [a]);
+        map.set(key, { name, agreements: [a] });
       }
     });
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    return Array.from(map.values())
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((g): [string, AgreementRow[]] => [g.name, g.agreements]);
   })();
 
   const physicianGroups = (() => {
@@ -99,7 +106,7 @@ export const StateProfileModal = ({
 
   const statCounts = {
     agreements: agreements.length > 0 ? activeAgreements.length : agreementCount,
-    providers: providers.length > 0 ? activeProviderList.length : providerCount,
+    providers: agreements.length > 0 ? providerGroups.length : providerCount,
     physicians: agreements.length > 0 ? physicianGroups.length : physicians.length,
   };
 

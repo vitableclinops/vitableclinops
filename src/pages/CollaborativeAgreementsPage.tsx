@@ -580,7 +580,13 @@ const CollaborativeAgreementsPage = () => {
 
     dbAgreements.forEach(agreement => {
       const existing = map.get(agreement.state_abbreviation);
-      const activeProviders = dbProviders.filter(p => p.agreement_id === agreement.id && p.is_active);
+      // Only providers on agreements that are live count toward this state's totals
+      const isActiveAgreement =
+        !['cancelled', 'terminated', 'termination_initiated', 'invalid'].includes(agreement.workflow_status || '') &&
+        !agreement.terminated_at;
+      const activeProviders = isActiveAgreement
+        ? dbProviders.filter(p => p.agreement_id === agreement.id && p.is_active)
+        : [];
       
       if (existing) {
         existing.agreements.push(agreement);
