@@ -50,15 +50,62 @@ const ACTIVE_EXCLUDED_STATUSES = ['cancelled', 'terminated', 'termination_initia
 export const StateProfileModal = ({
   open,
   onOpenChange,
+
   stateData,
   onUpdate,
   physicians = [],
   providerCount = 0,
   agreementCount = 0,
+  agreements = [],
+  providers = [],
 }: StateProfileModalProps) => {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [expandedStat, setExpandedStat] = useState<'agreements' | 'providers' | 'physicians' | null>(null);
+
+  // Only active, non-terminated/cancelled agreements count as active
+  const activeAgreements = agreements.filter(
+    (a) => !ACTIVE_EXCLUDED_STATUSES.includes(a.workflow_status || '') && !a.terminated_at
+  );
+  const activeProviderList = providers.filter((p) => p.is_active !== false);
+
+  // Group active agreements by provider (unique names) and by physician
+  const providerGroups = (() => {
+    const map = new Map<string, AgreementRow[]>();
+    activeAgreements.forEach((a) => {
+      const name = a.provider_name || a.provider_email || 'Unassigned';
+      const entry = map.get(name);
+      if (entry) {
+        entry.push(a);
+      } else {
+        map.set(name, [a]);
+      }
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  })();
+
+  const physicianGroups = (() => {
+    const map = new Map<string, { agreements: AgreementRow[]; providerNames: Set<string> }>();
+    activeAgreements.forEach((a) => {
+      const name = a.physician_name || 'Unassigned';
+      const entry = map.get(name) || { agreements: [], providerNames: new Set<string>() };
+      entry.agreements.push(a);
+      if (a.provider_name) entry.providerNames.add(a.provider_name);
+      map.set(name, entry);
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  })();
+
+  const statCounts = {
+    agreements: agreements.length > 0 ? activeAgreements.length : agreementCount,
+    providers: providers.length > 0 ? activeProviderList.length : providerCount,
+    physicians: agreements.length > 0 ? physicianGroups.length : physicians.length,
+  };
+
+  const toggleStat = (stat: 'agreements' | 'providers' | 'physicians') => {
+    setExpandedStat((prev) => (prev === stat ? null : stat));
+  };
   
   // Form state
   const [formData, setFormData] = useState<Partial<StateCompliance>>({});
