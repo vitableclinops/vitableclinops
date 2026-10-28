@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Button } from '@/components/ui/button';
@@ -7,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { cn } from '@/lib/utils';
+import { cn, parseLocalDate } from '@/lib/utils';
 import { ChevronLeft, ChevronRight, ExternalLink, Loader2, Plus, Stethoscope, Users } from 'lucide-react';
 import {
   addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek,
@@ -30,9 +31,18 @@ interface ProviderLink {
 const CollabMeetingSchedulePage = () => {
   const { profile, roles } = useAuth();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const meetingParam = searchParams.get('meeting');
+  const dateParam = searchParams.get('date');
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+
+  // Deep link from the Calendar page: jump to the meeting's month and select it
+  useEffect(() => {
+    if (dateParam) setMonth(startOfMonth(parseLocalDate(dateParam)));
+    if (meetingParam) setSelectedId(meetingParam);
+  }, [meetingParam, dateParam]);
 
   const rangeStart = startOfWeek(startOfMonth(month));
   const rangeEnd = endOfWeek(endOfMonth(month));
