@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
@@ -39,6 +40,7 @@ export const PhysicianInfoStep = ({ formData, updateFormData }: PhysicianInfoSte
         .from('profiles')
         .select('id, full_name, first_name, last_name, email, npi_number, profession, credentials')
         .in('profession', ['MD', 'DO', 'physician'])
+        .or(CURRENT_EMPLOYEE_FILTER)
         .order('full_name');
       if (error) throw error;
       return data || [];

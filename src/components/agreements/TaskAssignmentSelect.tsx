@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { useToast } from '@/hooks/use-toast';
 import { useEmailNotifications } from '@/hooks/useEmailNotifications';
 import { UserPlus } from 'lucide-react';
@@ -45,6 +46,7 @@ export function TaskAssignmentSelect({
           .from('profiles')
           .select('*')
           .in('user_id', uniqueUserIds)
+          .or(CURRENT_EMPLOYEE_FILTER)
           .order('full_name', { ascending: true });
 
         if (profiles) {

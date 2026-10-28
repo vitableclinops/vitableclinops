@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -116,6 +117,7 @@ const AgencyDetailPage = () => {
       .from('profiles')
       .select('id, full_name, email')
       .or('employment_type.is.null,employment_type.neq.agency')
+      .or(CURRENT_EMPLOYEE_FILTER)
       .order('full_name');
     if (data) setAvailableProviders(data);
   };

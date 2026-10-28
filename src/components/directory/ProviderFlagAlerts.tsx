@@ -3,9 +3,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import type { CoverageAlertSummary } from '@/lib/coverageAlertSummary';
-
-interface Conflict { field: string; local: string | null; medallion: string | null }
-export interface FlaggedProvider { id: string; name: string; conflicts: Conflict[]; identityReview?: { reason: string; howToFix: string } }
+import type { FlaggedProvider } from '@/lib/providerFlagSummary';
+export type { FlaggedProvider } from '@/lib/providerFlagSummary';
 
 function correction(field: string) {
   switch (field) {
@@ -35,10 +34,12 @@ export function ProviderFlagAlerts({
   providers,
   coverage,
   onReview,
+  onFindProfile,
 }: {
   providers: FlaggedProvider[];
   coverage?: CoverageAlertSummary | null;
   onReview: (id: string) => void;
+  onFindProfile: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const flagCount = providers.length;
@@ -63,7 +64,7 @@ export function ProviderFlagAlerts({
       </AlertTitle>
       <AlertDescription>
         {flagCount > 0 && (
-          <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview ? ['Identity needs review'] : []), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
+          <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview || p.sourceIdentityReviews?.length ? ['Identity needs review'] : []), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
         )}
         {coverage && <p className="mt-1 break-words text-muted-foreground">{coverage.summary}</p>}
         {coverage?.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
@@ -73,8 +74,8 @@ export function ProviderFlagAlerts({
               <section key={provider.id} className="py-3 first:pt-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-semibold">{provider.name}</h3>
-                  <Button size="sm" variant="outline" onClick={() => onReview(provider.id)}>
-                    Open profile<ArrowRight className="ml-1 h-3 w-3" />
+                  <Button size="sm" variant="outline" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>
+                    {provider.profileId ? 'Open profile' : 'Find provider profile'}<ArrowRight className="ml-1 h-3 w-3" />
                   </Button>
                 </div>
                 {provider.identityReview && (
@@ -83,6 +84,12 @@ export function ProviderFlagAlerts({
                     <p className="text-muted-foreground"><strong>How to fix:</strong> {provider.identityReview.howToFix}</p>
                   </div>
                 )}
+                {provider.sourceIdentityReviews?.map((review, index) => (
+                  <div key={index} className="mt-2 space-y-1">
+                    <p><strong>Identity needs review:</strong> {review.reason}</p>
+                    <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix}</p>
+                  </div>
+                ))}
                 {provider.conflicts.map((conflict, index) => (
                   <div key={`${conflict.field}-${index}`} className="mt-2 space-y-1">
                     <p><strong>{labels[conflict.field] ?? conflict.field.replace(/_/g, ' ')}</strong>: Directory says “{conflict.local ?? 'Not supplied'}”; Medallion says “{conflict.medallion ?? 'Not supplied'}”.</p>
@@ -100,26 +107,6 @@ export function ProviderFlagAlerts({
                   Source: Metabase (current records returned by our read-only query, explicit exclusions applied).
                   Warehouse refresh time: not verified. The source’s is_active flag meaning is pending data-owner confirmation.
                 </p>
-              </section>
-            )}
-            {coverage && coverage.review.length > 0 && (
-              <section className="py-3">
-                <h3 className="font-semibold">Identities needing review ({coverage.review.length})</h3>
-                <ul className="mt-1 space-y-2">
-                  {coverage.review.map(i => (
-                    <li key={i.ehrProviderId} className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="break-words">
-                        {i.ehrName} (NPI {i.npi ?? 'none'}) —{' '}
-                        {i.status === 'matched' ? 'linked by NPI; name differs from directory record' : i.reason}
-                      </span>
-                      {i.profileId && (
-                        <Button size="sm" variant="outline" onClick={() => onReview(i.profileId as string)}>
-                          Open profile<ArrowRight className="ml-1 h-3 w-3" />
-                        </Button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
               </section>
             )}
             {coverage && coverage.excluded.length > 0 && (

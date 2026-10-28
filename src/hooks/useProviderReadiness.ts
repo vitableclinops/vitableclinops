@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 
 export interface ChecklistItem {
   key: string;
@@ -75,7 +76,7 @@ export function useProviderReadiness() {
         { data: meetings },
         { data: meetingAttendees },
       ] = await Promise.all([
-        supabase.from('profiles').select('id, full_name, email, credentials, profession, avatar_url, employment_type, employment_status, agency_id, npi_number, chart_review_folder_url').order('full_name'),
+        supabase.from('profiles').select('id, full_name, email, credentials, profession, avatar_url, employment_type, employment_status, agency_id, npi_number, chart_review_folder_url').or(CURRENT_EMPLOYEE_FILTER).order('full_name'),
         supabase.from('provider_licenses').select('profile_id, state_abbreviation, status, expiration_date, license_number, updated_at'),
         supabase.from('state_compliance_requirements').select('state_abbreviation, ca_required, collab_requirement_type'),
         supabase.from('collaborative_agreements').select('id, physician_name, state_abbreviation, workflow_status, start_date, end_date, terminated_at, physician_signed_at'),

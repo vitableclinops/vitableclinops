@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { useAuth } from '@/hooks/useAuth';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -107,7 +108,7 @@ function useContractors() {
         supabase
           .from('profiles')
           .select('id, full_name, credentials, profession, employment_status, employment_type, agency_id')
-          .neq('employment_status', 'termed'),
+          .or(CURRENT_EMPLOYEE_FILTER),
         supabase
           .from('provider_ops_info')
           .select('profile_id, hourly_rate, employment_type, contractor_org'),

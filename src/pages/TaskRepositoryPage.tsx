@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -127,7 +128,7 @@ export default function TaskRepositoryPage() {
       const { data: roles } = await supabase.from('user_roles').select('user_id').in('role', ['admin']);
       if (roles && roles.length > 0) {
         const uids = [...new Set(roles.map(r => r.user_id).filter(Boolean))] as string[];
-        const { data: profs } = await supabase.from('profiles').select('id, full_name, email').in('user_id', uids).order('full_name');
+        const { data: profs } = await supabase.from('profiles').select('id, full_name, email').in('user_id', uids).or(CURRENT_EMPLOYEE_FILTER).order('full_name');
         setTeamMembers((profs || []).map(p => ({ id: p.id, name: p.full_name || p.email || 'Unknown' })));
       }
     })();

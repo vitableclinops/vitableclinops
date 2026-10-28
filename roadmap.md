@@ -24,3 +24,7 @@
 - [x] Add and verify copy icons beside active PCP telemedicine states.
 ^- [x] Condense the coverage freshness/identity-review flags into the top Provider flagged alert; verify one alert shows everything.
 - [x] Disregard the demo (test) account's missing NPI so it no longer appears in the Provider flagged alert; verified signed-in.
+- [ ] Merge source identity reviews into individual provider flags with safe correction guidance and verify the directory.
+- [ ] Exclude terminated employees from working pages and add a directory Offboarded tab while retaining history.
+- [ ] Make every provider flag correction clickable, including unresolved identities without a linked profile.
+- [ ] Remove current offboarded-provider warnings from directory alerts and profile displays without deleting source history.

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,7 @@ export function ReassignTaskDialog({ taskId, taskTitle, currentAssignee, onClose
     supabase
       .from('profiles')
       .select('id, full_name, email')
+      .or(CURRENT_EMPLOYEE_FILTER)
       .order('full_name')
       .then(({ data }) => {
         setTeamMembers((data || []) as TeamMember[]);

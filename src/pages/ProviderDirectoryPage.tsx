@@ -28,7 +28,10 @@ import { summarizeLicenses } from '@/lib/externalImport';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
-import { pcpCellFor } from '@/lib/pcpCoverage';
+import { pcpCellFor, isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
+import { mergeProviderFlags } from '@/lib/providerFlagSummary';
+import { employeeVisibleIn, isOffboarded } from '@/lib/employeeVisibility';
+import { FlagProfileLookup } from '@/components/directory/FlagProfileLookup';
 import { licensedNotActiveLabel } from '@/lib/licensedNotActiveStates';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import { directoryMedallionConflicts } from '@/lib/directoryMedallionConflicts';
@@ -124,6 +127,7 @@ const ProviderDirectoryPage = () => {
   const [publicProviders, setPublicProviders] = useState<DirectoryProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<FullProvider | null>(null);
+  const [flagLookupOpen, setFlagLookupOpen] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -261,9 +265,10 @@ const ProviderDirectoryPage = () => {
 
   // Filter and sort providers for directory view
   const filteredProviders = useMemo(() => {
-    const data = isAdmin && activeTab === 'management' ? providers : publicProviders;
+    const data = isAdmin ? providers.filter(p => p.directory_visibility !== 'excluded') : publicProviders;
     
     let filtered = data.filter(p => {
+      if (!employeeVisibleIn(p.employment_status, activeTab === 'offboarded' ? 'offboarded' : 'current')) return false;
       // Search filter
       const query = searchQuery.toLowerCase();
       if (query) {
@@ -300,7 +305,9 @@ const ProviderDirectoryPage = () => {
       }
 
       // Status filter (admin only)
-      if (isAdmin && statusFilter === 'hide_termed') {
+      if (isAdmin && activeTab === 'offboarded') {
+        // The Offboarded tab owns terminated records, regardless of the current-view status filter.
+      } else if (isAdmin && statusFilter === 'hide_termed') {
         if (p.employment_status === 'termed') return false;
       } else if (isAdmin && statusFilter !== 'all') {
         if (p.employment_status !== statusFilter) return false;
@@ -457,7 +464,7 @@ const ProviderDirectoryPage = () => {
     }
   };
 
-  const flaggedProviders = isAdmin ? providers
+  const directoryFlags = isAdmin ? providers
     .filter(p => !['termed', 'terminated'].includes((p.employment_status ?? '').toLowerCase()))
     .map(p => ({
       id: p.id, name: directoryDisplayName(p),
@@ -466,6 +473,10 @@ const ProviderDirectoryPage = () => {
     }))
     .filter(p => p.conflicts.length > 0 || p.identityReview)
     .sort((a, b) => a.name.localeCompare(b.name)) : [];
+  const flaggedProviders = mergeProviderFlags(directoryFlags, pcpCoverageLoading ? [] : coverageAlertSummary(pcpCoverage ?? null).review, providers.map(p => ({
+    id: p.id, name: directoryDisplayName(p),
+    suppress: isTestAccountDirectoryRecord(p) || !!OUT_OF_SCOPE_PROFILE_IDS[p.id] || ['termed', 'terminated'].includes((p.employment_status ?? '').toLowerCase()),
+  })));
 
   return (
     <div className="min-h-screen bg-background">
@@ -506,6 +517,7 @@ const ProviderDirectoryPage = () => {
           {/* Tabs for Admin */}
           {isAdmin && <ProviderFlagAlerts
             providers={flaggedProviders}
+            onFindProfile={() => setFlagLookupOpen(true)}
             coverage={pcpCoverageLoading ? null : coverageAlertSummary(pcpCoverage ?? null)}
             onReview={id => {
             const provider = providers.find(p => p.id === id);
@@ -513,7 +525,7 @@ const ProviderDirectoryPage = () => {
           }} />}
           {isAdmin ? (
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList>
+              <TabsList className="h-auto flex flex-wrap justify-start">
                 <TabsTrigger value="directory" className="gap-2">
                   <Users className="h-4 w-4" />
                   Directory
@@ -530,6 +542,7 @@ const ProviderDirectoryPage = () => {
                   <Upload className="h-4 w-4" />
                   Agency import
                 </TabsTrigger>
+                <TabsTrigger value="offboarded">Offboarded</TabsTrigger>
               </TabsList>
 
               {/* Supervision Tab - Medallion agreements across all providers */}
@@ -550,7 +563,7 @@ const ProviderDirectoryPage = () => {
               </TabsContent>
 
               {/* Directory Tab - Contact/Profile focused view */}
-              <TabsContent value="directory" className="space-y-6">
+              <TabsContent value={activeTab === 'offboarded' ? 'offboarded' : 'directory'} className="space-y-6">
                 <div className="flex items-center justify-between">
                   <ProviderFilters
                     searchQuery={searchQuery}
@@ -777,6 +790,13 @@ const ProviderDirectoryPage = () => {
         </div>
       </main>
 
+      {isAdmin && (
+        <FlagProfileLookup open={flagLookupOpen} onClose={() => setFlagLookupOpen(false)}
+          profiles={providers.filter(p => !isOffboarded(p.employment_status) && p.directory_visibility !== 'excluded').map(p => ({ id: p.id, name: directoryDisplayName(p), npi: p.npi_number }))}
+          onSelect={id => { const provider = providers.find(p => p.id === id); if (provider) setSelectedProvider(provider); }}
+          onAdd={() => navigate('/admin/add-provider')}
+        />
+      )}
       {isAdmin && (
         <ProviderDetailModal
           provider={selectedProvider}

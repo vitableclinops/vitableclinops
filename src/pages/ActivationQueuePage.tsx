@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { useQuery } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { useAuth } from '@/hooks/useAuth';
@@ -82,7 +83,7 @@ export default function ActivationQueuePage() {
       const { data } = await supabase
         .from('profiles')
         .select('id, full_name, email, employment_status')
-        .neq('employment_status', 'termed');
+        .or(CURRENT_EMPLOYEE_FILTER);
       return data || [];
     },
   });
