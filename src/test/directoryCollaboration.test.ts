@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { directoryCollaborationIds } from '@/lib/directoryCollaboration';
+import { directoryCollaborationIds, directoryCollaborationCounts } from '@/lib/directoryCollaboration';
 
 describe('directory collaboration participation', () => {
+  it('counts the same local agreement only once across direct and participant links', () => {
+    const counts = directoryCollaborationCounts([{ id: 'a', provider_id: 'np', physician_id: 'kate', workflow_status: 'active', terminated_at: null }], [{ agreement_id: 'a', provider_id: 'np', is_active: true }], [{ profile_id: 'np', supervisor_profile_id: 'kate', source_status: 'active', local_agreement_id: 'a' }]);
+    expect(counts.get('np')).toBe(1);
+    expect(counts.get('kate')).toBe(1);
+  });
   it('includes Kate as physician on an active local agreement', () => {
     const ids = directoryCollaborationIds([{ id: 'a', provider_id: 'np', physician_id: 'kate', workflow_status: 'active', terminated_at: null }], [], []);
     expect(ids.has('kate')).toBe(true);

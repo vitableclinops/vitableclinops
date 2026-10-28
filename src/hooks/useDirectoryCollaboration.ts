@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { directoryCollaborationIds } from '@/lib/directoryCollaboration';
+import { directoryCollaborationCounts } from '@/lib/directoryCollaboration';
 
 export function useDirectoryCollaboration(enabled: boolean) {
   return useQuery({
@@ -21,7 +21,7 @@ export function useDirectoryCollaboration(enabled: boolean) {
         supervisor_profile_id: externalIds.get(`${a.agency_id}:${a.supervisor_external_id}`) ?? null,
         source_status: a.collaborative_agreement_status, local_agreement_id: null,
       }));
-      return directoryCollaborationIds(local.data ?? [], participants.data ?? [], [...(medallion.data ?? []), ...agency]);
+      return directoryCollaborationCounts(local.data ?? [], participants.data ?? [], [...(medallion.data ?? []), ...agency]);
     },
   });
 }

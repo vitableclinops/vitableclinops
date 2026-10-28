@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAgencies } from '@/hooks/useAgencies';
+import { useDirectoryCollaboration } from '@/hooks/useDirectoryCollaboration';
 import {
   Dialog,
   DialogContent,
@@ -288,21 +289,9 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
     },
   });
 
-  // Fetch actual collaborative agreement count for this provider
-  const { data: agreementCount = 0 } = useQuery({
-    queryKey: ['provider-agreements-count', provider?.id],
-    queryFn: async () => {
-      if (!provider) return 0;
-      const { count, error } = await supabase
-        .from('agreement_providers')
-        .select('*', { count: 'exact', head: true })
-        .eq('provider_id', provider.id)
-        .eq('is_active', true);
-      if (error) throw error;
-      return count || 0;
-    },
-    enabled: !!provider,
-  });
+  // Share the directory's agreement-derived count for providers and physicians.
+  const { data: collaborationCounts } = useDirectoryCollaboration(!!provider);
+  const agreementCount = provider ? collaborationCounts?.get(provider.id) ?? 0 : 0;
 
   // Fetch this provider's active agreements to surface missing requirements
   // (currently: agreements with no documentation on file — same rule as the
@@ -364,14 +353,14 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
       if (!provider) return;
       // Exclude computed field from save
       const { has_collaborative_agreements: _, ...saveData } = formData;
-      const { error } = await supabase
+      const { data: saved, error } = await supabase
         .from('profiles')
-        .update({ ...saveData, has_collaborative_agreements: agreementCount > 0 })
+        .update(saveData)
         .eq('id', provider.id)
         .select('*')
         .single();
       if (error) throw error;
-      return { ...provider, ...saveData, has_collaborative_agreements: agreementCount > 0 } as FullProvider;
+      return saved as FullProvider;
     },
     onSuccess: (saved) => {
       if (saved) onSaved?.(saved);
