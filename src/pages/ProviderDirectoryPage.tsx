@@ -24,6 +24,7 @@ import { ProviderDetailModal } from '@/components/directory/ProviderDetailModal'
 import { SupervisionAgreementsTable } from '@/components/directory/SupervisionAgreementsTable';
 import { ExternalImportPanel } from '@/components/directory/ExternalImportPanel';
 import { useExternalDirectoryData } from '@/hooks/useExternalImport';
+import { useDirectoryCollaboration } from '@/hooks/useDirectoryCollaboration';
 import { summarizeLicenses } from '@/lib/externalImport';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
@@ -120,6 +121,7 @@ const ProviderDirectoryPage = () => {
   // Determine initial tab from URL or default based on role
   const tabParam = searchParams.get('tab');
   const isAdmin = roles.includes('admin');
+  const { data: collaborationIds } = useDirectoryCollaboration(isAdmin);
   const defaultTab = isAdmin && ['management', 'medallion', 'agency-import', 'offboarded'].includes(tabParam ?? '') ? (tabParam ?? 'directory') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);
@@ -457,7 +459,7 @@ const ProviderDirectoryPage = () => {
       : null,
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
-    has_collaborative_agreements: isAdmin ? (p as FullProvider).has_collaborative_agreements : null,
+    has_collaborative_agreements: isAdmin && collaborationIds ? collaborationIds.has(p.id) : null,
     activation_status: isOffboarded(p.employment_status) ? 'Terminated' : isAdmin ? ((p as any).activation_status || null) : null,
     collaborative_physician: null, // Derived from collaborative_agreements now
     renewal_handling: isAdmin ? ((p as any).renewal_handling || null) : null,

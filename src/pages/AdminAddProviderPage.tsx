@@ -235,6 +235,7 @@ export default function AdminAddProviderPage() {
     onSuccess: (data) => {
       setCreatedResult(data);
       queryClient.invalidateQueries({ queryKey: ['providers'] });
+      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
       toast({
         title: 'Provider Added',
         description: `${values.fullName} has been added to the system.`,
