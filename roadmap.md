@@ -21,3 +21,4 @@
 - [ ] Display licensed states minus active PCP states in the directory and verify real records.
 - [ ] Condense the new state column to comma-separated abbreviations matching active states.
 - [ ] Place Active PCP Telemedicine States before Licensed but not active in EHR.
+- [ ] Add and verify copy icons beside active PCP telemedicine states.

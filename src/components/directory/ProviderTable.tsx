@@ -225,8 +225,11 @@ export const ProviderTable = ({
                 </TableCell>
                 {isAdmin && (
                   <TableCell>
-                    <span className="text-sm max-w-[180px] truncate block">
-                      {provider.pcp_coverage ? <PcpCellView cell={provider.pcp_coverage} /> : null}
+                    <span className="flex items-center gap-1">
+                      <span className="text-sm max-w-[180px] truncate block">
+                        {provider.pcp_coverage ? <PcpCellView cell={provider.pcp_coverage} /> : null}
+                      </span>
+                      {!!provider.pcp_coverage?.states.length && <CopyValueButton value={provider.pcp_coverage.states.join(', ')} label="Active PCP telemedicine states" />}
                     </span>
                   </TableCell>
                 )}
