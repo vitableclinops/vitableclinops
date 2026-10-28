@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -47,7 +48,7 @@ interface CompanyMeetingWizardProps {
   onSuccess: () => void;
 }
 
-type WizardStep = 'date' | 'review' | 'notify';
+type WizardStep = 'date' | 'attendees' | 'review' | 'notify';
 
 export function CompanyMeetingWizard({ 
   open, 
@@ -61,6 +62,7 @@ export function CompanyMeetingWizard({
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderForMeeting[]>([]);
+  const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [createdMeetingIds, setCreatedMeetingIds] = useState<{ am: string; pm: string } | null>(null);
   const [emailsCopied, setEmailsCopied] = useState(false);
@@ -73,6 +75,7 @@ export function CompanyMeetingWizard({
       setNotes('');
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
+      setSelectedAttendees(new Set());
       suggestNextDate();
     }
   }, [open]);
@@ -162,7 +165,9 @@ export function CompanyMeetingWizard({
         }
       });
 
-      setProviders(Array.from(providerMap.values()).sort((a, b) => a.name.localeCompare(b.name)));
+      const providerList = Array.from(providerMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+      setProviders(providerList);
+      setSelectedAttendees(new Set(providerList.filter(p => p.isRequired).map(p => p.email)));
     } catch (err) {
       console.error('Error loading providers:', err);
       toast({
@@ -212,10 +217,29 @@ export function CompanyMeetingWizard({
     return providers.filter(p => !p.isRequired);
   }, [providers]);
 
-  // Generate email list for required providers only
+  // Providers the user chose to invite (defaults to the required providers)
+  const invitedProviders = useMemo(() => {
+    return providers.filter(p => selectedAttendees.has(p.email));
+  }, [providers, selectedAttendees]);
+
+  const toggleAttendee = (email: string) => {
+    setSelectedAttendees(prev => {
+      const next = new Set(prev);
+      if (next.has(email)) {
+        next.delete(email);
+      } else {
+        next.add(email);
+      }
+      return next;
+    });
+  };
+
+  const selectAllAttendees = (emails: string[]) => setSelectedAttendees(new Set(emails));
+
+  // Generate email list for invited providers only
   const emailList = useMemo(() => {
-    return requiredProviders.map(p => p.email).join(', ');
-  }, [requiredProviders]);
+    return invitedProviders.map(p => p.email).join(', ');
+  }, [invitedProviders]);
 
   // Copy emails to clipboard
   const copyEmails = async () => {
@@ -224,7 +248,7 @@ export function CompanyMeetingWizard({
       setEmailsCopied(true);
       toast({
         title: 'Copied!',
-        description: `${requiredProviders.length} email addresses copied to clipboard.`,
+        description: `${invitedProviders.length} email addresses copied to clipboard.`,
       });
       setTimeout(() => setEmailsCopied(false), 3000);
     } catch {
@@ -240,7 +264,7 @@ export function CompanyMeetingWizard({
   const downloadEmailsCsv = () => {
     const csvContent = [
       ['Name', 'Email', 'Required States', 'All States'].join(','),
-      ...requiredProviders.map(p => [
+      ...invitedProviders.map(p => [
         `"${p.name}"`,
         p.email,
         `"${p.requiredStates.join(', ')}"`,
@@ -258,7 +282,7 @@ export function CompanyMeetingWizard({
 
     toast({
       title: 'Downloaded',
-      description: `${requiredProviders.length} providers exported to CSV.`,
+      description: `${invitedProviders.length} providers exported to CSV.`,
     });
   };
 
@@ -320,9 +344,9 @@ export function CompanyMeetingWizard({
       
       if (pmError) throw pmError;
       
-      // Add only required providers as invited attendees to both meetings
-      if (requiredProviders.length > 0 && amMeeting && pmMeeting) {
-        const attendeeInserts = requiredProviders.flatMap(provider => [
+      // Add the selected providers as invited attendees to both meetings
+      if (invitedProviders.length > 0 && amMeeting && pmMeeting) {
+        const attendeeInserts = invitedProviders.flatMap(provider => [
           {
             meeting_id: amMeeting.id,
             provider_id: provider.id,
@@ -371,6 +395,8 @@ export function CompanyMeetingWizard({
     switch (step) {
       case 'date':
         return selectedDate !== undefined;
+      case 'attendees':
+        return selectedAttendees.size > 0;
       case 'review':
         return true;
       case 'notify':
@@ -381,7 +407,7 @@ export function CompanyMeetingWizard({
   };
 
   const goNext = () => {
-    const steps: WizardStep[] = ['date', 'review', 'notify'];
+    const steps: WizardStep[] = ['date', 'attendees', 'review', 'notify'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex < steps.length - 1) {
       if (step === 'review') {
@@ -393,7 +419,7 @@ export function CompanyMeetingWizard({
   };
 
   const goBack = () => {
-    const steps: WizardStep[] = ['date', 'review', 'notify'];
+    const steps: WizardStep[] = ['date', 'attendees', 'review', 'notify'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex > 0) {
       setStep(steps[currentIndex - 1]);
@@ -417,6 +443,7 @@ export function CompanyMeetingWizard({
           </DialogTitle>
           <DialogDescription>
             {step === 'date' && 'Select the date for the monthly collaborative meeting.'}
+            {step === 'attendees' && 'Choose who should be invited to this meeting.'}
             {step === 'review' && 'Review the meeting details before scheduling.'}
             {step === 'notify' && 'Meeting scheduled! Send notifications to providers.'}
           </DialogDescription>
@@ -424,29 +451,29 @@ export function CompanyMeetingWizard({
 
         {/* Progress indicators */}
         <div className="flex items-center justify-center gap-2 py-4">
-          {(['date', 'review', 'notify'] as WizardStep[]).map((s, i) => (
+          {(['date', 'attendees', 'review', 'notify'] as WizardStep[]).map((s, i) => (
             <div key={s} className="flex items-center">
               <div
                 className={cn(
                   'h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors',
                   step === s
                     ? 'bg-primary text-primary-foreground'
-                    : i < ['date', 'review', 'notify'].indexOf(step)
+                    : i < ['date', 'attendees', 'review', 'notify'].indexOf(step)
                     ? 'bg-green-500 text-white'
                     : 'bg-muted text-muted-foreground'
                 )}
               >
-                {i < ['date', 'review', 'notify'].indexOf(step) ? (
+                {i < ['date', 'attendees', 'review', 'notify'].indexOf(step) ? (
                   <Check className="h-4 w-4" />
                 ) : (
                   i + 1
                 )}
               </div>
-              {i < 2 && (
+              {i < 3 && (
                 <div
                   className={cn(
                     'w-12 h-0.5 mx-1',
-                    i < ['date', 'review', 'notify'].indexOf(step)
+                    i < ['date', 'attendees', 'review', 'notify'].indexOf(step)
                       ? 'bg-green-500'
                       : 'bg-muted'
                   )}
@@ -515,7 +542,84 @@ export function CompanyMeetingWizard({
             </div>
           )}
 
-          {/* Step 2: Review */}
+          {/* Step 2: Select Attendees */}
+          {step === 'attendees' && (
+            <div className="space-y-4">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  Pick exactly who should be invited. Providers required this month are pre-selected.
+                </AlertDescription>
+              </Alert>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => selectAllAttendees(providers.filter(p => p.isRequired).map(p => p.email))}
+                >
+                  Required only ({requiredProviders.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => selectAllAttendees(providers.map(p => p.email))}
+                >
+                  Select all ({providers.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedAttendees(new Set())}
+                >
+                  Clear
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {providers.map(provider => {
+                  const isSelected = selectedAttendees.has(provider.email);
+                  return (
+                    <div
+                      key={provider.email}
+                      className={cn(
+                        'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                        isSelected ? 'border-primary bg-primary/5' : 'bg-card'
+                      )}
+                      onClick={() => toggleAttendee(provider.email)}
+                    >
+                      <Checkbox checked={isSelected} className="mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium text-sm">{provider.name}</p>
+                          {provider.isRequired && (
+                            <Badge variant="secondary" className="text-xs">
+                              Required this month
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{provider.email}</p>
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {provider.states.map(state => (
+                            <Badge key={state} variant="outline" className="text-xs">
+                              {state}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {providers.length === 0 && !loading && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No providers found.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Review */}
           {step === 'review' && (
             <div className="space-y-6">
               <Card>
@@ -540,19 +644,21 @@ export function CompanyMeetingWizard({
                   
                   <div>
                     <Label className="text-muted-foreground text-xs">Providers to be Invited</Label>
-                    <p className="font-medium">{requiredProviders.length} providers required this month</p>
-                    {nonRequiredProviders.length > 0 && (
-                      <p className="text-xs text-muted-foreground">{nonRequiredProviders.length} providers not required (skipped)</p>
+                    <p className="font-medium">{invitedProviders.length} provider{invitedProviders.length !== 1 ? 's' : ''} selected</p>
+                    {providers.length - invitedProviders.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {providers.length - invitedProviders.length} provider{providers.length - invitedProviders.length !== 1 ? 's' : ''} not invited
+                      </p>
                     )}
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {requiredProviders.slice(0, 5).map(p => (
+                      {invitedProviders.slice(0, 5).map(p => (
                         <Badge key={p.email} variant="secondary" className="text-xs">
                           {p.name} ({p.requiredStates.join(', ')})
                         </Badge>
                       ))}
-                      {requiredProviders.length > 5 && (
+                      {invitedProviders.length > 5 && (
                         <Badge variant="outline" className="text-xs">
-                          +{requiredProviders.length - 5} more
+                          +{invitedProviders.length - 5} more
                         </Badge>
                       )}
                     </div>
@@ -630,11 +736,11 @@ export function CompanyMeetingWizard({
 
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">
-                      {providers.length} Providers to Notify
+                      {invitedProviders.length} Providers to Notify
                     </Label>
                     <ScrollArea className="h-48">
                       <div className="space-y-2">
-                        {providers.map(provider => (
+                        {invitedProviders.map(provider => (
                           <div 
                             key={provider.email}
                             className="flex items-center justify-between p-2 rounded border bg-card"
