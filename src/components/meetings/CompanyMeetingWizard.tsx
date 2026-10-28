@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -32,6 +34,12 @@ import { format, addMonths, startOfMonth, getDate } from 'date-fns';
 // Fixed time slots for company-wide meetings
 const AM_TIME = '10:00';
 const PM_TIME = '14:00';
+
+// Format a 24h "HH:mm" string as a 12-hour label, e.g. "10:00 AM"
+const fmt12 = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+};
 
 interface ProviderForMeeting {
   id: string;
@@ -63,11 +71,13 @@ export function CompanyMeetingWizard({
   const [step, setStep] = useState<WizardStep>('date');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [notes, setNotes] = useState('');
+  const [timeChoice, setTimeChoice] = useState<'both' | 'am' | 'pm' | 'custom'>('both');
+  const [customTime, setCustomTime] = useState('10:00');
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderForMeeting[]>([]);
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [createdMeetingIds, setCreatedMeetingIds] = useState<{ am: string; pm: string } | null>(null);
+  const [createdMeetingIds, setCreatedMeetingIds] = useState<string[] | null>(null);
   const [emailsCopied, setEmailsCopied] = useState(false);
 
   // Reset state when dialog opens
@@ -76,6 +86,8 @@ export function CompanyMeetingWizard({
       setStep('date');
       setSelectedDate(undefined);
       setNotes('');
+      setTimeChoice('both');
+      setCustomTime('10:00');
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
       setSelectedAttendees(new Set());
