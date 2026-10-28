@@ -13,3 +13,4 @@
 - [x] Add a top-of-directory Provider flagged alert with reasons, correction guidance, and profile links; verify Bee Chang's alert.
 - [x] Replace contractor employment labels with 1099 and verify directory/profile display.
 - [x] Check saved profile contractor classifications and convert any to 1099 (all 56 already stored as 1099; no data changes needed).
+- [ ] Add admin-only no-NPI profile exception, clear only missing-NPI flags, and verify saving.
