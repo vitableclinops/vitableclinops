@@ -6,8 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -32,14 +30,17 @@ import { cn } from '@/lib/utils';
 import { format, addMonths, startOfMonth, getDate } from 'date-fns';
 
 // Fixed time slots for company-wide meetings
-const AM_TIME = '10:00';
-const PM_TIME = '14:00';
 
 // Format a 24h "HH:mm" string as a 12-hour label, e.g. "10:00 AM"
 const fmt12 = (t: string) => {
   const [h, m] = t.split(':').map(Number);
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 };
+
+// All selectable meeting times: 12:00 AM through 11:30 PM in 30-minute steps
+const TIME_OPTIONS: string[] = Array.from({ length: 48 }, (_, i) =>
+  `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 === 0 ? '00' : '30'}`
+);
 
 interface ProviderForMeeting {
   id: string;
@@ -71,8 +72,7 @@ export function CompanyMeetingWizard({
   const [step, setStep] = useState<WizardStep>('date');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [notes, setNotes] = useState('');
-  const [timeChoice, setTimeChoice] = useState<'both' | 'am' | 'pm' | 'custom'>('both');
-  const [customTime, setCustomTime] = useState('10:00');
+  const [selectedTime, setSelectedTime] = useState('10:00');
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderForMeeting[]>([]);
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set());
@@ -86,8 +86,7 @@ export function CompanyMeetingWizard({
       setStep('date');
       setSelectedDate(undefined);
       setNotes('');
-      setTimeChoice('both');
-      setCustomTime('10:00');
+      setSelectedTime('10:00');
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
       setSelectedAttendees(new Set());
@@ -301,15 +300,10 @@ export function CompanyMeetingWizard({
     });
   };
 
-  // Which time slot(s) will be created, based on the selected time option
+  // The single selected time slot to create
   const getTimeSessions = (): { slot: 'am' | 'pm'; time: string }[] => {
-    if (timeChoice === 'am') return [{ slot: 'am', time: AM_TIME }];
-    if (timeChoice === 'pm') return [{ slot: 'pm', time: PM_TIME }];
-    if (timeChoice === 'custom') {
-      const t = customTime || '10:00';
-      return [{ slot: parseInt(t, 10) < 12 ? 'am' : 'pm', time: t }];
-    }
-    return [{ slot: 'am', time: AM_TIME }, { slot: 'pm', time: PM_TIME }];
+    const t = selectedTime || '10:00';
+    return [{ slot: parseInt(t, 10) < 12 ? 'am' : 'pm', time: t }];
   };
 
   const handleSubmit = async () => {
@@ -402,7 +396,7 @@ export function CompanyMeetingWizard({
   const canProceed = () => {
     switch (step) {
       case 'date':
-        return selectedDate !== undefined && (timeChoice !== 'custom' || customTime !== '');
+        return selectedDate !== undefined;
       case 'attendees':
         return selectedAttendees.size > 0;
       case 'review':
@@ -515,19 +509,24 @@ export function CompanyMeetingWizard({
                   disabled={(date) => date < new Date()}
                 />
                 <div className="w-full space-y-1.5">
-                  <Label>Meeting Time (Eastern Time)</Label>
-                  <Select value={timeChoice} onValueChange={(v) => setTimeChoice(v as 'both' | 'am' | 'pm' | 'custom')}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="both">Both — {fmt12(AM_TIME)} & {fmt12(PM_TIME)} ET</SelectItem>
-                      <SelectItem value="am">Morning only — {fmt12(AM_TIME)} ET</SelectItem>
-                      <SelectItem value="pm">Afternoon only — {fmt12(PM_TIME)} ET</SelectItem>
-                      <SelectItem value="custom">Custom time…</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {timeChoice === 'custom' && (
-                    <Input type="time" value={customTime} onChange={(e) => setCustomTime(e.target.value)} />
-                  )}
+                  <Label>Time</Label>
+                  <div className="max-h-44 overflow-y-auto rounded-md border" role="listbox" aria-label="Meeting time">
+                    {TIME_OPTIONS.map((t) => {
+                      const selected = t === selectedTime;
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => setSelectedTime(t)}
+                          className={`w-full px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent ${selected ? 'bg-primary/10 font-medium' : ''}`}
+                        >
+                          {fmt12(t)}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 {selectedDate && (
                   <div className="text-center">
@@ -698,8 +697,8 @@ export function CompanyMeetingWizard({
                 <Info className="h-4 w-4" />
                 <AlertDescription>
                   {calendarOnly
-                    ? `Providers will be added to the ${timeChoice === 'both' ? 'both time slots' : 'selected time slot'} on the calendar. No emails are sent.`
-                    : `Providers will be added to the ${timeChoice === 'both' ? 'both time slots' : 'selected time slot'}. After scheduling, you'll get a list of emails to notify them externally.`}
+                    ? `Providers will be added to the selected time slot on the calendar. No emails are sent.`
+                    : `Providers will be added to the selected time slot. After scheduling, you'll get a list of emails to notify them externally.`}
                 </AlertDescription>
               </Alert>
             </div>
