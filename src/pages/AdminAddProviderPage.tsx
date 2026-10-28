@@ -494,7 +494,7 @@ export default function AdminAddProviderPage() {
                               </FormControl>
                               <SelectContent>
                                 <SelectItem value="w2">W-2 Employee</SelectItem>
-                                <SelectItem value="1099">1099 Contractor</SelectItem>
+                                <SelectItem value="1099">1099</SelectItem>
                                 <SelectItem value="agency">Agency</SelectItem>
                               </SelectContent>
                             </Select>

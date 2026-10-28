@@ -35,7 +35,7 @@ export function AdminComplianceTab({ stats }: AdminComplianceTabProps) {
             </div>
             <div className="text-center p-4 rounded-lg bg-muted/50 border">
               <p className="text-2xl font-bold">{stats.contractorCount}</p>
-              <p className="text-xs text-muted-foreground mt-1">1099 Contractors</p>
+              <p className="text-xs text-muted-foreground mt-1">1099 Providers</p>
             </div>
           </div>
           <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border text-sm">

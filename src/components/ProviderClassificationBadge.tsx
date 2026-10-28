@@ -25,7 +25,7 @@ export function ProviderClassificationBadge({ employmentType, compact = false }:
     return (
       <Badge variant="outline" className={cn("gap-1 bg-purple-500/10 text-purple-600 border-purple-500/30", compact && "text-xs px-1.5 py-0")}>
         <User className={cn("h-3 w-3", compact && "h-2.5 w-2.5")} />
-        {compact ? '1099' : '1099 Contractor'}
+        1099
       </Badge>
     );
   }
