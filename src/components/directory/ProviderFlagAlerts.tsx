@@ -52,7 +52,7 @@ export function ProviderFlagAlerts({
       <AlertTitle className="flex flex-wrap items-center justify-between gap-2 leading-normal">
         <span>
           {flagCount
-            ? `Provider flagged · ${flagCount} provider${flagCount === 1 ? '' : 's'} need review`
+            ? `Provider flagged · ${flagCount} provider${flagCount === 1 ? ' needs' : 's need'} review`
             : 'No provider flags'}
           {coverage ? ` · ${coverage.label}` : ''}
         </span>
