@@ -261,6 +261,7 @@ export const ProviderTable = ({
                 {isAdmin && (
                   <TableCell>
                     {(() => {
+                      if (provider.has_collaborative_agreements === null) return <span className="text-muted-foreground text-sm">Checking…</span>;
                       const isMD = provider.profession === 'MD' || provider.credentials === 'MD';
                       if (isMD) {
                         return provider.has_collaborative_agreements ? (
