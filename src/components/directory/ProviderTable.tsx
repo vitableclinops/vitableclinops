@@ -224,8 +224,11 @@ export const ProviderTable = ({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span className="text-sm max-w-[200px] truncate block">
-                    {provider.actively_licensed_states || '-'}
+                  <span className="flex items-center gap-1">
+                    <span className="text-sm max-w-[200px] truncate block">
+                      {provider.actively_licensed_states || '-'}
+                    </span>
+                    {provider.actively_licensed_states && <CopyValueButton value={provider.actively_licensed_states} label="Licensed states" />}
                   </span>
                 </TableCell>
                 {isAdmin && (
