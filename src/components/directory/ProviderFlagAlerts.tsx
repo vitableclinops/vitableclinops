@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
+import type { CoverageAlertSummary } from '@/lib/coverageAlertSummary';
 
 interface Conflict { field: string; local: string | null; medallion: string | null }
 export interface FlaggedProvider { id: string; name: string; conflicts: Conflict[]; identityReview?: { reason: string; howToFix: string } }
@@ -30,21 +31,42 @@ const labels: Record<string, string> = {
   npi: 'NPI', name: 'Legal name', email: 'Email', specialty: 'Specialty',
 };
 
-export function ProviderFlagAlerts({ providers, onReview }: { providers: FlaggedProvider[]; onReview: (id: string) => void }) {
+export function ProviderFlagAlerts({
+  providers,
+  coverage,
+  onReview,
+}: {
+  providers: FlaggedProvider[];
+  coverage?: CoverageAlertSummary | null;
+  onReview: (id: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
-  if (providers.length === 0) return null;
+  const flagCount = providers.length;
+  if (!flagCount && !coverage) return null;
+  const coverageIssues = !!coverage && (coverage.status !== 'ok' || !!coverage.failure || coverage.review.length > 0);
+  const warning = flagCount > 0 || coverageIssues;
+
   return (
-    <Alert className="mb-6 border-warning/40 bg-warning/10">
+    <Alert className={`mb-6 ${warning ? 'border-warning/40 bg-warning/10' : 'border-border bg-muted/30'}`}>
       <AlertTriangle className="h-4 w-4" />
       <AlertTitle className="flex flex-wrap items-center justify-between gap-2 leading-normal">
-        <span>Provider flagged · {providers.length} provider{providers.length === 1 ? '' : 's'} need review</span>
+        <span>
+          {flagCount
+            ? `Provider flagged · ${flagCount} provider${flagCount === 1 ? '' : 's'} need review`
+            : 'No provider flags'}
+          {coverage ? ` · ${coverage.label}` : ''}
+        </span>
         <Button size="sm" variant="ghost" aria-expanded={expanded} aria-controls="provider-flag-details" onClick={() => setExpanded(value => !value)}>
           {expanded ? 'Hide details' : 'Review flags'}
           {expanded ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
         </Button>
       </AlertTitle>
       <AlertDescription>
-        <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview ? ['Identity needs review'] : []), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
+        {flagCount > 0 && (
+          <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview ? ['Identity needs review'] : []), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
+        )}
+        {coverage && <p className="mt-1 break-words text-muted-foreground">{coverage.summary}</p>}
+        {coverage?.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
         {expanded && (
           <div id="provider-flag-details" className="mt-3 max-h-80 overflow-y-auto divide-y divide-border">
             {providers.map(provider => (
@@ -69,6 +91,49 @@ export function ProviderFlagAlerts({ providers, onReview }: { providers: Flagged
                 ))}
               </section>
             ))}
+            {coverage && (
+              <section className="py-3">
+                <h3 className="font-semibold">Active states in EHR — data freshness</h3>
+                <p className="mt-1 break-words">{coverage.summary}</p>
+                {coverage.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Source: Metabase (current records returned by our read-only query, explicit exclusions applied).
+                  Warehouse refresh time: not verified. The source’s is_active flag meaning is pending data-owner confirmation.
+                </p>
+              </section>
+            )}
+            {coverage && coverage.review.length > 0 && (
+              <section className="py-3">
+                <h3 className="font-semibold">Identities needing review ({coverage.review.length})</h3>
+                <ul className="mt-1 space-y-2">
+                  {coverage.review.map(i => (
+                    <li key={i.ehrProviderId} className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="break-words">
+                        {i.ehrName} (NPI {i.npi ?? 'none'}) —{' '}
+                        {i.status === 'matched' ? 'linked by NPI; name differs from directory record' : i.reason}
+                      </span>
+                      {i.profileId && (
+                        <Button size="sm" variant="outline" onClick={() => onReview(i.profileId as string)}>
+                          Open profile<ArrowRight className="ml-1 h-3 w-3" />
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {coverage && coverage.excluded.length > 0 && (
+              <section className="py-3">
+                <h3 className="font-semibold">Explicit exclusions still present in source ({coverage.excluded.length})</h3>
+                <ul className="mt-1 ml-4 list-disc space-y-1">
+                  {coverage.excluded.map(i => (
+                    <li key={i.ehrProviderId} className="break-words">
+                      {i.ehrName} (NPI {i.npi ?? 'none'}) — {i.reason}; source still lists {i.states.length} state(s)
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             <p className="pt-3 text-xs text-muted-foreground">Medallion differences are rechecked after the next successful directory sync.</p>
           </div>
         )}
