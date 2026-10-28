@@ -31,6 +31,7 @@ import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor, isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
 import { mergeProviderFlags } from '@/lib/providerFlagSummary';
 import { employeeVisibleIn, isOffboarded } from '@/lib/employeeVisibility';
+import { isClinician } from '@/lib/clinicianRoles';
 import { FlagProfileLookup } from '@/components/directory/FlagProfileLookup';
 import { licensedNotActiveLabel } from '@/lib/licensedNotActiveStates';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
