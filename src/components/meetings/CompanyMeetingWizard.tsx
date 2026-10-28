@@ -27,7 +27,8 @@ import {
   Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format, addMonths, startOfMonth, getDate } from 'date-fns';
+import { format } from 'date-fns';
+import { selectMeetingProviders } from '@/lib/collabMeetingStates';
 
 // Fixed time slots for company-wide meetings
 
@@ -47,8 +48,6 @@ interface ProviderForMeeting {
   name: string;
   email: string;
   states: string[]; // All states this provider has agreements in
-  requiredStates: string[]; // States that require a meeting this month
-  isRequired: boolean; // Whether provider needs to attend this month
 }
 
 interface CompanyMeetingWizardProps {
@@ -94,18 +93,18 @@ export function CompanyMeetingWizard({
       setSelectedAttendees(new Set());
       setProviderStates({});
       setSelectedStates(new Set());
-      suggestNextDate();
+      setSelectedDate(new Date());
     }
   }, [open]);
 
-  // Reload providers when date changes to recalculate who's required
+  // Load selectable providers when the wizard opens
   useEffect(() => {
-    if (open && selectedDate) {
+    if (open) {
       loadProviders();
     }
-  }, [selectedDate]);
+  }, [open]);
 
-  // Load all active providers with their states and determine if required for this month
+  // Load available provider states without inferring meeting requirements
   const loadProviders = async () => {
     setLoading(true);
     try {
@@ -135,22 +134,6 @@ export function CompanyMeetingWizard({
         return;
       }
 
-      // Get state compliance requirements for meeting months
-      const stateAbbrs = [...new Set(agreements.map(a => a.state_abbreviation))];
-      const { data: stateCompliance } = await supabase
-        .from('state_compliance_requirements')
-        .select('state_abbreviation, meeting_months')
-        .in('state_abbreviation', stateAbbrs);
-
-      // Create state -> meeting months map
-      const stateMonthMap = new Map<string, number[]>();
-      stateCompliance?.forEach(sc => {
-        stateMonthMap.set(sc.state_abbreviation, sc.meeting_months || []);
-      });
-
-      // Determine which month we're scheduling for (default to next month)
-      const meetingMonth = selectedDate ? (selectedDate.getMonth() + 1) : ((new Date().getMonth() + 2) % 12 || 12);
-
       // Group providers and their states
       const providerMap = new Map<string, ProviderForMeeting>();
       
@@ -158,18 +141,10 @@ export function CompanyMeetingWizard({
         const agreement = agreements.find(a => a.id === ap.agreement_id);
         if (!agreement) return;
         
-        const stateMonths = stateMonthMap.get(agreement.state_abbreviation) || [];
-        // If no months specified or empty array, default to monthly (all months required)
-        const isRequiredForState = stateMonths.length === 0 || stateMonths.includes(meetingMonth);
-        
         const existing = providerMap.get(ap.provider_email);
         if (existing) {
           if (!existing.states.includes(agreement.state_abbreviation)) {
             existing.states.push(agreement.state_abbreviation);
-          }
-          if (isRequiredForState && !existing.requiredStates.includes(agreement.state_abbreviation)) {
-            existing.requiredStates.push(agreement.state_abbreviation);
-            existing.isRequired = true;
           }
         } else {
           providerMap.set(ap.provider_email, {
@@ -177,21 +152,12 @@ export function CompanyMeetingWizard({
             name: ap.provider_name,
             email: ap.provider_email,
             states: [agreement.state_abbreviation],
-            requiredStates: isRequiredForState ? [agreement.state_abbreviation] : [],
-            isRequired: isRequiredForState,
           });
         }
       });
 
       const providerList = Array.from(providerMap.values()).sort((a, b) => a.name.localeCompare(b.name));
       setProviders(providerList);
-      // Pre-select the scheduled states for every provider required this month
-      const initialStates: Record<string, string[]> = {};
-      providerList.filter(p => p.isRequired).forEach(p => {
-        initialStates[p.email] = p.requiredStates.length > 0 ? [...p.requiredStates] : [...p.states];
-      });
-      setProviderStates(initialStates);
-      setSelectedAttendees(new Set(Object.keys(initialStates)));
     } catch (err) {
       console.error('Error loading providers:', err);
       toast({
@@ -204,44 +170,7 @@ export function CompanyMeetingWizard({
     }
   };
 
-  // Suggest next meeting date based on monthly cadence
-  const suggestNextDate = async () => {
-    try {
-      // Get the last company-wide meeting
-      const { data: lastMeeting } = await supabase
-        .from('supervision_meetings')
-        .select('scheduled_date')
-        .eq('is_company_wide', true)
-        .order('scheduled_date', { ascending: false })
-        .limit(1)
-        .single();
-      
-      if (lastMeeting) {
-        // Suggest 1 month from last meeting
-        const lastDate = new Date(lastMeeting.scheduled_date);
-        setSelectedDate(addMonths(lastDate, 1));
-      } else {
-        // Default to first of next month
-        const nextMonth = addMonths(new Date(), 1);
-        setSelectedDate(startOfMonth(nextMonth));
-      }
-    } catch {
-      // No previous meeting, suggest first of next month
-      const nextMonth = addMonths(new Date(), 1);
-      setSelectedDate(startOfMonth(nextMonth));
-    }
-  };
-
-  // Get only required providers for invitations
-  const requiredProviders = useMemo(() => {
-    return providers.filter(p => p.isRequired);
-  }, [providers]);
-
-  const nonRequiredProviders = useMemo(() => {
-    return providers.filter(p => !p.isRequired);
-  }, [providers]);
-
-  // Providers the user chose to invite (defaults to the required providers)
+  // Providers explicitly selected for this meeting
   const invitedProviders = useMemo(() => {
     return providers.filter(p => (providerStates[p.email] || []).length > 0);
   }, [providers, providerStates]);
@@ -271,14 +200,13 @@ export function CompanyMeetingWizard({
     });
   };
 
-  // Default states to select for a provider: the scheduled ones, else all of theirs
+  // Selecting a provider explicitly selects the visible states
   const defaultStatesFor = (p: ProviderForMeeting) =>
-    p.requiredStates.length > 0 ? [...p.requiredStates] : [...p.states];
+    p.states.filter(state => selectedStates.size === 0 || selectedStates.has(state));
 
   const selectProviders = (provs: ProviderForMeeting[]) => {
-    const nextStates: Record<string, string[]> = {};
-    provs.forEach(p => { nextStates[p.email] = defaultStatesFor(p); });
-    setProviderStates(prev => ({ ...prev, ...nextStates }));
+    const nextStates = selectMeetingProviders(provs, selectedStates);
+    setProviderStates(nextStates);
     setSelectedAttendees(new Set(provs.map(p => p.email)));
   };
 
@@ -354,12 +282,11 @@ export function CompanyMeetingWizard({
   // Download email list as CSV
   const downloadEmailsCsv = () => {
     const csvContent = [
-      ['Name', 'Email', 'Selected States', 'All States'].join(','),
+      ['Name', 'Email', 'Selected States'].join(','),
       ...invitedProviders.map(p => [
         `"${p.name}"`,
         p.email,
         `"${(providerStates[p.email] || []).join(', ')}"`,
-        `"${p.states.join(', ')}"`,
       ].join(',')),
     ].join('\n');
 
@@ -524,7 +451,7 @@ export function CompanyMeetingWizard({
             Schedule Company-Wide Collaborative Meeting
           </DialogTitle>
           <DialogDescription>
-            {step === 'date' && 'Select the date for the monthly collaborative meeting.'}
+            {step === 'date' && 'Select the meeting date.'}
             {step === 'attendees' && 'Choose who should be invited to this meeting.'}
             {step === 'review' && 'Review the meeting details before scheduling.'}
             {step === 'notify' && 'Meeting scheduled! Send notifications to providers.'}
@@ -569,17 +496,6 @@ export function CompanyMeetingWizard({
           {/* Step 1: Select Date */}
           {step === 'date' && (
             <div className="space-y-6">
-              <p className="text-sm text-muted-foreground">
-                {loading ? 'Loading providers...' : (
-                  <>
-                    <strong>{requiredProviders.length}</strong> providers require a meeting this month based on their state cadences.
-                    {nonRequiredProviders.length > 0 && (
-                      <span> ({nonRequiredProviders.length} not required this month)</span>
-                    )}
-                  </>
-                )}
-              </p>
-
               <div className="flex flex-col items-center gap-4">
                 <Calendar
                   mode="single"
@@ -631,21 +547,7 @@ export function CompanyMeetingWizard({
           {/* Step 2: Select Attendees */}
           {step === 'attendees' && (
             <div className="space-y-4">
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  Pick exactly who should be invited. Providers required this month are pre-selected.
-                </AlertDescription>
-              </Alert>
-
               <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => selectProviders(requiredProviders)}
-                >
-                  Required only ({requiredProviders.length})
-                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -664,7 +566,7 @@ export function CompanyMeetingWizard({
 
               {allStates.length > 0 && (
                 <div className="rounded-lg border p-3 space-y-2">
-                  <Label className="text-xs text-muted-foreground">Filter by scheduled states</Label>
+                  <Label className="text-xs text-muted-foreground">Filter by state</Label>
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
@@ -730,29 +632,20 @@ export function CompanyMeetingWizard({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-medium text-sm">{provider.name}</p>
-                          {provider.isRequired && (
-                            <Badge variant="secondary" className="text-xs">
-                              Required this month
-                            </Badge>
-                          )}
                         </div>
                         <p className="text-xs text-muted-foreground">{provider.email}</p>
                         <div className="flex gap-1 mt-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
                           {provider.states.map(state => {
                             const stateOn = selectedStatesFor.includes(state);
-                            const isScheduled = provider.requiredStates.includes(state);
                             return (
                               <button
                                 key={state}
                                 type="button"
                                 onClick={() => toggleProviderState(provider.email, state)}
-                                title={isScheduled ? 'Meeting scheduled this month' : undefined}
                                 className={cn(
                                   'px-2 py-0.5 rounded-full text-xs border transition-colors',
                                   stateOn
                                     ? 'bg-primary text-primary-foreground border-primary'
-                                    : isScheduled
-                                    ? 'border-primary/40 text-primary hover:bg-primary/10'
                                     : 'text-muted-foreground hover:bg-accent'
                                 )}
                               >
@@ -761,11 +654,6 @@ export function CompanyMeetingWizard({
                             );
                           })}
                         </div>
-                        {!isSelected && provider.requiredStates.length > 0 && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Scheduled: {provider.requiredStates.join(', ')}
-                          </p>
-                        )}
                       </div>
                     </div>
                   );
@@ -927,14 +815,14 @@ export function CompanyMeetingWizard({
                               <p className="text-xs text-muted-foreground">{provider.email}</p>
                             </div>
                             <div className="flex gap-1">
-                              {provider.states.slice(0, 3).map(state => (
+                              {(providerStates[provider.email] || []).slice(0, 3).map(state => (
                                 <Badge key={state} variant="outline" className="text-xs">
                                   {state}
                                 </Badge>
                               ))}
-                              {provider.states.length > 3 && (
+                              {(providerStates[provider.email] || []).length > 3 && (
                                 <Badge variant="secondary" className="text-xs">
-                                  +{provider.states.length - 3}
+                                  +{(providerStates[provider.email] || []).length - 3}
                                 </Badge>
                               )}
                             </div>
