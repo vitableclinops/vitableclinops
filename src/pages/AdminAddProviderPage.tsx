@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge';
 import { AgreementWizard } from '@/components/agreements/AgreementWizard';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
