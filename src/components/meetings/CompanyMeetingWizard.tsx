@@ -712,7 +712,8 @@ export function CompanyMeetingWizard({
 
               <div className="space-y-2">
                 {filteredProviders.map(provider => {
-                  const isSelected = selectedAttendees.has(provider.email);
+                  const selectedStatesFor = providerStates[provider.email] || [];
+                  const isSelected = selectedStatesFor.length > 0;
                   return (
                     <div
                       key={provider.email}
@@ -720,7 +721,7 @@ export function CompanyMeetingWizard({
                         'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
                         isSelected ? 'border-primary bg-primary/5' : 'bg-card'
                       )}
-                      onClick={() => toggleAttendee(provider.email)}
+                      onClick={() => toggleAttendee(provider)}
                     >
                       <Checkbox checked={isSelected} className="mt-0.5" />
                       <div className="flex-1 min-w-0">
@@ -733,13 +734,35 @@ export function CompanyMeetingWizard({
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground">{provider.email}</p>
-                        <div className="flex gap-1 mt-1 flex-wrap">
-                          {provider.states.map(state => (
-                            <Badge key={state} variant="outline" className="text-xs">
-                              {state}
-                            </Badge>
-                          ))}
+                        <div className="flex gap-1 mt-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                          {provider.states.map(state => {
+                            const stateOn = selectedStatesFor.includes(state);
+                            const isScheduled = provider.requiredStates.includes(state);
+                            return (
+                              <button
+                                key={state}
+                                type="button"
+                                onClick={() => toggleProviderState(provider.email, state)}
+                                title={isScheduled ? 'Meeting scheduled this month' : undefined}
+                                className={cn(
+                                  'px-2 py-0.5 rounded-full text-xs border transition-colors',
+                                  stateOn
+                                    ? 'bg-primary text-primary-foreground border-primary'
+                                    : isScheduled
+                                    ? 'border-primary/40 text-primary hover:bg-primary/10'
+                                    : 'text-muted-foreground hover:bg-accent'
+                                )}
+                              >
+                                {state}
+                              </button>
+                            );
+                          })}
                         </div>
+                        {!isSelected && provider.requiredStates.length > 0 && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Scheduled: {provider.requiredStates.join(', ')}
+                          </p>
+                        )}
                       </div>
                     </div>
                   );
