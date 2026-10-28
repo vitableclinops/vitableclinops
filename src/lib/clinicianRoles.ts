@@ -44,7 +44,8 @@ export function normalizeRole(value: string | null | undefined): string {
     .trim()
     .toLowerCase()
     .replace(/[_\-.]+/g, ' ')
-    .replace(/\s+/g, ' ');
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function credentialsIndicateClinician(credentials: string | null | undefined): boolean {
