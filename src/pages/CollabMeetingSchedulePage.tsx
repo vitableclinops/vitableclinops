@@ -201,7 +201,7 @@ const CollabMeetingSchedulePage = () => {
     return [...byMd.entries()]
       .map(([md, list]) => [md, list.sort((x, y) => x.name.localeCompare(y.name))] as const)
       .sort((a, b) => a[0].localeCompare(b[0]));
-  }, [selected, providerLinks, chartMappings]);
+  }, [selected, providerLinks]);
 
   const openCharts = (urls: (string | null)[]) => {
     [...new Set(urls.filter(Boolean) as string[])].forEach((u) => window.open(u, '_blank', 'noopener'));
