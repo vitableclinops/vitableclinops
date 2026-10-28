@@ -3,5 +3,5 @@
 - [x] Fix CompanyMeetingWizard date picker being cut off (user can't see all calendar dates at 100% zoom)
 - [x] Show only saved attendee state selections on collab calendar events.
 - [x] Remove requirement-derived meeting suggestions and verify manual selection.
-- [ ] Add a shared editable mapping seeded with the 10 supplied spreadsheet links, with title, state, month and tab link.
-- [ ] Use saved mappings for meeting chart links, matching only selected states and the meeting month; verify saving and opening.
+- [x] Add a shared editable mapping seeded with the 10 supplied spreadsheet links, with title, state, month and tab link.
+- [x] Use saved mappings for meeting chart links, matching only selected states and the meeting month; verify saving and opening.
