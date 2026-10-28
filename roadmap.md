@@ -13,8 +13,8 @@
 - [x] Add a top-of-directory Provider flagged alert with reasons, correction guidance, and profile links; verify Bee Chang's alert.
 - [x] Replace contractor employment labels with 1099 and verify directory/profile display.
 - [x] Check saved profile contractor classifications and convert any to 1099 (all 56 already stored as 1099; no data changes needed).
-- [ ] Add admin-only no-NPI profile exception, clear only missing-NPI flags, and verify saving.
-- [ ] Label W-2 Internal employment bubbles clearly and exempt W-2 profiles from missing-NPI alerts.
+- [x] Add admin-only no-NPI profile exception, clear only missing-NPI flags, and verify saving.
+- [x] Label W-2 Internal employment bubbles clearly and exempt W-2 profiles from missing-NPI alerts.
 - [x] Display blank directory Type designations as Admin and exempt them from missing-NPI alerts now and in the future; verified 11 signed-in directory rows and 27 tests.
 - [x] Mark Joe Kitonga and Maddi Swanagan as Admin (directory Type designation + no-NPI exemption)
 - [x] Add copy buttons next to copyable fields (NPI, states) in the provider profile modal
@@ -22,4 +22,4 @@
 - [x] Condense the new state column to comma-separated abbreviations matching active states.
 - [x] Place Active PCP Telemedicine States before Licensed but not active in EHR.
 - [x] Add and verify copy icons beside active PCP telemedicine states.
-- [ ] Condense the coverage freshness/identity-review flags into the top Provider flagged alert; verify one alert shows everything.
+^- [x] Condense the coverage freshness/identity-review flags into the top Provider flagged alert; verify one alert shows everything.
