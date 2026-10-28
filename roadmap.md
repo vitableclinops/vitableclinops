@@ -36,3 +36,4 @@
 - [x] Correct Kate and Moensania collaboration labels using linked agreement records instead of stale profile flags.
 - [x] Audit all directory collaboration labels and statuses against linked agreements and verify consistency; 50 visible clinicians match.
 - [x] Keep collaboration checks current after new providers and agreements are saved, on window focus and every minute while visible.
+- [ ] Link Jonathan Luker’s confirmed Ohio and Pennsylvania collaborations; awaiting supervising physician and agreement documents or existing records.
