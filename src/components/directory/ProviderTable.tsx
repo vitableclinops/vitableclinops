@@ -1,7 +1,9 @@
 import type { PcpCell } from '@/lib/pcpCoverage';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import { employmentTypeBadgeLabel } from '@/lib/employmentTypeLabel';
+import { licensedNotActiveStateList } from '@/lib/licensedNotActiveStates';
 import { CopyValueButton } from '@/components/directory/CopyValueButton';
+import { StateListHover } from '@/components/directory/StateListHover';
 import {
   Table,
   TableBody,
@@ -50,7 +52,7 @@ const PCP_TOOLTIP = 'PCP telemedicine coverage states from Metabase: current rec
 
 function PcpCellView({ cell }: { cell: PcpCell }) {
   const tone = cell.kind === 'states' ? '' : cell.kind === 'needs_review' ? 'text-warning' : 'text-muted-foreground';
-  return <span className={`text-sm ${tone}`} title={cell.detail}>{cell.text}{cell.kind === 'needs_review' && cell.states.length > 0 ? ' ⚠' : ''}</span>;
+  return <span className={`text-sm ${tone}`}>{cell.text}{cell.kind === 'needs_review' && cell.states.length > 0 ? ' ⚠' : ''}</span>;
 }
 
 interface ProviderTableProps {
@@ -225,21 +227,33 @@ export const ProviderTable = ({
                 </TableCell>
                 {isAdmin && (
                   <TableCell>
-                    <span className="flex items-center gap-1">
-                      <span className="text-sm max-w-[180px] truncate block">
-                        {provider.pcp_coverage ? <PcpCellView cell={provider.pcp_coverage} /> : null}
-                      </span>
+                    <StateListHover
+                      label="Active States in EHR"
+                      value={provider.pcp_coverage?.states.length ? provider.pcp_coverage.states.join(', ') : null}
+                      detail={provider.pcp_coverage?.detail}
+                      display={
+                        <span className="text-sm max-w-[180px] truncate block">
+                          {provider.pcp_coverage ? <PcpCellView cell={provider.pcp_coverage} /> : null}
+                        </span>
+                      }
+                    >
                       {!!provider.pcp_coverage?.states.length && <CopyValueButton value={provider.pcp_coverage.states.join(', ')} label="Active states in EHR" />}
-                    </span>
+                    </StateListHover>
                   </TableCell>
                 )}
                 <TableCell>
-                  <span className="flex items-center gap-1">
-                    <span className="text-sm max-w-[180px] truncate block" title={provider.actively_licensed_states || undefined}>
-                      {provider.actively_licensed_states || '-'}
-                    </span>
+                  <StateListHover
+                    label="Licensed but not active in EHR"
+                    value={licensedNotActiveStateList(provider.actively_licensed_states)}
+                    detail="Licensed states minus Active States in EHR"
+                    display={
+                      <span className="text-sm max-w-[180px] truncate block">
+                        {provider.actively_licensed_states || '-'}
+                      </span>
+                    }
+                  >
                     {provider.actively_licensed_states && <CopyValueButton value={provider.actively_licensed_states} label="Licensed but not active in EHR" />}
-                  </span>
+                  </StateListHover>
                 </TableCell>
                 <TableCell>{provider.address_state || '-'}</TableCell>
                 {isAdmin && <TableCell>{getActivationBadge(provider.activation_status)}</TableCell>}
