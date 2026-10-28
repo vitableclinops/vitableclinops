@@ -29,7 +29,7 @@ export interface ProviderTableData {
   employment_status: string | null;
   employment_type: string | null;
   agency_name: string | null;
-  actively_licensed_states: string | null; // Now derived, may be null
+  actively_licensed_states: string | null; // Display-only licensed minus active PCP states
   primary_specialty: string | null;
   address_state: string | null;
   has_collaborative_agreements: boolean | null;
@@ -156,8 +156,8 @@ export const ProviderTable = ({
             <SortHeader column="profession" label="Type" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>NPI</TableHead>
             <SortHeader column="employment_type" label="Employment" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
-            <SortHeader column="actively_licensed_states" label="Licensed States" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             {isAdmin && <TableHead title={PCP_TOOLTIP}>Active PCP Telemedicine States</TableHead>}
+            <SortHeader column="actively_licensed_states" label="Licensed but not active in EHR" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>Home State</TableHead>
             {isAdmin && <SortHeader column="activation_status" label="Activation" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
             {isAdmin && <SortHeader column="employment_status" label="Status" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
@@ -223,21 +223,24 @@ export const ProviderTable = ({
                     )}
                   </div>
                 </TableCell>
-                <TableCell>
-                  <span className="flex items-center gap-1">
-                    <span className="text-sm max-w-[200px] truncate block">
-                      {provider.actively_licensed_states || '-'}
-                    </span>
-                    {provider.actively_licensed_states && <CopyValueButton value={provider.actively_licensed_states} label="Licensed states" />}
-                  </span>
-                </TableCell>
                 {isAdmin && (
                   <TableCell>
-                    <span className="text-sm max-w-[180px] truncate block">
-                      {provider.pcp_coverage ? <PcpCellView cell={provider.pcp_coverage} /> : null}
+                    <span className="flex items-center gap-1">
+                      <span className="text-sm max-w-[180px] truncate block">
+                        {provider.pcp_coverage ? <PcpCellView cell={provider.pcp_coverage} /> : null}
+                      </span>
+                      {!!provider.pcp_coverage?.states.length && <CopyValueButton value={provider.pcp_coverage.states.join(', ')} label="Active PCP telemedicine states" />}
                     </span>
                   </TableCell>
                 )}
+                <TableCell>
+                  <span className="flex items-center gap-1">
+                    <span className="text-sm max-w-[180px] truncate block" title={provider.actively_licensed_states || undefined}>
+                      {provider.actively_licensed_states || '-'}
+                    </span>
+                    {provider.actively_licensed_states && <CopyValueButton value={provider.actively_licensed_states} label="Licensed but not active in EHR" />}
+                  </span>
+                </TableCell>
                 <TableCell>{provider.address_state || '-'}</TableCell>
                 {isAdmin && <TableCell>{getActivationBadge(provider.activation_status)}</TableCell>}
                 {isAdmin && <TableCell>{getStatusBadge(provider.employment_status)}</TableCell>}
