@@ -624,8 +624,59 @@ export function CompanyMeetingWizard({
                 </Button>
               </div>
 
+              {allStates.length > 0 && (
+                <div className="rounded-lg border p-3 space-y-2">
+                  <Label className="text-xs text-muted-foreground">Filter by scheduled states</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStates(new Set())}
+                      className={cn(
+                        'px-2.5 py-1 rounded-full text-xs border transition-colors',
+                        selectedStates.size === 0
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'hover:bg-accent'
+                      )}
+                    >
+                      All states
+                    </button>
+                    {allStates.map(state => {
+                      const active = selectedStates.has(state);
+                      return (
+                        <button
+                          key={state}
+                          type="button"
+                          onClick={() => toggleStateFilter(state)}
+                          className={cn(
+                            'px-2.5 py-1 rounded-full text-xs border transition-colors',
+                            active
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'hover:bg-accent'
+                          )}
+                        >
+                          {state}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedStates.size > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {filteredProviders.length} provider{filteredProviders.length !== 1 ? 's' : ''} in {Array.from(selectedStates).sort().join(', ')}
+                      </span>
+                      <Button variant="outline" size="sm" onClick={() => selectFiltered(false)}>
+                        Add these to invite list
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => selectFiltered(true)}>
+                        Invite only these
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
-                {providers.map(provider => {
+                {filteredProviders.map(provider => {
                   const isSelected = selectedAttendees.has(provider.email);
                   return (
                     <div
