@@ -395,7 +395,7 @@ export default function AdminAddProviderPage() {
 
           {/* Step indicators */}
           <div className="flex items-center gap-4 mb-8">
-            {['Provider Details', ...(requiresLicensure ? ['States'] : []), 'Review & Submit'].map((label, idx) => {
+            {['Provider Details', ...(requiresLicensure ? ['Licensed States'] : []), 'Review & Submit'].map((label, idx) => {
               const stepKeys = ['details', ...(requiresLicensure ? ['states'] : []), 'review'];
               const currentIdx = stepKeys.indexOf(step);
               const isActive = idx === currentIdx;
@@ -613,7 +613,7 @@ export default function AdminAddProviderPage() {
                     <div className="flex justify-end gap-3 pt-4">
                       <Button type="button" variant="outline" onClick={() => navigate('/providers')}>Cancel</Button>
                       <Button type="button" onClick={handleNextFromDetails}>
-                        {requiresLicensure ? 'Next: Select States' : 'Next: Review'}
+                        {requiresLicensure ? 'Next: Licensed States' : 'Next: Review'}
                       </Button>
                     </div>
                   </CardContent>
@@ -625,10 +625,12 @@ export default function AdminAddProviderPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Licensed States</CardTitle>
-                    <CardDescription>Select the states where {values.fullName || 'this provider'} is or will be licensed.</CardDescription>
+                    <CardDescription>All states where {values.fullName || 'this provider'} currently holds a license—not just active Vitable practice states.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <StateSelectionStep
+                      title="Select All Licensed States"
+                      description="Include every state where the provider currently holds a license, even if they are not practicing there with Vitable. Active PCP telemedicine states are pulled separately from Metabase; selecting a licensed state here does not activate it."
                       selectedStates={values.selectedStates}
                       onUpdate={states => form.setValue('selectedStates', states, { shouldDirty: true })}
                       providerType={values.providerType as ProviderType || null}
@@ -680,8 +682,9 @@ export default function AdminAddProviderPage() {
                       )}
                       {values.selectedStates.length > 0 && (
                         <div className="md:col-span-2">
-                          <Label className="text-muted-foreground text-xs">States</Label>
+                          <Label className="text-muted-foreground text-xs">All Licensed States</Label>
                           <p className="font-medium">{values.selectedStates.join(', ')}</p>
+                          <p className="text-sm text-muted-foreground mt-1">License records pending verification. Active PCP telemedicine states are tracked separately through Metabase.</p>
                         </div>
                       )}
                       <div>
