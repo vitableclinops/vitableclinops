@@ -206,9 +206,10 @@ export function StateSelectionStep({
                   ) : (
                     <Checkbox
                       checked={isSelected}
-                      onCheckedChange={() => toggleState(state.abbreviation)}
-                      className="mt-0.5"
+                      className="mt-0.5 pointer-events-none"
                       disabled={isProhibited}
+                      tabIndex={-1}
+                      aria-hidden="true"
                     />
                   )}
                   <div className="flex-1 min-w-0">
