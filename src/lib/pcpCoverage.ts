@@ -150,12 +150,15 @@ export interface PcpCell { kind: PcpCellKind; text: string; states: string[]; de
  * scope — never inferred from absence in the result.
  */
 export function pcpCellFor(
-  profile: { id: string; profession: string | null; npi_number: string | null; admin_no_npi?: boolean },
+  profile: { id: string; profession: string | null; credentials?: string | null; npi_number: string | null; admin_no_npi?: boolean },
   data: { identities: EhrIdentity[] } | null | undefined,
 ): PcpCell {
   const mk = (kind: PcpCellKind, text: string, detail: string, states: string[] = []): PcpCell => ({ kind, text, detail, states });
+  const designation = (profile.profession || profile.credentials || '').trim();
+  const noTypeOrNpi = (!designation || designation === '-' || designation.toLowerCase() === 'admin') && !normNpi(profile.npi_number);
+  const noTypeCell = () => mk('not_applicable', 'Not applicable', 'Admin — non-provider; NPI not required');
   if (OUT_OF_SCOPE_PROFILE_IDS[profile.id]) return mk('excluded', 'Excluded', OUT_OF_SCOPE_PROFILE_IDS[profile.id]);
-  if (!data) return mk('unavailable', 'Unavailable', 'No coverage snapshot could be loaded');
+  if (!data) return noTypeOrNpi ? noTypeCell() : mk('unavailable', 'Unavailable', 'No coverage snapshot could be loaded');
   const mine = data.identities.filter((i) => i.profileId === profile.id || i.candidateProfileIds?.includes(profile.id));
   const ex = mine.find((i) => i.status === 'excluded');
   if (ex) return mk('excluded', 'Excluded', ex.reason);
@@ -165,6 +168,7 @@ export function pcpCellFor(
   if (m) return m.nameDiffers
     ? mk('needs_review', m.states.join(', '), `Matched by NPI; EHR name "${m.ehrName}" differs — name review needed`, m.states)
     : mk('states', m.states.join(', '), 'Matched by NPI', m.states);
+  if (noTypeOrNpi) return noTypeCell();
   if (!profile.profession) return mk('unavailable', 'Unavailable', 'Profession not recorded, so scope cannot be determined');
   if (!IN_SCOPE_PROFESSIONS.has(profile.profession)) return mk('not_applicable', 'Not applicable', 'Profession is outside PCP telemedicine (query covers nurse practitioners only)');
   if (!normNpi(profile.npi_number)) return profile.admin_no_npi
