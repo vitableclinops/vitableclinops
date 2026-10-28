@@ -4,7 +4,7 @@ import { pcpCellFor } from '@/lib/pcpCoverage';
 
 describe('Directory identity alerts', () => {
   it('does not require an NPI when the directory Type is a dash', () => {
-    for (const designation of [null, '', '-']) {
+    for (const designation of [null, '', '-', 'Admin', 'admin']) {
       const profile = { id: 'non-provider', profession: designation, credentials: null, npi_number: null };
       for (const data of [undefined, { identities: [] }]) {
         const cell = pcpCellFor(profile, data);

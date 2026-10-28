@@ -155,8 +155,8 @@ export function pcpCellFor(
 ): PcpCell {
   const mk = (kind: PcpCellKind, text: string, detail: string, states: string[] = []): PcpCell => ({ kind, text, detail, states });
   const designation = (profile.profession || profile.credentials || '').trim();
-  const noTypeOrNpi = (!designation || designation === '-') && !normNpi(profile.npi_number);
-  const noTypeCell = () => mk('not_applicable', 'Not applicable', 'No Type designation — non-provider; NPI not required');
+  const noTypeOrNpi = (!designation || designation === '-' || designation.toLowerCase() === 'admin') && !normNpi(profile.npi_number);
+  const noTypeCell = () => mk('not_applicable', 'Not applicable', 'Admin — non-provider; NPI not required');
   if (OUT_OF_SCOPE_PROFILE_IDS[profile.id]) return mk('excluded', 'Excluded', OUT_OF_SCOPE_PROFILE_IDS[profile.id]);
   if (!data) return noTypeOrNpi ? noTypeCell() : mk('unavailable', 'Unavailable', 'No coverage snapshot could be loaded');
   const mine = data.identities.filter((i) => i.profileId === profile.id || i.candidateProfileIds?.includes(profile.id));

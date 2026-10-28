@@ -205,7 +205,7 @@ export const ProviderTable = ({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline">{provider.profession || provider.credentials || '-'}</Badge>
+                  <Badge variant="outline">{(provider.profession || provider.credentials || '').trim() === '-' ? 'Admin' : (provider.profession || provider.credentials || '').trim() || 'Admin'}</Badge>
                 </TableCell>
                 <TableCell className="font-mono text-sm">{provider.npi_number || '-'}</TableCell>
                 <TableCell>

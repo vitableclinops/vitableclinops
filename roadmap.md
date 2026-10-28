@@ -15,3 +15,4 @@
 - [x] Check saved profile contractor classifications and convert any to 1099 (all 56 already stored as 1099; no data changes needed).
 - [ ] Add admin-only no-NPI profile exception, clear only missing-NPI flags, and verify saving.
 - [ ] Label W-2 Internal employment bubbles clearly and exempt W-2 profiles from missing-NPI alerts.
+- [ ] Display blank directory Type designations as Admin and exempt them from missing-NPI alerts now and in the future; verify.
