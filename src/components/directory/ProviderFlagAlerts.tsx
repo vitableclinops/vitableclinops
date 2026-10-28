@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 
 interface Conflict { field: string; local: string | null; medallion: string | null }
-export interface FlaggedProvider { id: string; name: string; conflicts: Conflict[] }
+export interface FlaggedProvider { id: string; name: string; conflicts: Conflict[]; identityReview?: { reason: string; howToFix: string } }
 
 function correction(field: string) {
   switch (field) {
@@ -44,7 +44,7 @@ export function ProviderFlagAlerts({ providers, onReview }: { providers: Flagged
         </Button>
       </AlertTitle>
       <AlertDescription>
-        <p className="break-words">{providers.map(p => `${p.name}: ${p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' ')).join(', ')}`).join(' · ')}</p>
+        <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview ? ['Identity needs review'] : []), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
         {expanded && (
           <div id="provider-flag-details" className="mt-3 max-h-80 overflow-y-auto divide-y divide-border">
             {providers.map(provider => (
@@ -55,6 +55,12 @@ export function ProviderFlagAlerts({ providers, onReview }: { providers: Flagged
                     Open profile<ArrowRight className="ml-1 h-3 w-3" />
                   </Button>
                 </div>
+                {provider.identityReview && (
+                  <div className="mt-2 space-y-1">
+                    <p><strong>Identity needs review:</strong> {provider.identityReview.reason}</p>
+                    <p className="text-muted-foreground"><strong>How to fix:</strong> {provider.identityReview.howToFix}</p>
+                  </div>
+                )}
                 {provider.conflicts.map((conflict, index) => (
                   <div key={`${conflict.field}-${index}`} className="mt-2 space-y-1">
                     <p><strong>{labels[conflict.field] ?? conflict.field.replace(/_/g, ' ')}</strong>: Directory says “{conflict.local ?? 'Not supplied'}”; Medallion says “{conflict.medallion ?? 'Not supplied'}”.</p>
