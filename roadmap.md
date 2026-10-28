@@ -23,3 +23,4 @@
 - [x] Place Active PCP Telemedicine States before Licensed but not active in EHR.
 - [x] Add and verify copy icons beside active PCP telemedicine states.
 ^- [x] Condense the coverage freshness/identity-review flags into the top Provider flagged alert; verify one alert shows everything.
+- [x] Disregard the demo (test) account's missing NPI so it no longer appears in the Provider flagged alert; verified signed-in.
