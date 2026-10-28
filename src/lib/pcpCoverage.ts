@@ -169,6 +169,7 @@ export function pcpCellFor(
   const noTypeOrNpi = (!designation || designation === '-' || designation.toLowerCase() === 'admin') && !normNpi(profile.npi_number);
   const noTypeCell = () => mk('not_applicable', 'Not applicable', 'Admin — non-provider; NPI not required');
   if (OUT_OF_SCOPE_PROFILE_IDS[profile.id]) return mk('excluded', 'Excluded', OUT_OF_SCOPE_PROFILE_IDS[profile.id]);
+  if (isTestAccountDirectoryRecord(profile)) return mk('not_applicable', 'Test account', 'Confirmed test account excluded from the directory; no NPI or EHR identity is required');
   if (!data) return noTypeOrNpi ? noTypeCell() : mk('unavailable', 'Unavailable', 'No coverage snapshot could be loaded');
   const mine = data.identities.filter((i) => i.profileId === profile.id || i.candidateProfileIds?.includes(profile.id));
   const ex = mine.find((i) => i.status === 'excluded');
