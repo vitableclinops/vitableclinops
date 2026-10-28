@@ -499,7 +499,9 @@ const ProviderDirectoryPage = () => {
                 <h1 className="text-3xl font-bold text-foreground">Providers</h1>
                 <p className="text-muted-foreground">
                   {isAdmin 
-                    ? `${providers.length} total • ${providers.filter(p => p.employment_status === 'active').length} active`
+                    ? activeTab === 'offboarded'
+                      ? `${providers.filter(p => isOffboarded(p.employment_status) && p.directory_visibility !== 'excluded').length} offboarded`
+                      : `${providers.filter(p => !isOffboarded(p.employment_status) && p.directory_visibility !== 'excluded').length} current • ${providers.filter(p => p.employment_status === 'active' && p.directory_visibility !== 'excluded').length} active`
                     : `${publicProviders.length} colleagues`
                   }
                 </p>
