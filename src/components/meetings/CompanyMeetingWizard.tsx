@@ -41,6 +41,11 @@ const fmt12 = (t: string) => {
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 };
 
+// All selectable meeting times: 12:00 AM through 11:30 PM in 30-minute steps
+const TIME_OPTIONS: string[] = Array.from({ length: 48 }, (_, i) =>
+  `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 === 0 ? '00' : '30'}`
+);
+
 interface ProviderForMeeting {
   id: string;
   name: string;
@@ -71,8 +76,7 @@ export function CompanyMeetingWizard({
   const [step, setStep] = useState<WizardStep>('date');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [notes, setNotes] = useState('');
-  const [timeChoice, setTimeChoice] = useState<'both' | 'am' | 'pm' | 'custom'>('both');
-  const [customTime, setCustomTime] = useState('10:00');
+  const [selectedTime, setSelectedTime] = useState('10:00');
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderForMeeting[]>([]);
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set());
@@ -86,8 +90,7 @@ export function CompanyMeetingWizard({
       setStep('date');
       setSelectedDate(undefined);
       setNotes('');
-      setTimeChoice('both');
-      setCustomTime('10:00');
+      setSelectedTime('10:00');
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
       setSelectedAttendees(new Set());
@@ -301,15 +304,10 @@ export function CompanyMeetingWizard({
     });
   };
 
-  // Which time slot(s) will be created, based on the selected time option
+  // The single selected time slot to create
   const getTimeSessions = (): { slot: 'am' | 'pm'; time: string }[] => {
-    if (timeChoice === 'am') return [{ slot: 'am', time: AM_TIME }];
-    if (timeChoice === 'pm') return [{ slot: 'pm', time: PM_TIME }];
-    if (timeChoice === 'custom') {
-      const t = customTime || '10:00';
-      return [{ slot: parseInt(t, 10) < 12 ? 'am' : 'pm', time: t }];
-    }
-    return [{ slot: 'am', time: AM_TIME }, { slot: 'pm', time: PM_TIME }];
+    const t = selectedTime || '10:00';
+    return [{ slot: parseInt(t, 10) < 12 ? 'am' : 'pm', time: t }];
   };
 
   const handleSubmit = async () => {
