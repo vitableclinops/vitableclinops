@@ -3717,6 +3717,7 @@ export type Database = {
           address_line_1: string | null
           address_line_2: string | null
           address_state: string | null
+          admin_no_npi: boolean
           agency_id: string | null
           auto_renew_licenses: boolean | null
           avatar_url: string | null
@@ -3780,6 +3781,7 @@ export type Database = {
           address_line_1?: string | null
           address_line_2?: string | null
           address_state?: string | null
+          admin_no_npi?: boolean
           agency_id?: string | null
           auto_renew_licenses?: boolean | null
           avatar_url?: string | null
@@ -3843,6 +3845,7 @@ export type Database = {
           address_line_1?: string | null
           address_line_2?: string | null
           address_state?: string | null
+          admin_no_npi?: boolean
           agency_id?: string | null
           auto_renew_licenses?: boolean | null
           avatar_url?: string | null
