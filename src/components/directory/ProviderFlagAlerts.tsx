@@ -34,10 +34,12 @@ export function ProviderFlagAlerts({
   providers,
   coverage,
   onReview,
+  onFindProfile,
 }: {
   providers: FlaggedProvider[];
   coverage?: CoverageAlertSummary | null;
   onReview: (id: string) => void;
+  onFindProfile: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const flagCount = providers.length;
@@ -72,9 +74,9 @@ export function ProviderFlagAlerts({
               <section key={provider.id} className="py-3 first:pt-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-semibold">{provider.name}</h3>
-                  {provider.profileId && <Button size="sm" variant="outline" onClick={() => { if (provider.profileId) onReview(provider.profileId); }}>
-                    Open profile<ArrowRight className="ml-1 h-3 w-3" />
-                  </Button>}
+                  <Button size="sm" variant="outline" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>
+                    {provider.profileId ? 'Open profile' : 'Find provider profile'}<ArrowRight className="ml-1 h-3 w-3" />
+                  </Button>
                 </div>
                 {provider.identityReview && (
                   <div className="mt-2 space-y-1">
