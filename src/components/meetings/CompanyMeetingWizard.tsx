@@ -402,7 +402,7 @@ export function CompanyMeetingWizard({
   const canProceed = () => {
     switch (step) {
       case 'date':
-        return selectedDate !== undefined;
+        return selectedDate !== undefined && (timeChoice !== 'custom' || customTime !== '');
       case 'attendees':
         return selectedAttendees.size > 0;
       case 'review':
@@ -514,20 +514,33 @@ export function CompanyMeetingWizard({
                   className="rounded-md border"
                   disabled={(date) => date < new Date()}
                 />
+                <div className="w-full space-y-1.5">
+                  <Label>Meeting Time (Eastern Time)</Label>
+                  <Select value={timeChoice} onValueChange={(v) => setTimeChoice(v as 'both' | 'am' | 'pm' | 'custom')}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="both">Both — {fmt12(AM_TIME)} & {fmt12(PM_TIME)} ET</SelectItem>
+                      <SelectItem value="am">Morning only — {fmt12(AM_TIME)} ET</SelectItem>
+                      <SelectItem value="pm">Afternoon only — {fmt12(PM_TIME)} ET</SelectItem>
+                      <SelectItem value="custom">Custom time…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {timeChoice === 'custom' && (
+                    <Input type="time" value={customTime} onChange={(e) => setCustomTime(e.target.value)} />
+                  )}
+                </div>
                 {selectedDate && (
                   <div className="text-center">
                     <p className="text-lg font-semibold">
                       {format(selectedDate, 'EEEE, MMMM d, yyyy')}
                     </p>
                     <div className="flex items-center justify-center gap-4 mt-2 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Sun className="h-4 w-4 text-amber-500" />
-                        AM: {AM_TIME}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Moon className="h-4 w-4 text-indigo-500" />
-                        PM: {PM_TIME}
-                      </span>
+                      {getTimeSessions().map((s) => (
+                        <span key={s.slot} className="flex items-center gap-1">
+                          {s.slot === 'am' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
+                          {fmt12(s.time)} ET
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -640,8 +653,8 @@ export function CompanyMeetingWizard({
                       </p>
                     </div>
                     <div>
-                      <Label className="text-muted-foreground text-xs">Time Slots</Label>
-                      <p className="font-medium">AM ({AM_TIME}) & PM ({PM_TIME})</p>
+                      <Label className="text-muted-foreground text-xs">Time (Eastern)</Label>
+                      <p className="font-medium">{getTimeSessions().map((s) => `${fmt12(s.time)} ET`).join(' & ')}</p>
                     </div>
                   </div>
                   
@@ -685,8 +698,8 @@ export function CompanyMeetingWizard({
                 <Info className="h-4 w-4" />
                 <AlertDescription>
                   {calendarOnly
-                    ? 'Providers will be added to both time slots on the calendar. No emails are sent.'
-                    : "Providers will be added to both time slots. After scheduling, you'll get a list of emails to notify them externally."}
+                    ? `Providers will be added to the ${timeChoice === 'both' ? 'both time slots' : 'selected time slot'} on the calendar. No emails are sent.`
+                    : `Providers will be added to the ${timeChoice === 'both' ? 'both time slots' : 'selected time slot'}. After scheduling, you'll get a list of emails to notify them externally.`}
                 </AlertDescription>
               </Alert>
             </div>
