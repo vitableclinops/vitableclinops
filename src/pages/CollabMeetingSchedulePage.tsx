@@ -40,7 +40,7 @@ const CollabMeetingSchedulePage = () => {
 
   // Deep link from the Calendar page: jump to the meeting's month and select it
   useEffect(() => {
-    if (dateParam) setMonth(startOfMonth(parseLocalDate(dateParam)));
+    if (dateParam) setMonth(startOfMonth(parseLocalDate(dateParam.slice(0, 10))));
     if (meetingParam) setSelectedId(meetingParam);
   }, [meetingParam, dateParam]);
 
