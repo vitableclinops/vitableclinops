@@ -109,18 +109,6 @@ export function ProviderFlagAlerts({
                 </p>
               </section>
             )}
-            {coverage && coverage.excluded.length > 0 && (
-              <section className="py-3">
-                <h3 className="font-semibold">Explicit exclusions still present in source ({coverage.excluded.length})</h3>
-                <ul className="mt-1 ml-4 list-disc space-y-1">
-                  {coverage.excluded.map(i => (
-                    <li key={i.ehrProviderId} className="break-words">
-                      {i.ehrName} (NPI {i.npi ?? 'none'}) — {i.reason}; source still lists {i.states.length} state(s)
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
             <p className="pt-3 text-xs text-muted-foreground">Medallion differences are rechecked after the next successful directory sync.</p>
           </div>
         )}
