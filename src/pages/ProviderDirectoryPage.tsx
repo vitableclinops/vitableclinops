@@ -31,6 +31,7 @@ import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor } from '@/lib/pcpCoverage';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import { directoryMedallionConflicts } from '@/lib/directoryMedallionConflicts';
+import { directoryIdentityAlert } from '@/lib/directoryIdentityAlerts';
 import { ProviderFlagAlerts } from '@/components/directory/ProviderFlagAlerts';
 import { PcpCoverageStatus } from '@/components/directory/PcpCoverageStatus';
 import { useToast } from '@/hooks/use-toast';
@@ -449,8 +450,12 @@ const ProviderDirectoryPage = () => {
 
   const flaggedProviders = isAdmin ? providers
     .filter(p => !['termed', 'terminated'].includes((p.employment_status ?? '').toLowerCase()))
-    .map(p => ({ id: p.id, name: directoryDisplayName(p), conflicts: directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []) }))
-    .filter(p => p.conflicts.length > 0)
+    .map(p => ({
+      id: p.id, name: directoryDisplayName(p),
+      conflicts: directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []),
+      identityReview: directoryIdentityAlert(pcpCellFor(p, pcpCoverageLoading ? undefined : pcpCoverage)),
+    }))
+    .filter(p => p.conflicts.length > 0 || p.identityReview)
     .sort((a, b) => a.name.localeCompare(b.name)) : [];
 
   return (
