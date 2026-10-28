@@ -252,6 +252,108 @@ const CollabMeetingSchedulePage = () => {
     toast({ title: url ? 'Chart link saved' : 'Chart link removed' });
   };
 
+  // ============= Add providers to the selected meeting =============
+  const [addOpen, setAddOpen] = useState(false);
+  const [addProviders, setAddProviders] = useState<{ id: string; name: string; email: string; states: string[] }[]>([]);
+  const [addStates, setAddStates] = useState<Record<string, string[]>>({});
+  const [addSearch, setAddSearch] = useState('');
+  const [addLoading, setAddLoading] = useState(false);
+  const [addSaving, setAddSaving] = useState(false);
+
+  const openAdd = async () => {
+    setAddOpen(true);
+    setAddStates({});
+    setAddSearch('');
+    setAddLoading(true);
+    try {
+      const [{ data: aps }, { data: ags }] = await Promise.all([
+        supabase.from('agreement_providers').select('id, provider_name, provider_email, agreement_id').eq('is_active', true),
+        supabase.from('collaborative_agreements').select('id, state_abbreviation')
+          .in('workflow_status', ['active', 'pending_signatures', 'awaiting_provider_signatures', 'awaiting_physician_signature']),
+      ]);
+      const agMap = new Map((ags || []).map((a) => [a.id, a.state_abbreviation]));
+      const map = new Map<string, { id: string; name: string; email: string; states: string[] }>();
+      (aps || []).forEach((ap) => {
+        if (!ap.provider_email) return;
+        const state = agMap.get(ap.agreement_id);
+        if (!state) return;
+        const email = ap.provider_email.toLowerCase();
+        const existing = map.get(email);
+        if (existing) {
+          if (!existing.states.includes(state)) existing.states.push(state);
+        } else {
+          map.set(email, { id: ap.id, name: ap.provider_name || ap.provider_email, email: ap.provider_email, states: [state] });
+        }
+      });
+      setAddProviders([...map.values()].sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to load providers.', variant: 'destructive' });
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const existingStatesFor = (email: string) =>
+    new Set(
+      (selected?.attendees || [])
+        .filter((a) => (a.provider_email || '').toLowerCase() === email.toLowerCase())
+        .flatMap((a) => selectedMeetingStates(a.notes)),
+    );
+
+  const toggleAddState = (email: string, state: string) => {
+    setAddStates((prev) => {
+      const cur = prev[email] || [];
+      const next = cur.includes(state) ? cur.filter((s) => s !== state) : [...cur, state];
+      return { ...prev, [email]: next };
+    });
+  };
+
+  const saveNewProviders = async () => {
+    if (!selected) return;
+    const pending = addProviders.filter((p) => (addStates[p.email] || []).length > 0);
+    if (!pending.length) return;
+    setAddSaving(true);
+    try {
+      for (const p of pending) {
+        const newStates = [...(addStates[p.email] || [])].sort();
+        const existing = selected.attendees.filter((a) => (a.provider_email || '').toLowerCase() === p.email.toLowerCase());
+        if (existing.length) {
+          // Provider already attends: merge the new states into their saved states
+          const merged = [...new Set([...existing.flatMap((a) => selectedMeetingStates(a.notes)), ...newStates])].sort();
+          const { error } = await supabase
+            .from('meeting_attendees')
+            .update({ notes: `States: ${merged.join(', ')}` })
+            .eq('id', existing[0].id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('meeting_attendees').insert({
+            meeting_id: selected.id,
+            provider_id: p.id,
+            provider_name: p.name,
+            provider_email: p.email,
+            attendance_status: 'invited',
+            has_rsvped: false,
+            notes: `States: ${newStates.join(', ')}`,
+          });
+          if (error) throw error;
+        }
+      }
+      setAddOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['collab-meeting-schedule'] });
+      toast({ title: 'Providers added' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to add providers.', variant: 'destructive' });
+    } finally {
+      setAddSaving(false);
+    }
+  };
+
+  const visibleAddProviders = useMemo(() => {
+    const q = addSearch.trim().toLowerCase();
+    return q ? addProviders.filter((p) => p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q)) : addProviders;
+  }, [addProviders, addSearch]);
+  // ============= End add providers =============
+
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar
