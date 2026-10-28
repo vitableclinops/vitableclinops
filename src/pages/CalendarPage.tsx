@@ -275,7 +275,11 @@ const CalendarPage = () => {
                         const rsvpCount = meetingAttendees.filter(a => a.has_rsvped).length;
                         
                         return (
-                          <Card key={`supervision-${meeting.id}`} className="border-purple-200 dark:border-purple-800">
+                          <Card
+                            key={`supervision-${meeting.id}`}
+                            className="border-purple-200 dark:border-purple-800 cursor-pointer hover:border-purple-400 dark:hover:border-purple-600 transition-colors"
+                            onClick={() => navigate(`/admin/collab-meetings?meeting=${meeting.id}&date=${meeting.scheduled_date}`)}
+                          >
                             <CardContent className="p-5">
                               <div className="flex items-start justify-between">
                                 <div className="flex items-start gap-4">
@@ -316,7 +320,13 @@ const CalendarPage = () => {
                                       {meeting.video_link && (
                                         <>
                                           <span>·</span>
-                                          <a href={meeting.video_link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                                          <a
+                                            href={meeting.video_link}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-primary hover:underline flex items-center gap-1"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
                                             <Video className="h-3 w-3" />
                                             Join
                                           </a>
@@ -356,7 +366,11 @@ const CalendarPage = () => {
                         const attendedCount = meetingAttendees.filter(a => a.attendance_status === 'attended').length;
                         
                         return (
-                          <Card key={`supervision-${meeting.id}`} className="border-muted">
+                          <Card
+                            key={`supervision-${meeting.id}`}
+                            className="border-muted cursor-pointer hover:border-muted-foreground/40 transition-colors"
+                            onClick={() => navigate(`/admin/collab-meetings?meeting=${meeting.id}&date=${meeting.scheduled_date}`)}
+                          >
                             <CardContent className="p-5">
                               <div className="flex items-start justify-between">
                                 <div className="flex items-start gap-4">
