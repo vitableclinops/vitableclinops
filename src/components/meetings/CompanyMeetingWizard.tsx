@@ -271,34 +271,61 @@ export function CompanyMeetingWizard({
     });
   };
 
+  // Default states to select for a provider: the scheduled ones, else all of theirs
+  const defaultStatesFor = (p: ProviderForMeeting) =>
+    p.requiredStates.length > 0 ? [...p.requiredStates] : [...p.states];
+
+  const selectProviders = (provs: ProviderForMeeting[]) => {
+    const nextStates: Record<string, string[]> = {};
+    provs.forEach(p => { nextStates[p.email] = defaultStatesFor(p); });
+    setProviderStates(prev => ({ ...prev, ...nextStates }));
+    setSelectedAttendees(new Set(provs.map(p => p.email)));
+  };
+
   // Select (or add) every currently filtered provider
   const selectFiltered = (replace: boolean) => {
-    const emails = filteredProviders.map(p => p.email);
     if (replace) {
-      selectAllAttendees(emails);
+      selectProviders(filteredProviders);
     } else {
       setSelectedAttendees(prev => {
         const next = new Set(prev);
-        emails.forEach(e => next.add(e));
+        filteredProviders.forEach(p => next.add(p.email));
+        return next;
+      });
+      setProviderStates(prev => {
+        const next = { ...prev };
+        filteredProviders.forEach(p => {
+          const cur = [...(next[p.email] || [])];
+          defaultStatesFor(p).forEach(s => { if (!cur.includes(s)) cur.push(s); });
+          next[p.email] = cur;
+        });
         return next;
       });
     }
   };
 
-
-  const toggleAttendee = (email: string) => {
-    setSelectedAttendees(prev => {
-      const next = new Set(prev);
-      if (next.has(email)) {
-        next.delete(email);
-      } else {
-        next.add(email);
-      }
-      return next;
-    });
+  const toggleAttendee = (p: ProviderForMeeting) => {
+    const isSelected = (providerStates[p.email] || []).length > 0;
+    if (isSelected) {
+      setProviderStates(prev => ({ ...prev, [p.email]: [] }));
+      setSelectedAttendees(prev => { const n = new Set(prev); n.delete(p.email); return n; });
+    } else {
+      setProviderStates(prev => ({ ...prev, [p.email]: defaultStatesFor(p) }));
+      setSelectedAttendees(prev => new Set(prev).add(p.email));
+    }
   };
 
-  const selectAllAttendees = (emails: string[]) => setSelectedAttendees(new Set(emails));
+  const toggleProviderState = (email: string, state: string) => {
+    const cur = providerStates[email] || [];
+    const nextList = cur.includes(state) ? cur.filter(s => s !== state) : [...cur, state];
+    setProviderStates(prev => ({ ...prev, [email]: nextList }));
+    if (nextList.length > 0) {
+      setSelectedAttendees(prev => new Set(prev).add(email));
+    } else {
+      setSelectedAttendees(prev => { const n = new Set(prev); n.delete(email); return n; });
+    }
+  };
+
 
   // Generate email list for invited providers only
   const emailList = useMemo(() => {
