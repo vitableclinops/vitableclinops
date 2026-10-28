@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -204,12 +203,15 @@ export function StateSelectionStep({
                   {isProhibited ? (
                     <Ban className="h-4 w-4 text-destructive mt-0.5" />
                   ) : (
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => toggleState(state.abbreviation)}
-                      className="mt-0.5"
-                      disabled={isProhibited}
-                    />
+                    <div
+                      aria-hidden="true"
+                      className={cn(
+                        "mt-0.5 h-4 w-4 shrink-0 rounded-sm border border-primary flex items-center justify-center",
+                        isSelected ? "bg-primary text-primary-foreground" : "bg-transparent"
+                      )}
+                    >
+                      {isSelected && <Check className="h-3 w-3" />}
+                    </div>
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
