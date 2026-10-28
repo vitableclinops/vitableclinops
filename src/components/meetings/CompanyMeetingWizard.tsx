@@ -714,6 +714,11 @@ export function CompanyMeetingWizard({
                     No providers found.
                   </p>
                 )}
+                {providers.length > 0 && filteredProviders.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No providers in the selected states.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
