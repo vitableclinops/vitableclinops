@@ -18,7 +18,7 @@
 - [x] Display blank directory Type designations as Admin and exempt them from missing-NPI alerts now and in the future; verified 11 signed-in directory rows and 27 tests.
 - [x] Mark Joe Kitonga and Maddi Swanagan as Admin (directory Type designation + no-NPI exemption)
 - [x] Add copy buttons next to copyable fields (NPI, states) in the provider profile modal
-- [ ] Display licensed states minus active PCP states in the directory and verify real records.
-- [ ] Condense the new state column to comma-separated abbreviations matching active states.
-- [ ] Place Active PCP Telemedicine States before Licensed but not active in EHR.
-- [ ] Add and verify copy icons beside active PCP telemedicine states.
+- [x] Display licensed states minus active PCP states in the directory and verify real records.
+- [x] Condense the new state column to comma-separated abbreviations matching active states.
+- [x] Place Active PCP Telemedicine States before Licensed but not active in EHR.
+- [x] Add and verify copy icons beside active PCP telemedicine states.
