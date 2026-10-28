@@ -3355,6 +3355,7 @@ export type Database = {
         Row: {
           assigned_slot: string | null
           attendance_status: string | null
+          chart_link: string | null
           confirmed_at: string | null
           created_at: string
           has_rsvped: boolean | null
@@ -3370,6 +3371,7 @@ export type Database = {
         Insert: {
           assigned_slot?: string | null
           attendance_status?: string | null
+          chart_link?: string | null
           confirmed_at?: string | null
           created_at?: string
           has_rsvped?: boolean | null
@@ -3385,6 +3387,7 @@ export type Database = {
         Update: {
           assigned_slot?: string | null
           attendance_status?: string | null
+          chart_link?: string | null
           confirmed_at?: string | null
           created_at?: string
           has_rsvped?: boolean | null

@@ -24,7 +24,7 @@ import {
   COLLAB_SPREADSHEET_LIBRARY_KEY, libraryUrlsForStates, meetingMonthName, mergeLibraryDefaults,
 } from '@/lib/collabSpreadsheetLibrary';
 import { CollabSpreadsheetLibraryDialog } from '@/components/meetings/CollabSpreadsheetLibraryDialog';
-import { ChevronLeft, ChevronRight, ExternalLink, FileSpreadsheet, Loader2, Pencil, Plus, Stethoscope, Trash2, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, FileSpreadsheet, Link2, Loader2, Pencil, Plus, Stethoscope, Trash2, Users } from 'lucide-react';
 import {
   addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek,
 } from 'date-fns';
@@ -34,7 +34,7 @@ interface Meeting {
   scheduled_date: string;
   time_slot: string | null;
   notes: string | null;
-  attendees: { provider_name: string; provider_email: string; notes: string | null }[];
+  attendees: { id: string; provider_name: string; provider_email: string; notes: string | null; chart_link: string | null }[];
 }
 
 interface ProviderLink {
@@ -53,6 +53,8 @@ const CollabMeetingSchedulePage = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [linkEditKey, setLinkEditKey] = useState<string | null>(null);
+  const [linkDraft, setLinkDraft] = useState('');
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editDate, setEditDate] = useState('');
@@ -130,7 +132,7 @@ const CollabMeetingSchedulePage = () => {
     queryFn: async (): Promise<Meeting[]> => {
       const { data, error } = await supabase
         .from('supervision_meetings')
-        .select('id, scheduled_date, time_slot, notes, status, meeting_attendees(provider_name, provider_email, notes)')
+        .select('id, scheduled_date, time_slot, notes, status, meeting_attendees(id, provider_name, provider_email, notes, chart_link)')
         .eq('is_company_wide', true)
         .neq('status', 'cancelled')
         .gte('scheduled_date', rangeStart.toISOString())
@@ -203,7 +205,7 @@ const CollabMeetingSchedulePage = () => {
   const groups = useMemo(() => {
     if (!selected) return [];
     const monthName = meetingMonthName(selected.scheduled_date);
-    const byMd = new Map<string, { name: string; email: string; states: string[]; chartUrls: string[] }[]>();
+    const byMd = new Map<string, { attendeeId: string; name: string; email: string; states: string[]; chartUrls: string[]; hasManual: boolean }[]>();
     selected.attendees.forEach((a) => {
       const links = providerLinks.get((a.provider_email || '').toLowerCase()) || [];
       meetingStateGroups(a.notes, links).forEach(([md, scope]) => {
@@ -215,11 +217,15 @@ const CollabMeetingSchedulePage = () => {
           .flatMap((state) =>
             links.filter((link) => link.state === state && link.physician === md && link.chartUrl).map((link) => link.chartUrl as string),
           );
+        // A manually saved link on the attendee wins over library/agreement links
+        const manual = (a.chart_link || '').trim();
         const entry = {
+          attendeeId: a.id,
           name: a.provider_name,
           email: a.provider_email,
           states: scope.states,
-          chartUrls: [...new Set([...libMatches.map((o) => o.url), ...fallbackUrls])],
+          chartUrls: manual ? [manual] : [...new Set([...libMatches.map((o) => o.url), ...fallbackUrls])],
+          hasManual: !!manual,
         };
         byMd.set(md, [...(byMd.get(md) || []), entry]);
       });
@@ -231,6 +237,19 @@ const CollabMeetingSchedulePage = () => {
 
   const openCharts = (urls: (string | null)[]) => {
     [...new Set(urls.filter(Boolean) as string[])].forEach((u) => window.open(u, '_blank', 'noopener'));
+  };
+
+  const saveChartLink = async (attendeeId: string) => {
+    const url = linkDraft.trim();
+    const { error } = await supabase.from('meeting_attendees').update({ chart_link: url || null }).eq('id', attendeeId);
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setLinkEditKey(null);
+    setLinkDraft('');
+    queryClient.invalidateQueries({ queryKey: ['collab-meeting-schedule'] });
+    toast({ title: url ? 'Chart link saved' : 'Chart link removed' });
   };
 
   return (
@@ -353,12 +372,43 @@ const CollabMeetingSchedulePage = () => {
                               {p.states.map((s) => <Badge key={s} variant="outline" className="text-[10px] px-1">{s}</Badge>)}
                             </div>
                           </div>
-                          {p.chartUrls.length ? (
-                            <Button variant="ghost" size="sm" onClick={() => openCharts(p.chartUrls)}>
-                              <ExternalLink className="h-3.5 w-3.5 mr-1" /> Charts
-                            </Button>
+                          {linkEditKey === p.attendeeId ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                value={linkDraft}
+                                onChange={(e) => setLinkDraft(e.target.value)}
+                                placeholder="Paste chart link"
+                                className="h-8 w-44 text-xs"
+                                autoFocus
+                                onKeyDown={(e) => { if (e.key === 'Enter') saveChartLink(p.attendeeId); }}
+                              />
+                              <Button size="sm" className="h-8" onClick={() => saveChartLink(p.attendeeId)}>Save</Button>
+                              <Button size="sm" variant="ghost" className="h-8" onClick={() => setLinkEditKey(null)}>Cancel</Button>
+                            </div>
+                          ) : p.chartUrls.length ? (
+                            <div className="flex items-center">
+                              <Button variant="ghost" size="sm" onClick={() => openCharts(p.chartUrls)}>
+                                <ExternalLink className="h-3.5 w-3.5 mr-1" /> Charts
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground"
+                                aria-label="Edit chart link"
+                                onClick={() => { setLinkEditKey(p.attendeeId); setLinkDraft(p.hasManual ? p.chartUrls[0] : ''); }}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                            </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">No chart link</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs text-muted-foreground"
+                              onClick={() => { setLinkEditKey(p.attendeeId); setLinkDraft(''); }}
+                            >
+                              <Link2 className="h-3.5 w-3.5 mr-1" /> Add link
+                            </Button>
                           )}
                         </div>
                       ))}
