@@ -639,21 +639,21 @@ export function CompanyMeetingWizard({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => selectAllAttendees(providers.filter(p => p.isRequired).map(p => p.email))}
+                  onClick={() => selectProviders(requiredProviders)}
                 >
                   Required only ({requiredProviders.length})
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => selectAllAttendees(providers.map(p => p.email))}
+                  onClick={() => selectProviders(providers)}
                 >
                   Select all ({providers.length})
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedAttendees(new Set())}
+                  onClick={() => { setSelectedAttendees(new Set()); setProviderStates({}); }}
                 >
                   Clear
                 </Button>
