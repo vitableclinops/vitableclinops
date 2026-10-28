@@ -5,11 +5,21 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
 import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { cn, parseLocalDate } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, ExternalLink, Loader2, Plus, Stethoscope, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Loader2, Pencil, Plus, Stethoscope, Trash2, Users } from 'lucide-react';
 import {
   addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek,
 } from 'date-fns';
@@ -37,6 +47,68 @@ const CollabMeetingSchedulePage = () => {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editDate, setEditDate] = useState('');
+  const [editSlot, setEditSlot] = useState<'am' | 'pm'>('am');
+  const [editNotes, setEditNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { toast } = useToast();
+
+  const openEdit = (m: Meeting) => {
+    setEditDate(format(new Date(m.scheduled_date), 'yyyy-MM-dd'));
+    setEditSlot(m.time_slot === 'pm' ? 'pm' : 'am');
+    setEditNotes(m.notes || '');
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!selected || !editDate) return;
+    setSaving(true);
+    try {
+      const original = new Date(selected.scheduled_date);
+      const newDate = new Date(`${editDate}T00:00:00`);
+      if (editSlot !== (selected.time_slot === 'pm' ? 'pm' : 'am')) {
+        // Switching sessions uses the standard meeting time (10:00 AM / 2:00 PM)
+        const [h, m] = editSlot === 'am' ? [10, 0] : [14, 0];
+        newDate.setHours(h, m, 0, 0);
+      } else {
+        newDate.setHours(original.getHours(), original.getMinutes(), 0, 0);
+      }
+      const { error } = await supabase
+        .from('supervision_meetings')
+        .update({ scheduled_date: newDate.toISOString(), time_slot: editSlot, notes: editNotes || null })
+        .eq('id', selected.id);
+      if (error) throw error;
+      setEditOpen(false);
+      setSelectedId(selected.id);
+      queryClient.invalidateQueries({ queryKey: ['collab-meeting-schedule'] });
+      toast({ title: 'Meeting updated' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to update meeting.', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteMeeting = async () => {
+    if (!selected) return;
+    setDeleting(true);
+    try {
+      await supabase.from('meeting_attendees').delete().eq('meeting_id', selected.id);
+      const { error } = await supabase.from('supervision_meetings').delete().eq('id', selected.id);
+      if (error) throw error;
+      setDeleteOpen(false);
+      setSelectedId(null);
+      queryClient.invalidateQueries({ queryKey: ['collab-meeting-schedule'] });
+      toast({ title: 'Meeting deleted' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to delete meeting.', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Deep link from the Calendar page: jump to the meeting's month and select it
   useEffect(() => {
