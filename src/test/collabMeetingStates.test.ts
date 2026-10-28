@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { meetingStateGroups, selectedMeetingStates, selectMeetingProviders } from './collabMeetingStates';
+import { meetingStateGroups, selectedMeetingStates, selectMeetingProviders } from '../lib/collabMeetingStates';
 
 describe('manually selected meeting states', () => {
   it('shows only saved selected states and their leading MD', () => {
