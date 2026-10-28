@@ -16,13 +16,16 @@ import { usePhysicianCapacity } from '@/hooks/usePhysicianCapacity';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, Check, Loader2 } from 'lucide-react';
 import type { State } from '@/types';
+import { useQueryClient } from '@tanstack/react-query';
+import { hasAgreementDocument } from '@/lib/newProviderCollab';
 
 interface AgreementWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess?: () => void;
+  onSuccess?: (result?: { documentAttached: boolean }) => void;
+  requireDocument?: boolean;
   /** Prefill state + provider (used when adding a provider in a collab-required state). */
-  prefill?: { stateAbbr?: string; provider?: { id?: string; name: string; email: string; npi?: string } } | null;
+  prefill?: { stateAbbr?: string; skipProcess?: boolean; provider?: { id?: string; name: string; email: string; npi?: string } } | null;
 }
 
 export interface AgreementFormData {
@@ -67,7 +70,8 @@ const STEPS = [
   { id: 'review', title: 'Review & Create', description: 'Review and submit the agreement' },
 ];
 
-export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: AgreementWizardProps) => {
+export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requireDocument = false }: AgreementWizardProps) => {
+  const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { createAgreementWithTasks } = useAgreementWorkflow();
@@ -109,10 +113,10 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: Agre
   useEffect(() => {
     if (!open || !prefill) return;
     const st = prefill.stateAbbr ? (allUSStates.find(x => x.abbreviation === prefill.stateAbbr) ?? null) : null;
-    setFormData({ ...DEFAULT_FORM, selectedState: st, providers: prefill.provider ? [prefill.provider] : [] });
+    setFormData({ ...DEFAULT_FORM, selectedState: st, skipProcess: prefill.skipProcess ?? false, providers: prefill.provider ? [prefill.provider] : [] });
     setCurrentStep(st ? 1 : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, prefill?.stateAbbr, prefill?.provider?.email]);
+  }, [open, prefill?.stateAbbr, prefill?.provider?.email, prefill?.skipProcess]);
 
   const { clearSaved } = useFormPersist('agreement-wizard', persistValue, restoreWizard);
 
@@ -146,7 +150,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: Agre
       case 3:
         return formData.startDate !== undefined;
       case 4:
-        return true;
+        return !requireDocument || hasAgreementDocument(formData.documentFile, formData.documentLink);
       default:
         return false;
     }
@@ -166,6 +170,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: Agre
 
   const handleSubmit = async () => {
     if (!formData.selectedState) return;
+    if (!canProceed()) return;
 
     setIsSubmitting(true);
     try {
@@ -192,7 +197,8 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: Agre
         }
       );
 
-      if (formData.skipProcess && newAgreement?.id) {
+      let documentAttached = false;
+      if ((formData.skipProcess || requireDocument) && newAgreement?.id) {
         try {
           let docUrl: string | null = null;
           let fileName: string | null = null;
@@ -216,6 +222,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: Agre
               .update({ agreement_document_url: docUrl })
               .eq('id', newAgreement.id);
             if (updErr) throw updErr;
+            documentAttached = true;
             await supabase.from('agreement_audit_log').insert({
               entity_type: 'agreement',
               entity_id: newAgreement.id,
@@ -250,7 +257,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: Agre
           .then(({ data }) => {
             if (data?.blocked) {
               toast.warning('Initiation email blocked', {
-                description: data.message ?? `No collab email requirements for ${formData.selectedState!.abbreviation}.`,
+                description: data.message ?? `No collab email requirements for ${formData.selectedState?.abbreviation}.`,
               });
             }
           })
@@ -260,8 +267,12 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: Agre
       }
 
       clearSaved();
+      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
+      queryClient.invalidateQueries({ queryKey: ['agreements'] });
+      queryClient.invalidateQueries({ queryKey: ['provider-agreements-count'] });
+      queryClient.invalidateQueries({ queryKey: ['provider-missing-doc-agreements'] });
       onOpenChange(false);
-      onSuccess?.();
+      onSuccess?.({ documentAttached });
 
       // Reset form
       setCurrentStep(0);
@@ -287,7 +298,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: Agre
       case 3:
         return <AgreementDetailsStep formData={formData} updateFormData={updateFormData} />;
       case 4:
-        return <ReviewStep formData={formData} updateFormData={updateFormData} />;
+        return <ReviewStep formData={formData} updateFormData={updateFormData} requireDocument={requireDocument} />;
       default:
         return null;
     }
@@ -350,7 +361,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: Agre
               <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           ) : (
-            <Button onClick={handleSubmit} disabled={isSubmitting}>
+            <Button onClick={handleSubmit} disabled={isSubmitting || !canProceed()}>
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />

@@ -9,6 +9,7 @@ import { AlertTriangle, FileText } from 'lucide-react';
 import { MEDALLION_STALE_HOURS, agreementTypeLabel, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { formatRelativeTime } from '@/hooks/useDataFreshness';
 import { useExternalDirectoryData } from '@/hooks/useExternalImport';
+import { useLocalSupervisionAgreements } from '@/hooks/useLocalSupervisionAgreements';
 
 /**
  * Every collaborative agreement from Medallion, across all providers.
@@ -17,6 +18,7 @@ import { useExternalDirectoryData } from '@/hooks/useExternalImport';
 export function SupervisionAgreementsTable() {
   const { data, isLoading, error } = useMedallionDirectoryData(true);
   const { data: ext } = useExternalDirectoryData(true);
+  const { data: local = [], isLoading: localLoading, error: localError } = useLocalSupervisionAgreements();
   const [q, setQ] = useState('');
   const [state, setState] = useState('all');
   const [type, setType] = useState('all');
@@ -27,7 +29,7 @@ export function SupervisionAgreementsTable() {
     return m;
   }, [data]);
 
-  const rows = useMemo(() => {
+  const allRows = useMemo(() => {
     const extName = new Map((ext?.providers ?? []).map((p: any) => [`${p.agency_id}::${p.external_provider_id}`, [p.first_name, p.last_name].filter(Boolean).join(' ') || p.external_provider_id]));
     const agency = (ext?.agreements ?? []).map((a: any) => ({
       medallion_agreement_id: `ext:${a.id}`, source: 'Agency import' as const,
@@ -37,16 +39,21 @@ export function SupervisionAgreementsTable() {
       start_date: a.supervision_start_date, end_date: a.supervision_end_date, document_title: a.document_title,
       last_returned_at: null, local_agreement_id: null, local_match_notes: null,
     }));
-    const all = [...(data?.agreements ?? []).map((a) => ({ ...a, source: 'Medallion' as const, provider: provName.get(a.medallion_provider_id) ?? '—' })), ...agency] as any[];
-    return all
+    const linkedIds = new Set((data?.agreements ?? []).map(a => a.local_agreement_id).filter(Boolean));
+    return [...(data?.agreements ?? []).map((a) => ({ ...a, source: 'Medallion' as const, provider: provName.get(a.medallion_provider_id) ?? '—' })), ...agency,
+      ...local.filter(a => !linkedIds.has(a.local_agreement_id))] as any[];
+  }, [data, ext, local, provName]);
+
+  const rows = useMemo(() => {
+    return allRows
       .filter((a) => state === 'all' || a.state === state)
       .filter((a) => type === 'all' || agreementTypeLabel(a.agreement_type) === type)
       .filter((a) => !q || `${a.provider} ${a.supervisor_name ?? ''}`.toLowerCase().includes(q.toLowerCase()))
       .sort((a, b) => a.provider.localeCompare(b.provider) || (a.state ?? '').localeCompare(b.state ?? ''));
-  }, [data, ext, provName, q, state, type]);
+  }, [allRows, q, state, type]);
 
-  const states = [...new Set((data?.agreements ?? []).map((a) => a.state).filter(Boolean) as string[])].sort();
-  const counts = (data?.agreements ?? []).reduce<Record<string, number>>((acc, a) => {
+  const states = [...new Set(allRows.map((a) => a.state).filter(Boolean) as string[])].sort();
+  const counts = allRows.reduce<Record<string, number>>((acc, a) => {
     const k = agreementTypeLabel(a.agreement_type); acc[k] = (acc[k] ?? 0) + 1; return acc;
   }, {});
   const staleCutoff = Date.now() - MEDALLION_STALE_HOURS * 3600_000;
@@ -55,11 +62,10 @@ export function SupervisionAgreementsTable() {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold">Supervision & collaboration</h2>
-        <p className="text-sm text-muted-foreground mt-1">Collaborative agreements for internal providers (Medallion) and external providers (verified agency imports). Read-only; our own agreement records are unchanged.</p>
       </div>
 
       <div className="flex flex-wrap gap-2 text-sm">
-        <Badge variant="secondary">{data?.agreements.length ?? 0} agreements</Badge>
+        <Badge variant="secondary">{allRows.length} agreements</Badge>
         {Object.entries(counts).map(([k, v]) => (
           <Badge key={k} variant={k === 'Unknown' ? 'outline' : 'secondary'}>{k}: {v}</Badge>
         ))}
@@ -84,8 +90,8 @@ export function SupervisionAgreementsTable() {
 
       <Card>
         <CardContent className="p-0 overflow-x-auto">
-          {isLoading ? <p className="p-4 text-sm text-muted-foreground">Loading…</p>
-            : error ? <p className="p-4 text-sm text-destructive">Couldn't load agreements.</p> : (
+          {isLoading || localLoading ? <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+            : error || localError ? <p className="p-4 text-sm text-destructive">Couldn't load agreements.</p> : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -111,7 +117,9 @@ export function SupervisionAgreementsTable() {
                         <TableCell className="capitalize">{a.source_status ?? '—'}</TableCell>
                         <TableCell className="whitespace-nowrap text-sm">{a.start_date ?? '?'} → {a.end_date ?? 'open'}</TableCell>
                         <TableCell className="text-xs max-w-[220px]">
-                          {a.document_title ? (
+                          {a.document_url ? (
+                            <a href={a.document_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1"><FileText className="h-3 w-3" />Signed agreement</a>
+                          ) : a.document_title ? (
                             <span className="flex items-start gap-1" title="The file is stored in Medallion; open it there.">
                               <FileText className="h-3 w-3 mt-0.5 shrink-0" /><span className="break-all">{a.document_title}</span>
                             </span>
@@ -130,7 +138,6 @@ export function SupervisionAgreementsTable() {
             )}
         </CardContent>
       </Card>
-      <p className="text-xs text-muted-foreground">Agreement files live in Medallion; this view shows the file name. Rows Medallion stops returning stay listed and are marked stale rather than removed.</p>
     </div>
   );
 }

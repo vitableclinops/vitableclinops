@@ -22,9 +22,10 @@ import type { AgreementFormData } from '../AgreementWizard';
 interface ReviewStepProps {
   formData: AgreementFormData;
   updateFormData?: (updates: Partial<AgreementFormData>) => void;
+  requireDocument?: boolean;
 }
 
-export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
+export const ReviewStep = ({ formData, updateFormData, requireDocument = false }: ReviewStepProps) => {
   const stateCode = formData.selectedState?.abbreviation;
 
   // Check whether this state has collab email requirements configured.
@@ -55,6 +56,7 @@ export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
       <Card className="p-4 border-primary/40">
         <label className="flex items-start gap-3 cursor-pointer">
           <Checkbox
+            disabled={requireDocument}
             checked={!!formData.skipProcess}
             onCheckedChange={(v) => updateFormData?.({ skipProcess: v === true })}
             className="mt-0.5"
@@ -66,9 +68,9 @@ export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
             </p>
           </div>
         </label>
-        {formData.skipProcess && (
+        {(formData.skipProcess || requireDocument) && (
           <div className="mt-4 space-y-3 border-t pt-3">
-            <p className="text-sm font-medium">Signed agreement (optional)</p>
+            <p className="text-sm font-medium">Signed agreement ({requireDocument ? 'required' : 'optional'})</p>
             <div className="space-y-1">
               <Label htmlFor="wiz-doc-file" className="text-xs">Upload file</Label>
               <Input
@@ -102,8 +104,8 @@ export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
       <Card className="p-4 bg-muted/30">
         <p className="text-sm text-muted-foreground">
           Review the agreement details below. Once created, the agreement will be in 
-          <Badge variant="default" className="mx-1">In Progress</Badge> 
-          status with required tasks auto-generated.
+          <Badge variant="default" className="mx-1">{formData.skipProcess ? 'Active' : 'In Progress'}</Badge>
+          {formData.skipProcess ? 'status without tasks or email notifications.' : 'status with required tasks auto-generated.'}
         </p>
       </Card>
 
@@ -198,7 +200,7 @@ export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
       </Card>
 
       {/* What happens next */}
-      <Card className="p-4 border-primary/20 bg-primary/5">
+      {!formData.skipProcess && <Card className="p-4 border-primary/20 bg-primary/5">
         <h4 className="font-medium mb-2">What happens next?</h4>
         <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
           <li>Agreement will be created in <strong>In Progress</strong> status</li>
@@ -207,10 +209,10 @@ export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
           <li>At minimum: signed document uploaded + provider notified</li>
           <li>Supervision meetings will be scheduled per the cadence</li>
         </ol>
-      </Card>
+      </Card>}
 
       {/* Email notifications that will fire on submit */}
-      <Card className="p-4">
+      {!formData.skipProcess && <Card className="p-4">
         <div className="flex items-center gap-2 mb-3">
           <Mail className="h-4 w-4 text-primary" />
           <h4 className="font-medium">Email notifications</h4>
@@ -267,7 +269,7 @@ export const ReviewStep = ({ formData, updateFormData }: ReviewStepProps) => {
             agreement detail page — not from this wizard.
           </p>
         </div>
-      </Card>
+      </Card>}
     </div>
   );
 };

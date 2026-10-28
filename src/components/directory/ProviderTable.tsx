@@ -1,4 +1,5 @@
 import type { PcpCell } from '@/lib/pcpCoverage';
+import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import {
   Table,
   TableBody,
@@ -190,7 +191,7 @@ export const ProviderTable = ({
                     </Avatar>
                     <div>
                       <span className="font-medium">
-                        {provider.preferred_name || provider.full_name || 'Unknown'}
+                        {directoryDisplayName(provider)}
                       </span>
                       {provider.medallion_conflicts ? (
                         <Badge variant="outline" className="ml-2 text-[10px] border-warning text-warning" title={provider.medallion_conflicts}>

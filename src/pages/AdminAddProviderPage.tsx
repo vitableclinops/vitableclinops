@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { AgreementWizard } from '@/components/agreements/AgreementWizard';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -31,6 +31,8 @@ import { ArrowLeft, Loader2, UserPlus, Copy, Eye, EyeOff } from 'lucide-react';
 import { PROVIDER_TYPE_CONFIG, type ProviderType } from '@/types';
 import { StateSelectionStep } from '@/components/onboarding/StateSelectionStep';
 import { getCollabRequirementType } from '@/constants/stateRestrictions';
+import { useStateCompliance } from '@/hooks/useStateCompliance';
+import { newProviderCollabStates } from '@/lib/newProviderCollab';
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +92,8 @@ const defaultValues: ProviderFormValues = {
 
 export default function AdminAddProviderPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { allData: requirements, loading: requirementsLoading, error: requirementsError } = useStateCompliance();
   const { profile, roles } = useAuth();
   const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'admin');
   const userName = profile?.full_name || profile?.email || 'Admin';
@@ -108,6 +112,7 @@ export default function AdminAddProviderPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [agreementState, setAgreementState] = useState<string | null>(null);
   const [agreedStates, setAgreedStates] = useState<string[]>([]);
+  const collabStates = newProviderCollabStates(values.providerType, values.selectedStates, requirements);
 
   const requiresLicensure = values.providerType
     ? PROVIDER_TYPE_CONFIG[values.providerType as ProviderType]?.requiresLicensure
@@ -145,9 +150,7 @@ export default function AdminAddProviderPage() {
 
       let activationStatus = 'pending_onboarding';
       if (data.selectedStates.length > 0) {
-        const hasCollabStates = data.selectedStates.some(
-          s => getCollabRequirementType(s) === 'always'
-        );
+        const hasCollabStates = newProviderCollabStates(data.providerType, data.selectedStates, requirements).length > 0;
         activationStatus = hasCollabStates ? 'pending_agreements' : 'pending_review';
       }
 
@@ -183,7 +186,7 @@ export default function AdminAddProviderPage() {
           state_abbreviation: stateAbbr,
           license_type: 'APRN',
           status: 'pending_verification',
-          requires_collab_agreement: getCollabRequirementType(stateAbbr) === 'always',
+          requires_collab_agreement: newProviderCollabStates(data.providerType, data.selectedStates, requirements).includes(stateAbbr),
         }));
 
         await supabase.from('provider_licenses').insert(licenseRows);
@@ -231,6 +234,7 @@ export default function AdminAddProviderPage() {
     },
     onSuccess: (data) => {
       setCreatedResult(data);
+      queryClient.invalidateQueries({ queryKey: ['providers'] });
       toast({
         title: 'Provider Added',
         description: `${values.fullName} has been added to the system.`,
@@ -322,19 +326,18 @@ export default function AdminAddProviderPage() {
                 )}
 
                 {(() => {
-                  const collabStates = values.selectedStates.filter(st => getCollabRequirementType(st) === 'always');
                   if (collabStates.length === 0) return null;
                   return (
                     <div className="space-y-2 rounded-md border border-warning/30 bg-warning/10 p-3">
                       <p className="text-sm font-medium">Collaborative agreement required</p>
                       <p className="text-xs text-muted-foreground">
-                        These states require a collaborative agreement. Add one for each so it's linked on the Agreements tab.
+                        Signed collaborative agreements are needed for these states.
                       </p>
                       <div className="flex flex-wrap gap-2 pt-1">
                         {collabStates.map(st => agreedStates.includes(st) ? (
                           <Badge key={st} variant="secondary">{st} · added</Badge>
                         ) : (
-                          <Button key={st} size="sm" onClick={() => setAgreementState(st)}>Add {st} agreement</Button>
+                          <Button key={st} size="sm" onClick={() => setAgreementState(st)}>Upload {st} agreement</Button>
                         ))}
                       </div>
                     </div>
@@ -342,13 +345,15 @@ export default function AdminAddProviderPage() {
                 })()}
 
                 <AgreementWizard
+                  requireDocument
                   open={!!agreementState}
                   onOpenChange={(o) => { if (!o) setAgreementState(null); }}
                   prefill={agreementState ? {
                     stateAbbr: agreementState,
+                    skipProcess: true,
                     provider: { id: createdResult.profileId, name: values.fullName, email: values.email, npi: values.npiNumber || undefined },
                   } : null}
-                  onSuccess={() => { if (agreementState) setAgreedStates(prev => [...prev, agreementState]); setAgreementState(null); }}
+                  onSuccess={(result) => { if (agreementState && result?.documentAttached) setAgreedStates(prev => [...prev, agreementState]); setAgreementState(null); }}
                 />
 
                 <div className="flex gap-3 pt-4">
@@ -689,7 +694,8 @@ export default function AdminAddProviderPage() {
                       <Button type="button" variant="outline" onClick={() => setStep(requiresLicensure ? 'states' : 'details')}>
                         Back
                       </Button>
-                      <Button type="submit" disabled={createProviderMutation.isPending}>
+                      {requirementsError && <p className="text-sm text-destructive">Could not load state requirements. Reload before adding the provider.</p>}
+                      <Button type="submit" disabled={createProviderMutation.isPending || requirementsLoading || !!requirementsError}>
                         {createProviderMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                         Create Provider
                       </Button>

@@ -29,6 +29,8 @@ import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor } from '@/lib/pcpCoverage';
+import { directoryDisplayName } from '@/lib/directoryDisplayName';
+import { directoryMedallionConflicts } from '@/lib/directoryMedallionConflicts';
 import { PcpCoverageStatus } from '@/components/directory/PcpCoverageStatus';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -108,7 +110,7 @@ const ProviderDirectoryPage = () => {
   // Determine initial tab from URL or default based on role
   const tabParam = searchParams.get('tab');
   const isAdmin = roles.includes('admin');
-  const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : tabParam === 'medallion' ? 'medallion' : 'management') : 'directory';
+  const defaultTab = isAdmin && ['management', 'medallion', 'agency-import'].includes(tabParam ?? '') ? (tabParam ?? 'directory') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -433,7 +435,7 @@ const ProviderDirectoryPage = () => {
     pod_lead_id: isAdmin ? ((p as any).pod_lead_id || null) : null,
     pod_lead_name: isAdmin ? (podLeadMap.get((p as any).pod_lead_id) || null) : null,
     medallion_conflicts: isAdmin
-      ? ((medallion?.byProfile.get(p.id)?.conflicts ?? []).map(c => `${c.field.replace(/_/g, ' ')}: ours ${c.local ?? '—'}, Medallion ${c.medallion ?? '—'}`).join('; ') || null)
+      ? (directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []).map(c => `${c.field.replace(/_/g, ' ')}: ours ${c.local ?? '—'}, Medallion ${c.medallion ?? '—'}`).join('; ') || null)
       : null,
   }));
 
@@ -484,13 +486,13 @@ const ProviderDirectoryPage = () => {
           {isAdmin ? (
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList>
-                <TabsTrigger value="management" className="gap-2">
-                  <Shield className="h-4 w-4" />
-                  Supervision
-                </TabsTrigger>
                 <TabsTrigger value="directory" className="gap-2">
                   <Users className="h-4 w-4" />
                   Directory
+                </TabsTrigger>
+                <TabsTrigger value="management" className="gap-2">
+                  <Shield className="h-4 w-4" />
+                  Supervision
                 </TabsTrigger>
                 <TabsTrigger value="medallion" className="gap-2">
                   <Activity className="h-4 w-4" />
@@ -613,7 +615,7 @@ const ProviderDirectoryPage = () => {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="font-semibold text-foreground truncate">
-                                  {provider.preferred_name || provider.full_name || 'Unknown'}
+                                  {directoryDisplayName(provider)}
                                 </h3>
                                 {isAdmin && getStatusBadge(provider.employment_status)}
                               </div>
@@ -727,7 +729,7 @@ const ProviderDirectoryPage = () => {
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-foreground truncate">
-                              {provider.preferred_name || provider.full_name || 'Unknown'}
+                              {directoryDisplayName(provider)}
                             </h3>
                             {(provider.profession || provider.credentials) && (
                               <p className="text-sm text-muted-foreground">{provider.profession || provider.credentials}</p>
