@@ -378,6 +378,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
       queryClient.invalidateQueries({ queryKey: ['providers'] });
       queryClient.invalidateQueries({ queryKey: ['provider-directory'] });
       toast({ title: 'Profile updated', description: 'Provider profile saved successfully.' });
+      queryClient.invalidateQueries({ predicate: query => !['pcp-coverage-by-id'].includes(String(query.queryKey[0])) });
       setIsEditing(false);
     },
     onError: (error) => {

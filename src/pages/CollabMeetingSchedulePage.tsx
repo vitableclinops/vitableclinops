@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { meetingStateGroups, selectedMeetingStates } from '@/lib/collabMeetingStates';
 import {
@@ -267,13 +268,17 @@ const CollabMeetingSchedulePage = () => {
     setAddLoading(true);
     try {
       const [{ data: aps }, { data: ags }] = await Promise.all([
-        supabase.from('agreement_providers').select('id, provider_name, provider_email, agreement_id').eq('is_active', true),
+        supabase.from('agreement_providers').select('id, provider_id, provider_name, provider_email, agreement_id').eq('is_active', true),
         supabase.from('collaborative_agreements').select('id, state_abbreviation')
           .in('workflow_status', ['active', 'pending_signatures', 'awaiting_provider_signatures', 'awaiting_physician_signature']),
       ]);
+      const { data: currentProfiles, error: profileError } = await supabase.from('profiles').select('id').or(CURRENT_EMPLOYEE_FILTER);
+      if (profileError) throw profileError;
+      const currentIds = new Set((currentProfiles ?? []).map(p => p.id));
       const agMap = new Map((ags || []).map((a) => [a.id, a.state_abbreviation]));
       const map = new Map<string, { id: string | null; name: string; email: string; states: string[] }>();
       (aps || []).forEach((ap) => {
+        if (ap.provider_id && !currentIds.has(ap.provider_id)) return;
         if (!ap.provider_email) return;
         const state = agMap.get(ap.agreement_id);
         if (!state) return;

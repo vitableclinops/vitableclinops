@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
@@ -227,7 +228,7 @@ const CollaborativeAgreementsPage = () => {
     if (!providersRes.error) {
       setDbProviders(providersRes.data || []);
     }
-    const flagRes = await supabase.from('profiles').select('id').eq('activation_status', 'pending_agreements');
+    const flagRes = await supabase.from('profiles').select('id').eq('activation_status', 'pending_agreements').or(CURRENT_EMPLOYEE_FILTER);
     if (!flagRes.error) setPendingFlagIds(new Set((flagRes.data || []).map(r => r.id)));
 
     // Build a set of agreement IDs that have at least one task document
