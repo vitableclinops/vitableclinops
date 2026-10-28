@@ -30,6 +30,7 @@ import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMeda
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor } from '@/lib/pcpCoverage';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
+import { directoryMedallionConflicts } from '@/lib/directoryMedallionConflicts';
 import { PcpCoverageStatus } from '@/components/directory/PcpCoverageStatus';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -434,7 +435,7 @@ const ProviderDirectoryPage = () => {
     pod_lead_id: isAdmin ? ((p as any).pod_lead_id || null) : null,
     pod_lead_name: isAdmin ? (podLeadMap.get((p as any).pod_lead_id) || null) : null,
     medallion_conflicts: isAdmin
-      ? ((medallion?.byProfile.get(p.id)?.conflicts ?? []).map(c => `${c.field.replace(/_/g, ' ')}: ours ${c.local ?? '—'}, Medallion ${c.medallion ?? '—'}`).join('; ') || null)
+      ? (directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []).map(c => `${c.field.replace(/_/g, ' ')}: ours ${c.local ?? '—'}, Medallion ${c.medallion ?? '—'}`).join('; ') || null)
       : null,
   }));
 
