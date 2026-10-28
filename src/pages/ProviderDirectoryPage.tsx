@@ -108,7 +108,7 @@ const ProviderDirectoryPage = () => {
   // Determine initial tab from URL or default based on role
   const tabParam = searchParams.get('tab');
   const isAdmin = roles.includes('admin');
-  const defaultTab = isAdmin ? (tabParam === 'directory' ? 'directory' : tabParam === 'medallion' ? 'medallion' : 'management') : 'directory';
+  const defaultTab = isAdmin && ['management', 'medallion', 'agency-import'].includes(tabParam ?? '') ? (tabParam ?? 'directory') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -484,13 +484,13 @@ const ProviderDirectoryPage = () => {
           {isAdmin ? (
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList>
-                <TabsTrigger value="management" className="gap-2">
-                  <Shield className="h-4 w-4" />
-                  Supervision
-                </TabsTrigger>
                 <TabsTrigger value="directory" className="gap-2">
                   <Users className="h-4 w-4" />
                   Directory
+                </TabsTrigger>
+                <TabsTrigger value="management" className="gap-2">
+                  <Shield className="h-4 w-4" />
+                  Supervision
                 </TabsTrigger>
                 <TabsTrigger value="medallion" className="gap-2">
                   <Activity className="h-4 w-4" />
