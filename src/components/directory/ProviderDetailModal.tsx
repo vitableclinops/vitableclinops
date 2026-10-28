@@ -166,7 +166,7 @@ const EditableField = ({
   </div>
 );
 
-export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalProps) => {
+export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDetailModalProps) => {
   const { data: medallionData } = useMedallionDirectoryData(!!provider);
   const medallionStates = provider ? activeLicensedStates(medallionData?.licensesByProfile.get(provider.id)) : [];
   const { toast } = useToast();
@@ -358,10 +358,14 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
       const { error } = await supabase
         .from('profiles')
         .update({ ...saveData, has_collaborative_agreements: agreementCount > 0 })
-        .eq('id', provider.id);
+        .eq('id', provider.id)
+        .select('*')
+        .single();
       if (error) throw error;
+      return { ...provider, ...saveData, has_collaborative_agreements: agreementCount > 0 } as FullProvider;
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      if (saved) onSaved?.(saved);
       queryClient.invalidateQueries({ queryKey: ['providers'] });
       queryClient.invalidateQueries({ queryKey: ['provider-directory'] });
       toast({ title: 'Profile updated', description: 'Provider profile saved successfully.' });
