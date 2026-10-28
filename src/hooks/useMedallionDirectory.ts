@@ -107,6 +107,17 @@ export function useMedallionDirectoryData(enabled: boolean) {
     queryKey: ['medallion_directory'],
     enabled,
     staleTime: 60_000,
+    select: (data) => {
+      const providers = data.providers.map(p => ({
+        ...p,
+        conflicts: directoryMedallionConflicts(p.profile_id ?? '', p.conflicts ?? []),
+      }));
+      const byProfile = new Map<string, MedallionProviderRow>();
+      providers.forEach(p => {
+        if (p.profile_id) byProfile.set(p.profile_id, p);
+      });
+      return { ...data, providers, byProfile };
+    },
     queryFn: async () => {
       const [prov, lic, ag, runs] = await Promise.all([
         supabase.from('medallion_providers').select('*').range(0, 4999),
@@ -115,10 +126,7 @@ export function useMedallionDirectoryData(enabled: boolean) {
         supabase.from('medallion_sync_runs').select('*').order('started_at', { ascending: false }).limit(200),
       ]);
       for (const r of [prov, lic, ag, runs]) if (r.error) throw r.error;
-      const providers = ((prov.data ?? []) as unknown as MedallionProviderRow[]).map(p => ({
-        ...p,
-        conflicts: directoryMedallionConflicts(p.profile_id ?? '', p.conflicts ?? []),
-      }));
+      const providers = (prov.data ?? []) as unknown as MedallionProviderRow[];
       const licenses = (lic.data ?? []) as unknown as MedallionLicenseRow[];
       const agreements = (ag.data ?? []) as unknown as MedallionAgreementRow[];
       const byProfile = new Map<string, MedallionProviderRow>();
