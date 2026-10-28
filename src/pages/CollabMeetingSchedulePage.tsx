@@ -287,6 +287,16 @@ const CollabMeetingSchedulePage = () => {
                     <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open all chart spreadsheets
                   </Button>
                 )}
+                {selected && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => openEdit(selected)}>
+                      <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                    </Button>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 {!selected && <p className="text-sm text-muted-foreground">Click a meeting on the calendar to see who should attend.</p>}
