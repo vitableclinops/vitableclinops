@@ -91,6 +91,7 @@ interface FullProvider {
 interface ProviderDetailModalProps {
   provider: FullProvider | null;
   onClose: () => void;
+  onSaved?: (provider: FullProvider) => void;
 }
 
 const getInitials = (name: string | null) => {
