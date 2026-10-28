@@ -13,7 +13,7 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
   </div>
 );
 
-export function MedallionProviderSection({ profileId, medallionId }: { profileId: string; medallionId: string | null }) {
+export function MedallionProviderSection({ profileId, medallionId, suppressFlags = false }: { profileId: string; medallionId: string | null; suppressFlags?: boolean }) {
   const { toast } = useToast();
   const { data, isLoading } = useMedallionDirectoryData(true);
   const run = useRunMedallionSync();
@@ -48,7 +48,7 @@ export function MedallionProviderSection({ profileId, medallionId }: { profileId
         </Button>
       </div>
 
-      {m?.conflicts?.length ? (
+      {!suppressFlags && m?.conflicts?.length ? (
         <div className="rounded-md border border-warning/40 bg-warning/5 p-3 text-sm space-y-1">
           <p className="font-medium flex items-center gap-1"><AlertTriangle className="h-4 w-4 text-warning" />Differs from Medallion</p>
           {m.conflicts.map((c, i) => (

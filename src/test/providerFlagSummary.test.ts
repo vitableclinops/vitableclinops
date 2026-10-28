@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeProviderFlags } from '@/lib/providerFlagSummary';
+import { mergeProviderFlags, CONFIRMED_OFFBOARDED_EHR_PROFILES } from '@/lib/providerFlagSummary';
 import type { EhrIdentity } from '@/lib/pcpCoverage';
 
 const identity = (over: Partial<EhrIdentity> = {}): EhrIdentity => ({
@@ -39,5 +39,13 @@ describe('Unified provider identity flags', () => {
   });
   it('does not suppress a genuine name conflict for an otherwise eligible profile', () => {
     expect(mergeProviderFlags([], [identity()], profiles)[0].sourceIdentityReviews).toHaveLength(1);
+  });
+  it('suppresses all five user-confirmed offboarded EHR records only while offboarded', () => {
+    const entries = Object.entries(CONFIRMED_OFFBOARDED_EHR_PROFILES);
+    expect(entries).toHaveLength(5);
+    const identities = entries.map(([ehrProviderId]) => identity({ ehrProviderId, profileId: null, status: 'unmatched' }));
+    const offboarded = entries.map(([, id]) => ({ id, name: id, suppress: true }));
+    expect(mergeProviderFlags([], identities, offboarded)).toEqual([]);
+    expect(mergeProviderFlags([], identities, offboarded.map(p => ({ ...p, suppress: false })))).toHaveLength(5);
   });
 });

@@ -15,7 +15,7 @@ import { useLocalSupervisionAgreements } from '@/hooks/useLocalSupervisionAgreem
  * Every collaborative agreement from Medallion, across all providers.
  * Read-only; our own agreement records are unchanged.
  */
-export function SupervisionAgreementsTable() {
+export function SupervisionAgreementsTable({ offboardedProfiles = [] }: { offboardedProfiles?: { id: string; medallionId: string | null }[] }) {
   const { data, isLoading, error } = useMedallionDirectoryData(true);
   const { data: ext } = useExternalDirectoryData(true);
   const { data: local = [], isLoading: localLoading, error: localError } = useLocalSupervisionAgreements();
@@ -40,9 +40,16 @@ export function SupervisionAgreementsTable() {
       last_returned_at: null, local_agreement_id: null, local_match_notes: null,
     }));
     const linkedIds = new Set((data?.agreements ?? []).map(a => a.local_agreement_id).filter(Boolean));
-    return [...(data?.agreements ?? []).map((a) => ({ ...a, source: 'Medallion' as const, provider: provName.get(a.medallion_provider_id) ?? '—' })), ...agency,
-      ...local.filter(a => !linkedIds.has(a.local_agreement_id))] as any[];
-  }, [data, ext, local, provName]);
+    const offboardedIds = new Set(offboardedProfiles.map(p => p.id));
+    const offboardedMedallion = new Set(offboardedProfiles.map(p => p.medallionId).filter(Boolean));
+    const offboardedExternal = new Set((ext?.providers ?? []).filter((p: any) => offboardedIds.has(p.profile_id)).map((p: any) => `${p.agency_id}::${p.external_provider_id}`));
+    const eligibleAgency = agency.filter((a: any) => {
+      const original = (ext?.agreements ?? []).find((row: any) => `ext:${row.id}` === a.medallion_agreement_id);
+      return !original || !offboardedExternal.has(`${original.agency_id}::${original.external_provider_id}`);
+    });
+    return [...(data?.agreements ?? []).filter(a => !offboardedMedallion.has(a.medallion_provider_id)).map((a) => ({ ...a, source: 'Medallion' as const, provider: provName.get(a.medallion_provider_id) ?? '—' })), ...eligibleAgency,
+      ...local.filter(a => !linkedIds.has(a.local_agreement_id) && !offboardedIds.has(a.provider_id))] as any[];
+  }, [data, ext, local, provName, offboardedProfiles]);
 
   const rows = useMemo(() => {
     return allRows

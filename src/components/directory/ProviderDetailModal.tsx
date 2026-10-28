@@ -25,6 +25,7 @@ import { FileText, ExternalLink, Pencil, Save, X, Link2, AlertTriangle, Upload, 
 import { CopyValueButton } from '@/components/directory/CopyValueButton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { CURRENT_EMPLOYEE_FILTER, isOffboarded } from '@/lib/employeeVisibility';
 
 const PROFESSION_OPTIONS = [
   'NP',
@@ -278,6 +279,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
         .from('profiles')
         .select('id, full_name, email')
         .in('user_id', podLeadUserIds)
+          .or(CURRENT_EMPLOYEE_FILTER)
         .not('full_name', 'is', null)
         .order('full_name');
       
@@ -490,7 +492,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
           </DialogTitle>
         </DialogHeader>
 
-        {missingDocAgreements.length > 0 && (
+        {!isOffboarded(provider.employment_status) && missingDocAgreements.length > 0 && (
           <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
             <div className="text-sm">
@@ -659,7 +661,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                       {agreementCount > 0 ? `${agreementCount} active` : 'None'}
                     </Badge>
                     <span className="text-sm text-muted-foreground">Collab Agreements</span>
-                    {missingDocAgreements.length > 0 && (
+                    {!isOffboarded(provider.employment_status) && missingDocAgreements.length > 0 && (
                       <Badge variant="outline" className="border-amber-500/50 text-amber-600">
                         {missingDocAgreements.length} missing docs
                       </Badge>
@@ -678,7 +680,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
 
           {/* Overview Tab - Quick summary with enriched fields */}
           <TabsContent value="overview" className="mt-4 space-y-4">
-            {isAdminUser && (activationOverride ?? provider.activation_status) === 'pending_agreements' && agreementCount > 0 && (
+            {!isOffboarded(provider.employment_status) && isAdminUser && (activationOverride ?? provider.activation_status) === 'pending_agreements' && agreementCount > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/30 bg-warning/10 p-3">
                 <p className="text-sm">
                   Activation still says <strong>Pending Agreements</strong>, but {agreementCount} agreement{agreementCount === 1 ? ' is' : 's are'} on file.
@@ -690,6 +692,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
             )}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <InfoRow label="Activation Status" value={(() => {
+                if (isOffboarded(provider.employment_status)) return 'Offboarded';
                 const s = activationOverride ?? provider.activation_status;
                 return s === 'ready' ? 'Ready' :
                   s === 'pending_onboarding' ? 'Pending Onboarding' :
