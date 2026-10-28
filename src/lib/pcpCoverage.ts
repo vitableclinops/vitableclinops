@@ -53,6 +53,8 @@ export const FORMER_STAFF_EHR_EXCLUSIONS: Record<string, { npi: string; name: st
   'd4754d85-1b68-4ebd-b05f-3601cc93312e': { npi: '1649662925', name: 'Emily Van-Otoo' },
   '4b4b4d58-01d5-4548-a3c8-096052584127': { npi: '1063965978', name: 'Crystal Oramadike' },
   '8fa1e0f2-5227-4c3a-a5cd-ed9809dbe86a': { npi: '1356911325', name: 'LaStasha Jackson' },
+  'ce5c2836-81ed-414b-97f9-8d87b0eb66ad': { npi: '1992030928', name: 'Stacy Lynn' },
+  '8f00d193-1095-40de-8ce3-e692399d0192': { npi: '1639432156', name: 'Samuel Elias-Ausi' },
 };
 
 /** Out-of-scope roles (verified profile ids). Not terminated, not a licensure gap. */

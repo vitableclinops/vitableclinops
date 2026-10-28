@@ -62,6 +62,16 @@ describe('Active PCP Telemedicine States identity matching', () => {
 });
 
 describe('PCP coverage exclusions tied to verified identities', () => {
+  it.each([
+    ['Stacy Lynn', 'ce5c2836-81ed-414b-97f9-8d87b0eb66ad', '1992030928'],
+    ['Samuel Elias-Ausi', '8f00d193-1095-40de-8ce3-e692399d0192', '1639432156'],
+  ])('excludes confirmed offboarded %s without a directory record', (name, id, npi) => {
+    const { identities, statesByProfile } = matchEhrCoverage([row(id, name, npi, 'FL')], []);
+    expect(identities[0].status).toBe('excluded');
+    expect(statesByProfile.size).toBe(0);
+    expect(matchEhrCoverage([row(id, name, '1000000000', 'FL')], []).identities[0].status).toBe('ambiguous');
+  });
+
   it('excludes the four former employees by EHR ID + NPI', () => {
     const { identities, statesByProfile } = matchEhrCoverage([
       row('d5027156-3519-4620-97c2-c781743f9e5b', 'Heidi Hershberger', '1962936542', 'PA'),
