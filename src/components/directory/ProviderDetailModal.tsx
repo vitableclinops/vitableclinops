@@ -827,7 +827,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="w2">W2 (Internal)</SelectItem>
+                        <SelectItem value="w2">Internal</SelectItem>
                         <SelectItem value="1099">1099 (Internal)</SelectItem>
                         <SelectItem value="agency">Agency-Supplied</SelectItem>
                       </SelectContent>
@@ -875,7 +875,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                   <div>
                     <p className="text-xs text-muted-foreground mb-0.5">Employment Type</p>
                     <Badge variant={provider.employment_type === 'agency' ? 'secondary' : 'outline'}>
-                      {provider.employment_type === 'w2' ? 'W2 (Internal)' : provider.employment_type === '1099' ? '1099 (Internal)' : provider.employment_type === 'agency' ? 'Agency-Supplied' : 'Not Set'}
+                      {provider.employment_type === 'w2' ? 'Internal' : provider.employment_type === '1099' ? '1099' : provider.employment_type === 'agency' ? 'Agency-Supplied' : 'Not Set'}
                     </Badge>
                   </div>
                   {provider.employment_type === 'agency' && (

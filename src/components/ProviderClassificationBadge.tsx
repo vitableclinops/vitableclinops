@@ -33,7 +33,7 @@ export function ProviderClassificationBadge({ employmentType, compact = false }:
   return (
     <Badge variant="outline" className={cn("gap-1 bg-primary/10 text-primary border-primary/30", compact && "text-xs px-1.5 py-0")}>
       <User className={cn("h-3 w-3", compact && "h-2.5 w-2.5")} />
-      {compact ? 'W2' : 'W2 — Internally Managed'}
+      Internal
     </Badge>
   );
 }

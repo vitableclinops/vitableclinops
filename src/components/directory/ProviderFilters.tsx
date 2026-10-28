@@ -107,7 +107,7 @@ export const ProviderFilters = ({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Employment</SelectItem>
-          <SelectItem value="w2">W2 — Internal</SelectItem>
+          <SelectItem value="w2">Internal</SelectItem>
           <SelectItem value="1099">1099 — Internal</SelectItem>
           <SelectItem value="agency">Agency-Supplied</SelectItem>
         </SelectContent>
