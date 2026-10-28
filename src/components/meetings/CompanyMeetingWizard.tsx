@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -47,7 +48,7 @@ interface CompanyMeetingWizardProps {
   onSuccess: () => void;
 }
 
-type WizardStep = 'date' | 'review' | 'notify';
+type WizardStep = 'date' | 'attendees' | 'review' | 'notify';
 
 export function CompanyMeetingWizard({ 
   open, 
@@ -61,6 +62,7 @@ export function CompanyMeetingWizard({
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderForMeeting[]>([]);
+  const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [createdMeetingIds, setCreatedMeetingIds] = useState<{ am: string; pm: string } | null>(null);
   const [emailsCopied, setEmailsCopied] = useState(false);
@@ -73,6 +75,7 @@ export function CompanyMeetingWizard({
       setNotes('');
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
+      setSelectedAttendees(new Set());
       suggestNextDate();
     }
   }, [open]);
@@ -162,7 +165,9 @@ export function CompanyMeetingWizard({
         }
       });
 
-      setProviders(Array.from(providerMap.values()).sort((a, b) => a.name.localeCompare(b.name)));
+      const providerList = Array.from(providerMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+      setProviders(providerList);
+      setSelectedAttendees(new Set(providerList.filter(p => p.isRequired).map(p => p.email)));
     } catch (err) {
       console.error('Error loading providers:', err);
       toast({
@@ -212,10 +217,29 @@ export function CompanyMeetingWizard({
     return providers.filter(p => !p.isRequired);
   }, [providers]);
 
-  // Generate email list for required providers only
+  // Providers the user chose to invite (defaults to the required providers)
+  const invitedProviders = useMemo(() => {
+    return providers.filter(p => selectedAttendees.has(p.email));
+  }, [providers, selectedAttendees]);
+
+  const toggleAttendee = (email: string) => {
+    setSelectedAttendees(prev => {
+      const next = new Set(prev);
+      if (next.has(email)) {
+        next.delete(email);
+      } else {
+        next.add(email);
+      }
+      return next;
+    });
+  };
+
+  const selectAllAttendees = (emails: string[]) => setSelectedAttendees(new Set(emails));
+
+  // Generate email list for invited providers only
   const emailList = useMemo(() => {
-    return requiredProviders.map(p => p.email).join(', ');
-  }, [requiredProviders]);
+    return invitedProviders.map(p => p.email).join(', ');
+  }, [invitedProviders]);
 
   // Copy emails to clipboard
   const copyEmails = async () => {
@@ -224,7 +248,7 @@ export function CompanyMeetingWizard({
       setEmailsCopied(true);
       toast({
         title: 'Copied!',
-        description: `${requiredProviders.length} email addresses copied to clipboard.`,
+        description: `${invitedProviders.length} email addresses copied to clipboard.`,
       });
       setTimeout(() => setEmailsCopied(false), 3000);
     } catch {
@@ -240,7 +264,7 @@ export function CompanyMeetingWizard({
   const downloadEmailsCsv = () => {
     const csvContent = [
       ['Name', 'Email', 'Required States', 'All States'].join(','),
-      ...requiredProviders.map(p => [
+      ...invitedProviders.map(p => [
         `"${p.name}"`,
         p.email,
         `"${p.requiredStates.join(', ')}"`,
@@ -258,7 +282,7 @@ export function CompanyMeetingWizard({
 
     toast({
       title: 'Downloaded',
-      description: `${requiredProviders.length} providers exported to CSV.`,
+      description: `${invitedProviders.length} providers exported to CSV.`,
     });
   };
 
@@ -320,9 +344,9 @@ export function CompanyMeetingWizard({
       
       if (pmError) throw pmError;
       
-      // Add only required providers as invited attendees to both meetings
-      if (requiredProviders.length > 0 && amMeeting && pmMeeting) {
-        const attendeeInserts = requiredProviders.flatMap(provider => [
+      // Add the selected providers as invited attendees to both meetings
+      if (invitedProviders.length > 0 && amMeeting && pmMeeting) {
+        const attendeeInserts = invitedProviders.flatMap(provider => [
           {
             meeting_id: amMeeting.id,
             provider_id: provider.id,
@@ -371,6 +395,8 @@ export function CompanyMeetingWizard({
     switch (step) {
       case 'date':
         return selectedDate !== undefined;
+      case 'attendees':
+        return selectedAttendees.size > 0;
       case 'review':
         return true;
       case 'notify':
@@ -381,7 +407,7 @@ export function CompanyMeetingWizard({
   };
 
   const goNext = () => {
-    const steps: WizardStep[] = ['date', 'review', 'notify'];
+    const steps: WizardStep[] = ['date', 'attendees', 'review', 'notify'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex < steps.length - 1) {
       if (step === 'review') {
@@ -393,7 +419,7 @@ export function CompanyMeetingWizard({
   };
 
   const goBack = () => {
-    const steps: WizardStep[] = ['date', 'review', 'notify'];
+    const steps: WizardStep[] = ['date', 'attendees', 'review', 'notify'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex > 0) {
       setStep(steps[currentIndex - 1]);
