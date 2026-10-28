@@ -1,7 +1,10 @@
 type Conflict = { field: string; local: string | null; medallion: string | null };
 
-/** Acknowledges only the reviewed classification difference; future changes remain visible. */
-export function directoryMedallionConflicts(profileId: string, conflicts: Conflict[]) {
-  return conflicts.filter(c => !(profileId === 'c69f6935-34eb-4ba2-b4c0-794d95370027'
-    && c.field === 'employment_type' && c.local === '1099' && c.medallion === 'prn'));
+const EQUIVALENT_EMPLOYMENT_TYPES = new Set(['1099', 'contractor', 'prn']);
+
+/** Filter equivalent employment terminology only; preserve all substantive differences. */
+export function directoryMedallionConflicts<T extends Conflict>(_profileId: string, conflicts: T[]): T[] {
+  return conflicts.filter(c => !(c.field === 'employment_type'
+    && EQUIVALENT_EMPLOYMENT_TYPES.has((c.local ?? '').trim().toLowerCase())
+    && EQUIVALENT_EMPLOYMENT_TYPES.has((c.medallion ?? '').trim().toLowerCase())));
 }
