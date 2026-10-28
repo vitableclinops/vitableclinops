@@ -495,19 +495,16 @@ export function CompanyMeetingWizard({
           {/* Step 1: Select Date */}
           {step === 'date' && (
             <div className="space-y-6">
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  {loading ? 'Loading providers...' : (
-                    <>
-                      <strong>{requiredProviders.length}</strong> providers require a meeting this month based on their state cadences.
-                      {nonRequiredProviders.length > 0 && (
-                        <span className="text-muted-foreground"> ({nonRequiredProviders.length} not required this month)</span>
-                      )}
-                    </>
-                  )}
-                </AlertDescription>
-              </Alert>
+              <p className="text-sm text-muted-foreground">
+                {loading ? 'Loading providers...' : (
+                  <>
+                    <strong>{requiredProviders.length}</strong> providers require a meeting this month based on their state cadences.
+                    {nonRequiredProviders.length > 0 && (
+                      <span> ({nonRequiredProviders.length} not required this month)</span>
+                    )}
+                  </>
+                )}
+              </p>
 
               <div className="flex flex-col items-center gap-4">
                 <Calendar
