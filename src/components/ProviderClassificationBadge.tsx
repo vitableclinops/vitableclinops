@@ -5,9 +5,11 @@ import { cn } from '@/lib/utils';
 interface ProviderClassificationBadgeProps {
   employmentType: string | null;
   compact?: boolean;
+  /** Display-only label override (stored employment_type stays unchanged). */
+  labelOverride?: string | null;
 }
 
-export function ProviderClassificationBadge({ employmentType, compact = false }: ProviderClassificationBadgeProps) {
+export function ProviderClassificationBadge({ employmentType, compact = false, labelOverride }: ProviderClassificationBadgeProps) {
   const isAgency = employmentType === 'agency';
   const is1099 = employmentType === '1099';
   const isW2 = !employmentType || employmentType === 'w2';
