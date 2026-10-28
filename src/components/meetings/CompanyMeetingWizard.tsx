@@ -6,8 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -32,8 +30,6 @@ import { cn } from '@/lib/utils';
 import { format, addMonths, startOfMonth, getDate } from 'date-fns';
 
 // Fixed time slots for company-wide meetings
-const AM_TIME = '10:00';
-const PM_TIME = '14:00';
 
 // Format a 24h "HH:mm" string as a 12-hour label, e.g. "10:00 AM"
 const fmt12 = (t: string) => {
