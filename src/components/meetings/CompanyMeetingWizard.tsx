@@ -443,6 +443,7 @@ export function CompanyMeetingWizard({
           </DialogTitle>
           <DialogDescription>
             {step === 'date' && 'Select the date for the monthly collaborative meeting.'}
+            {step === 'attendees' && 'Choose who should be invited to this meeting.'}
             {step === 'review' && 'Review the meeting details before scheduling.'}
             {step === 'notify' && 'Meeting scheduled! Send notifications to providers.'}
           </DialogDescription>
@@ -541,7 +542,84 @@ export function CompanyMeetingWizard({
             </div>
           )}
 
-          {/* Step 2: Review */}
+          {/* Step 2: Select Attendees */}
+          {step === 'attendees' && (
+            <div className="space-y-4">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  Pick exactly who should be invited. Providers required this month are pre-selected.
+                </AlertDescription>
+              </Alert>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => selectAllAttendees(providers.filter(p => p.isRequired).map(p => p.email))}
+                >
+                  Required only ({requiredProviders.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => selectAllAttendees(providers.map(p => p.email))}
+                >
+                  Select all ({providers.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedAttendees(new Set())}
+                >
+                  Clear
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {providers.map(provider => {
+                  const isSelected = selectedAttendees.has(provider.email);
+                  return (
+                    <div
+                      key={provider.email}
+                      className={cn(
+                        'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                        isSelected ? 'border-primary bg-primary/5' : 'bg-card'
+                      )}
+                      onClick={() => toggleAttendee(provider.email)}
+                    >
+                      <Checkbox checked={isSelected} className="mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium text-sm">{provider.name}</p>
+                          {provider.isRequired && (
+                            <Badge variant="secondary" className="text-xs">
+                              Required this month
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{provider.email}</p>
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {provider.states.map(state => (
+                            <Badge key={state} variant="outline" className="text-xs">
+                              {state}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {providers.length === 0 && !loading && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No providers found.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Review */}
           {step === 'review' && (
             <div className="space-y-6">
               <Card>
@@ -566,19 +644,21 @@ export function CompanyMeetingWizard({
                   
                   <div>
                     <Label className="text-muted-foreground text-xs">Providers to be Invited</Label>
-                    <p className="font-medium">{requiredProviders.length} providers required this month</p>
-                    {nonRequiredProviders.length > 0 && (
-                      <p className="text-xs text-muted-foreground">{nonRequiredProviders.length} providers not required (skipped)</p>
+                    <p className="font-medium">{invitedProviders.length} provider{invitedProviders.length !== 1 ? 's' : ''} selected</p>
+                    {providers.length - invitedProviders.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {providers.length - invitedProviders.length} provider{providers.length - invitedProviders.length !== 1 ? 's' : ''} not invited
+                      </p>
                     )}
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {requiredProviders.slice(0, 5).map(p => (
+                      {invitedProviders.slice(0, 5).map(p => (
                         <Badge key={p.email} variant="secondary" className="text-xs">
                           {p.name} ({p.requiredStates.join(', ')})
                         </Badge>
                       ))}
-                      {requiredProviders.length > 5 && (
+                      {invitedProviders.length > 5 && (
                         <Badge variant="outline" className="text-xs">
-                          +{requiredProviders.length - 5} more
+                          +{invitedProviders.length - 5} more
                         </Badge>
                       )}
                     </div>
@@ -656,11 +736,11 @@ export function CompanyMeetingWizard({
 
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">
-                      {providers.length} Providers to Notify
+                      {invitedProviders.length} Providers to Notify
                     </Label>
                     <ScrollArea className="h-48">
                       <div className="space-y-2">
-                        {providers.map(provider => (
+                        {invitedProviders.map(provider => (
                           <div 
                             key={provider.email}
                             className="flex items-center justify-between p-2 rounded border bg-card"
