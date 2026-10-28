@@ -196,6 +196,7 @@ const CollaborativeAgreementsPage = () => {
   const [dbProviders, setDbProviders] = useState<DbProvider[]>([]);
   const [agreementDocCounts, setAgreementDocCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [pendingFlagIds, setPendingFlagIds] = useState<Set<string>>(new Set());
   
   // Derived values from auth
   const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'admin');
@@ -226,6 +227,8 @@ const CollaborativeAgreementsPage = () => {
     if (!providersRes.error) {
       setDbProviders(providersRes.data || []);
     }
+    const flagRes = await supabase.from('profiles').select('id').eq('activation_status', 'pending_agreements');
+    if (!flagRes.error) setPendingFlagIds(new Set((flagRes.data || []).map(r => r.id)));
 
     // Build a set of agreement IDs that have at least one task document
     if (!docCountsRes.error && docCountsRes.data) {
@@ -244,12 +247,28 @@ const CollaborativeAgreementsPage = () => {
   }, []);
 
   // Incomplete agreements (shell records with no provider assigned)
-  const incompleteAgreements = dbAgreements.filter(a => !a.provider_name && !a.provider_email);
+  const isLiveAgreement = (a: DbAgreement) =>
+    !['cancelled', 'terminated', 'termination_initiated', 'invalid'].includes(a.workflow_status) && !a.terminated_at;
+  const staleFlagProviders = (a: DbAgreement) =>
+    isLiveAgreement(a)
+      ? dbProviders.filter(p => p.agreement_id === a.id && p.is_active && p.provider_id && pendingFlagIds.has(p.provider_id))
+      : [];
+  const incompleteAgreements = dbAgreements.filter(a => (!a.provider_name && !a.provider_email) || staleFlagProviders(a).length > 0);
 
   const getIncompleteIssues = (a: DbAgreement) => {
     const linked = dbProviders.filter(p => p.agreement_id === a.id && p.is_active);
-    const issues: { reason: string; fix: string; action?: 'sync' }[] = [];
-    if (linked.length === 0) {
+    const issues: { reason: string; fix: string; action?: 'sync' | 'clear_flag' }[] = [];
+    const stale = staleFlagProviders(a);
+    if (stale.length > 0) {
+      issues.push({
+        reason: `${stale.map(p => p.provider_name).join(', ')} still shows "Pending Agreements" in the directory even though this agreement exists.`,
+        fix: 'Click "Mark agreements done" to clear the flag.',
+        action: 'clear_flag',
+      });
+    }
+    if (a.provider_name || a.provider_email) {
+      // provider details present
+    } else if (linked.length === 0) {
       issues.push({
         reason: 'No provider is linked to this agreement.',
         fix: 'Open the agreement and add the provider from the directory. If it was never used, it can be deleted.',
@@ -271,6 +290,19 @@ const CollaborativeAgreementsPage = () => {
       });
     }
     return { linked, issues };
+  };
+
+  const clearPendingFlag = async (a: DbAgreement) => {
+    const ids = staleFlagProviders(a).map(p => p.provider_id as string);
+    const { error } = await supabase.from('profiles')
+      .update({ activation_status: 'ready', has_collaborative_agreements: true }).in('id', ids);
+    if (error) {
+      toast({ title: 'Could not update', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Pending Agreements flag cleared' });
+    setSelectedIncompleteId(null);
+    fetchDbAgreements();
   };
 
   const syncProviderToAgreement = async (a: DbAgreement) => {
@@ -784,7 +816,7 @@ const CollaborativeAgreementsPage = () => {
                       >
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">
-                            {linked.map(p => p.provider_name).join(', ') || 'No provider'} — {a.state_abbreviation}
+                            {linked.map(p => p.provider_name).join(', ') || a.provider_name || 'No provider'} — {a.state_abbreviation}
                           </p>
                           <p className="text-xs text-muted-foreground">{a.physician_name || 'No physician'}</p>
                         </div>
@@ -804,6 +836,9 @@ const CollaborativeAgreementsPage = () => {
                           <div className="flex flex-wrap gap-2">
                             {hasRole('admin') && issues.some(i => i.action === 'sync') && (
                               <Button size="sm" onClick={() => syncProviderToAgreement(a)}>Fill in provider details</Button>
+                            )}
+                            {hasRole('admin') && issues.some(i => i.action === 'clear_flag') && (
+                              <Button size="sm" onClick={() => clearPendingFlag(a)}>Mark agreements done</Button>
                             )}
                             <Button size="sm" variant="outline" asChild>
                               <Link to={`/admin/agreements/${a.id}`}>Open agreement</Link>
