@@ -41,3 +41,4 @@
 - [x] Compare Jonathan’s directory, latest EHR states and agreements without changing statuses: Active profile, OH license in Medallion, PA in latest five EHR snapshots but no OH, no linked agreements. Warehouse-side reason for absent OH cannot be confirmed from saved active-only results.
 - [x] Include existing linked task uploads and participant documents in agreement attachment checks; verified with tests and signed-in directory, without changing statuses.
 - [x] Confirm current and future agreement additions refresh directory participation, supervision and missing-agreement flags; wizard invalidates all three queries, with focus/minute refresh as fallback.
+- [ ] Show required agreement/link gaps in Agreements → Incomplete / Need fixing using the same directory checks and clickable corrections.
