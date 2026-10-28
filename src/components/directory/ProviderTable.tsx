@@ -1,5 +1,6 @@
 import type { PcpCell } from '@/lib/pcpCoverage';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
+import { employmentTypeBadgeLabel } from '@/lib/employmentTypeLabel';
 import {
   Table,
   TableBody,
