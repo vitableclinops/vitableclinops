@@ -21,6 +21,8 @@ interface ProviderFiltersProps {
   onEmploymentTypeChange: (value: string) => void;
   agencyFilter: string;
   onAgencyChange: (value: string) => void;
+  showEveryone: boolean;
+  onShowEveryoneChange: (value: boolean) => void;
   availableStates: string[];
   availableProfessions: string[];
   availableAgencies: AgencyOption[];
@@ -41,6 +43,8 @@ export const ProviderFilters = ({
   onEmploymentTypeChange,
   agencyFilter,
   onAgencyChange,
+  showEveryone,
+  onShowEveryoneChange,
   availableStates,
   availableProfessions,
   availableAgencies,
@@ -111,6 +115,17 @@ export const ProviderFilters = ({
           <SelectItem value="agency">Agency-Supplied</SelectItem>
         </SelectContent>
       </Select>
+
+      <Select value={showEveryone ? 'everyone' : 'clinicians'} onValueChange={value => onShowEveryoneChange(value === 'everyone')}>
+        <SelectTrigger className="w-[190px]" aria-label="Directory scope">
+          <SelectValue placeholder="Who" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="clinicians">Clinicians only</SelectItem>
+          <SelectItem value="everyone">Everyone incl. staff</SelectItem>
+        </SelectContent>
+      </Select>
+
 
       {employmentTypeFilter === 'agency' && availableAgencies.length > 0 && (
         <Select value={agencyFilter} onValueChange={onAgencyChange}>

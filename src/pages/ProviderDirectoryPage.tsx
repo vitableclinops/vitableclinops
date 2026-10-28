@@ -31,6 +31,7 @@ import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor, isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
 import { mergeProviderFlags } from '@/lib/providerFlagSummary';
 import { employeeVisibleIn, isOffboarded } from '@/lib/employeeVisibility';
+import { isClinician } from '@/lib/clinicianRoles';
 import { FlagProfileLookup } from '@/components/directory/FlagProfileLookup';
 import { licensedNotActiveLabel } from '@/lib/licensedNotActiveStates';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
@@ -136,6 +137,8 @@ const ProviderDirectoryPage = () => {
   const [statusFilter, setStatusFilter] = useState('active');
   const [employmentTypeFilter, setEmploymentTypeFilter] = useState('all');
   const [agencyFilter, setAgencyFilter] = useState('all');
+  // Default directory scope hides staff records that carry no clinical Type.
+  const [showEveryone, setShowEveryone] = useState(false);
   
   
   // Sorting
@@ -276,6 +279,8 @@ const ProviderDirectoryPage = () => {
     
     let filtered = data.filter(p => {
       if (!employeeVisibleIn(p.employment_status, activeTab === 'offboarded' ? 'offboarded' : 'current')) return false;
+      // Offboarded keeps the full archive; current views show clinicians by default.
+      if (activeTab !== 'offboarded' && !showEveryone && !isClinician(p)) return false;
       // Search filter
       const query = searchQuery.toLowerCase();
       if (query) {
@@ -379,7 +384,7 @@ const ProviderDirectoryPage = () => {
     });
 
     return filtered;
-  }, [providers, publicProviders, isAdmin, activeTab, searchQuery, stateFilter, professionFilter, statusFilter, employmentTypeFilter, agencyFilter, sortColumn, sortDirection, providerStateMap]);
+  }, [providers, publicProviders, isAdmin, activeTab, searchQuery, stateFilter, professionFilter, statusFilter, employmentTypeFilter, agencyFilter, showEveryone, sortColumn, sortDirection, providerStateMap]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -397,9 +402,10 @@ const ProviderDirectoryPage = () => {
     setStatusFilter('active');
     setEmploymentTypeFilter('all');
     setAgencyFilter('all');
+    setShowEveryone(false);
   };
 
-  const hasActiveFilters = searchQuery !== '' || stateFilter !== 'all' || professionFilter !== 'all' || statusFilter !== 'active' || employmentTypeFilter !== 'all' || agencyFilter !== 'all';
+  const hasActiveFilters = searchQuery !== '' || stateFilter !== 'all' || professionFilter !== 'all' || statusFilter !== 'active' || employmentTypeFilter !== 'all' || agencyFilter !== 'all' || showEveryone;
 
   const getProviderInitials = (name: string | null) => {
     if (!name) return '?';
@@ -508,8 +514,8 @@ const ProviderDirectoryPage = () => {
                   {isAdmin 
                     ? activeTab === 'offboarded'
                       ? `${providers.filter(p => isOffboarded(p.employment_status) && p.directory_visibility !== 'excluded').length} offboarded`
-                      : `${providers.filter(p => !isOffboarded(p.employment_status) && p.directory_visibility !== 'excluded').length} current • ${providers.filter(p => p.employment_status === 'active' && p.directory_visibility !== 'excluded').length} active`
-                    : `${publicProviders.length} colleagues`
+                      : `${providers.filter(p => !isOffboarded(p.employment_status) && p.directory_visibility !== 'excluded' && (showEveryone || isClinician(p))).length} current • ${providers.filter(p => p.employment_status === 'active' && p.directory_visibility !== 'excluded' && (showEveryone || isClinician(p))).length} active`
+                    : `${publicProviders.filter(p => showEveryone || isClinician(p)).length} colleagues`
                   }
                 </p>
               </div>
@@ -594,6 +600,8 @@ const ProviderDirectoryPage = () => {
                     onEmploymentTypeChange={setEmploymentTypeFilter}
                     agencyFilter={agencyFilter}
                     onAgencyChange={setAgencyFilter}
+                    showEveryone={showEveryone}
+                    onShowEveryoneChange={setShowEveryone}
                     availableStates={availableStates}
                     availableProfessions={availableProfessions}
                     availableAgencies={agencies}
@@ -712,6 +720,8 @@ const ProviderDirectoryPage = () => {
                   onEmploymentTypeChange={setEmploymentTypeFilter}
                   agencyFilter={agencyFilter}
                   onAgencyChange={setAgencyFilter}
+                  showEveryone={showEveryone}
+                  onShowEveryoneChange={setShowEveryone}
                   availableStates={availableStates}
                   availableProfessions={availableProfessions}
                   availableAgencies={agencies}
