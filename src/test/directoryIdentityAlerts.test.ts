@@ -36,4 +36,20 @@ describe('Directory identity alerts', () => {
     const data = { identities: [{ ehrProviderId: 'duplicate', ehrName: 'Provider', npi: '1234567890', states: [], status: 'ambiguous' as const, profileId: 'reviewed', nameDiffers: false, reason: 'Several EHR IDs share this directory record' }] };
     expect(pcpCellFor(profile, data).kind).toBe('needs_review');
   });
+  it('disregards the missing NPI for confirmed test accounts only', () => {
+    const testAccount = {
+      id: 'demo-user', profession: 'NP', npi_number: null,
+      directory_visibility: 'excluded',
+      directory_visibility_reason: 'Confirmed test account (excluded from directory; login kept)',
+    };
+    for (const data of [undefined, { identities: [] }]) {
+      const cell = pcpCellFor(testAccount, data);
+      expect(cell.kind).toBe('not_applicable');
+      expect(directoryIdentityAlert(cell)).toBeUndefined();
+    }
+    const realProvider = { id: 'real', profession: 'NP', npi_number: null, directory_visibility: 'visible', directory_visibility_reason: null };
+    expect(pcpCellFor(realProvider, { identities: [] }).kind).toBe('needs_review');
+    const privacyExcluded = { id: 'private', profession: 'NP', npi_number: null, directory_visibility: 'excluded', directory_visibility_reason: 'Requested directory privacy' };
+    expect(pcpCellFor(privacyExcluded, { identities: [] }).kind).toBe('needs_review');
+  });
 });

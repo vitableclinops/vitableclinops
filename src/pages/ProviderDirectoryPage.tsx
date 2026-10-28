@@ -52,6 +52,8 @@ interface FullProvider {
   phone_number: string | null;
   npi_number: string | null;
   admin_no_npi?: boolean;
+  directory_visibility?: string | null;
+  directory_visibility_reason?: string | null;
   credentials: string | null;
   profession: string | null;
   avatar_url: string | null;
