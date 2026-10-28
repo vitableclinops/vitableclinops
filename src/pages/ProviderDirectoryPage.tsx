@@ -25,6 +25,8 @@ import { SupervisionAgreementsTable } from '@/components/directory/SupervisionAg
 import { ExternalImportPanel } from '@/components/directory/ExternalImportPanel';
 import { useExternalDirectoryData } from '@/hooks/useExternalImport';
 import { useDirectoryCollaboration } from '@/hooks/useDirectoryCollaboration';
+import { useActiveStateAgreementAudit } from '@/hooks/useActiveStateAgreementAudit';
+import { activeStateAgreementFlags } from '@/lib/activeStateAgreementFlags';
 import { summarizeLicenses } from '@/lib/externalImport';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
@@ -122,6 +124,7 @@ const ProviderDirectoryPage = () => {
   const tabParam = searchParams.get('tab');
   const isAdmin = roles.includes('admin');
   const { data: collaborationIds } = useDirectoryCollaboration(isAdmin);
+  const { data: agreementAudit, error: agreementAuditError } = useActiveStateAgreementAudit(isAdmin);
   const defaultTab = isAdmin && ['management', 'medallion', 'agency-import', 'offboarded'].includes(tabParam ?? '') ? (tabParam ?? 'directory') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);
@@ -485,8 +488,13 @@ const ProviderDirectoryPage = () => {
       id: p.id, name: directoryDisplayName(p),
       conflicts: directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []),
       identityReview: directoryIdentityAlert(pcpCellFor(p, pcpCoverageLoading ? undefined : pcpCoverage)),
+      agreementReviews: (() => {
+        const states = !pcpCoverageLoading ? pcpCoverage?.statesByProfile.get(p.id) : undefined;
+        return agreementAudit && states && !isTestAccountDirectoryRecord(p)
+          ? activeStateAgreementFlags(p, states, agreementAudit.rules, agreementAudit.agreements, agreementAudit.decisions) : [];
+      })(),
     }))
-    .filter(p => p.conflicts.length > 0 || p.identityReview)
+    .filter(p => p.conflicts.length > 0 || p.identityReview || p.agreementReviews.length > 0)
     .sort((a, b) => a.name.localeCompare(b.name)) : [];
   const flaggedProviders = mergeProviderFlags(directoryFlags, pcpCoverageLoading ? [] : coverageAlertSummary(pcpCoverage ?? null).review, providers.map(p => ({
     id: p.id, name: directoryDisplayName(p),
@@ -532,6 +540,7 @@ const ProviderDirectoryPage = () => {
           </div>
 
           {/* Tabs for Admin */}
+          {isAdmin && agreementAuditError && <p className="mb-3 text-destructive">Agreement checks unavailable. Existing provider flags may not include missing agreements.</p>}
           {isAdmin && <ProviderFlagAlerts
             providers={flaggedProviders}
             onFindProfile={() => setFlagLookupOpen(true)}

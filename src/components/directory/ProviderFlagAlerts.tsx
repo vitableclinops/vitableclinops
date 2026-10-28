@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
@@ -42,6 +43,7 @@ export function ProviderFlagAlerts({
   onFindProfile: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const navigate = useNavigate();
   const flagCount = providers.length;
   if (!flagCount) return null;
 
@@ -62,7 +64,7 @@ export function ProviderFlagAlerts({
       </AlertTitle>
       <AlertDescription>
         {flagCount > 0 && (
-          <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview || p.sourceIdentityReviews?.length ? ['Identity needs review'] : []), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
+          <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview || p.sourceIdentityReviews?.length ? ['Identity needs review'] : []), ...(p.agreementReviews?.length ? [`Collaboration review (${p.agreementReviews.map(r => r.state).join(', ')})`] : []), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
         )}
         {coverage && <p className="mt-1 break-words text-muted-foreground">{coverage.summary}</p>}
         {coverage?.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
@@ -92,6 +94,12 @@ export function ProviderFlagAlerts({
                   <div key={`${conflict.field}-${index}`} className="mt-2 space-y-1">
                     <p><strong>{labels[conflict.field] ?? conflict.field.replace(/_/g, ' ')}</strong>: Directory says “{conflict.local ?? 'Not supplied'}”; Medallion says “{conflict.medallion ?? 'Not supplied'}”.</p>
                     <p className="text-muted-foreground"><strong>How to fix:</strong> {correction(conflict.field)} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>Correct profile</Button></p>
+                  </div>
+                ))}
+                {provider.agreementReviews?.map(review => (
+                  <div key={review.state} className="mt-2 space-y-1">
+                    <p><strong>{review.state} collaboration:</strong> {review.reason}</p>
+                    <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => navigate('/admin/agreements')}>Review agreements</Button></p>
                   </div>
                 ))}
               </section>

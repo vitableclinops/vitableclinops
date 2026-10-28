@@ -36,4 +36,6 @@
 - [x] Correct Kate and Moensania collaboration labels using linked agreement records instead of stale profile flags.
 - [x] Audit all directory collaboration labels and statuses against linked agreements and verify consistency; 50 visible clinicians match.
 - [x] Keep collaboration checks current after new providers and agreements are saved, on window focus and every minute while visible.
-- [ ] Link Jonathan Luker’s confirmed Ohio and Pennsylvania collaborations with Kate; awaiting documents/effective dates and review of Ohio supervision limit (saved limit 3, currently 7 active linked providers).
+- [ ] Link Jonathan Luker’s confirmed Ohio and Pennsylvania collaborations with Kate Baron; awaiting signed documents/effective dates and Ohio capacity review. No status changes authorized.
+- [x] Check active EHR states for required linked agreements and flag missing agreements with clickable corrections; tests and signed-in correction flow verified.
+- [x] Compare Jonathan’s directory, latest EHR states and agreements without changing statuses: Active profile, OH license in Medallion, PA in latest five EHR snapshots but no OH, no linked agreements. Warehouse-side reason for absent OH cannot be confirmed from saved active-only results.

@@ -7,6 +7,7 @@ export interface FlaggedProvider {
   name: string;
   conflicts: Conflict[];
   identityReview?: IdentityReview;
+  agreementReviews?: import('@/lib/activeStateAgreementFlags').AgreementReview[];
   sourceIdentityReviews?: IdentityReview[];
   profileId?: string;
 }
