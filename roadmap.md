@@ -10,4 +10,4 @@
 - [x] Move Directory before Supervision in the provider directory tabs.
 - [x] Display Amanda (Mandy) Clement in the directory while retaining Amanda Clement as her legal name.
 - [x] Investigate and resolve Amanda Clement's Differs from Medallion flag without hiding other conflicts.
-- [ ] Add a top-of-directory Provider flagged alert with reasons, correction guidance, and profile links; verify Bee Chang's alert.
+- [x] Add a top-of-directory Provider flagged alert with reasons, correction guidance, and profile links; verify Bee Chang's alert.
