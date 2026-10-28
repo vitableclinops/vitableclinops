@@ -458,7 +458,7 @@ export function CompanyMeetingWizard({
         </DialogHeader>
 
         {/* Progress indicators */}
-        <div className="flex items-center justify-center gap-2 py-4">
+        <div className="flex items-center justify-center gap-2 py-2">
           {(['date', 'attendees', 'review', 'notify'] as WizardStep[]).map((s, i) => (
             <div key={s} className="flex items-center">
               <div
@@ -491,7 +491,7 @@ export function CompanyMeetingWizard({
           ))}
         </div>
 
-        <ScrollArea className="flex-1 pr-4">
+        <ScrollArea className="flex-1 min-h-0 pr-4">
           {/* Step 1: Select Date */}
           {step === 'date' && (
             <div className="space-y-6">
@@ -544,7 +544,7 @@ export function CompanyMeetingWizard({
                   placeholder="Add any notes or agenda items for this meeting..."
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
+                  rows={2}
                 />
               </div>
             </div>
