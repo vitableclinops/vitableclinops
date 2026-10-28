@@ -687,8 +687,9 @@ export function CompanyMeetingWizard({
               <Alert>
                 <Info className="h-4 w-4" />
                 <AlertDescription>
-                  Providers will be added to both time slots. After scheduling, 
-                  you'll get a list of emails to notify them externally.
+                  {calendarOnly
+                    ? 'Providers will be added to both time slots on the calendar. No emails are sent.'
+                    : "Providers will be added to both time slots. After scheduling, you'll get a list of emails to notify them externally."}
                 </AlertDescription>
               </Alert>
             </div>
