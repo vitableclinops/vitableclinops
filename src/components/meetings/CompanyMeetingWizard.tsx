@@ -76,6 +76,7 @@ export function CompanyMeetingWizard({
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderForMeeting[]>([]);
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set());
+  const [selectedStates, setSelectedStates] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [createdMeetingIds, setCreatedMeetingIds] = useState<string[] | null>(null);
   const [emailsCopied, setEmailsCopied] = useState(false);
@@ -90,6 +91,7 @@ export function CompanyMeetingWizard({
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
       setSelectedAttendees(new Set());
+      setSelectedStates(new Set());
       suggestNextDate();
     }
   }, [open]);
@@ -235,6 +237,46 @@ export function CompanyMeetingWizard({
   const invitedProviders = useMemo(() => {
     return providers.filter(p => selectedAttendees.has(p.email));
   }, [providers, selectedAttendees]);
+
+  // All states present across providers (for the state filter chips)
+  const allStates = useMemo(() => {
+    const s = new Set<string>();
+    providers.forEach(p => p.states.forEach(st => s.add(st)));
+    return Array.from(s).sort();
+  }, [providers]);
+
+  // Providers visible under the current state filter (empty filter = all)
+  const filteredProviders = useMemo(() => {
+    if (selectedStates.size === 0) return providers;
+    return providers.filter(p => p.states.some(st => selectedStates.has(st)));
+  }, [providers, selectedStates]);
+
+  const toggleStateFilter = (state: string) => {
+    setSelectedStates(prev => {
+      const next = new Set(prev);
+      if (next.has(state)) {
+        next.delete(state);
+      } else {
+        next.add(state);
+      }
+      return next;
+    });
+  };
+
+  // Select (or add) every currently filtered provider
+  const selectFiltered = (replace: boolean) => {
+    const emails = filteredProviders.map(p => p.email);
+    if (replace) {
+      selectAllAttendees(emails);
+    } else {
+      setSelectedAttendees(prev => {
+        const next = new Set(prev);
+        emails.forEach(e => next.add(e));
+        return next;
+      });
+    }
+  };
+
 
   const toggleAttendee = (email: string) => {
     setSelectedAttendees(prev => {
@@ -582,8 +624,59 @@ export function CompanyMeetingWizard({
                 </Button>
               </div>
 
+              {allStates.length > 0 && (
+                <div className="rounded-lg border p-3 space-y-2">
+                  <Label className="text-xs text-muted-foreground">Filter by scheduled states</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStates(new Set())}
+                      className={cn(
+                        'px-2.5 py-1 rounded-full text-xs border transition-colors',
+                        selectedStates.size === 0
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'hover:bg-accent'
+                      )}
+                    >
+                      All states
+                    </button>
+                    {allStates.map(state => {
+                      const active = selectedStates.has(state);
+                      return (
+                        <button
+                          key={state}
+                          type="button"
+                          onClick={() => toggleStateFilter(state)}
+                          className={cn(
+                            'px-2.5 py-1 rounded-full text-xs border transition-colors',
+                            active
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'hover:bg-accent'
+                          )}
+                        >
+                          {state}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedStates.size > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {filteredProviders.length} provider{filteredProviders.length !== 1 ? 's' : ''} in {Array.from(selectedStates).sort().join(', ')}
+                      </span>
+                      <Button variant="outline" size="sm" onClick={() => selectFiltered(false)}>
+                        Add these to invite list
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => selectFiltered(true)}>
+                        Invite only these
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
-                {providers.map(provider => {
+                {filteredProviders.map(provider => {
                   const isSelected = selectedAttendees.has(provider.email);
                   return (
                     <div
@@ -619,6 +712,11 @@ export function CompanyMeetingWizard({
                 {providers.length === 0 && !loading && (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     No providers found.
+                  </p>
+                )}
+                {providers.length > 0 && filteredProviders.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No providers in the selected states.
                   </p>
                 )}
               </div>
