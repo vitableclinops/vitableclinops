@@ -1,0 +1,1 @@
+ALTER TABLE public.meeting_attendees ADD COLUMN IF NOT EXISTS chart_link TEXT;

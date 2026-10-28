@@ -71,6 +71,13 @@
       "when": 1793040569537,
       "tag": "0009_auto_fill_agreement_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793221519398,
+      "tag": "0010_add_chart_link_to_meeting_attendees",
+      "breakpoints": true
     }
   ]
 }
