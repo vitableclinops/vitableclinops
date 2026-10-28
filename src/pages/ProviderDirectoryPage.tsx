@@ -771,6 +771,10 @@ const ProviderDirectoryPage = () => {
         <ProviderDetailModal
           provider={selectedProvider}
           onClose={() => setSelectedProvider(null)}
+          onSaved={saved => {
+            setProviders(current => current.map(p => p.id === saved.id ? saved : p));
+            setSelectedProvider(saved);
+          }}
         />
       )}
     </div>
