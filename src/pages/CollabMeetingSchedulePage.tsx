@@ -581,6 +581,67 @@ const CollabMeetingSchedulePage = () => {
         </AlertDialogContent>
       </AlertDialog>
 
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-md max-h-[95vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Add providers</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 flex flex-col gap-3">
+            <Input
+              placeholder="Search providers"
+              value={addSearch}
+              onChange={(e) => setAddSearch(e.target.value)}
+            />
+            <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-2">
+              {addLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : visibleAddProviders.map((p) => {
+                const existing = existingStatesFor(p.email);
+                const picked = addStates[p.email] || [];
+                return (
+                  <div key={p.email} className="rounded border p-2">
+                    <p className="text-sm font-medium">{p.name}</p>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {p.states.map((s) => {
+                        const already = existing.has(s);
+                        const on = picked.includes(s) || already;
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            disabled={already}
+                            onClick={() => toggleAddState(p.email, s)}
+                            className={cn(
+                              'text-[11px] px-1.5 py-0.5 rounded-full border',
+                              already ? 'bg-muted text-muted-foreground border-transparent' :
+                                on ? 'bg-primary text-primary-foreground border-transparent' : 'hover:bg-muted',
+                            )}
+                          >
+                            {s}{already ? ' ✓' : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              {!addLoading && visibleAddProviders.length === 0 && (
+                <p className="text-sm text-muted-foreground py-4 text-center">No providers found.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSaving}>Cancel</Button>
+            <Button
+              onClick={saveNewProviders}
+              disabled={addSaving || Object.values(addStates).every((v) => v.length === 0)}
+            >
+              {addSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${Object.values(addStates).reduce((n, v) => n + v.length, 0)} state(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <CollabSpreadsheetLibraryDialog open={libraryOpen} onOpenChange={setLibraryOpen} />
 
       <CompanyMeetingWizard
