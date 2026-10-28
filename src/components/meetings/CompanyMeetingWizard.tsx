@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -122,6 +123,9 @@ export function CompanyMeetingWizard({
         .eq('is_active', true);
       
       if (error) throw error;
+      const { data: currentProfiles, error: profileError } = await supabase.from('profiles').select('id').or(CURRENT_EMPLOYEE_FILTER);
+      if (profileError) throw profileError;
+      const currentIds = new Set((currentProfiles ?? []).map(p => p.id));
 
       // Get agreement details for state info
       const { data: agreements } = await supabase
@@ -138,6 +142,7 @@ export function CompanyMeetingWizard({
       const providerMap = new Map<string, ProviderForMeeting>();
       
       agreementProviders?.forEach(ap => {
+        if (ap.provider_id && !currentIds.has(ap.provider_id)) return;
         const agreement = agreements.find(a => a.id === ap.agreement_id);
         if (!agreement) return;
         

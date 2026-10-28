@@ -119,7 +119,7 @@ const ProviderDirectoryPage = () => {
   // Determine initial tab from URL or default based on role
   const tabParam = searchParams.get('tab');
   const isAdmin = roles.includes('admin');
-  const defaultTab = isAdmin && ['management', 'medallion', 'agency-import'].includes(tabParam ?? '') ? (tabParam ?? 'directory') : 'directory';
+  const defaultTab = isAdmin && ['management', 'medallion', 'agency-import', 'offboarded'].includes(tabParam ?? '') ? (tabParam ?? 'directory') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -439,20 +439,20 @@ const ProviderDirectoryPage = () => {
       }
       return null;
     })(),
-    pcp_coverage: isAdmin
+    pcp_coverage: isOffboarded(p.employment_status) ? { kind: 'not_applicable', text: 'Offboarded', states: [], detail: 'Offboarded — current EHR coverage review not required' } : isAdmin
       ? pcpCellFor(p, pcpCoverageLoading ? undefined : pcpCoverage)
       : null,
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,
     has_collaborative_agreements: isAdmin ? (p as FullProvider).has_collaborative_agreements : null,
-    activation_status: isAdmin ? ((p as any).activation_status || null) : null,
+    activation_status: isOffboarded(p.employment_status) ? 'Terminated' : isAdmin ? ((p as any).activation_status || null) : null,
     collaborative_physician: null, // Derived from collaborative_agreements now
     renewal_handling: isAdmin ? ((p as any).renewal_handling || null) : null,
     languages: isAdmin ? (medallion?.byProfile.get(p.id)?.languages?.join(', ') || (p as any).languages || null) : null,
     pod_name: null,
     pod_lead_id: isAdmin ? ((p as any).pod_lead_id || null) : null,
     pod_lead_name: isAdmin ? (podLeadMap.get((p as any).pod_lead_id) || null) : null,
-    medallion_conflicts: isAdmin
+    medallion_conflicts: isAdmin && !isOffboarded(p.employment_status)
       ? (directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []).map(c => `${c.field.replace(/_/g, ' ')}: ours ${c.local ?? '—'}, Medallion ${c.medallion ?? '—'}`).join('; ') || null)
       : null,
   }));
@@ -499,7 +499,9 @@ const ProviderDirectoryPage = () => {
                 <h1 className="text-3xl font-bold text-foreground">Providers</h1>
                 <p className="text-muted-foreground">
                   {isAdmin 
-                    ? `${providers.length} total • ${providers.filter(p => p.employment_status === 'active').length} active`
+                    ? activeTab === 'offboarded'
+                      ? `${providers.filter(p => isOffboarded(p.employment_status) && p.directory_visibility !== 'excluded').length} offboarded`
+                      : `${providers.filter(p => !isOffboarded(p.employment_status) && p.directory_visibility !== 'excluded').length} current • ${providers.filter(p => p.employment_status === 'active' && p.directory_visibility !== 'excluded').length} active`
                     : `${publicProviders.length} colleagues`
                   }
                 </p>
@@ -547,7 +549,7 @@ const ProviderDirectoryPage = () => {
 
               {/* Supervision Tab - Medallion agreements across all providers */}
               <TabsContent value="management" className="space-y-6">
-                <SupervisionAgreementsTable />
+                <SupervisionAgreementsTable offboardedProfiles={providers.filter(p => isOffboarded(p.employment_status)).map(p => ({ id: p.id, medallionId: p.medallion_id }))} />
               </TabsContent>
 
               <TabsContent value="agency-import">

@@ -81,19 +81,19 @@ export function ProviderFlagAlerts({
                 {provider.identityReview && (
                   <div className="mt-2 space-y-1">
                     <p><strong>Identity needs review:</strong> {provider.identityReview.reason}</p>
-                    <p className="text-muted-foreground"><strong>How to fix:</strong> {provider.identityReview.howToFix}</p>
+                    <p className="text-muted-foreground"><strong>How to fix:</strong> {provider.identityReview.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>Correct profile</Button></p>
                   </div>
                 )}
                 {provider.sourceIdentityReviews?.map((review, index) => (
                   <div key={index} className="mt-2 space-y-1">
                     <p><strong>Identity needs review:</strong> {review.reason}</p>
-                    <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix}</p>
+                    <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>{provider.profileId ? 'Correct profile' : 'Find provider profile'}</Button></p>
                   </div>
                 ))}
                 {provider.conflicts.map((conflict, index) => (
                   <div key={`${conflict.field}-${index}`} className="mt-2 space-y-1">
                     <p><strong>{labels[conflict.field] ?? conflict.field.replace(/_/g, ' ')}</strong>: Directory says “{conflict.local ?? 'Not supplied'}”; Medallion says “{conflict.medallion ?? 'Not supplied'}”.</p>
-                    <p className="text-muted-foreground"><strong>How to fix:</strong> {correction(conflict.field)}</p>
+                    <p className="text-muted-foreground"><strong>How to fix:</strong> {correction(conflict.field)} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>Correct profile</Button></p>
                   </div>
                 ))}
               </section>
@@ -107,18 +107,6 @@ export function ProviderFlagAlerts({
                   Source: Metabase (current records returned by our read-only query, explicit exclusions applied).
                   Warehouse refresh time: not verified. The source’s is_active flag meaning is pending data-owner confirmation.
                 </p>
-              </section>
-            )}
-            {coverage && coverage.excluded.length > 0 && (
-              <section className="py-3">
-                <h3 className="font-semibold">Explicit exclusions still present in source ({coverage.excluded.length})</h3>
-                <ul className="mt-1 ml-4 list-disc space-y-1">
-                  {coverage.excluded.map(i => (
-                    <li key={i.ehrProviderId} className="break-words">
-                      {i.ehrName} (NPI {i.npi ?? 'none'}) — {i.reason}; source still lists {i.states.length} state(s)
-                    </li>
-                  ))}
-                </ul>
               </section>
             )}
             <p className="pt-3 text-xs text-muted-foreground">Medallion differences are rechecked after the next successful directory sync.</p>
