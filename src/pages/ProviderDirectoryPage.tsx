@@ -29,6 +29,7 @@ import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor } from '@/lib/pcpCoverage';
+import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import { PcpCoverageStatus } from '@/components/directory/PcpCoverageStatus';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -613,7 +614,7 @@ const ProviderDirectoryPage = () => {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="font-semibold text-foreground truncate">
-                                  {provider.preferred_name || provider.full_name || 'Unknown'}
+                                  {directoryDisplayName(provider)}
                                 </h3>
                                 {isAdmin && getStatusBadge(provider.employment_status)}
                               </div>
@@ -727,7 +728,7 @@ const ProviderDirectoryPage = () => {
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-foreground truncate">
-                              {provider.preferred_name || provider.full_name || 'Unknown'}
+                              {directoryDisplayName(provider)}
                             </h3>
                             {(provider.profession || provider.credentials) && (
                               <p className="text-sm text-muted-foreground">{provider.profession || provider.credentials}</p>
