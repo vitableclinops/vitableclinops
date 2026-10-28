@@ -268,6 +268,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
 
       clearSaved();
       queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
+      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
       queryClient.invalidateQueries({ queryKey: ['agreements'] });
       queryClient.invalidateQueries({ queryKey: ['provider-agreements-count'] });
       queryClient.invalidateQueries({ queryKey: ['provider-missing-doc-agreements'] });

@@ -35,3 +35,4 @@
 - [x] Default the directory view to clinicians only with an Everyone incl. staff switch; verified 50 clinician rows vs 64 with staff signed in.
 - [ ] Correct Kate and Moensania collaboration labels using linked agreement records instead of stale profile flags.
 - [ ] Audit all directory collaboration labels and statuses against linked agreements and verify consistency.
+- [ ] Keep collaboration checks current after new providers and agreements are saved.
