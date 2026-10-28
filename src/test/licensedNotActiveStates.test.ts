@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { licensedNotActiveLabel, licensedNotActiveStates } from '@/lib/licensedNotActiveStates';
+import { licensedNotActiveLabel, licensedNotActiveStateList, licensedNotActiveStates } from '@/lib/licensedNotActiveStates';
 
 describe('Licensed states minus active PCP telemedicine states', () => {
   it('keeps only licensed states not in active PCP telemedicine states', () => {
@@ -19,5 +19,15 @@ describe('Licensed states minus active PCP telemedicine states', () => {
   });
   it('does not infer inactive states from an ambiguous identity', () => {
     expect(licensedNotActiveLabel(['CA'], { kind: 'needs_review', text: '', detail: '', states: [] })).toBe('Identity needs review');
+  });
+  it('offers the full list for a hover popup when states are present', () => {
+    expect(licensedNotActiveStateList('CA, TX, NJ')).toBe('CA, TX, NJ');
+  });
+  it('offers no popup for status messages or empty cells', () => {
+    expect(licensedNotActiveStateList('Coverage unavailable')).toBeNull();
+    expect(licensedNotActiveStateList('Identity needs review')).toBeNull();
+    expect(licensedNotActiveStateList('None')).toBeNull();
+    expect(licensedNotActiveStateList(null)).toBeNull();
+    expect(licensedNotActiveStateList('   ')).toBeNull();
   });
 });

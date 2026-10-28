@@ -165,7 +165,11 @@ const navGroups: NavGroup[] = [
 ];
 
 export function AppSidebar({ userRole, userName, userEmail, userAvatarUrl }: AppSidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  // Below the lg breakpoint pages only offset content by 4rem, so an expanded
+  // 16rem panel would sit on top of them. Start narrow; the toggle still expands it.
+  const [collapsed, setCollapsed] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 1024
+  );
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, roles } = useAuth();
