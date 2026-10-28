@@ -30,5 +30,5 @@
 - [x] Remove current offboarded-provider warnings from directory alerts and profile displays without deleting source history.
 - [x] Remove the explicit former-staff exclusions listing from the current directory.
 - [x] Confirm directory termination status takes precedence over Metabase, with status edits refreshing current views and offboarded alerts suppressed.
-- [ ] Refresh directory statuses while open and normalize offboarded flag suppression.
-- [ ] Hide the yellow alert when no actual provider flags exist; show last-fetch information above the directory table.
+- [x] Refresh directory statuses while open and normalize offboarded flag suppression.
+- [x] Hide the yellow alert when no actual provider flags exist; show last-fetch information above the directory table.
