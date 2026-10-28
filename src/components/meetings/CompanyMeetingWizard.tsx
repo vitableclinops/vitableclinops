@@ -450,29 +450,29 @@ export function CompanyMeetingWizard({
 
         {/* Progress indicators */}
         <div className="flex items-center justify-center gap-2 py-4">
-          {(['date', 'review', 'notify'] as WizardStep[]).map((s, i) => (
+          {(['date', 'attendees', 'review', 'notify'] as WizardStep[]).map((s, i) => (
             <div key={s} className="flex items-center">
               <div
                 className={cn(
                   'h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors',
                   step === s
                     ? 'bg-primary text-primary-foreground'
-                    : i < ['date', 'review', 'notify'].indexOf(step)
+                    : i < ['date', 'attendees', 'review', 'notify'].indexOf(step)
                     ? 'bg-green-500 text-white'
                     : 'bg-muted text-muted-foreground'
                 )}
               >
-                {i < ['date', 'review', 'notify'].indexOf(step) ? (
+                {i < ['date', 'attendees', 'review', 'notify'].indexOf(step) ? (
                   <Check className="h-4 w-4" />
                 ) : (
                   i + 1
                 )}
               </div>
-              {i < 2 && (
+              {i < 3 && (
                 <div
                   className={cn(
                     'w-12 h-0.5 mx-1',
-                    i < ['date', 'review', 'notify'].indexOf(step)
+                    i < ['date', 'attendees', 'review', 'notify'].indexOf(step)
                       ? 'bg-green-500'
                       : 'bg-muted'
                   )}
