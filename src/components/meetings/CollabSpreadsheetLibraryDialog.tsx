@@ -78,7 +78,7 @@ export function CollabSpreadsheetLibraryDialog({ open, onOpenChange }: Props) {
         .eq('key', COLLAB_SPREADSHEET_LIBRARY_KEY)
         .maybeSingle();
       const payload = {
-        value: { spreadsheets: cleaned },
+        value: { spreadsheets: cleaned } as any,
         updated_by: user?.id,
         updated_at: new Date().toISOString(),
       };
