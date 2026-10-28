@@ -76,6 +76,7 @@ export function CompanyMeetingWizard({
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderForMeeting[]>([]);
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set());
+  const [providerStates, setProviderStates] = useState<Record<string, string[]>>({}); // email -> selected states
   const [selectedStates, setSelectedStates] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [createdMeetingIds, setCreatedMeetingIds] = useState<string[] | null>(null);
@@ -91,6 +92,7 @@ export function CompanyMeetingWizard({
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
       setSelectedAttendees(new Set());
+      setProviderStates({});
       setSelectedStates(new Set());
       suggestNextDate();
     }
@@ -183,7 +185,13 @@ export function CompanyMeetingWizard({
 
       const providerList = Array.from(providerMap.values()).sort((a, b) => a.name.localeCompare(b.name));
       setProviders(providerList);
-      setSelectedAttendees(new Set(providerList.filter(p => p.isRequired).map(p => p.email)));
+      // Pre-select the scheduled states for every provider required this month
+      const initialStates: Record<string, string[]> = {};
+      providerList.filter(p => p.isRequired).forEach(p => {
+        initialStates[p.email] = p.requiredStates.length > 0 ? [...p.requiredStates] : [...p.states];
+      });
+      setProviderStates(initialStates);
+      setSelectedAttendees(new Set(Object.keys(initialStates)));
     } catch (err) {
       console.error('Error loading providers:', err);
       toast({
@@ -235,8 +243,8 @@ export function CompanyMeetingWizard({
 
   // Providers the user chose to invite (defaults to the required providers)
   const invitedProviders = useMemo(() => {
-    return providers.filter(p => selectedAttendees.has(p.email));
-  }, [providers, selectedAttendees]);
+    return providers.filter(p => (providerStates[p.email] || []).length > 0);
+  }, [providers, providerStates]);
 
   // All states present across providers (for the state filter chips)
   const allStates = useMemo(() => {
@@ -263,34 +271,61 @@ export function CompanyMeetingWizard({
     });
   };
 
+  // Default states to select for a provider: the scheduled ones, else all of theirs
+  const defaultStatesFor = (p: ProviderForMeeting) =>
+    p.requiredStates.length > 0 ? [...p.requiredStates] : [...p.states];
+
+  const selectProviders = (provs: ProviderForMeeting[]) => {
+    const nextStates: Record<string, string[]> = {};
+    provs.forEach(p => { nextStates[p.email] = defaultStatesFor(p); });
+    setProviderStates(prev => ({ ...prev, ...nextStates }));
+    setSelectedAttendees(new Set(provs.map(p => p.email)));
+  };
+
   // Select (or add) every currently filtered provider
   const selectFiltered = (replace: boolean) => {
-    const emails = filteredProviders.map(p => p.email);
     if (replace) {
-      selectAllAttendees(emails);
+      selectProviders(filteredProviders);
     } else {
       setSelectedAttendees(prev => {
         const next = new Set(prev);
-        emails.forEach(e => next.add(e));
+        filteredProviders.forEach(p => next.add(p.email));
+        return next;
+      });
+      setProviderStates(prev => {
+        const next = { ...prev };
+        filteredProviders.forEach(p => {
+          const cur = [...(next[p.email] || [])];
+          defaultStatesFor(p).forEach(s => { if (!cur.includes(s)) cur.push(s); });
+          next[p.email] = cur;
+        });
         return next;
       });
     }
   };
 
-
-  const toggleAttendee = (email: string) => {
-    setSelectedAttendees(prev => {
-      const next = new Set(prev);
-      if (next.has(email)) {
-        next.delete(email);
-      } else {
-        next.add(email);
-      }
-      return next;
-    });
+  const toggleAttendee = (p: ProviderForMeeting) => {
+    const isSelected = (providerStates[p.email] || []).length > 0;
+    if (isSelected) {
+      setProviderStates(prev => ({ ...prev, [p.email]: [] }));
+      setSelectedAttendees(prev => { const n = new Set(prev); n.delete(p.email); return n; });
+    } else {
+      setProviderStates(prev => ({ ...prev, [p.email]: defaultStatesFor(p) }));
+      setSelectedAttendees(prev => new Set(prev).add(p.email));
+    }
   };
 
-  const selectAllAttendees = (emails: string[]) => setSelectedAttendees(new Set(emails));
+  const toggleProviderState = (email: string, state: string) => {
+    const cur = providerStates[email] || [];
+    const nextList = cur.includes(state) ? cur.filter(s => s !== state) : [...cur, state];
+    setProviderStates(prev => ({ ...prev, [email]: nextList }));
+    if (nextList.length > 0) {
+      setSelectedAttendees(prev => new Set(prev).add(email));
+    } else {
+      setSelectedAttendees(prev => { const n = new Set(prev); n.delete(email); return n; });
+    }
+  };
+
 
   // Generate email list for invited providers only
   const emailList = useMemo(() => {
@@ -319,11 +354,11 @@ export function CompanyMeetingWizard({
   // Download email list as CSV
   const downloadEmailsCsv = () => {
     const csvContent = [
-      ['Name', 'Email', 'Required States', 'All States'].join(','),
+      ['Name', 'Email', 'Selected States', 'All States'].join(','),
       ...invitedProviders.map(p => [
         `"${p.name}"`,
         p.email,
-        `"${p.requiredStates.join(', ')}"`,
+        `"${(providerStates[p.email] || []).join(', ')}"`,
         `"${p.states.join(', ')}"`,
       ].join(',')),
     ].join('\n');
@@ -401,6 +436,9 @@ export function CompanyMeetingWizard({
             provider_email: provider.email,
             attendance_status: 'invited',
             has_rsvped: false,
+            notes: (providerStates[provider.email] || []).length > 0
+              ? `States: ${(providerStates[provider.email] || []).join(', ')}`
+              : null,
           }))
         );
 
@@ -604,21 +642,21 @@ export function CompanyMeetingWizard({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => selectAllAttendees(providers.filter(p => p.isRequired).map(p => p.email))}
+                  onClick={() => selectProviders(requiredProviders)}
                 >
                   Required only ({requiredProviders.length})
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => selectAllAttendees(providers.map(p => p.email))}
+                  onClick={() => selectProviders(providers)}
                 >
                   Select all ({providers.length})
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedAttendees(new Set())}
+                  onClick={() => { setSelectedAttendees(new Set()); setProviderStates({}); }}
                 >
                   Clear
                 </Button>
@@ -677,7 +715,8 @@ export function CompanyMeetingWizard({
 
               <div className="space-y-2">
                 {filteredProviders.map(provider => {
-                  const isSelected = selectedAttendees.has(provider.email);
+                  const selectedStatesFor = providerStates[provider.email] || [];
+                  const isSelected = selectedStatesFor.length > 0;
                   return (
                     <div
                       key={provider.email}
@@ -685,7 +724,7 @@ export function CompanyMeetingWizard({
                         'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
                         isSelected ? 'border-primary bg-primary/5' : 'bg-card'
                       )}
-                      onClick={() => toggleAttendee(provider.email)}
+                      onClick={() => toggleAttendee(provider)}
                     >
                       <Checkbox checked={isSelected} className="mt-0.5" />
                       <div className="flex-1 min-w-0">
@@ -698,13 +737,35 @@ export function CompanyMeetingWizard({
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground">{provider.email}</p>
-                        <div className="flex gap-1 mt-1 flex-wrap">
-                          {provider.states.map(state => (
-                            <Badge key={state} variant="outline" className="text-xs">
-                              {state}
-                            </Badge>
-                          ))}
+                        <div className="flex gap-1 mt-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                          {provider.states.map(state => {
+                            const stateOn = selectedStatesFor.includes(state);
+                            const isScheduled = provider.requiredStates.includes(state);
+                            return (
+                              <button
+                                key={state}
+                                type="button"
+                                onClick={() => toggleProviderState(provider.email, state)}
+                                title={isScheduled ? 'Meeting scheduled this month' : undefined}
+                                className={cn(
+                                  'px-2 py-0.5 rounded-full text-xs border transition-colors',
+                                  stateOn
+                                    ? 'bg-primary text-primary-foreground border-primary'
+                                    : isScheduled
+                                    ? 'border-primary/40 text-primary hover:bg-primary/10'
+                                    : 'text-muted-foreground hover:bg-accent'
+                                )}
+                              >
+                                {state}
+                              </button>
+                            );
+                          })}
                         </div>
+                        {!isSelected && provider.requiredStates.length > 0 && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Scheduled: {provider.requiredStates.join(', ')}
+                          </p>
+                        )}
                       </div>
                     </div>
                   );
@@ -768,7 +829,7 @@ export function CompanyMeetingWizard({
                     <div className="mt-2 flex flex-wrap gap-1">
                       {invitedProviders.slice(0, 5).map(p => (
                         <Badge key={p.email} variant="secondary" className="text-xs">
-                          {p.name} ({p.requiredStates.join(', ')})
+                          {p.name} ({(providerStates[p.email] || []).join(', ')})
                         </Badge>
                       ))}
                       {invitedProviders.length > 5 && (
