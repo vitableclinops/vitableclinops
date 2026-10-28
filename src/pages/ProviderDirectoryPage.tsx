@@ -31,6 +31,7 @@ import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor } from '@/lib/pcpCoverage';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import { directoryMedallionConflicts } from '@/lib/directoryMedallionConflicts';
+import { ProviderFlagAlerts } from '@/components/directory/ProviderFlagAlerts';
 import { PcpCoverageStatus } from '@/components/directory/PcpCoverageStatus';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -446,6 +447,12 @@ const ProviderDirectoryPage = () => {
     }
   };
 
+  const flaggedProviders = isAdmin ? providers
+    .filter(p => !['termed', 'terminated'].includes((p.employment_status ?? '').toLowerCase()))
+    .map(p => ({ id: p.id, name: directoryDisplayName(p), conflicts: directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []) }))
+    .filter(p => p.conflicts.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name)) : [];
+
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar
@@ -483,6 +490,10 @@ const ProviderDirectoryPage = () => {
           </div>
 
           {/* Tabs for Admin */}
+          {isAdmin && <ProviderFlagAlerts providers={flaggedProviders} onReview={id => {
+            const provider = providers.find(p => p.id === id);
+            if (provider) setSelectedProvider(provider);
+          }} />}
           {isAdmin ? (
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList>
