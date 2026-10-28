@@ -46,6 +46,8 @@ interface CompanyMeetingWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  /** Only add the meeting to the calendar — skip the notify/email step */
+  calendarOnly?: boolean;
 }
 
 type WizardStep = 'date' | 'attendees' | 'review' | 'notify';
@@ -54,6 +56,7 @@ export function CompanyMeetingWizard({
   open, 
   onOpenChange, 
   onSuccess,
+  calendarOnly = false,
 }: CompanyMeetingWizardProps) {
   const { toast } = useToast();
   
@@ -373,7 +376,12 @@ export function CompanyMeetingWizard({
       }
       
       setCreatedMeetingIds({ am: amMeeting.id, pm: pmMeeting.id });
-      setStep('notify');
+      if (calendarOnly) {
+        onSuccess();
+        onOpenChange(false);
+      } else {
+        setStep('notify');
+      }
       
       toast({
         title: 'Meeting scheduled',
