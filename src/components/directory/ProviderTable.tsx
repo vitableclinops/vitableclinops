@@ -210,7 +210,7 @@ export const ProviderTable = ({
                 <TableCell className="font-mono text-sm">{provider.npi_number || '-'}</TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">
-                    <ProviderClassificationBadge employmentType={provider.employment_type} compact />
+                    <ProviderClassificationBadge employmentType={provider.employment_type} compact labelOverride={employmentTypeBadgeLabel(provider)} />
                     {provider.employment_type === 'agency' && provider.agency_name && (
                       <span className="text-xs text-muted-foreground truncate max-w-[140px]">{provider.agency_name}</span>
                     )}
