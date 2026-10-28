@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -57,6 +58,7 @@ export function TaskDocumentUpload({
   onDocumentCountChange,
 }: TaskDocumentUploadProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [documents, setDocuments] = useState<TaskDocument[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -120,6 +122,8 @@ export function TaskDocumentUpload({
         });
 
       if (insertError) throw insertError;
+      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
+      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
 
       // Audit log
       await supabase.from('agreement_audit_log').insert({
@@ -157,6 +161,8 @@ export function TaskDocumentUpload({
     try {
       await supabase.storage.from('task-documents').remove([doc.file_path]);
       await supabase.from('task_documents').delete().eq('id', doc.id);
+      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
+      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
 
       const { data: { user } } = await supabase.auth.getUser();
       await supabase.from('agreement_audit_log').insert({

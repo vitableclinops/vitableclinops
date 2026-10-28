@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { StatCard } from '@/components/StatCard';
@@ -25,6 +25,7 @@ import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
+import { useRequiredAgreementFlags } from '@/hooks/useRequiredAgreementFlags';
 import { useScheduledMeetings } from '@/hooks/useScheduledMeetings';
 import { 
   Users,
@@ -153,7 +154,10 @@ const getStateFPAStatus = (stateAbbr: string, complianceData: StateCompliance[])
 const CollaborativeAgreementsPage = () => {
   // All hooks must be called first, before any conditional logic
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { profile, roles, hasRole } = useAuth();
+  const { flags: requiredAgreementFlags, loading: requiredFlagsLoading, error: requiredFlagsError } = useRequiredAgreementFlags(roles.includes('admin'));
+  const [gapPrefill, setGapPrefill] = useState<{ stateAbbr: string; skipProcess: boolean; provider: { id: string; name: string; email: string; npi?: string } } | null>(null);
   const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
   const { getNextMeetingForAgreement, hasMeetingScheduled, loading: meetingsLoading } = useScheduledMeetings();
   const [searchParams] = useSearchParams();
@@ -255,6 +259,7 @@ const CollaborativeAgreementsPage = () => {
       ? dbProviders.filter(p => p.agreement_id === a.id && p.is_active && p.provider_id && pendingFlagIds.has(p.provider_id))
       : [];
   const incompleteAgreements = dbAgreements.filter(a => (!a.provider_name && !a.provider_email) || staleFlagProviders(a).length > 0);
+  const incompleteCount = incompleteAgreements.length + requiredAgreementFlags.length;
 
   const getIncompleteIssues = (a: DbAgreement) => {
     const linked = dbProviders.filter(p => p.agreement_id === a.id && p.is_active);
@@ -504,6 +509,8 @@ const CollaborativeAgreementsPage = () => {
       setUploadDialogOpen(false);
       setDocumentUrl('');
       setSelectedFlatAgreement(null);
+      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
+      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
       fetchDbAgreements();
     } catch (error) {
       console.error('Error saving document:', error);
@@ -707,7 +714,7 @@ const CollaborativeAgreementsPage = () => {
               )}
               {/* Only admins can create new agreements */}
               {hasRole('admin') && (
-                <Button onClick={() => setWizardOpen(true)} size="lg">
+                <Button onClick={() => { setGapPrefill(null); setWizardOpen(true); }} size="lg">
                   <Plus className="h-4 w-4 mr-2" />
                   New Agreement
                 </Button>
@@ -720,6 +727,7 @@ const CollaborativeAgreementsPage = () => {
             open={wizardOpen} 
             onOpenChange={setWizardOpen}
             onSuccess={() => fetchDbAgreements()}
+            prefill={gapPrefill}
           />
 
           <CompanyMeetingWizard
@@ -787,10 +795,10 @@ const CollaborativeAgreementsPage = () => {
             />
             <StatCard
               title="Incomplete"
-              value={incompleteAgreements.length}
+              value={incompleteCount}
               subtitle="Need fixing"
               icon={AlertTriangle}
-              variant={incompleteAgreements.length > 0 ? 'danger' : 'success'}
+              variant={incompleteCount > 0 ? 'danger' : 'success'}
               onClick={() => { setSelectedIncompleteId(null); setIncompleteOpen(true); }}
             />
           </div>
@@ -798,13 +806,32 @@ const CollaborativeAgreementsPage = () => {
           <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Incomplete agreements ({incompleteAgreements.length})</DialogTitle>
+                <DialogTitle>Incomplete agreements ({incompleteCount})</DialogTitle>
                 <DialogDescription>Click an agreement to see why it's incomplete and how to fix it.</DialogDescription>
               </DialogHeader>
-              {incompleteAgreements.length === 0 && (
+              {requiredFlagsLoading && <p className="text-sm text-muted-foreground">Checking required agreements…</p>}
+              {requiredFlagsError && <p className="text-sm text-destructive">Required agreement checks unavailable.</p>}
+              {incompleteCount === 0 && !requiredFlagsLoading && !requiredFlagsError && (
                 <p className="text-sm text-muted-foreground">Nothing to fix — all agreements are complete.</p>
               )}
               <div className="space-y-2">
+                {requiredAgreementFlags.map(flag => {
+                  const existing = dbAgreements.find(a => a.state_abbreviation === flag.state && isLiveAgreement(a) && (a.provider_id === flag.provider.id || dbProviders.some(p => p.agreement_id === a.id && p.provider_id === flag.provider.id && p.is_active)));
+                  return (
+                    <div key={`required:${flag.provider.id}:${flag.state}`} className="rounded-lg border p-3 space-y-2">
+                      <p className="text-sm font-medium">{flag.name} — {flag.state}</p>
+                      <p className="text-sm text-destructive">Why: {flag.reason}</p>
+                      <p className="text-sm text-muted-foreground">How to fix: {flag.howToFix}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {existing ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.id}`}>Open agreement</Link></Button> : <Button size="sm" onClick={() => {
+                          setGapPrefill({ stateAbbr: flag.state, skipProcess: true, provider: { id: flag.provider.id, name: flag.name, email: flag.provider.email, npi: flag.provider.npi_number ?? undefined } });
+                          setIncompleteOpen(false); setWizardOpen(true);
+                        }}>Add / link agreement</Button>}
+                        <Button size="sm" variant="outline" asChild><Link to="/directory">Provider directory</Link></Button>
+                      </div>
+                    </div>
+                  );
+                })}
                 {incompleteAgreements.map(a => {
                   const { linked, issues } = getIncompleteIssues(a);
                   const open = selectedIncompleteId === a.id;
