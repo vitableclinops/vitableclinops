@@ -3,4 +3,5 @@
 - [x] Fix CompanyMeetingWizard date picker being cut off (user can't see all calendar dates at 100% zoom)
 - [x] Show only saved attendee state selections on collab calendar events.
 - [x] Remove requirement-derived meeting suggestions and verify manual selection.
-- [ ] Auto-link state chart spreadsheets (Drive folder 1VA2NuOMdw4G611f-ayW6lelA765ZYSci) into "Open all chart spreadsheets". Blocker: needs a workspace admin to share a Google Drive + Google Sheets connection with Emily (Sharing -> "Can use") or grant her a role that can create connections; "Maddi's Google Sheets" exists but Emily has no access. Fallback: Emily pastes spreadsheet links + tab names for a fixed mapping.
+- [x] Add a shared editable mapping seeded with the 10 supplied spreadsheet links, with title, state, month and tab link.
+- [x] Use saved mappings for meeting chart links, matching only selected states and the meeting month; verify saving and opening.

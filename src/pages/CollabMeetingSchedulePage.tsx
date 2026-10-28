@@ -20,6 +20,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { meetingStateGroups, selectedMeetingStates } from '@/lib/collabMeetingStates';
+import { COLLAB_CHART_CONFIG_KEY, CollabChartMapping, initialCollabChartMappings, matchingChartUrls, meetingChartMonth } from '@/lib/collabChartMapping';
+import { useSystemConfig, SystemConfigEntry } from '@/hooks/useSystemConfig';
+import { CollabChartMappingDialog } from '@/components/meetings/CollabChartMappingDialog';
 import { ChevronLeft, ChevronRight, ExternalLink, Loader2, Pencil, Plus, Stethoscope, Trash2, Users } from 'lucide-react';
 import {
   addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek,
@@ -48,6 +51,9 @@ const CollabMeetingSchedulePage = () => {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const { data: configEntries, isLoading: mappingsLoading, isError: mappingsError } = useSystemConfig();
+  const chartMappings = ((configEntries as SystemConfigEntry[] | undefined)?.find(entry => entry.key === COLLAB_CHART_CONFIG_KEY)?.value?.rows ?? initialCollabChartMappings) as CollabChartMapping[];
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editDate, setEditDate] = useState('');
@@ -183,7 +189,7 @@ const CollabMeetingSchedulePage = () => {
   // Group selected meeting attendees by leading MD
   const groups = useMemo(() => {
     if (!selected) return [];
-    const byMd = new Map<string, { name: string; email: string; states: string[]; chartUrl: string | null }[]>();
+    const byMd = new Map<string, { name: string; email: string; states: string[]; chartUrls: string[] }[]>();
     selected.attendees.forEach((a) => {
       const links = providerLinks.get((a.provider_email || '').toLowerCase()) || [];
       meetingStateGroups(a.notes, links).forEach(([md, scope]) => {
@@ -191,7 +197,11 @@ const CollabMeetingSchedulePage = () => {
           name: a.provider_name,
           email: a.provider_email,
           states: scope.states,
-          chartUrl: scope.chartUrl,
+          chartUrls: [...new Set(scope.states.flatMap(state => {
+            const mapped = matchingChartUrls(chartMappings, [state], meetingChartMonth(selected.scheduled_date));
+            if (mapped.length) return mapped;
+            return links.filter(link => link.state === state && link.physician === md && link.chartUrl).map(link => link.chartUrl as string);
+          }))],
         };
         byMd.set(md, [...(byMd.get(md) || []), entry]);
       });
@@ -199,7 +209,7 @@ const CollabMeetingSchedulePage = () => {
     return [...byMd.entries()]
       .map(([md, list]) => [md, list.sort((x, y) => x.name.localeCompare(y.name))] as const)
       .sort((a, b) => a[0].localeCompare(b[0]));
-  }, [selected, providerLinks]);
+  }, [selected, providerLinks, chartMappings]);
 
   const openCharts = (urls: (string | null)[]) => {
     [...new Set(urls.filter(Boolean) as string[])].forEach((u) => window.open(u, '_blank', 'noopener'));
@@ -220,9 +230,12 @@ const CollabMeetingSchedulePage = () => {
               <h1 className="text-2xl font-bold">Collab Meeting Schedule</h1>
               <p className="text-muted-foreground text-sm">Who should attend each collaborative meeting, grouped by the leading MD.</p>
             </div>
+            <div className="flex flex-wrap gap-2">
+            {roles.includes('admin') && <Button variant="outline" disabled={mappingsLoading || mappingsError} onClick={() => setMappingOpen(true)}>Spreadsheet mapping</Button>}
             <Button onClick={() => setWizardOpen(true)}>
               <Plus className="h-4 w-4 mr-2" /> Schedule Meeting
             </Button>
+            </div>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
@@ -282,7 +295,8 @@ const CollabMeetingSchedulePage = () => {
                     variant="outline"
                     size="sm"
                     className="w-fit"
-                    onClick={() => openCharts(groups.flatMap(([, list]) => list.map((p) => p.chartUrl)))}
+                    disabled={mappingsLoading || mappingsError || !groups.some(([, list]) => list.some(p => p.chartUrls.length))}
+                    onClick={() => openCharts(groups.flatMap(([, list]) => list.flatMap((p) => p.chartUrls)))}
                   >
                     <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open all chart spreadsheets
                   </Button>
@@ -319,8 +333,8 @@ const CollabMeetingSchedulePage = () => {
                               {p.states.map((s) => <Badge key={s} variant="outline" className="text-[10px] px-1">{s}</Badge>)}
                             </div>
                           </div>
-                          {p.chartUrl ? (
-                            <Button variant="ghost" size="sm" onClick={() => openCharts([p.chartUrl])}>
+                          {p.chartUrls.length ? (
+                            <Button variant="ghost" size="sm" disabled={mappingsLoading || mappingsError} onClick={() => openCharts(p.chartUrls)}>
                               <ExternalLink className="h-3.5 w-3.5 mr-1" /> Charts
                             </Button>
                           ) : (
@@ -392,6 +406,7 @@ const CollabMeetingSchedulePage = () => {
         </AlertDialogContent>
       </AlertDialog>
 
+      <CollabChartMappingDialog open={mappingOpen} onOpenChange={setMappingOpen} rows={chartMappings} />
       <CompanyMeetingWizard
         open={wizardOpen}
         onOpenChange={setWizardOpen}
