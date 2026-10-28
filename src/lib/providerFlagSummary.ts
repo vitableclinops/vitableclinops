@@ -30,7 +30,7 @@ export function mergeProviderFlags(
   profiles: { id: string; name: string; suppress: boolean }[],
 ): FlaggedProvider[] {
   const catalog = new Map(profiles.map(p => [p.id, p]));
-  const flags = new Map(providers.map(p => [p.id, { ...p, profileId: p.id, sourceIdentityReviews: [] as IdentityReview[] }]));
+  const flags = new Map<string, FlaggedProvider & { sourceIdentityReviews: IdentityReview[] }>(providers.map(p => [p.id, { ...p, profileId: p.id, sourceIdentityReviews: [] }]));
   for (const identity of identities) {
     if (identity.status === 'excluded') continue;
     const profile = identity.profileId ? catalog.get(identity.profileId) : undefined;
