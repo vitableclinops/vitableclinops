@@ -238,6 +238,46 @@ export function CompanyMeetingWizard({
     return providers.filter(p => selectedAttendees.has(p.email));
   }, [providers, selectedAttendees]);
 
+  // All states present across providers (for the state filter chips)
+  const allStates = useMemo(() => {
+    const s = new Set<string>();
+    providers.forEach(p => p.states.forEach(st => s.add(st)));
+    return Array.from(s).sort();
+  }, [providers]);
+
+  // Providers visible under the current state filter (empty filter = all)
+  const filteredProviders = useMemo(() => {
+    if (selectedStates.size === 0) return providers;
+    return providers.filter(p => p.states.some(st => selectedStates.has(st)));
+  }, [providers, selectedStates]);
+
+  const toggleStateFilter = (state: string) => {
+    setSelectedStates(prev => {
+      const next = new Set(prev);
+      if (next.has(state)) {
+        next.delete(state);
+      } else {
+        next.add(state);
+      }
+      return next;
+    });
+  };
+
+  // Select (or add) every currently filtered provider
+  const selectFiltered = (replace: boolean) => {
+    const emails = filteredProviders.map(p => p.email);
+    if (replace) {
+      selectAllAttendees(emails);
+    } else {
+      setSelectedAttendees(prev => {
+        const next = new Set(prev);
+        emails.forEach(e => next.add(e));
+        return next;
+      });
+    }
+  };
+
+
   const toggleAttendee = (email: string) => {
     setSelectedAttendees(prev => {
       const next = new Set(prev);
