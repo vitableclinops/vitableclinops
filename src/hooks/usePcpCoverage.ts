@@ -24,6 +24,8 @@ export function usePcpCoverage(enabled: boolean) {
   return useQuery<PcpCoverageData | null>({
     queryKey: ['pcp-coverage-by-id'],
     enabled,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const [snap, profiles, med, runs, ext] = await Promise.all([
