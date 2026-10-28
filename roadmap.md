@@ -9,3 +9,4 @@
 - [ ] Prompt agreement uploads for new providers' collaboration-required states and show linked agreements in Supervision; verify the flow.
 - [ ] Move Directory before Supervision in the provider directory tabs.
 - [ ] Display Amanda (Mandy) Clement in the directory while retaining Amanda Clement as her legal name.
+- [ ] Investigate and resolve Amanda Clement's Differs from Medallion flag without hiding other conflicts.
