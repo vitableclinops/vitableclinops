@@ -165,8 +165,8 @@ const ProviderDirectoryPage = () => {
   }, [agencies]);
 
   useEffect(() => {
-    const fetchProviders = async () => {
-      setLoading(true);
+    const fetchProviders = async (initial = false) => {
+      if (initial) setLoading(true);
       
       if (isAdmin) {
         const { data, error } = await supabase
@@ -203,10 +203,17 @@ const ProviderDirectoryPage = () => {
         setPublicProviders(publicData as DirectoryProvider[]);
       }
       
-      setLoading(false);
+      if (initial) setLoading(false);
     };
 
-    fetchProviders();
+    fetchProviders(true);
+    const refresh = () => { if (!document.hidden) void fetchProviders(); };
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+    };
   }, [isAdmin]);
 
   // Provider → set of licensed state abbreviations, derived from
@@ -465,7 +472,7 @@ const ProviderDirectoryPage = () => {
   };
 
   const directoryFlags = isAdmin ? providers
-    .filter(p => !['termed', 'terminated'].includes((p.employment_status ?? '').toLowerCase()))
+    .filter(p => !isOffboarded(p.employment_status))
     .map(p => ({
       id: p.id, name: directoryDisplayName(p),
       conflicts: directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []),
@@ -475,7 +482,7 @@ const ProviderDirectoryPage = () => {
     .sort((a, b) => a.name.localeCompare(b.name)) : [];
   const flaggedProviders = mergeProviderFlags(directoryFlags, pcpCoverageLoading ? [] : coverageAlertSummary(pcpCoverage ?? null).review, providers.map(p => ({
     id: p.id, name: directoryDisplayName(p),
-    suppress: isTestAccountDirectoryRecord(p) || !!OUT_OF_SCOPE_PROFILE_IDS[p.id] || ['termed', 'terminated'].includes((p.employment_status ?? '').toLowerCase()),
+    suppress: isTestAccountDirectoryRecord(p) || !!OUT_OF_SCOPE_PROFILE_IDS[p.id] || isOffboarded(p.employment_status),
   })));
 
   return (
@@ -566,6 +573,13 @@ const ProviderDirectoryPage = () => {
 
               {/* Directory Tab - Contact/Profile focused view */}
               <TabsContent value={activeTab === 'offboarded' ? 'offboarded' : 'directory'} className="space-y-6">
+                <p className="text-xs text-muted-foreground">
+                  Active states in EHR · Last successful fetch: {pcpCoverage?.pulledAt
+                    ? new Date(pcpCoverage.pulledAt).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' }) + ' ET'
+                    : pcpCoverageLoading ? 'Loading…' : 'Not available'}
+                  {pcpCoverage?.stale ? ' · Stale snapshot' : ''}
+                  {pcpCoverage && coverageAlertSummary(pcpCoverage).failure ? ' · Latest refresh failed; showing last successful snapshot' : ''}
+                </p>
                 <div className="flex items-center justify-between">
                   <ProviderFilters
                     searchQuery={searchQuery}

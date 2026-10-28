@@ -43,12 +43,10 @@ export function ProviderFlagAlerts({
 }) {
   const [expanded, setExpanded] = useState(false);
   const flagCount = providers.length;
-  if (!flagCount && !coverage) return null;
-  const coverageIssues = !!coverage && (coverage.status !== 'ok' || !!coverage.failure || coverage.review.length > 0);
-  const warning = flagCount > 0 || coverageIssues;
+  if (!flagCount) return null;
 
   return (
-    <Alert className={`mb-6 ${warning ? 'border-warning/40 bg-warning/10' : 'border-border bg-muted/30'}`}>
+    <Alert className="mb-6 border-warning/40 bg-warning/10">
       <AlertTriangle className="h-4 w-4" />
       <AlertTitle className="flex flex-wrap items-center justify-between gap-2 leading-normal">
         <span>
