@@ -252,6 +252,108 @@ const CollabMeetingSchedulePage = () => {
     toast({ title: url ? 'Chart link saved' : 'Chart link removed' });
   };
 
+  // ============= Add providers to the selected meeting =============
+  const [addOpen, setAddOpen] = useState(false);
+  const [addProviders, setAddProviders] = useState<{ id: string; name: string; email: string; states: string[] }[]>([]);
+  const [addStates, setAddStates] = useState<Record<string, string[]>>({});
+  const [addSearch, setAddSearch] = useState('');
+  const [addLoading, setAddLoading] = useState(false);
+  const [addSaving, setAddSaving] = useState(false);
+
+  const openAdd = async () => {
+    setAddOpen(true);
+    setAddStates({});
+    setAddSearch('');
+    setAddLoading(true);
+    try {
+      const [{ data: aps }, { data: ags }] = await Promise.all([
+        supabase.from('agreement_providers').select('id, provider_name, provider_email, agreement_id').eq('is_active', true),
+        supabase.from('collaborative_agreements').select('id, state_abbreviation')
+          .in('workflow_status', ['active', 'pending_signatures', 'awaiting_provider_signatures', 'awaiting_physician_signature']),
+      ]);
+      const agMap = new Map((ags || []).map((a) => [a.id, a.state_abbreviation]));
+      const map = new Map<string, { id: string; name: string; email: string; states: string[] }>();
+      (aps || []).forEach((ap) => {
+        if (!ap.provider_email) return;
+        const state = agMap.get(ap.agreement_id);
+        if (!state) return;
+        const email = ap.provider_email.toLowerCase();
+        const existing = map.get(email);
+        if (existing) {
+          if (!existing.states.includes(state)) existing.states.push(state);
+        } else {
+          map.set(email, { id: ap.id, name: ap.provider_name || ap.provider_email, email: ap.provider_email, states: [state] });
+        }
+      });
+      setAddProviders([...map.values()].sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to load providers.', variant: 'destructive' });
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const existingStatesFor = (email: string) =>
+    new Set(
+      (selected?.attendees || [])
+        .filter((a) => (a.provider_email || '').toLowerCase() === email.toLowerCase())
+        .flatMap((a) => selectedMeetingStates(a.notes)),
+    );
+
+  const toggleAddState = (email: string, state: string) => {
+    setAddStates((prev) => {
+      const cur = prev[email] || [];
+      const next = cur.includes(state) ? cur.filter((s) => s !== state) : [...cur, state];
+      return { ...prev, [email]: next };
+    });
+  };
+
+  const saveNewProviders = async () => {
+    if (!selected) return;
+    const pending = addProviders.filter((p) => (addStates[p.email] || []).length > 0);
+    if (!pending.length) return;
+    setAddSaving(true);
+    try {
+      for (const p of pending) {
+        const newStates = [...(addStates[p.email] || [])].sort();
+        const existing = selected.attendees.filter((a) => (a.provider_email || '').toLowerCase() === p.email.toLowerCase());
+        if (existing.length) {
+          // Provider already attends: merge the new states into their saved states
+          const merged = [...new Set([...existing.flatMap((a) => selectedMeetingStates(a.notes)), ...newStates])].sort();
+          const { error } = await supabase
+            .from('meeting_attendees')
+            .update({ notes: `States: ${merged.join(', ')}` })
+            .eq('id', existing[0].id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('meeting_attendees').insert({
+            meeting_id: selected.id,
+            provider_id: p.id,
+            provider_name: p.name,
+            provider_email: p.email,
+            attendance_status: 'invited',
+            has_rsvped: false,
+            notes: `States: ${newStates.join(', ')}`,
+          });
+          if (error) throw error;
+        }
+      }
+      setAddOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['collab-meeting-schedule'] });
+      toast({ title: 'Providers added' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to add providers.', variant: 'destructive' });
+    } finally {
+      setAddSaving(false);
+    }
+  };
+
+  const visibleAddProviders = useMemo(() => {
+    const q = addSearch.trim().toLowerCase();
+    return q ? addProviders.filter((p) => p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q)) : addProviders;
+  }, [addProviders, addSearch]);
+  // ============= End add providers =============
+
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar
@@ -342,6 +444,9 @@ const CollabMeetingSchedulePage = () => {
                 )}
                 {selected && (
                   <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => openAdd()}>
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Add provider
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => openEdit(selected)}>
                       <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
                     </Button>
@@ -475,6 +580,67 @@ const CollabMeetingSchedulePage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-md max-h-[95vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Add providers</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 flex flex-col gap-3">
+            <Input
+              placeholder="Search providers"
+              value={addSearch}
+              onChange={(e) => setAddSearch(e.target.value)}
+            />
+            <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-2">
+              {addLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : visibleAddProviders.map((p) => {
+                const existing = existingStatesFor(p.email);
+                const picked = addStates[p.email] || [];
+                return (
+                  <div key={p.email} className="rounded border p-2">
+                    <p className="text-sm font-medium">{p.name}</p>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {p.states.map((s) => {
+                        const already = existing.has(s);
+                        const on = picked.includes(s) || already;
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            disabled={already}
+                            onClick={() => toggleAddState(p.email, s)}
+                            className={cn(
+                              'text-[11px] px-1.5 py-0.5 rounded-full border',
+                              already ? 'bg-muted text-muted-foreground border-transparent' :
+                                on ? 'bg-primary text-primary-foreground border-transparent' : 'hover:bg-muted',
+                            )}
+                          >
+                            {s}{already ? ' ✓' : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              {!addLoading && visibleAddProviders.length === 0 && (
+                <p className="text-sm text-muted-foreground py-4 text-center">No providers found.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSaving}>Cancel</Button>
+            <Button
+              onClick={saveNewProviders}
+              disabled={addSaving || Object.values(addStates).every((v) => v.length === 0)}
+            >
+              {addSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${Object.values(addStates).reduce((n, v) => n + v.length, 0)} state(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CollabSpreadsheetLibraryDialog open={libraryOpen} onOpenChange={setLibraryOpen} />
 
