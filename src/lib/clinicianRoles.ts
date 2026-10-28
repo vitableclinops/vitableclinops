@@ -31,9 +31,8 @@ const CLINICIAN_ROLES = new Set([
 /** Tokens that mark a credentials string as clinical (e.g. "MSN, FNP-BC"). */
 const CLINICIAN_CREDENTIAL_TOKENS = new Set([
   'md', 'do', 'np', 'apn', 'aprn', 'rn', 'npp', 'pa',
-  'fnp', 'enp', 'pnp', 'agpcnp', 'fnpbc', 'whnp', 'cnm', 'crna', 'bc',
-  'lpc', 'lcsw', 'licsw', 'lmft', 'mft', 'lmhc', 'lfcs',
-  'mh', 'lpcmhsp',
+  'fnp', 'enp', 'pnp', 'agpcnp', 'fnpbc', 'whnp', 'cnm', 'crna',
+  'lpc', 'lcsw', 'licsw', 'lmft', 'mft', 'lmhc', 'lfcs', 'lpcmhsp',
 ]);
 
 /** Values that explicitly mean "not a clinical Type". */
