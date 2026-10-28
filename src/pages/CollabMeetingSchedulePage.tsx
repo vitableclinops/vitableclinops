@@ -285,7 +285,25 @@ const CollabMeetingSchedulePage = () => {
           map.set(email, { id: ap.id, name: ap.provider_name || ap.provider_email, email: ap.provider_email, states: [state] });
         }
       });
-      setAddProviders([...map.values()].sort((a, b) => a.name.localeCompare(b.name)));
+      // Include current attendees (even if their agreement is no longer live) and prefill their states
+      const initial: Record<string, string[]> = {};
+      (selected?.attendees || []).forEach((a) => {
+        if (!a.provider_email) return;
+        const email = a.provider_email.toLowerCase();
+        const states = selectedMeetingStates(a.notes);
+        let entry = map.get(email);
+        if (!entry) {
+          entry = { id: a.provider_id || a.id, name: a.provider_name || a.provider_email, email: a.provider_email, states: [] };
+          map.set(email, entry);
+        }
+        states.forEach((s) => { if (!entry!.states.includes(s)) entry!.states.push(s); });
+        initial[entry.email] = [...new Set([...(initial[entry.email] || []), ...states])];
+      });
+      setAddStates(initial);
+      setAddProviders([...map.values()].sort((a, b) => {
+        const ai = initial[a.email] ? 0 : 1, bi = initial[b.email] ? 0 : 1;
+        return ai - bi || a.name.localeCompare(b.name);
+      }));
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to load providers.', variant: 'destructive' });
     } finally {
@@ -308,24 +326,32 @@ const CollabMeetingSchedulePage = () => {
     });
   };
 
+  const sameStates = (a: string[], b: string[]) => [...a].sort().join(',') === [...b].sort().join(',');
+  const changedProviders = addProviders.filter((p) => !sameStates(addStates[p.email] || [], [...existingStatesFor(p.email)]));
+
   const saveNewProviders = async () => {
-    if (!selected) return;
-    const pending = addProviders.filter((p) => (addStates[p.email] || []).length > 0);
-    if (!pending.length) return;
+    if (!selected || !changedProviders.length) return;
     setAddSaving(true);
     try {
-      for (const p of pending) {
-        const newStates = [...(addStates[p.email] || [])].sort();
+      for (const p of changedProviders) {
+        const desired = [...(addStates[p.email] || [])].sort();
         const existing = selected.attendees.filter((a) => (a.provider_email || '').toLowerCase() === p.email.toLowerCase());
         if (existing.length) {
-          // Provider already attends: merge the new states into their saved states
-          const merged = [...new Set([...existing.flatMap((a) => selectedMeetingStates(a.notes)), ...newStates])].sort();
+          if (!desired.length) {
+            const { error } = await supabase.from('meeting_attendees').delete().in('id', existing.map((a) => a.id));
+            if (error) throw error;
+            continue;
+          }
           const { error } = await supabase
             .from('meeting_attendees')
-            .update({ notes: `States: ${merged.join(', ')}` })
+            .update({ notes: `States: ${desired.join(', ')}` })
             .eq('id', existing[0].id);
           if (error) throw error;
-        } else {
+          if (existing.length > 1) {
+            const { error: delErr } = await supabase.from('meeting_attendees').delete().in('id', existing.slice(1).map((a) => a.id));
+            if (delErr) throw delErr;
+          }
+        } else if (desired.length) {
           const { error } = await supabase.from('meeting_attendees').insert({
             meeting_id: selected.id,
             provider_id: p.id,
@@ -333,16 +359,16 @@ const CollabMeetingSchedulePage = () => {
             provider_email: p.email,
             attendance_status: 'invited',
             has_rsvped: false,
-            notes: `States: ${newStates.join(', ')}`,
+            notes: `States: ${desired.join(', ')}`,
           });
           if (error) throw error;
         }
       }
       setAddOpen(false);
       queryClient.invalidateQueries({ queryKey: ['collab-meeting-schedule'] });
-      toast({ title: 'Providers added' });
+      toast({ title: 'Attendees updated' });
     } catch (err: any) {
-      toast({ title: 'Error', description: err?.message || 'Failed to add providers.', variant: 'destructive' });
+      toast({ title: 'Error', description: err?.message || 'Failed to update attendees.', variant: 'destructive' });
     } finally {
       setAddSaving(false);
     }
