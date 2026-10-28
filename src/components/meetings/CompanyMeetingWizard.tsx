@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -32,6 +34,12 @@ import { format, addMonths, startOfMonth, getDate } from 'date-fns';
 // Fixed time slots for company-wide meetings
 const AM_TIME = '10:00';
 const PM_TIME = '14:00';
+
+// Format a 24h "HH:mm" string as a 12-hour label, e.g. "10:00 AM"
+const fmt12 = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+};
 
 interface ProviderForMeeting {
   id: string;
@@ -63,11 +71,13 @@ export function CompanyMeetingWizard({
   const [step, setStep] = useState<WizardStep>('date');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [notes, setNotes] = useState('');
+  const [timeChoice, setTimeChoice] = useState<'both' | 'am' | 'pm' | 'custom'>('both');
+  const [customTime, setCustomTime] = useState('10:00');
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderForMeeting[]>([]);
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [createdMeetingIds, setCreatedMeetingIds] = useState<{ am: string; pm: string } | null>(null);
+  const [createdMeetingIds, setCreatedMeetingIds] = useState<string[] | null>(null);
   const [emailsCopied, setEmailsCopied] = useState(false);
 
   // Reset state when dialog opens
@@ -76,6 +86,8 @@ export function CompanyMeetingWizard({
       setStep('date');
       setSelectedDate(undefined);
       setNotes('');
+      setTimeChoice('both');
+      setCustomTime('10:00');
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
       setSelectedAttendees(new Set());
@@ -289,6 +301,17 @@ export function CompanyMeetingWizard({
     });
   };
 
+  // Which time slot(s) will be created, based on the selected time option
+  const getTimeSessions = (): { slot: 'am' | 'pm'; time: string }[] => {
+    if (timeChoice === 'am') return [{ slot: 'am', time: AM_TIME }];
+    if (timeChoice === 'pm') return [{ slot: 'pm', time: PM_TIME }];
+    if (timeChoice === 'custom') {
+      const t = customTime || '10:00';
+      return [{ slot: parseInt(t, 10) < 12 ? 'am' : 'pm', time: t }];
+    }
+    return [{ slot: 'am', time: AM_TIME }, { slot: 'pm', time: PM_TIME }];
+  };
+
   const handleSubmit = async () => {
     if (!selectedDate) return;
     
@@ -297,95 +320,72 @@ export function CompanyMeetingWizard({
     try {
       const baseDate = new Date(selectedDate);
       
-      // Create AM meeting
-      const amDate = new Date(baseDate);
-      const [amHours, amMinutes] = AM_TIME.split(':').map(Number);
-      amDate.setHours(amHours, amMinutes, 0, 0);
-      
-      const { data: amMeeting, error: amError } = await supabase
-        .from('supervision_meetings')
-        .insert({
-          scheduled_date: amDate.toISOString(),
-          time_slot: 'am',
-          meeting_type: 'collaborative_meeting',
-          status: 'scheduled',
-          notes: notes || null,
-          is_company_wide: true,
-          meeting_month: format(selectedDate, 'yyyy-MM-01'),
-          // Use a placeholder agreement_id (first active agreement) for backward compatibility
-          agreement_id: (await supabase
-            .from('collaborative_agreements')
-            .select('id')
-            .in('workflow_status', ['active'])
-            .limit(1)
-            .single()).data?.id || null,
-        })
-        .select()
+      // Resolve the placeholder agreement_id once for all meetings
+      const { data: placeholderAgreement } = await supabase
+        .from('collaborative_agreements')
+        .select('id')
+        .in('workflow_status', ['active'])
+        .limit(1)
         .single();
-      
-      if (amError) throw amError;
-      
-      // Create PM meeting
-      const pmDate = new Date(baseDate);
-      const [pmHours, pmMinutes] = PM_TIME.split(':').map(Number);
-      pmDate.setHours(pmHours, pmMinutes, 0, 0);
-      
-      const { data: pmMeeting, error: pmError } = await supabase
-        .from('supervision_meetings')
-        .insert({
-          scheduled_date: pmDate.toISOString(),
-          time_slot: 'pm',
-          meeting_type: 'collaborative_meeting',
-          status: 'scheduled',
-          notes: notes || null,
-          is_company_wide: true,
-          meeting_month: format(selectedDate, 'yyyy-MM-01'),
-          agreement_id: amMeeting?.agreement_id || null,
-        })
-        .select()
-        .single();
-      
-      if (pmError) throw pmError;
-      
-      // Add the selected providers as invited attendees to both meetings
-      if (invitedProviders.length > 0 && amMeeting && pmMeeting) {
-        const attendeeInserts = invitedProviders.flatMap(provider => [
-          {
-            meeting_id: amMeeting.id,
+
+      // Create one meeting per selected time slot
+      const sessions = getTimeSessions();
+      const created: any[] = [];
+      for (const session of sessions) {
+        const meetingDate = new Date(baseDate);
+        const [hours, minutes] = session.time.split(':').map(Number);
+        meetingDate.setHours(hours, minutes, 0, 0);
+
+        const { data: meeting, error: meetingError } = await supabase
+          .from('supervision_meetings')
+          .insert({
+            scheduled_date: meetingDate.toISOString(),
+            time_slot: session.slot,
+            meeting_type: 'collaborative_meeting',
+            status: 'scheduled',
+            notes: notes || null,
+            is_company_wide: true,
+            meeting_month: format(selectedDate, 'yyyy-MM-01'),
+            agreement_id: placeholderAgreement?.id || null,
+          })
+          .select()
+          .single();
+
+        if (meetingError) throw meetingError;
+        created.push(meeting);
+      }
+
+      // Add the selected providers as invited attendees to each created meeting
+      if (invitedProviders.length > 0 && created.length > 0) {
+        const attendeeInserts = created.flatMap((meeting) =>
+          invitedProviders.map(provider => ({
+            meeting_id: meeting.id,
             provider_id: provider.id,
             provider_name: provider.name,
             provider_email: provider.email,
             attendance_status: 'invited',
             has_rsvped: false,
-          },
-          {
-            meeting_id: pmMeeting.id,
-            provider_id: provider.id,
-            provider_name: provider.name,
-            provider_email: provider.email,
-            attendance_status: 'invited',
-            has_rsvped: false,
-          },
-        ]);
-        
+          }))
+        );
+
         const { error: attendeeError } = await supabase
           .from('meeting_attendees')
           .insert(attendeeInserts);
-        
+
         if (attendeeError) throw attendeeError;
       }
-      
-      setCreatedMeetingIds({ am: amMeeting.id, pm: pmMeeting.id });
+
+      setCreatedMeetingIds(created.map((m) => m.id));
       if (calendarOnly) {
         onSuccess();
         onOpenChange(false);
       } else {
         setStep('notify');
       }
-      
+
       toast({
         title: 'Meeting scheduled',
-        description: `Collaborative meetings scheduled for ${format(selectedDate, 'MMMM d, yyyy')} at ${AM_TIME} and ${PM_TIME}.`,
+        description: `Collaborative meeting scheduled for ${format(selectedDate, 'MMMM d, yyyy')} at ${sessions.map((s) => `${fmt12(s.time)} ET`).join(' & ')}.`,
       });
     } catch (error) {
       console.error('Error scheduling meetings:', error);
@@ -402,7 +402,7 @@ export function CompanyMeetingWizard({
   const canProceed = () => {
     switch (step) {
       case 'date':
-        return selectedDate !== undefined;
+        return selectedDate !== undefined && (timeChoice !== 'custom' || customTime !== '');
       case 'attendees':
         return selectedAttendees.size > 0;
       case 'review':
@@ -514,20 +514,33 @@ export function CompanyMeetingWizard({
                   className="rounded-md border"
                   disabled={(date) => date < new Date()}
                 />
+                <div className="w-full space-y-1.5">
+                  <Label>Meeting Time (Eastern Time)</Label>
+                  <Select value={timeChoice} onValueChange={(v) => setTimeChoice(v as 'both' | 'am' | 'pm' | 'custom')}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="both">Both — {fmt12(AM_TIME)} & {fmt12(PM_TIME)} ET</SelectItem>
+                      <SelectItem value="am">Morning only — {fmt12(AM_TIME)} ET</SelectItem>
+                      <SelectItem value="pm">Afternoon only — {fmt12(PM_TIME)} ET</SelectItem>
+                      <SelectItem value="custom">Custom time…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {timeChoice === 'custom' && (
+                    <Input type="time" value={customTime} onChange={(e) => setCustomTime(e.target.value)} />
+                  )}
+                </div>
                 {selectedDate && (
                   <div className="text-center">
                     <p className="text-lg font-semibold">
                       {format(selectedDate, 'EEEE, MMMM d, yyyy')}
                     </p>
                     <div className="flex items-center justify-center gap-4 mt-2 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Sun className="h-4 w-4 text-amber-500" />
-                        AM: {AM_TIME}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Moon className="h-4 w-4 text-indigo-500" />
-                        PM: {PM_TIME}
-                      </span>
+                      {getTimeSessions().map((s) => (
+                        <span key={s.slot} className="flex items-center gap-1">
+                          {s.slot === 'am' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
+                          {fmt12(s.time)} ET
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -640,8 +653,8 @@ export function CompanyMeetingWizard({
                       </p>
                     </div>
                     <div>
-                      <Label className="text-muted-foreground text-xs">Time Slots</Label>
-                      <p className="font-medium">AM ({AM_TIME}) & PM ({PM_TIME})</p>
+                      <Label className="text-muted-foreground text-xs">Time (Eastern)</Label>
+                      <p className="font-medium">{getTimeSessions().map((s) => `${fmt12(s.time)} ET`).join(' & ')}</p>
                     </div>
                   </div>
                   
@@ -685,8 +698,8 @@ export function CompanyMeetingWizard({
                 <Info className="h-4 w-4" />
                 <AlertDescription>
                   {calendarOnly
-                    ? 'Providers will be added to both time slots on the calendar. No emails are sent.'
-                    : "Providers will be added to both time slots. After scheduling, you'll get a list of emails to notify them externally."}
+                    ? `Providers will be added to the ${timeChoice === 'both' ? 'both time slots' : 'selected time slot'} on the calendar. No emails are sent.`
+                    : `Providers will be added to the ${timeChoice === 'both' ? 'both time slots' : 'selected time slot'}. After scheduling, you'll get a list of emails to notify them externally.`}
                 </AlertDescription>
               </Alert>
             </div>
