@@ -19,6 +19,7 @@ import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { cn, parseLocalDate } from '@/lib/utils';
+import { meetingStateGroups, selectedMeetingStates } from '@/lib/collabMeetingStates';
 import { ChevronLeft, ChevronRight, ExternalLink, Loader2, Pencil, Plus, Stethoscope, Trash2, Users } from 'lucide-react';
 import {
   addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek,
@@ -29,7 +30,7 @@ interface Meeting {
   scheduled_date: string;
   time_slot: string | null;
   notes: string | null;
-  attendees: { provider_name: string; provider_email: string }[];
+  attendees: { provider_name: string; provider_email: string; notes: string | null }[];
 }
 
 interface ProviderLink {
@@ -124,7 +125,7 @@ const CollabMeetingSchedulePage = () => {
     queryFn: async (): Promise<Meeting[]> => {
       const { data, error } = await supabase
         .from('supervision_meetings')
-        .select('id, scheduled_date, time_slot, notes, status, meeting_attendees(provider_name, provider_email)')
+        .select('id, scheduled_date, time_slot, notes, status, meeting_attendees(provider_name, provider_email, notes)')
         .eq('is_company_wide', true)
         .neq('status', 'cancelled')
         .gte('scheduled_date', rangeStart.toISOString())
@@ -185,14 +186,12 @@ const CollabMeetingSchedulePage = () => {
     const byMd = new Map<string, { name: string; email: string; states: string[]; chartUrl: string | null }[]>();
     selected.attendees.forEach((a) => {
       const links = providerLinks.get((a.provider_email || '').toLowerCase()) || [];
-      const mds = links.length ? [...new Set(links.map((l) => l.physician))] : ['No active agreement'];
-      mds.forEach((md) => {
-        const mine = links.filter((l) => l.physician === md);
+      meetingStateGroups(a.notes, links).forEach(([md, scope]) => {
         const entry = {
           name: a.provider_name,
           email: a.provider_email,
-          states: [...new Set(mine.map((l) => l.state))].sort(),
-          chartUrl: mine.find((l) => l.chartUrl)?.chartUrl || links.find((l) => l.chartUrl)?.chartUrl || null,
+          states: scope.states,
+          chartUrl: scope.chartUrl,
         };
         byMd.set(md, [...(byMd.get(md) || []), entry]);
       });
@@ -261,6 +260,7 @@ const CollabMeetingSchedulePage = () => {
                             >
                               <div className="font-medium">{format(new Date(m.scheduled_date), 'h:mm a')} Collab</div>
                               <div className="text-muted-foreground">{m.attendees.length} attending</div>
+                              <div className="break-words">{[...new Set(m.attendees.flatMap(a => selectedMeetingStates(a.notes)))].sort().join(', ')}</div>
                             </button>
                           ))}
                         </div>
