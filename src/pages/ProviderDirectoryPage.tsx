@@ -28,7 +28,8 @@ import { summarizeLicenses } from '@/lib/externalImport';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
-import { pcpCellFor } from '@/lib/pcpCoverage';
+import { pcpCellFor, isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
+import { mergeProviderFlags } from '@/lib/providerFlagSummary';
 import { licensedNotActiveLabel } from '@/lib/licensedNotActiveStates';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import { directoryMedallionConflicts } from '@/lib/directoryMedallionConflicts';
@@ -457,7 +458,7 @@ const ProviderDirectoryPage = () => {
     }
   };
 
-  const flaggedProviders = isAdmin ? providers
+  const directoryFlags = isAdmin ? providers
     .filter(p => !['termed', 'terminated'].includes((p.employment_status ?? '').toLowerCase()))
     .map(p => ({
       id: p.id, name: directoryDisplayName(p),
@@ -466,6 +467,10 @@ const ProviderDirectoryPage = () => {
     }))
     .filter(p => p.conflicts.length > 0 || p.identityReview)
     .sort((a, b) => a.name.localeCompare(b.name)) : [];
+  const flaggedProviders = mergeProviderFlags(directoryFlags, pcpCoverageLoading ? [] : coverageAlertSummary(pcpCoverage ?? null).review, providers.map(p => ({
+    id: p.id, name: directoryDisplayName(p),
+    suppress: isTestAccountDirectoryRecord(p) || !!OUT_OF_SCOPE_PROFILE_IDS[p.id] || ['termed', 'terminated'].includes((p.employment_status ?? '').toLowerCase()),
+  })));
 
   return (
     <div className="min-h-screen bg-background">
