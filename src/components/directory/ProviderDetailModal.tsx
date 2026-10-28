@@ -127,12 +127,41 @@ const formatDate = (dateStr: string | null) => {
   }
 };
 
-const InfoRow = ({ label, value }: { label: string; value: React.ReactNode }) => (
-  <div>
-    <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
-    <p className="font-medium text-sm">{value || '-'}</p>
-  </div>
-);
+const CopyValueButton = ({ value, label }: { value: string; label?: string }) => {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={label ? `Copy ${label}` : 'Copy'}
+      title="Copy"
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+        } catch {
+          // clipboard unavailable — still show feedback so the user can retry
+        }
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+    </button>
+  );
+};
+
+const InfoRow = ({ label, value }: { label: string; value: React.ReactNode }) => {
+  const copyable = typeof value === 'string' && value.trim().length > 0;
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
+        <p className="font-medium text-sm break-words">{value || '-'}</p>
+      </div>
+      {copyable && <CopyValueButton value={value as string} label={label} />}
+    </div>
+  );
+};
 
 const EditableField = ({
   label,
