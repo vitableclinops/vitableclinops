@@ -623,7 +623,6 @@ const CollabMeetingSchedulePage = () => {
               {addLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
               ) : visibleAddProviders.map((p) => {
-                const existing = existingStatesFor(p.email);
                 const picked = addStates[p.email] || [];
                 return (
                   <div key={p.email} className="rounded border p-2">
