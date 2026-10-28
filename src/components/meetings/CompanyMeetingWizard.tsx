@@ -91,6 +91,7 @@ export function CompanyMeetingWizard({
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
       setSelectedAttendees(new Set());
+      setSelectedStates(new Set());
       suggestNextDate();
     }
   }, [open]);
