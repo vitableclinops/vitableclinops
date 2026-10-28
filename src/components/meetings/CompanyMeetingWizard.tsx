@@ -354,11 +354,11 @@ export function CompanyMeetingWizard({
   // Download email list as CSV
   const downloadEmailsCsv = () => {
     const csvContent = [
-      ['Name', 'Email', 'Required States', 'All States'].join(','),
+      ['Name', 'Email', 'Selected States', 'All States'].join(','),
       ...invitedProviders.map(p => [
         `"${p.name}"`,
         p.email,
-        `"${p.requiredStates.join(', ')}"`,
+        `"${(providerStates[p.email] || []).join(', ')}"`,
         `"${p.states.join(', ')}"`,
       ].join(',')),
     ].join('\n');
@@ -436,6 +436,9 @@ export function CompanyMeetingWizard({
             provider_email: provider.email,
             attendance_status: 'invited',
             has_rsvped: false,
+            notes: (providerStates[provider.email] || []).length > 0
+              ? `States: ${(providerStates[provider.email] || []).join(', ')}`
+              : null,
           }))
         );
 
@@ -826,7 +829,7 @@ export function CompanyMeetingWizard({
                     <div className="mt-2 flex flex-wrap gap-1">
                       {invitedProviders.slice(0, 5).map(p => (
                         <Badge key={p.email} variant="secondary" className="text-xs">
-                          {p.name} ({p.requiredStates.join(', ')})
+                          {p.name} ({(providerStates[p.email] || []).join(', ')})
                         </Badge>
                       ))}
                       {invitedProviders.length > 5 && (
