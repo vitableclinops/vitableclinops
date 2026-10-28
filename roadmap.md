@@ -34,3 +34,4 @@
 - [x] Hide the yellow alert when no actual provider flags exist; show last-fetch information above the directory table.
 - [x] Default the directory view to clinicians only with an Everyone incl. staff switch; verified 50 clinician rows vs 64 with staff signed in.
 - [ ] Correct Kate and Moensania collaboration labels using linked agreement records instead of stale profile flags.
+- [ ] Audit all directory collaboration labels and statuses against linked agreements and verify consistency.
