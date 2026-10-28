@@ -400,7 +400,7 @@ export function CompanyMeetingWizard({
   const canProceed = () => {
     switch (step) {
       case 'date':
-        return selectedDate !== undefined && (timeChoice !== 'custom' || customTime !== '');
+        return selectedDate !== undefined;
       case 'attendees':
         return selectedAttendees.size > 0;
       case 'review':
@@ -701,8 +701,8 @@ export function CompanyMeetingWizard({
                 <Info className="h-4 w-4" />
                 <AlertDescription>
                   {calendarOnly
-                    ? `Providers will be added to the ${timeChoice === 'both' ? 'both time slots' : 'selected time slot'} on the calendar. No emails are sent.`
-                    : `Providers will be added to the ${timeChoice === 'both' ? 'both time slots' : 'selected time slot'}. After scheduling, you'll get a list of emails to notify them externally.`}
+                    ? `Providers will be added to the selected time slot on the calendar. No emails are sent.`
+                    : `Providers will be added to the selected time slot. After scheduling, you'll get a list of emails to notify them externally.`}
                 </AlertDescription>
               </Alert>
             </div>
