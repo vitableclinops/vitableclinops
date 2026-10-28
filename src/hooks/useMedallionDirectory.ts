@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { directoryMedallionConflicts } from '@/lib/directoryMedallionConflicts';
 
 export type MedallionEntity = 'providers' | 'licenses' | 'agreements';
 export const MEDALLION_ENTITIES: MedallionEntity[] = ['providers', 'licenses', 'agreements'];
@@ -114,7 +115,10 @@ export function useMedallionDirectoryData(enabled: boolean) {
         supabase.from('medallion_sync_runs').select('*').order('started_at', { ascending: false }).limit(200),
       ]);
       for (const r of [prov, lic, ag, runs]) if (r.error) throw r.error;
-      const providers = (prov.data ?? []) as unknown as MedallionProviderRow[];
+      const providers = ((prov.data ?? []) as unknown as MedallionProviderRow[]).map(p => ({
+        ...p,
+        conflicts: directoryMedallionConflicts(p.profile_id ?? '', p.conflicts ?? []),
+      }));
       const licenses = (lic.data ?? []) as unknown as MedallionLicenseRow[];
       const agreements = (ag.data ?? []) as unknown as MedallionAgreementRow[];
       const byProfile = new Map<string, MedallionProviderRow>();
