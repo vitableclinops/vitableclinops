@@ -149,8 +149,19 @@ export interface PcpCell { kind: PcpCellKind; text: string; states: string[]; de
  * only used when the provider's recorded profession is outside the query's
  * scope — never inferred from absence in the result.
  */
+/**
+ * Confirmed test accounts (directory_visibility 'excluded' with a test-account
+ * reason) are not real providers: they never need an NPI or an EHR identity.
+ */
+export function isTestAccountDirectoryRecord(
+  profile: { directory_visibility?: string | null; directory_visibility_reason?: string | null },
+): boolean {
+  return (profile.directory_visibility || '') === 'excluded'
+    && /test\s+account/i.test(profile.directory_visibility_reason || '');
+}
+
 export function pcpCellFor(
-  profile: { id: string; profession: string | null; credentials?: string | null; npi_number: string | null; admin_no_npi?: boolean },
+  profile: { id: string; profession: string | null; credentials?: string | null; npi_number: string | null; admin_no_npi?: boolean; directory_visibility?: string | null; directory_visibility_reason?: string | null },
   data: { identities: EhrIdentity[] } | null | undefined,
 ): PcpCell {
   const mk = (kind: PcpCellKind, text: string, detail: string, states: string[] = []): PcpCell => ({ kind, text, detail, states });
@@ -158,6 +169,7 @@ export function pcpCellFor(
   const noTypeOrNpi = (!designation || designation === '-' || designation.toLowerCase() === 'admin') && !normNpi(profile.npi_number);
   const noTypeCell = () => mk('not_applicable', 'Not applicable', 'Admin — non-provider; NPI not required');
   if (OUT_OF_SCOPE_PROFILE_IDS[profile.id]) return mk('excluded', 'Excluded', OUT_OF_SCOPE_PROFILE_IDS[profile.id]);
+  if (isTestAccountDirectoryRecord(profile)) return mk('not_applicable', 'Test account', 'Confirmed test account excluded from the directory; no NPI or EHR identity is required');
   if (!data) return noTypeOrNpi ? noTypeCell() : mk('unavailable', 'Unavailable', 'No coverage snapshot could be loaded');
   const mine = data.identities.filter((i) => i.profileId === profile.id || i.candidateProfileIds?.includes(profile.id));
   const ex = mine.find((i) => i.status === 'excluded');
