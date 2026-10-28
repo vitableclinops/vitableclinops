@@ -6,7 +6,7 @@ export function useLocalSupervisionAgreements() {
     queryKey: ['local-supervision-agreements'],
     queryFn: async () => {
       const { data, error } = await supabase.from('agreement_providers')
-        .select('id, provider_name, provider_email, collaborative_agreements(id, physician_name, physician_npi, state_abbreviation, workflow_status, start_date, end_date, agreement_document_url, medallion_document_url)')
+        .select('id, provider_id, provider_name, provider_email, collaborative_agreements(id, physician_name, physician_npi, state_abbreviation, workflow_status, start_date, end_date, agreement_document_url, medallion_document_url)')
         .eq('is_active', true);
       if (error) throw error;
       return (data ?? []).flatMap(row => {
@@ -14,6 +14,7 @@ export function useLocalSupervisionAgreements() {
         if (!a) return [];
         return [{
           medallion_agreement_id: `local:${row.id}`, source: 'Directory',
+          provider_id: row.provider_id,
           provider: row.provider_name || row.provider_email || '—',
           supervisor_name: a.physician_name, supervisor_npi: a.physician_npi,
           state: a.state_abbreviation, agreement_type: null,

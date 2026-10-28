@@ -553,7 +553,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
           </TabsList>
 
           <TabsContent value="medallion" className="mt-4">
-            <MedallionProviderSection profileId={provider.id} medallionId={provider.medallion_id} />
+            <MedallionProviderSection profileId={provider.id} medallionId={provider.medallion_id} suppressFlags={isOffboarded(provider.employment_status)} />
           </TabsContent>
 
           {/* Professional Tab */}
