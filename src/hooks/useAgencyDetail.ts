@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { useToast } from '@/hooks/use-toast';
 
 export interface AgencyContact {
@@ -69,6 +70,7 @@ export const useAgencyDetail = (agencyId: string | undefined) => {
           .select('id, full_name, email, credentials, profession, employment_status, activation_status, npi_number')
           .eq('agency_id', agencyId)
           .eq('employment_type', 'agency')
+          .or(CURRENT_EMPLOYEE_FILTER)
           .order('full_name'),
       ]);
 

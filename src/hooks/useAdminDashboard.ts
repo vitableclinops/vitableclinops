@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Task = Tables<'agreement_tasks'>;
@@ -85,6 +86,7 @@ export function useAdminDashboard() {
         supabase
           .from('profiles')
           .select('employment_type')
+          .or(CURRENT_EMPLOYEE_FILTER)
           .not('employment_type', 'is', null),
         // Agreement counts by workflow status
         supabase
@@ -119,7 +121,7 @@ export function useAdminDashboard() {
           .select('id, full_name, birthday, start_date_on_network, employment_start_date, employment_type, pod_id')
           .in('employment_type', ['w2', '1099'])
           .neq('activation_status', 'Terminated')
-          .neq('employment_status', 'termed'),
+          .or(CURRENT_EMPLOYEE_FILTER),
         // Completed + archived tasks from last 7 days
         supabase
           .from('agreement_tasks')

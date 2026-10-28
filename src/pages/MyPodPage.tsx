@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { useNavigate } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,7 +43,7 @@ export default function MyPodPage() {
           const { data: members } = await supabase
             .from('profiles')
             .select('id, full_name, email, avatar_url, activation_status, profession, onboarding_completed')
-            .eq('pod_id', podData.id);
+            .eq('pod_id', podData.id).or(CURRENT_EMPLOYEE_FILTER);
 
           setPodMembers(members || []);
         } else {
@@ -50,7 +51,7 @@ export default function MyPodPage() {
           const { data: members } = await supabase
             .from('profiles')
             .select('id, full_name, email, avatar_url, activation_status, profession, onboarding_completed')
-            .eq('pod_lead_id', profile.id);
+            .eq('pod_lead_id', profile.id).or(CURRENT_EMPLOYEE_FILTER);
 
           setPodMembers(members || []);
         }

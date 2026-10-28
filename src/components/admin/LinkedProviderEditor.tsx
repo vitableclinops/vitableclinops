@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -46,7 +47,7 @@ export function LinkedProviderEditor({
       supabase
         .from('profiles')
         .select('id, full_name, email')
-        .neq('employment_status', 'termed')
+        .or(CURRENT_EMPLOYEE_FILTER)
         .neq('activation_status', 'Terminated')
         .order('full_name')
         .then(({ data }) => {
