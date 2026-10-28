@@ -15,6 +15,7 @@ import TaskDetailView from "./pages/TaskDetailView";
 
 import StateCompliancePage from "./pages/StateCompliancePage";
 import CollaborativeAgreementsPage from "./pages/CollaborativeAgreementsPage";
+import CollabMeetingSchedulePage from "./pages/CollabMeetingSchedulePage";
 import SystemSettingsPage from "./pages/SystemSettingsPage";
 import ProviderIntakePage from "./pages/ProviderIntakePage";
 import PhysicianPortal from "./pages/PhysicianPortal";
@@ -260,6 +261,11 @@ const App = () => (
             <Route path="/admin/agencies/:agencyId" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <AgencyDetailPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/collab-meetings" element={
+              <ProtectedRoute requiredRoles={['admin', 'pod_lead']}>
+                <CollabMeetingSchedulePage />
               </ProtectedRoute>
             } />
             <Route path="/admin/calendar" element={

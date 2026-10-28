@@ -133,6 +133,7 @@ const navGroups: NavGroup[] = [
       { label: 'Agencies', icon: Building2, href: '/admin/agencies', roles: ['admin'] },
       { label: 'Hiring Pipeline', icon: UserSearch, href: '/admin/hiring', roles: ['admin'] },
       { label: 'Calendar', icon: Calendar, href: '/admin/calendar', roles: ['admin', 'pod_lead'] },
+      { label: 'Collab Meetings', icon: CalendarCheck, href: '/admin/collab-meetings', roles: ['admin', 'pod_lead'] },
     ],
   },
   {
