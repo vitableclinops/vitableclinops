@@ -513,19 +513,24 @@ export function CompanyMeetingWizard({
                   disabled={(date) => date < new Date()}
                 />
                 <div className="w-full space-y-1.5">
-                  <Label>Meeting Time (Eastern Time)</Label>
-                  <Select value={timeChoice} onValueChange={(v) => setTimeChoice(v as 'both' | 'am' | 'pm' | 'custom')}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="both">Both — {fmt12(AM_TIME)} & {fmt12(PM_TIME)} ET</SelectItem>
-                      <SelectItem value="am">Morning only — {fmt12(AM_TIME)} ET</SelectItem>
-                      <SelectItem value="pm">Afternoon only — {fmt12(PM_TIME)} ET</SelectItem>
-                      <SelectItem value="custom">Custom time…</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {timeChoice === 'custom' && (
-                    <Input type="time" value={customTime} onChange={(e) => setCustomTime(e.target.value)} />
-                  )}
+                  <Label>Time</Label>
+                  <div className="max-h-44 overflow-y-auto rounded-md border" role="listbox" aria-label="Meeting time">
+                    {TIME_OPTIONS.map((t) => {
+                      const selected = t === selectedTime;
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => setSelectedTime(t)}
+                          className={`w-full px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent ${selected ? 'bg-primary/10 font-medium' : ''}`}
+                        >
+                          {fmt12(t)}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 {selectedDate && (
                   <div className="text-center">
