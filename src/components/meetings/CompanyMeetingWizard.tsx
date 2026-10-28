@@ -301,6 +301,17 @@ export function CompanyMeetingWizard({
     });
   };
 
+  // Which time slot(s) will be created, based on the selected time option
+  const getTimeSessions = (): { slot: 'am' | 'pm'; time: string }[] => {
+    if (timeChoice === 'am') return [{ slot: 'am', time: AM_TIME }];
+    if (timeChoice === 'pm') return [{ slot: 'pm', time: PM_TIME }];
+    if (timeChoice === 'custom') {
+      const t = customTime || '10:00';
+      return [{ slot: parseInt(t, 10) < 12 ? 'am' : 'pm', time: t }];
+    }
+    return [{ slot: 'am', time: AM_TIME }, { slot: 'pm', time: PM_TIME }];
+  };
+
   const handleSubmit = async () => {
     if (!selectedDate) return;
     
