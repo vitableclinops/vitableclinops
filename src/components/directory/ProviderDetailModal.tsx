@@ -175,6 +175,26 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
   const [uploadTarget, setUploadTarget] = useState<any | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { hasRole } = useAuth();
+  const isAdminUser = hasRole('admin');
+  const [activationOverride, setActivationOverride] = useState<string | null>(null);
+  const [overrideFor, setOverrideFor] = useState<string | null>(null);
+  if (provider && overrideFor !== provider.id) { setOverrideFor(provider.id); setActivationOverride(null); }
+  const clearAgreementFlag = useMutation({
+    mutationFn: async () => {
+      if (!provider) return;
+      const { error } = await supabase.from('profiles')
+        .update({ activation_status: 'ready', has_collaborative_agreements: true }).eq('id', provider.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setActivationOverride('ready');
+      queryClient.invalidateQueries({ queryKey: ['providers'] });
+      queryClient.invalidateQueries({ queryKey: ['provider-directory'] });
+      toast({ title: 'Activation updated', description: 'Pending Agreements flag cleared.' });
+    },
+    onError: (e: Error) => toast({ title: 'Could not update', description: e.message, variant: 'destructive' }),
+  });
 
   // Upload a signed agreement document straight from the missing-docs banner.
   // Stores the file in the task-documents bucket and links it on the agreement,
@@ -637,12 +657,24 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
 
           {/* Overview Tab - Quick summary with enriched fields */}
           <TabsContent value="overview" className="mt-4 space-y-4">
+            {isAdminUser && (activationOverride ?? provider.activation_status) === 'pending_agreements' && agreementCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/30 bg-warning/10 p-3">
+                <p className="text-sm">
+                  Activation still says <strong>Pending Agreements</strong>, but {agreementCount} agreement{agreementCount === 1 ? ' is' : 's are'} on file.
+                </p>
+                <Button size="sm" onClick={() => clearAgreementFlag.mutate()} disabled={clearAgreementFlag.isPending}>
+                  Mark agreements done
+                </Button>
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <InfoRow label="Activation Status" value={
-                provider.activation_status === 'ready' ? 'Ready' :
-                provider.activation_status === 'pending_onboarding' ? 'Pending Onboarding' :
-                provider.activation_status || 'Not Set'
-              } />
+              <InfoRow label="Activation Status" value={(() => {
+                const s = activationOverride ?? provider.activation_status;
+                return s === 'ready' ? 'Ready' :
+                  s === 'pending_onboarding' ? 'Pending Onboarding' :
+                  s === 'pending_agreements' ? 'Pending Agreements' :
+                  s || 'Not Set';
+              })()} />
               <InfoRow label="Collaborative Physician" value={null} />
               <InfoRow label="Renewal Handling" value={
                 provider.renewal_handling === 'self' ? 'Self-Managed' :
