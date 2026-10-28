@@ -39,3 +39,5 @@
 - [ ] Link Jonathan Luker’s confirmed Ohio and Pennsylvania collaborations with Kate Baron; awaiting signed documents/effective dates and Ohio capacity review. No status changes authorized.
 - [x] Check active EHR states for required linked agreements and flag missing agreements with clickable corrections; tests and signed-in correction flow verified.
 - [x] Compare Jonathan’s directory, latest EHR states and agreements without changing statuses: Active profile, OH license in Medallion, PA in latest five EHR snapshots but no OH, no linked agreements. Warehouse-side reason for absent OH cannot be confirmed from saved active-only results.
+- [x] Include existing linked task uploads and participant documents in agreement attachment checks; verified with tests and signed-in directory, without changing statuses.
+- [x] Confirm current and future agreement additions refresh directory participation, supervision and missing-agreement flags; wizard invalidates all three queries, with focus/minute refresh as fallback.

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { activeStateAgreementFlags, type StateAgreement } from '@/lib/activeStateAgreementFlags';
 const provider = { id: 'jonathan', profession: 'NP' };
 const today = new Date(2026, 9, 28);
-const check = (states: string[], agreements: StateAgreement[] = []) => activeStateAgreementFlags(provider, states, [], agreements, [], today);
+const rules = ['PA', 'OH'].map(state_abbreviation => ({ state_abbreviation, ca_required: true, collab_requirement_type: 'always' }));
+const check = (states: string[], agreements: StateAgreement[] = []) => activeStateAgreementFlags(provider, states, rules, agreements, [], today);
 describe('active EHR state agreement checks', () => {
   it('flags required PA but not Ohio when Ohio is not active in EHR', () => {
     expect(check(['PA', 'AZ']).map(r => r.state)).toEqual(['PA']);
@@ -23,8 +24,15 @@ describe('active EHR state agreement checks', () => {
   it('uses saved requirements over defaults', () => {
     expect(activeStateAgreementFlags(provider, ['PA'], [{ state_abbreviation: 'PA', ca_required: false, collab_requirement_type: 'never' }], [], [], today)).toEqual([]);
   });
-  it('asks for verification rather than declaring conditional states missing', () => {
-    expect(check(['CO'])[0].reason).toBe('Collaboration requirement needs provider-specific verification.');
+  it('does not flag CT or other states saved as not requiring agreements', () => {
+    expect(activeStateAgreementFlags(provider, ['CT', 'CO', 'FL', 'MN', 'VT'],
+      ['CT', 'CO', 'FL', 'MN', 'VT'].map(state_abbreviation => ({ state_abbreviation, ca_required: false, collab_requirement_type: 'conditional' })), [], [], today)).toEqual([]);
+  });
+  it('does not infer a requirement from defaults when a saved rule is absent', () => {
+    expect(activeStateAgreementFlags(provider, ['PA', 'OH'], [], [], [], today)).toEqual([]);
+  });
+  it('flags a conditional state only when the directory explicitly requires an agreement', () => {
+    expect(activeStateAgreementFlags(provider, ['AR'], [{ state_abbreviation: 'AR', ca_required: true, collab_requirement_type: 'conditional' }], [], [], today).map(r => r.state)).toEqual(['AR']);
   });
   it('does not impose NP agreements on physicians', () => {
     expect(activeStateAgreementFlags({ id: 'md', profession: 'physician' }, ['PA'], [], [], [], today)).toEqual([]);
