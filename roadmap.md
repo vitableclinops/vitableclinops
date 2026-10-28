@@ -42,3 +42,4 @@
 - [x] Include existing linked task uploads and participant documents in agreement attachment checks; verified with tests and signed-in directory, without changing statuses.
 - [x] Confirm current and future agreement additions refresh directory participation, supervision and missing-agreement flags; wizard invalidates all three queries, with focus/minute refresh as fallback.
 - [ ] Show required agreement/link gaps in Agreements → Incomplete / Need fixing using the same directory checks and clickable corrections.
+- [ ] Refresh both directory and Needs fixing flags immediately after agreement document uploads/links.

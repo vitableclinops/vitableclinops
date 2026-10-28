@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
@@ -67,6 +68,7 @@ export default function AgreementDetailPage() {
   const { agreementId } = useParams<{ agreementId: string }>();
   const { profile, roles, hasRole } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { tasks, loading: tasksLoading, refetch: refetchTasks } = useAgreementTasks({ agreementId });
   const { advanceStatus, checkTasksComplete } = useAgreementWorkflow();
 
@@ -280,6 +282,8 @@ export default function AgreementDetailPage() {
         .update({ agreement_document_url: docUrl })
         .eq('id', agreement.id);
       if (updateError) throw updateError;
+      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
+      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
 
       await supabase.from('agreement_audit_log').insert({
         entity_type: 'agreement',

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { StatCard } from '@/components/StatCard';
@@ -154,6 +154,7 @@ const getStateFPAStatus = (stateAbbr: string, complianceData: StateCompliance[])
 const CollaborativeAgreementsPage = () => {
   // All hooks must be called first, before any conditional logic
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { profile, roles, hasRole } = useAuth();
   const { flags: requiredAgreementFlags, loading: requiredFlagsLoading, error: requiredFlagsError } = useRequiredAgreementFlags(roles.includes('admin'));
   const [gapPrefill, setGapPrefill] = useState<{ stateAbbr: string; skipProcess: boolean; provider: { id: string; name: string; email: string; npi?: string } } | null>(null);
@@ -508,6 +509,8 @@ const CollaborativeAgreementsPage = () => {
       setUploadDialogOpen(false);
       setDocumentUrl('');
       setSelectedFlatAgreement(null);
+      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
+      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
       fetchDbAgreements();
     } catch (error) {
       console.error('Error saving document:', error);
@@ -711,7 +714,7 @@ const CollaborativeAgreementsPage = () => {
               )}
               {/* Only admins can create new agreements */}
               {hasRole('admin') && (
-                <Button onClick={() => setWizardOpen(true)} size="lg">
+                <Button onClick={() => { setGapPrefill(null); setWizardOpen(true); }} size="lg">
                   <Plus className="h-4 w-4 mr-2" />
                   New Agreement
                 </Button>
