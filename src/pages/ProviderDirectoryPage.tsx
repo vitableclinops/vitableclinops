@@ -34,7 +34,7 @@ import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import { directoryMedallionConflicts } from '@/lib/directoryMedallionConflicts';
 import { directoryIdentityAlert } from '@/lib/directoryIdentityAlerts';
 import { ProviderFlagAlerts } from '@/components/directory/ProviderFlagAlerts';
-import { PcpCoverageStatus } from '@/components/directory/PcpCoverageStatus';
+import { coverageAlertSummary } from '@/lib/coverageAlertSummary';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -502,7 +502,10 @@ const ProviderDirectoryPage = () => {
           </div>
 
           {/* Tabs for Admin */}
-          {isAdmin && <ProviderFlagAlerts providers={flaggedProviders} onReview={id => {
+          {isAdmin && <ProviderFlagAlerts
+            providers={flaggedProviders}
+            coverage={pcpCoverageLoading ? null : coverageAlertSummary(pcpCoverage ?? null)}
+            onReview={id => {
             const provider = providers.find(p => p.id === id);
             if (provider) setSelectedProvider(provider);
           }} />}
@@ -609,7 +612,6 @@ const ProviderDirectoryPage = () => {
                   </div>
                 ) : viewMode === 'table' ? (
                   <>
-                  {isAdmin && <PcpCoverageStatus data={pcpCoverage ?? null} />}
                   <ProviderTable
                     providers={tableData}
                     onRowClick={handleRowClick}
