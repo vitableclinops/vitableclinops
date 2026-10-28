@@ -243,8 +243,8 @@ export function CompanyMeetingWizard({
 
   // Providers the user chose to invite (defaults to the required providers)
   const invitedProviders = useMemo(() => {
-    return providers.filter(p => selectedAttendees.has(p.email));
-  }, [providers, selectedAttendees]);
+    return providers.filter(p => (providerStates[p.email] || []).length > 0);
+  }, [providers, providerStates]);
 
   // All states present across providers (for the state filter chips)
   const allStates = useMemo(() => {
