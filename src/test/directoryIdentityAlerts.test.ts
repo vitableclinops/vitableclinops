@@ -3,6 +3,21 @@ import { directoryIdentityAlert } from '@/lib/directoryIdentityAlerts';
 import { pcpCellFor } from '@/lib/pcpCoverage';
 
 describe('Directory identity alerts', () => {
+  it('does not require an NPI when the directory Type is a dash', () => {
+    for (const designation of [null, '', '-']) {
+      const profile = { id: 'non-provider', profession: designation, credentials: null, npi_number: null };
+      for (const data of [undefined, { identities: [] }]) {
+        const cell = pcpCellFor(profile, data);
+        expect(cell.kind).toBe('not_applicable');
+        expect(directoryIdentityAlert(cell)).toBeUndefined();
+      }
+    }
+  });
+  it('keeps genuine identity conflicts for entries without a Type designation', () => {
+    const profile = { id: 'non-provider', profession: null, credentials: null, npi_number: null };
+    const data = { identities: [{ ehrProviderId: 'duplicate', ehrName: 'Staff', npi: '1234567890', states: [], status: 'ambiguous' as const, profileId: 'non-provider', nameDiffers: false, reason: 'Several EHR IDs share this directory record' }] };
+    expect(pcpCellFor(profile, data).kind).toBe('needs_review');
+  });
   it('flags a missing NPI with its actual reason and verified-NPI correction', () => {
     const cell = pcpCellFor({ id: 'new-provider', profession: 'NP', npi_number: null }, { identities: [] });
     const alert = directoryIdentityAlert(cell);
