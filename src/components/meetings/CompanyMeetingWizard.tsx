@@ -485,7 +485,7 @@ export function CompanyMeetingWizard({
           ))}
         </div>
 
-        <ScrollArea className="flex-1 min-h-0 pr-4">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-4">
           {/* Step 1: Select Date */}
           {step === 'date' && (
             <div className="space-y-6">
