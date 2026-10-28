@@ -20,7 +20,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { meetingStateGroups, selectedMeetingStates } from '@/lib/collabMeetingStates';
-import { ChevronLeft, ChevronRight, ExternalLink, Loader2, Pencil, Plus, Stethoscope, Trash2, Users } from 'lucide-react';
+import {
+  COLLAB_SPREADSHEET_LIBRARY_KEY, libraryUrlsForStates, meetingMonthName, mergeLibraryDefaults,
+} from '@/lib/collabSpreadsheetLibrary';
+import { CollabSpreadsheetLibraryDialog } from '@/components/meetings/CollabSpreadsheetLibraryDialog';
+import { ChevronLeft, ChevronRight, ExternalLink, FileSpreadsheet, Loader2, Pencil, Plus, Stethoscope, Trash2, Users } from 'lucide-react';
 import {
   addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek,
 } from 'date-fns';
@@ -48,6 +52,7 @@ const CollabMeetingSchedulePage = () => {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editDate, setEditDate] = useState('');
@@ -177,23 +182,44 @@ const CollabMeetingSchedulePage = () => {
     },
   });
 
+  // Shared chart spreadsheet library (system_config), seeded with the shared Drive links
+  const { data: library = [] } = useQuery({
+    queryKey: ['system-config', COLLAB_SPREADSHEET_LIBRARY_KEY],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('system_config')
+        .select('value')
+        .eq('key', COLLAB_SPREADSHEET_LIBRARY_KEY)
+        .maybeSingle();
+      if (error) throw error;
+      return mergeLibraryDefaults((data?.value as any)?.spreadsheets);
+    },
+  });
+
   const days = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
   const selected = meetings.find((m) => m.id === selectedId) || null;
 
   // Group selected meeting attendees by leading MD
   const groups = useMemo(() => {
     if (!selected) return [];
+    const monthName = meetingMonthName(selected.scheduled_date);
     const byMd = new Map<string, { name: string; email: string; states: string[]; chartUrls: string[] }[]>();
     selected.attendees.forEach((a) => {
       const links = providerLinks.get((a.provider_email || '').toLowerCase()) || [];
       meetingStateGroups(a.notes, links).forEach(([md, scope]) => {
+        // Library month tabs win; agreement chart links cover states with no library match
+        const libMatches = libraryUrlsForStates(library, scope.states, monthName);
+        const libStates = new Set(libMatches.map((o) => o.state));
+        const fallbackUrls = scope.states
+          .filter((state) => !libStates.has(state))
+          .flatMap((state) =>
+            links.filter((link) => link.state === state && link.physician === md && link.chartUrl).map((link) => link.chartUrl as string),
+          );
         const entry = {
           name: a.provider_name,
           email: a.provider_email,
           states: scope.states,
-          chartUrls: [...new Set(scope.states.flatMap(state => {
-            return links.filter(link => link.state === state && link.physician === md && link.chartUrl).map(link => link.chartUrl as string);
-          }))],
+          chartUrls: [...new Set([...libMatches.map((o) => o.url), ...fallbackUrls])],
         };
         byMd.set(md, [...(byMd.get(md) || []), entry]);
       });
@@ -201,7 +227,7 @@ const CollabMeetingSchedulePage = () => {
     return [...byMd.entries()]
       .map(([md, list]) => [md, list.sort((x, y) => x.name.localeCompare(y.name))] as const)
       .sort((a, b) => a[0].localeCompare(b[0]));
-  }, [selected, providerLinks]);
+  }, [selected, providerLinks, library]);
 
   const openCharts = (urls: (string | null)[]) => {
     [...new Set(urls.filter(Boolean) as string[])].forEach((u) => window.open(u, '_blank', 'noopener'));
@@ -223,6 +249,9 @@ const CollabMeetingSchedulePage = () => {
               <p className="text-muted-foreground text-sm">Who should attend each collaborative meeting, grouped by the leading MD.</p>
             </div>
             <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setLibraryOpen(true)}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" /> Chart spreadsheets
+            </Button>
             <Button onClick={() => setWizardOpen(true)}>
               <Plus className="h-4 w-4 mr-2" /> Schedule Meeting
             </Button>
@@ -396,6 +425,8 @@ const CollabMeetingSchedulePage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CollabSpreadsheetLibraryDialog open={libraryOpen} onOpenChange={setLibraryOpen} />
 
       <CompanyMeetingWizard
         open={wizardOpen}

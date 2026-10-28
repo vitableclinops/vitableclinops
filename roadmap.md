@@ -5,3 +5,4 @@
 - [x] Remove requirement-derived meeting suggestions and verify manual selection.
 - [x] Add a shared editable mapping seeded with the 10 supplied spreadsheet links, with title, state, month and tab link.
 - [x] Use saved mappings for meeting chart links, matching only selected states and the meeting month; verify saving and opening.
+- [x] Replace the mapping with a shared spreadsheet library (10 Drive links, states + monthly tab links) that auto-links the right month's tab per provider on collab meetings.
