@@ -14,4 +14,11 @@ describe('Directory identity alerts', () => {
     expect(directoryIdentityAlert(pcpCellFor(profile, undefined))).toBeUndefined();
     expect(directoryIdentityAlert(pcpCellFor(profile, { identities: [] }))).toBeUndefined();
   });
+  it('clears only the missing-NPI flag for an admin no-NPI exception', () => {
+    const profile = { id: 'reviewed', profession: 'NP', npi_number: null, admin_no_npi: true };
+    expect(pcpCellFor(profile, { identities: [] })).toMatchObject({ kind: 'not_applicable', text: 'Admin: no NPI', states: [] });
+    expect(directoryIdentityAlert(pcpCellFor(profile, { identities: [] }))).toBeUndefined();
+    const data = { identities: [{ ehrProviderId: 'duplicate', ehrName: 'Provider', npi: '1234567890', states: [], status: 'ambiguous' as const, profileId: 'reviewed', nameDiffers: false, reason: 'Several EHR IDs share this directory record' }] };
+    expect(pcpCellFor(profile, data).kind).toBe('needs_review');
+  });
 });

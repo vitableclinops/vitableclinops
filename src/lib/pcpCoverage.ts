@@ -150,7 +150,7 @@ export interface PcpCell { kind: PcpCellKind; text: string; states: string[]; de
  * scope — never inferred from absence in the result.
  */
 export function pcpCellFor(
-  profile: { id: string; profession: string | null; npi_number: string | null },
+  profile: { id: string; profession: string | null; npi_number: string | null; admin_no_npi?: boolean },
   data: { identities: EhrIdentity[] } | null | undefined,
 ): PcpCell {
   const mk = (kind: PcpCellKind, text: string, detail: string, states: string[] = []): PcpCell => ({ kind, text, detail, states });
@@ -167,6 +167,8 @@ export function pcpCellFor(
     : mk('states', m.states.join(', '), 'Matched by NPI', m.states);
   if (!profile.profession) return mk('unavailable', 'Unavailable', 'Profession not recorded, so scope cannot be determined');
   if (!IN_SCOPE_PROFESSIONS.has(profile.profession)) return mk('not_applicable', 'Not applicable', 'Profession is outside PCP telemedicine (query covers nurse practitioners only)');
-  if (!normNpi(profile.npi_number)) return mk('needs_review', 'Identity needs review', 'No NPI on this record, so it cannot be linked to the EHR');
+  if (!normNpi(profile.npi_number)) return profile.admin_no_npi
+    ? mk('not_applicable', 'Admin: no NPI', 'Missing NPI reviewed by an admin; no EHR identity or coverage is inferred')
+    : mk('needs_review', 'Identity needs review', 'No NPI on this record, so it cannot be linked to the EHR');
   return mk('none_returned', 'No coverage returned', 'NPI not present in the latest query result');
 }

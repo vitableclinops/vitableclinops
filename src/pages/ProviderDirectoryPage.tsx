@@ -50,6 +50,7 @@ interface FullProvider {
   email: string;
   phone_number: string | null;
   npi_number: string | null;
+  admin_no_npi?: boolean;
   credentials: string | null;
   profession: string | null;
   avatar_url: string | null;
@@ -424,7 +425,7 @@ const ProviderDirectoryPage = () => {
       return null;
     })(),
     pcp_coverage: isAdmin
-      ? pcpCellFor({ id: p.id, profession: p.profession, npi_number: p.npi_number }, pcpCoverageLoading ? undefined : pcpCoverage)
+      ? pcpCellFor(p, pcpCoverageLoading ? undefined : pcpCoverage)
       : null,
     primary_specialty: p.primary_specialty,
     address_state: isAdmin ? (p as FullProvider).address_state : (p as DirectoryProvider).address_state,

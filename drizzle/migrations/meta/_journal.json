@@ -78,6 +78,13 @@
       "when": 1793221519398,
       "tag": "0010_add_chart_link_to_meeting_attendees",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793226153226,
+      "tag": "0011_admin_no_npi_exception",
+      "breakpoints": true
     }
   ]
 }

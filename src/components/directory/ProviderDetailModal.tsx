@@ -49,6 +49,7 @@ interface FullProvider {
   email: string;
   phone_number: string | null;
   npi_number: string | null;
+  admin_no_npi?: boolean;
   credentials: string | null;
   profession: string | null;
   avatar_url: string | null;
@@ -90,6 +91,7 @@ interface FullProvider {
 interface ProviderDetailModalProps {
   provider: FullProvider | null;
   onClose: () => void;
+  onSaved?: (provider: FullProvider) => void;
 }
 
 const getInitials = (name: string | null) => {
@@ -382,6 +384,7 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
       email: provider.email,
       phone_number: provider.phone_number,
       npi_number: provider.npi_number,
+      admin_no_npi: provider.admin_no_npi ?? false,
       credentials: provider.credentials,
       profession: provider.profession,
       caqh_number: provider.caqh_number,
@@ -548,6 +551,12 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                   <EditableField label="Email" value={formData.email} field="email" onChange={handleChange} type="email" />
                   <EditableField label="Phone" value={formData.phone_number} field="phone_number" onChange={handleChange} type="tel" />
                   <EditableField label="NPI" value={formData.npi_number} field="npi_number" onChange={handleChange} />
+                  {isAdminUser && (
+                    <div className="flex items-center justify-between gap-2">
+                      <label htmlFor="admin-no-npi" className="text-sm text-muted-foreground">Admin: no NPI</label>
+                      <Switch id="admin-no-npi" checked={!!formData.admin_no_npi} onCheckedChange={value => setFormData(prev => ({ ...prev, admin_no_npi: value }))} />
+                    </div>
+                  )}
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">Profession</p>
                     <Select value={formData.profession || ''} onValueChange={(v) => handleChange('profession', v)}>
@@ -569,6 +578,7 @@ export const ProviderDetailModal = ({ provider, onClose }: ProviderDetailModalPr
                   <InfoRow label="Email" value={provider.email} />
                   <InfoRow label="Phone" value={provider.phone_number} />
                   <InfoRow label="NPI" value={provider.npi_number} />
+                  {provider.admin_no_npi && <InfoRow label="NPI review" value="Admin: no NPI" />}
                   <InfoRow label="Profession" value={provider.profession} />
                   <InfoRow label="CAQH Number" value={provider.caqh_number} />
                   <InfoRow label="Medallion ID" value={provider.medallion_id} />
