@@ -117,14 +117,15 @@ export const ProviderFilters = ({
       </Select>
 
       <Select value={showEveryone ? 'everyone' : 'clinicians'} onValueChange={value => onShowEveryoneChange(value === 'everyone')}>
-        <SelectTrigger className="w-[170px]" aria-label="Directory scope">
+        <SelectTrigger className="w-[190px]" aria-label="Directory scope">
           <SelectValue placeholder="Who" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="clinicians">Clinicians only</SelectItem>
-          <SelectItem value="everyone">Everyone (incl. staff)</SelectItem>
+          <SelectItem value="everyone">Everyone incl. staff</SelectItem>
         </SelectContent>
       </Select>
+
 
       {employmentTypeFilter === 'agency' && availableAgencies.length > 0 && (
         <Select value={agencyFilter} onValueChange={onAgencyChange}>
