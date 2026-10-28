@@ -76,6 +76,7 @@ export function CompanyMeetingWizard({
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<ProviderForMeeting[]>([]);
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set());
+  const [providerStates, setProviderStates] = useState<Record<string, string[]>>({}); // email -> selected states
   const [selectedStates, setSelectedStates] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [createdMeetingIds, setCreatedMeetingIds] = useState<string[] | null>(null);
@@ -91,6 +92,7 @@ export function CompanyMeetingWizard({
       setCreatedMeetingIds(null);
       setEmailsCopied(false);
       setSelectedAttendees(new Set());
+      setProviderStates({});
       setSelectedStates(new Set());
       suggestNextDate();
     }
@@ -183,7 +185,13 @@ export function CompanyMeetingWizard({
 
       const providerList = Array.from(providerMap.values()).sort((a, b) => a.name.localeCompare(b.name));
       setProviders(providerList);
-      setSelectedAttendees(new Set(providerList.filter(p => p.isRequired).map(p => p.email)));
+      // Pre-select the scheduled states for every provider required this month
+      const initialStates: Record<string, string[]> = {};
+      providerList.filter(p => p.isRequired).forEach(p => {
+        initialStates[p.email] = p.requiredStates.length > 0 ? [...p.requiredStates] : [...p.states];
+      });
+      setProviderStates(initialStates);
+      setSelectedAttendees(new Set(Object.keys(initialStates)));
     } catch (err) {
       console.error('Error loading providers:', err);
       toast({
