@@ -156,7 +156,7 @@ export const ProviderTable = ({
             <SortHeader column="profession" label="Type" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>NPI</TableHead>
             <SortHeader column="employment_type" label="Employment" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
-            {isAdmin && <TableHead title={PCP_TOOLTIP}>Active PCP Telemedicine States</TableHead>}
+            {isAdmin && <TableHead title={PCP_TOOLTIP}>Active States in EHR</TableHead>}
             <SortHeader column="actively_licensed_states" label="Licensed but not active in EHR" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>Home State</TableHead>
             {isAdmin && <SortHeader column="activation_status" label="Activation" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
@@ -229,7 +229,7 @@ export const ProviderTable = ({
                       <span className="text-sm max-w-[180px] truncate block">
                         {provider.pcp_coverage ? <PcpCellView cell={provider.pcp_coverage} /> : null}
                       </span>
-                      {!!provider.pcp_coverage?.states.length && <CopyValueButton value={provider.pcp_coverage.states.join(', ')} label="Active PCP telemedicine states" />}
+                      {!!provider.pcp_coverage?.states.length && <CopyValueButton value={provider.pcp_coverage.states.join(', ')} label="Active states in EHR" />}
                     </span>
                   </TableCell>
                 )}
