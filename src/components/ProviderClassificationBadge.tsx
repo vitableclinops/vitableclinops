@@ -5,9 +5,11 @@ import { cn } from '@/lib/utils';
 interface ProviderClassificationBadgeProps {
   employmentType: string | null;
   compact?: boolean;
+  /** Display-only label override (stored employment_type stays unchanged). */
+  labelOverride?: string | null;
 }
 
-export function ProviderClassificationBadge({ employmentType, compact = false }: ProviderClassificationBadgeProps) {
+export function ProviderClassificationBadge({ employmentType, compact = false, labelOverride }: ProviderClassificationBadgeProps) {
   const isAgency = employmentType === 'agency';
   const is1099 = employmentType === '1099';
   const isW2 = !employmentType || employmentType === 'w2';
@@ -33,7 +35,7 @@ export function ProviderClassificationBadge({ employmentType, compact = false }:
   return (
     <Badge variant="outline" className={cn("gap-1 bg-primary/10 text-primary border-primary/30", compact && "text-xs px-1.5 py-0")}>
       <User className={cn("h-3 w-3", compact && "h-2.5 w-2.5")} />
-      Internal
+      {labelOverride || 'Internal'}
     </Badge>
   );
 }

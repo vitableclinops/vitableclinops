@@ -16,3 +16,5 @@
 - [ ] Add admin-only no-NPI profile exception, clear only missing-NPI flags, and verify saving.
 - [ ] Label W-2 Internal employment bubbles clearly and exempt W-2 profiles from missing-NPI alerts.
 - [x] Display blank directory Type designations as Admin and exempt them from missing-NPI alerts now and in the future; verified 11 signed-in directory rows and 27 tests.
+- [x] Mark Joe Kitonga and Maddi Swanagan as Admin (directory Type designation + no-NPI exemption)
+- [x] Add copy buttons next to copyable fields (NPI, states) in the provider profile modal

@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileText, ExternalLink, Pencil, Save, X, Link2, AlertTriangle, Upload, Loader2 } from 'lucide-react';
+import { CopyValueButton } from '@/components/directory/CopyValueButton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -127,12 +128,18 @@ const formatDate = (dateStr: string | null) => {
   }
 };
 
-const InfoRow = ({ label, value }: { label: string; value: React.ReactNode }) => (
-  <div>
-    <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
-    <p className="font-medium text-sm">{value || '-'}</p>
-  </div>
-);
+const InfoRow = ({ label, value }: { label: string; value: React.ReactNode }) => {
+  const copyable = typeof value === 'string' && value.trim().length > 0;
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
+        <p className="font-medium text-sm break-words">{value || '-'}</p>
+      </div>
+      {copyable && <CopyValueButton value={value as string} label={label} />}
+    </div>
+  );
+};
 
 const EditableField = ({
   label,

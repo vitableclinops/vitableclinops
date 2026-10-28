@@ -1,5 +1,7 @@
 import type { PcpCell } from '@/lib/pcpCoverage';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
+import { employmentTypeBadgeLabel } from '@/lib/employmentTypeLabel';
+import { CopyValueButton } from '@/components/directory/CopyValueButton';
 import {
   Table,
   TableBody,
@@ -207,18 +209,26 @@ export const ProviderTable = ({
                 <TableCell>
                   <Badge variant="outline">{(provider.profession || provider.credentials || '').trim() === '-' ? 'Admin' : (provider.profession || provider.credentials || '').trim() || 'Admin'}</Badge>
                 </TableCell>
-                <TableCell className="font-mono text-sm">{provider.npi_number || '-'}</TableCell>
+                <TableCell className="font-mono text-sm">
+                  <span className="flex items-center gap-1">
+                    {provider.npi_number || '-'}
+                    {provider.npi_number && <CopyValueButton value={provider.npi_number} label="NPI" />}
+                  </span>
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">
-                    <ProviderClassificationBadge employmentType={provider.employment_type} compact />
+                    <ProviderClassificationBadge employmentType={provider.employment_type} compact labelOverride={employmentTypeBadgeLabel(provider)} />
                     {provider.employment_type === 'agency' && provider.agency_name && (
                       <span className="text-xs text-muted-foreground truncate max-w-[140px]">{provider.agency_name}</span>
                     )}
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span className="text-sm max-w-[200px] truncate block">
-                    {provider.actively_licensed_states || '-'}
+                  <span className="flex items-center gap-1">
+                    <span className="text-sm max-w-[200px] truncate block">
+                      {provider.actively_licensed_states || '-'}
+                    </span>
+                    {provider.actively_licensed_states && <CopyValueButton value={provider.actively_licensed_states} label="Licensed states" />}
                   </span>
                 </TableCell>
                 {isAdmin && (
