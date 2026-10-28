@@ -6,7 +6,7 @@
 - [x] Add a shared editable mapping seeded with the 10 supplied spreadsheet links, with title, state, month and tab link.
 - [x] Use saved mappings for meeting chart links, matching only selected states and the meeting month; verify saving and opening.
 - [x] Replace the mapping with a shared spreadsheet library (10 Drive links, states + monthly tab links) that auto-links the right month's tab per provider on collab meetings.
-- [ ] Prompt agreement uploads for new providers' collaboration-required states and show linked agreements in Supervision; verify the flow.
-- [ ] Move Directory before Supervision in the provider directory tabs.
-- [ ] Display Amanda (Mandy) Clement in the directory while retaining Amanda Clement as her legal name.
-- [ ] Investigate and resolve Amanda Clement's Differs from Medallion flag without hiding other conflicts.
+- [x] Prompt agreement uploads for new providers' collaboration-required states and show linked agreements in Supervision; verify the flow.
+- [x] Move Directory before Supervision in the provider directory tabs.
+- [x] Display Amanda (Mandy) Clement in the directory while retaining Amanda Clement as her legal name.
+- [x] Investigate and resolve Amanda Clement's Differs from Medallion flag without hiding other conflicts.
