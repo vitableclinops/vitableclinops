@@ -254,7 +254,7 @@ const CollabMeetingSchedulePage = () => {
 
   // ============= Add providers to the selected meeting =============
   const [addOpen, setAddOpen] = useState(false);
-  const [addProviders, setAddProviders] = useState<{ id: string; name: string; email: string; states: string[] }[]>([]);
+  const [addProviders, setAddProviders] = useState<{ id: string | null; name: string; email: string; states: string[] }[]>([]);
   const [addStates, setAddStates] = useState<Record<string, string[]>>({});
   const [addSearch, setAddSearch] = useState('');
   const [addLoading, setAddLoading] = useState(false);
@@ -272,7 +272,7 @@ const CollabMeetingSchedulePage = () => {
           .in('workflow_status', ['active', 'pending_signatures', 'awaiting_provider_signatures', 'awaiting_physician_signature']),
       ]);
       const agMap = new Map((ags || []).map((a) => [a.id, a.state_abbreviation]));
-      const map = new Map<string, { id: string; name: string; email: string; states: string[] }>();
+      const map = new Map<string, { id: string | null; name: string; email: string; states: string[] }>();
       (aps || []).forEach((ap) => {
         if (!ap.provider_email) return;
         const state = agMap.get(ap.agreement_id);
@@ -285,7 +285,25 @@ const CollabMeetingSchedulePage = () => {
           map.set(email, { id: ap.id, name: ap.provider_name || ap.provider_email, email: ap.provider_email, states: [state] });
         }
       });
-      setAddProviders([...map.values()].sort((a, b) => a.name.localeCompare(b.name)));
+      // Include current attendees (even if their agreement is no longer live) and prefill their states
+      const initial: Record<string, string[]> = {};
+      (selected?.attendees || []).forEach((a) => {
+        if (!a.provider_email) return;
+        const email = a.provider_email.toLowerCase();
+        const states = selectedMeetingStates(a.notes);
+        let entry = map.get(email);
+        if (!entry) {
+          entry = { id: (a as any).provider_id ?? null, name: a.provider_name || a.provider_email, email: a.provider_email, states: [] };
+          map.set(email, entry);
+        }
+        states.forEach((s) => { if (!entry!.states.includes(s)) entry!.states.push(s); });
+        initial[entry.email] = [...new Set([...(initial[entry.email] || []), ...states])];
+      });
+      setAddStates(initial);
+      setAddProviders([...map.values()].sort((a, b) => {
+        const ai = initial[a.email] ? 0 : 1, bi = initial[b.email] ? 0 : 1;
+        return ai - bi || a.name.localeCompare(b.name);
+      }));
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to load providers.', variant: 'destructive' });
     } finally {
@@ -308,24 +326,32 @@ const CollabMeetingSchedulePage = () => {
     });
   };
 
+  const sameStates = (a: string[], b: string[]) => [...a].sort().join(',') === [...b].sort().join(',');
+  const changedProviders = addProviders.filter((p) => !sameStates(addStates[p.email] || [], [...existingStatesFor(p.email)]));
+
   const saveNewProviders = async () => {
-    if (!selected) return;
-    const pending = addProviders.filter((p) => (addStates[p.email] || []).length > 0);
-    if (!pending.length) return;
+    if (!selected || !changedProviders.length) return;
     setAddSaving(true);
     try {
-      for (const p of pending) {
-        const newStates = [...(addStates[p.email] || [])].sort();
+      for (const p of changedProviders) {
+        const desired = [...(addStates[p.email] || [])].sort();
         const existing = selected.attendees.filter((a) => (a.provider_email || '').toLowerCase() === p.email.toLowerCase());
         if (existing.length) {
-          // Provider already attends: merge the new states into their saved states
-          const merged = [...new Set([...existing.flatMap((a) => selectedMeetingStates(a.notes)), ...newStates])].sort();
+          if (!desired.length) {
+            const { error } = await supabase.from('meeting_attendees').delete().in('id', existing.map((a) => a.id));
+            if (error) throw error;
+            continue;
+          }
           const { error } = await supabase
             .from('meeting_attendees')
-            .update({ notes: `States: ${merged.join(', ')}` })
+            .update({ notes: `States: ${desired.join(', ')}` })
             .eq('id', existing[0].id);
           if (error) throw error;
-        } else {
+          if (existing.length > 1) {
+            const { error: delErr } = await supabase.from('meeting_attendees').delete().in('id', existing.slice(1).map((a) => a.id));
+            if (delErr) throw delErr;
+          }
+        } else if (desired.length) {
           const { error } = await supabase.from('meeting_attendees').insert({
             meeting_id: selected.id,
             provider_id: p.id,
@@ -333,16 +359,16 @@ const CollabMeetingSchedulePage = () => {
             provider_email: p.email,
             attendance_status: 'invited',
             has_rsvped: false,
-            notes: `States: ${newStates.join(', ')}`,
+            notes: `States: ${desired.join(', ')}`,
           });
           if (error) throw error;
         }
       }
       setAddOpen(false);
       queryClient.invalidateQueries({ queryKey: ['collab-meeting-schedule'] });
-      toast({ title: 'Providers added' });
+      toast({ title: 'Attendees updated' });
     } catch (err: any) {
-      toast({ title: 'Error', description: err?.message || 'Failed to add providers.', variant: 'destructive' });
+      toast({ title: 'Error', description: err?.message || 'Failed to update attendees.', variant: 'destructive' });
     } finally {
       setAddSaving(false);
     }
@@ -445,7 +471,7 @@ const CollabMeetingSchedulePage = () => {
                 {selected && (
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => openAdd()}>
-                      <Plus className="h-3.5 w-3.5 mr-1" /> Add provider
+                      <Users className="h-3.5 w-3.5 mr-1" /> Edit providers/states
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => openEdit(selected)}>
                       <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
@@ -584,7 +610,8 @@ const CollabMeetingSchedulePage = () => {
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-md max-h-[95vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Add providers</DialogTitle>
+            <DialogTitle>Edit providers &amp; states</DialogTitle>
+            <p className="text-xs text-muted-foreground">Highlighted states attend this meeting. Click a state to add or remove it.</p>
           </DialogHeader>
           <div className="flex-1 min-h-0 flex flex-col gap-3">
             <Input
@@ -596,15 +623,14 @@ const CollabMeetingSchedulePage = () => {
               {addLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
               ) : visibleAddProviders.map((p) => {
-                const existing = existingStatesFor(p.email);
                 const picked = addStates[p.email] || [];
                 return (
                   <div key={p.email} className="rounded border p-2">
                     <p className="text-sm font-medium">{p.name}</p>
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {p.states.map((s) => {
-                        const already = existing.has(s);
-                        const on = picked.includes(s) || already;
+                        const already = false;
+                        const on = picked.includes(s);
                         return (
                           <button
                             key={s}
@@ -634,9 +660,9 @@ const CollabMeetingSchedulePage = () => {
             <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSaving}>Cancel</Button>
             <Button
               onClick={saveNewProviders}
-              disabled={addSaving || Object.values(addStates).every((v) => v.length === 0)}
+              disabled={addSaving || changedProviders.length === 0}
             >
-              {addSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${Object.values(addStates).reduce((n, v) => n + v.length, 0)} state(s)`}
+              {addSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Save changes (${changedProviders.length})`}
             </Button>
           </DialogFooter>
         </DialogContent>
