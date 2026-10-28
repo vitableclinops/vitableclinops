@@ -29,7 +29,7 @@ export interface ProviderTableData {
   employment_status: string | null;
   employment_type: string | null;
   agency_name: string | null;
-  actively_licensed_states: string | null; // Now derived, may be null
+  actively_licensed_states: string | null; // Display-only licensed minus active PCP states
   primary_specialty: string | null;
   address_state: string | null;
   has_collaborative_agreements: boolean | null;
@@ -156,7 +156,7 @@ export const ProviderTable = ({
             <SortHeader column="profession" label="Type" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>NPI</TableHead>
             <SortHeader column="employment_type" label="Employment" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
-            <SortHeader column="actively_licensed_states" label="Licensed States" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
+            <SortHeader column="actively_licensed_states" label="Licensed but not active in EHR" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             {isAdmin && <TableHead title={PCP_TOOLTIP}>Active PCP Telemedicine States</TableHead>}
             <TableHead>Home State</TableHead>
             {isAdmin && <SortHeader column="activation_status" label="Activation" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />}
@@ -225,10 +225,10 @@ export const ProviderTable = ({
                 </TableCell>
                 <TableCell>
                   <span className="flex items-center gap-1">
-                    <span className="text-sm max-w-[200px] truncate block">
+                    <span className="text-sm max-w-[200px] block break-words" title={provider.actively_licensed_states || undefined}>
                       {provider.actively_licensed_states || '-'}
                     </span>
-                    {provider.actively_licensed_states && <CopyValueButton value={provider.actively_licensed_states} label="Licensed states" />}
+                    {provider.actively_licensed_states && <CopyValueButton value={provider.actively_licensed_states} label="Licensed but not active in EHR" />}
                   </span>
                 </TableCell>
                 {isAdmin && (

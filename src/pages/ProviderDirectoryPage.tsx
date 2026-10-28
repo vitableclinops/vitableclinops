@@ -29,6 +29,7 @@ import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
 import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor } from '@/lib/pcpCoverage';
+import { licensedNotActiveLabel } from '@/lib/licensedNotActiveStates';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import { directoryMedallionConflicts } from '@/lib/directoryMedallionConflicts';
 import { directoryIdentityAlert } from '@/lib/directoryIdentityAlerts';
@@ -418,10 +419,15 @@ const ProviderDirectoryPage = () => {
     agency_name: (p as FullProvider).agency_id ? (agencyMap.get((p as FullProvider).agency_id!) || null) : null,
     actively_licensed_states: (() => {
       const st = activeLicensedStates(medallion?.licensesByProfile.get(p.id));
-      if (st.length) return st.join(', ');
+      const coverage = pcpCellFor(p, pcpCoverageLoading ? undefined : pcpCoverage);
+      if (st.length) return licensedNotActiveLabel(st, coverage);
       // Agency-imported providers: validated license rows only; incomplete inventories say so.
       const ext = !medallion?.byProfile.get(p.id) ? external?.byProfile.get(p.id) : undefined;
-      if (ext) return `${summarizeLicenses(ext.licenses, ext.licenseInventory).label} · agency`;
+      if (ext) {
+        const summary = summarizeLicenses(ext.licenses, ext.licenseInventory);
+        const label = licensedNotActiveLabel(summary.states, coverage);
+        return summary.incomplete ? `${label || 'No validated licenses'} · inventory incomplete` : label;
+      }
       return null;
     })(),
     pcp_coverage: isAdmin
