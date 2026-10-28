@@ -5,11 +5,21 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
 import { CompanyMeetingWizard } from '@/components/meetings/CompanyMeetingWizard';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { cn, parseLocalDate } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, ExternalLink, Loader2, Plus, Stethoscope, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Loader2, Pencil, Plus, Stethoscope, Trash2, Users } from 'lucide-react';
 import {
   addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek,
 } from 'date-fns';
@@ -37,6 +47,68 @@ const CollabMeetingSchedulePage = () => {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editDate, setEditDate] = useState('');
+  const [editSlot, setEditSlot] = useState<'am' | 'pm'>('am');
+  const [editNotes, setEditNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { toast } = useToast();
+
+  const openEdit = (m: Meeting) => {
+    setEditDate(format(new Date(m.scheduled_date), 'yyyy-MM-dd'));
+    setEditSlot(m.time_slot === 'pm' ? 'pm' : 'am');
+    setEditNotes(m.notes || '');
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!selected || !editDate) return;
+    setSaving(true);
+    try {
+      const original = new Date(selected.scheduled_date);
+      const newDate = new Date(`${editDate}T00:00:00`);
+      if (editSlot !== (selected.time_slot === 'pm' ? 'pm' : 'am')) {
+        // Switching sessions uses the standard meeting time (10:00 AM / 2:00 PM)
+        const [h, m] = editSlot === 'am' ? [10, 0] : [14, 0];
+        newDate.setHours(h, m, 0, 0);
+      } else {
+        newDate.setHours(original.getHours(), original.getMinutes(), 0, 0);
+      }
+      const { error } = await supabase
+        .from('supervision_meetings')
+        .update({ scheduled_date: newDate.toISOString(), time_slot: editSlot, notes: editNotes || null })
+        .eq('id', selected.id);
+      if (error) throw error;
+      setEditOpen(false);
+      setSelectedId(selected.id);
+      queryClient.invalidateQueries({ queryKey: ['collab-meeting-schedule'] });
+      toast({ title: 'Meeting updated' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to update meeting.', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteMeeting = async () => {
+    if (!selected) return;
+    setDeleting(true);
+    try {
+      await supabase.from('meeting_attendees').delete().eq('meeting_id', selected.id);
+      const { error } = await supabase.from('supervision_meetings').delete().eq('id', selected.id);
+      if (error) throw error;
+      setDeleteOpen(false);
+      setSelectedId(null);
+      queryClient.invalidateQueries({ queryKey: ['collab-meeting-schedule'] });
+      toast({ title: 'Meeting deleted' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to delete meeting.', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Deep link from the Calendar page: jump to the meeting's month and select it
   useEffect(() => {
@@ -215,6 +287,16 @@ const CollabMeetingSchedulePage = () => {
                     <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open all chart spreadsheets
                   </Button>
                 )}
+                {selected && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => openEdit(selected)}>
+                      <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                    </Button>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 {!selected && <p className="text-sm text-muted-foreground">Click a meeting on the calendar to see who should attend.</p>}
@@ -254,6 +336,61 @@ const CollabMeetingSchedulePage = () => {
           </div>
         </div>
       </main>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit meeting</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-date">Date</Label>
+              <Input id="edit-date" type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Time</Label>
+              <Select value={editSlot} onValueChange={(v: 'am' | 'pm') => setEditSlot(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="am">Morning (10:00 AM)</SelectItem>
+                  <SelectItem value="pm">Afternoon (2:00 PM)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea id="edit-notes" rows={3} value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Optional notes" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={saveEdit} disabled={saving || !editDate}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this meeting?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selected && `${format(new Date(selected.scheduled_date), 'EEEE, MMMM d')} at ${format(new Date(selected.scheduled_date), 'h:mm a')} will be removed from the calendar, along with its attendee list. This can't be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={(e) => { e.preventDefault(); deleteMeeting(); }}
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Yes, delete it'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <CompanyMeetingWizard
         open={wizardOpen}

@@ -1,2 +1,3 @@
 - [x] Delete test accounts: Maddi PodLead, Test User
 - [x] Delete IL no-provider agreement
+- [x] Fix CompanyMeetingWizard date picker being cut off (user can't see all calendar dates at 100% zoom)

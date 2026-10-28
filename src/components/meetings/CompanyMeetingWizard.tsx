@@ -443,7 +443,7 @@ export function CompanyMeetingWizard({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[95vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarIcon className="h-5 w-5 text-primary" />
@@ -458,7 +458,7 @@ export function CompanyMeetingWizard({
         </DialogHeader>
 
         {/* Progress indicators */}
-        <div className="flex items-center justify-center gap-2 py-4">
+        <div className="flex items-center justify-center gap-2 py-2">
           {(['date', 'attendees', 'review', 'notify'] as WizardStep[]).map((s, i) => (
             <div key={s} className="flex items-center">
               <div
@@ -491,26 +491,22 @@ export function CompanyMeetingWizard({
           ))}
         </div>
 
-        <ScrollArea className="flex-1 pr-4">
+        <ScrollArea className="flex-1 min-h-0 pr-4">
           {/* Step 1: Select Date */}
           {step === 'date' && (
             <div className="space-y-6">
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  {loading ? 'Loading providers...' : (
-                    <>
-                      <strong>{requiredProviders.length}</strong> providers require a meeting this month based on their state cadences.
-                      {nonRequiredProviders.length > 0 && (
-                        <span className="text-muted-foreground"> ({nonRequiredProviders.length} not required this month)</span>
-                      )}
-                    </>
-                  )}
-                </AlertDescription>
-              </Alert>
+              <p className="text-sm text-muted-foreground">
+                {loading ? 'Loading providers...' : (
+                  <>
+                    <strong>{requiredProviders.length}</strong> providers require a meeting this month based on their state cadences.
+                    {nonRequiredProviders.length > 0 && (
+                      <span> ({nonRequiredProviders.length} not required this month)</span>
+                    )}
+                  </>
+                )}
+              </p>
 
               <div className="flex flex-col items-center gap-4">
-                <Label className="text-base font-medium">Meeting Date</Label>
                 <Calendar
                   mode="single"
                   selected={selectedDate}
@@ -537,16 +533,6 @@ export function CompanyMeetingWizard({
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="notes">Meeting Notes (optional)</Label>
-                <Textarea
-                  id="notes"
-                  placeholder="Add any notes or agenda items for this meeting..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                />
-              </div>
             </div>
           )}
 
@@ -623,6 +609,17 @@ export function CompanyMeetingWizard({
                     No providers found.
                   </p>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Meeting Notes (optional)</Label>
+                <Textarea
+                  id="notes"
+                  placeholder="Add any notes or agenda items for this meeting..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                />
               </div>
             </div>
           )}
