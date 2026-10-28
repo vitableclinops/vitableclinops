@@ -11,3 +11,5 @@
 - [x] Display Amanda (Mandy) Clement in the directory while retaining Amanda Clement as her legal name.
 - [x] Investigate and resolve Amanda Clement's Differs from Medallion flag without hiding other conflicts.
 - [x] Add a top-of-directory Provider flagged alert with reasons, correction guidance, and profile links; verify Bee Chang's alert.
+- [ ] Replace contractor employment labels with 1099 and verify directory/profile display.
+- [ ] Check saved profile contractor classifications and convert any to 1099.
