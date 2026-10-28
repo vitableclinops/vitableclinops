@@ -254,7 +254,7 @@ const CollabMeetingSchedulePage = () => {
 
   // ============= Add providers to the selected meeting =============
   const [addOpen, setAddOpen] = useState(false);
-  const [addProviders, setAddProviders] = useState<{ id: string; name: string; email: string; states: string[] }[]>([]);
+  const [addProviders, setAddProviders] = useState<{ id: string | null; name: string; email: string; states: string[] }[]>([]);
   const [addStates, setAddStates] = useState<Record<string, string[]>>({});
   const [addSearch, setAddSearch] = useState('');
   const [addLoading, setAddLoading] = useState(false);
@@ -272,7 +272,7 @@ const CollabMeetingSchedulePage = () => {
           .in('workflow_status', ['active', 'pending_signatures', 'awaiting_provider_signatures', 'awaiting_physician_signature']),
       ]);
       const agMap = new Map((ags || []).map((a) => [a.id, a.state_abbreviation]));
-      const map = new Map<string, { id: string; name: string; email: string; states: string[] }>();
+      const map = new Map<string, { id: string | null; name: string; email: string; states: string[] }>();
       (aps || []).forEach((ap) => {
         if (!ap.provider_email) return;
         const state = agMap.get(ap.agreement_id);
@@ -293,7 +293,7 @@ const CollabMeetingSchedulePage = () => {
         const states = selectedMeetingStates(a.notes);
         let entry = map.get(email);
         if (!entry) {
-          entry = { id: a.provider_id || a.id, name: a.provider_name || a.provider_email, email: a.provider_email, states: [] };
+          entry = { id: (a as any).provider_id ?? null, name: a.provider_name || a.provider_email, email: a.provider_email, states: [] };
           map.set(email, entry);
         }
         states.forEach((s) => { if (!entry!.states.includes(s)) entry!.states.push(s); });
@@ -471,7 +471,7 @@ const CollabMeetingSchedulePage = () => {
                 {selected && (
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => openAdd()}>
-                      <Plus className="h-3.5 w-3.5 mr-1" /> Add provider
+                      <Users className="h-3.5 w-3.5 mr-1" /> Edit providers/states
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => openEdit(selected)}>
                       <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
@@ -610,7 +610,8 @@ const CollabMeetingSchedulePage = () => {
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-md max-h-[95vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Add providers</DialogTitle>
+            <DialogTitle>Edit providers &amp; states</DialogTitle>
+            <p className="text-xs text-muted-foreground">Highlighted states attend this meeting. Click a state to add or remove it.</p>
           </DialogHeader>
           <div className="flex-1 min-h-0 flex flex-col gap-3">
             <Input
@@ -629,8 +630,8 @@ const CollabMeetingSchedulePage = () => {
                     <p className="text-sm font-medium">{p.name}</p>
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {p.states.map((s) => {
-                        const already = existing.has(s);
-                        const on = picked.includes(s) || already;
+                        const already = false;
+                        const on = picked.includes(s);
                         return (
                           <button
                             key={s}
@@ -660,9 +661,9 @@ const CollabMeetingSchedulePage = () => {
             <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSaving}>Cancel</Button>
             <Button
               onClick={saveNewProviders}
-              disabled={addSaving || Object.values(addStates).every((v) => v.length === 0)}
+              disabled={addSaving || changedProviders.length === 0}
             >
-              {addSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${Object.values(addStates).reduce((n, v) => n + v.length, 0)} state(s)`}
+              {addSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Save changes (${changedProviders.length})`}
             </Button>
           </DialogFooter>
         </DialogContent>
