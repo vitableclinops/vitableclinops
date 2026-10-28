@@ -22,3 +22,4 @@
 - [x] Condense the new state column to comma-separated abbreviations matching active states.
 - [x] Place Active PCP Telemedicine States before Licensed but not active in EHR.
 - [x] Add and verify copy icons beside active PCP telemedicine states.
+- [ ] Condense the coverage freshness/identity-review flags into the top Provider flagged alert; verify one alert shows everything.
