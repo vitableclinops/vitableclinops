@@ -1,3 +1,5 @@
+import { Badge } from '@/components/ui/badge';
+import { AgreementWizard } from '@/components/agreements/AgreementWizard';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
@@ -104,6 +106,8 @@ export default function AdminAddProviderPage() {
   const [step, setStep] = useState<'details' | 'states' | 'review'>('details');
   const [createdResult, setCreatedResult] = useState<{ profileId: string; tempPassword?: string } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [agreementState, setAgreementState] = useState<string | null>(null);
+  const [agreedStates, setAgreedStates] = useState<string[]>([]);
 
   const requiresLicensure = values.providerType
     ? PROVIDER_TYPE_CONFIG[values.providerType as ProviderType]?.requiresLicensure
@@ -317,12 +321,43 @@ export default function AdminAddProviderPage() {
                   </div>
                 )}
 
+                {(() => {
+                  const collabStates = values.selectedStates.filter(st => getCollabRequirementType(st) === 'always');
+                  if (collabStates.length === 0) return null;
+                  return (
+                    <div className="space-y-2 rounded-md border border-warning/30 bg-warning/10 p-3">
+                      <p className="text-sm font-medium">Collaborative agreement required</p>
+                      <p className="text-xs text-muted-foreground">
+                        These states require a collaborative agreement. Add one for each so it's linked on the Agreements tab.
+                      </p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {collabStates.map(st => agreedStates.includes(st) ? (
+                          <Badge key={st} variant="secondary">{st} · added</Badge>
+                        ) : (
+                          <Button key={st} size="sm" onClick={() => setAgreementState(st)}>Add {st} agreement</Button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <AgreementWizard
+                  open={!!agreementState}
+                  onOpenChange={(o) => { if (!o) setAgreementState(null); }}
+                  prefill={agreementState ? {
+                    stateAbbr: agreementState,
+                    provider: { id: createdResult.profileId, name: values.fullName, email: values.email, npi: values.npiNumber || undefined },
+                  } : null}
+                  onSuccess={() => { if (agreementState) setAgreedStates(prev => [...prev, agreementState]); setAgreementState(null); }}
+                />
+
                 <div className="flex gap-3 pt-4">
                   <Button variant="outline" onClick={() => navigate('/providers')}>
                     Back to Directory
                   </Button>
                   <Button onClick={() => {
                     setCreatedResult(null);
+                    setAgreedStates([]);
                     form.reset(defaultValues);
                     setStep('details');
                   }}>

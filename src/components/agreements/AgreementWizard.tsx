@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { allUSStates } from '@/data/allStates';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -20,6 +21,8 @@ interface AgreementWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  /** Prefill state + provider (used when adding a provider in a collab-required state). */
+  prefill?: { stateAbbr?: string; provider?: { id?: string; name: string; email: string; npi?: string } } | null;
 }
 
 export interface AgreementFormData {
@@ -64,7 +67,7 @@ const STEPS = [
   { id: 'review', title: 'Review & Create', description: 'Review and submit the agreement' },
 ];
 
-export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWizardProps) => {
+export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill }: AgreementWizardProps) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { createAgreementWithTasks } = useAgreementWorkflow();
@@ -103,6 +106,14 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess }: AgreementWiza
     step: currentStep,
     form: { ...formData, documentFile: null, startDate: formData.startDate?.toISOString() },
   };
+  useEffect(() => {
+    if (!open || !prefill) return;
+    const st = prefill.stateAbbr ? (allUSStates.find(x => x.abbreviation === prefill.stateAbbr) ?? null) : null;
+    setFormData({ ...DEFAULT_FORM, selectedState: st, providers: prefill.provider ? [prefill.provider] : [] });
+    setCurrentStep(st ? 1 : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefill?.stateAbbr, prefill?.provider?.email]);
+
   const { clearSaved } = useFormPersist('agreement-wizard', persistValue, restoreWizard);
 
   // Check physician capacity
