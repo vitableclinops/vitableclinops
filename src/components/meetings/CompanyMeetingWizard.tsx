@@ -443,7 +443,7 @@ export function CompanyMeetingWizard({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[95vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarIcon className="h-5 w-5 text-primary" />
@@ -510,7 +510,6 @@ export function CompanyMeetingWizard({
               </Alert>
 
               <div className="flex flex-col items-center gap-4">
-                <Label className="text-base font-medium">Meeting Date</Label>
                 <Calendar
                   mode="single"
                   selected={selectedDate}
@@ -537,16 +536,6 @@ export function CompanyMeetingWizard({
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="notes">Meeting Notes (optional)</Label>
-                <Textarea
-                  id="notes"
-                  placeholder="Add any notes or agenda items for this meeting..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                />
-              </div>
             </div>
           )}
 
@@ -623,6 +612,17 @@ export function CompanyMeetingWizard({
                     No providers found.
                   </p>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Meeting Notes (optional)</Label>
+                <Textarea
+                  id="notes"
+                  placeholder="Add any notes or agenda items for this meeting..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                />
               </div>
             </div>
           )}
