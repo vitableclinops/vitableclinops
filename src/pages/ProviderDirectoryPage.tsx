@@ -489,9 +489,9 @@ const ProviderDirectoryPage = () => {
       conflicts: directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []),
       identityReview: directoryIdentityAlert(pcpCellFor(p, pcpCoverageLoading ? undefined : pcpCoverage)),
       agreementReviews: (() => {
-        const cell = pcpCellFor(p, pcpCoverageLoading ? undefined : pcpCoverage);
-        return agreementAudit && cell.kind === 'states' && !isTestAccountDirectoryRecord(p)
-          ? activeStateAgreementFlags(p, cell.states, agreementAudit.rules, agreementAudit.agreements, agreementAudit.decisions) : [];
+        const states = !pcpCoverageLoading ? pcpCoverage?.statesByProfile.get(p.id) : undefined;
+        return agreementAudit && states && !isTestAccountDirectoryRecord(p)
+          ? activeStateAgreementFlags(p, states, agreementAudit.rules, agreementAudit.agreements, agreementAudit.decisions) : [];
       })(),
     }))
     .filter(p => p.conflicts.length > 0 || p.identityReview || p.agreementReviews.length > 0)
