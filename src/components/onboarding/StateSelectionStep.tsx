@@ -26,6 +26,8 @@ interface StateSelectionStepProps {
   pendingApplications?: PendingApplication[];
   onPendingApplicationsUpdate?: (applications: PendingApplication[]) => void;
   showPendingOption?: boolean;
+  title?: string;
+  description?: string;
 }
 
 export function StateSelectionStep({ 
@@ -35,6 +37,8 @@ export function StateSelectionStep({
   pendingApplications = [],
   onPendingApplicationsUpdate,
   showPendingOption = true,
+  title = 'Select States Where You Are Licensed',
+  description = 'Choose the states where you currently hold an active license. You can add more later.',
 }: StateSelectionStepProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isApplyingForNew, setIsApplyingForNew] = useState(pendingApplications.length > 0);
@@ -121,9 +125,9 @@ export function StateSelectionStep({
         <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
           <MapPin className="h-8 w-8 text-primary" />
         </div>
-        <h2 className="text-xl font-semibold text-foreground">Select States Where You Are Licensed</h2>
+        <h2 className="text-xl font-semibold text-foreground">{title}</h2>
         <p className="text-muted-foreground mt-2">
-          Choose the states where you currently hold an active license. You can add more later.
+          {description}
         </p>
       </div>
 
