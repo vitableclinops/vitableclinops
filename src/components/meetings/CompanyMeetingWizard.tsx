@@ -320,95 +320,72 @@ export function CompanyMeetingWizard({
     try {
       const baseDate = new Date(selectedDate);
       
-      // Create AM meeting
-      const amDate = new Date(baseDate);
-      const [amHours, amMinutes] = AM_TIME.split(':').map(Number);
-      amDate.setHours(amHours, amMinutes, 0, 0);
-      
-      const { data: amMeeting, error: amError } = await supabase
-        .from('supervision_meetings')
-        .insert({
-          scheduled_date: amDate.toISOString(),
-          time_slot: 'am',
-          meeting_type: 'collaborative_meeting',
-          status: 'scheduled',
-          notes: notes || null,
-          is_company_wide: true,
-          meeting_month: format(selectedDate, 'yyyy-MM-01'),
-          // Use a placeholder agreement_id (first active agreement) for backward compatibility
-          agreement_id: (await supabase
-            .from('collaborative_agreements')
-            .select('id')
-            .in('workflow_status', ['active'])
-            .limit(1)
-            .single()).data?.id || null,
-        })
-        .select()
+      // Resolve the placeholder agreement_id once for all meetings
+      const { data: placeholderAgreement } = await supabase
+        .from('collaborative_agreements')
+        .select('id')
+        .in('workflow_status', ['active'])
+        .limit(1)
         .single();
-      
-      if (amError) throw amError;
-      
-      // Create PM meeting
-      const pmDate = new Date(baseDate);
-      const [pmHours, pmMinutes] = PM_TIME.split(':').map(Number);
-      pmDate.setHours(pmHours, pmMinutes, 0, 0);
-      
-      const { data: pmMeeting, error: pmError } = await supabase
-        .from('supervision_meetings')
-        .insert({
-          scheduled_date: pmDate.toISOString(),
-          time_slot: 'pm',
-          meeting_type: 'collaborative_meeting',
-          status: 'scheduled',
-          notes: notes || null,
-          is_company_wide: true,
-          meeting_month: format(selectedDate, 'yyyy-MM-01'),
-          agreement_id: amMeeting?.agreement_id || null,
-        })
-        .select()
-        .single();
-      
-      if (pmError) throw pmError;
-      
-      // Add the selected providers as invited attendees to both meetings
-      if (invitedProviders.length > 0 && amMeeting && pmMeeting) {
-        const attendeeInserts = invitedProviders.flatMap(provider => [
-          {
-            meeting_id: amMeeting.id,
+
+      // Create one meeting per selected time slot
+      const sessions = getTimeSessions();
+      const created: any[] = [];
+      for (const session of sessions) {
+        const meetingDate = new Date(baseDate);
+        const [hours, minutes] = session.time.split(':').map(Number);
+        meetingDate.setHours(hours, minutes, 0, 0);
+
+        const { data: meeting, error: meetingError } = await supabase
+          .from('supervision_meetings')
+          .insert({
+            scheduled_date: meetingDate.toISOString(),
+            time_slot: session.slot,
+            meeting_type: 'collaborative_meeting',
+            status: 'scheduled',
+            notes: notes || null,
+            is_company_wide: true,
+            meeting_month: format(selectedDate, 'yyyy-MM-01'),
+            agreement_id: placeholderAgreement?.id || null,
+          })
+          .select()
+          .single();
+
+        if (meetingError) throw meetingError;
+        created.push(meeting);
+      }
+
+      // Add the selected providers as invited attendees to each created meeting
+      if (invitedProviders.length > 0 && created.length > 0) {
+        const attendeeInserts = created.flatMap((meeting) =>
+          invitedProviders.map(provider => ({
+            meeting_id: meeting.id,
             provider_id: provider.id,
             provider_name: provider.name,
             provider_email: provider.email,
             attendance_status: 'invited',
             has_rsvped: false,
-          },
-          {
-            meeting_id: pmMeeting.id,
-            provider_id: provider.id,
-            provider_name: provider.name,
-            provider_email: provider.email,
-            attendance_status: 'invited',
-            has_rsvped: false,
-          },
-        ]);
-        
+          }))
+        );
+
         const { error: attendeeError } = await supabase
           .from('meeting_attendees')
           .insert(attendeeInserts);
-        
+
         if (attendeeError) throw attendeeError;
       }
-      
-      setCreatedMeetingIds({ am: amMeeting.id, pm: pmMeeting.id });
+
+      setCreatedMeetingIds(created.map((m) => m.id));
       if (calendarOnly) {
         onSuccess();
         onOpenChange(false);
       } else {
         setStep('notify');
       }
-      
+
       toast({
         title: 'Meeting scheduled',
-        description: `Collaborative meetings scheduled for ${format(selectedDate, 'MMMM d, yyyy')} at ${AM_TIME} and ${PM_TIME}.`,
+        description: `Collaborative meeting scheduled for ${format(selectedDate, 'MMMM d, yyyy')} at ${sessions.map((s) => `${fmt12(s.time)} ET`).join(' & ')}.`,
       });
     } catch (error) {
       console.error('Error scheduling meetings:', error);
