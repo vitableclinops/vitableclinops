@@ -788,7 +788,7 @@ export function CompanyMeetingWizard({
               </Card>
             </div>
           )}
-        </ScrollArea>
+        </div>
 
         <DialogFooter className="mt-6">
           {step !== 'notify' ? (
