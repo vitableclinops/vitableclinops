@@ -43,3 +43,5 @@
 - [x] Confirm current and future agreement additions refresh directory participation, supervision and missing-agreement flags; wizard invalidates all three queries, with focus/minute refresh as fallback.
 - [x] Show required agreement/link gaps in Agreements → Incomplete / Need fixing using the same directory checks; verified Jonathan PA and prefilled correction signed in.
 - [x] Refresh both directory and Needs fixing flags after document uploads/links; save handlers invalidate shared audit queries and evidence-removal tests pass.
+- [x] Show and verify collaborating physician slots filled per state using saved MD:NP limits; signed-in Patel OH shows 1/5 and Kelsie Hardy.
+- [x] Correct Ohio’s saved verification limit to 5 as confirmed by Emily; both saved values verified as 5.
