@@ -164,36 +164,45 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                   </div>
                 )}
 
-                {/* Supervising physicians */}
-                <div className="border-t pt-4">
-                  <p className="text-sm font-medium text-muted-foreground mb-2">
-                    Supervising Physicians
-                  </p>
-                  <div className="space-y-2">
-                    {state.physicians.map((physician) => {
-                      const providerCount = state.activeProviders.filter(p =>
+                {/* Supervising physicians — only those with at least one active provider */}
+                {(() => {
+                  const physiciansWithProviders = state.physicians
+                    .map((physician) => ({
+                      physician,
+                      providerCount: state.activeProviders.filter(p =>
                         state.agreements.some(
                           a => a.id === p.agreement_id && a.physician_name === physician
                         )
-                      ).length;
+                      ).length,
+                    }))
+                    .filter(entry => entry.providerCount > 0);
 
-                      return (
-                        <div
-                          key={physician}
-                          className="flex items-center justify-between p-3 rounded-lg border"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Shield className="h-4 w-4 text-primary" />
-                            <span className="text-sm font-medium">Dr. {physician}</span>
+                  if (physiciansWithProviders.length === 0) return null;
+
+                  return (
+                    <div className="border-t pt-4">
+                      <p className="text-sm font-medium text-muted-foreground mb-2">
+                        Supervising Physicians
+                      </p>
+                      <div className="space-y-2">
+                        {physiciansWithProviders.map(({ physician, providerCount }) => (
+                          <div
+                            key={physician}
+                            className="flex items-center justify-between p-3 rounded-lg border"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Shield className="h-4 w-4 text-primary" />
+                              <span className="text-sm font-medium">Dr. {physician}</span>
+                            </div>
+                            <span className="text-sm text-muted-foreground">
+                              {providerCount} provider{providerCount !== 1 ? 's' : ''}
+                            </span>
                           </div>
-                          <span className="text-sm text-muted-foreground">
-                            {providerCount} provider{providerCount !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Provider names preview */}
                 {state.activeProviders.length > 0 && (
