@@ -52,7 +52,9 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
   return (
     <>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {stateData.map((state) => {
+        {[...stateData]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((state) => {
           const compliance = getComplianceInfo(state.abbreviation);
           const hasComplianceRisk = state.agreements.some(
             a => a.workflow_status === 'active' && !a.medallion_document_url && !a.agreement_document_url
