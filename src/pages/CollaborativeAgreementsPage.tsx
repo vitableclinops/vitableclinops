@@ -1,3 +1,4 @@
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
 import { useState } from 'react';
 import { AGREEMENT_REFRESH_OPTIONS, refreshAgreementViews } from '@/lib/agreementRefresh';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -553,6 +554,19 @@ const CollaborativeAgreementsPage = () => {
   const agreementsWithoutDocument = flattenedAgreements.filter(
     a => a.isActive && !a.documentUrl && !a.medallionDocumentUrl
   ).length;
+  // Missing-document agreements shown as flags inside Needs fixing (deduped against
+  // required-agreement flags and incomplete shells; DirectShifts physicians exempt)
+  const requiredFlagKeys = new Set(requiredAgreementFlags.map(f => `${f.provider.id}:${f.state}`));
+  const incompleteIds = new Set(incompleteAgreements.map(a => a.id));
+  const missingDocAgreements = dbAgreements.filter(a => {
+    if (!activeAgreementIds.has(a.id) || incompleteIds.has(a.id)) return false;
+    if (isDocumentExemptPhysician(a.physician_name)) return false;
+    const providers = dbProviders.filter(p => p.agreement_id === a.id && p.is_active);
+    if (a.agreement_document_url || a.medallion_document_url || providers.some(p => p.medallion_document_url)) return false;
+    if ((agreementDocCounts as Record<string, number>)[a.id] > 0) return false;
+    return !providers.some(p => p.provider_id && requiredFlagKeys.has(`${p.provider_id}:${a.state_abbreviation}`));
+  });
+  const needsFixingCount = incompleteCount + missingDocAgreements.length;
   
   // Upcoming meetings in next 14 days
   const upcomingMeetings = flattenedAgreements.filter(
@@ -744,7 +758,7 @@ const CollaborativeAgreementsPage = () => {
           )}
 
           {/* Stats Grid */}
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 mb-8">
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-5 mb-8">
             <StatCard
               title="Active Agreements"
               value={activeAgreementsCount}
@@ -773,15 +787,6 @@ const CollaborativeAgreementsPage = () => {
               active={statFilter === 'renewals'}
             />
             <StatCard
-              title="Missing Docs"
-              value={agreementsWithoutDocument}
-              subtitle="Need documentation"
-              icon={AlertTriangle}
-              variant={agreementsWithoutDocument > 0 ? 'danger' : 'success'}
-              onClick={() => handleStatCardClick('missing_docs')}
-              active={statFilter === 'missing_docs'}
-            />
-            <StatCard
               title="Supervised Providers"
               value={totalActiveProviders}
               subtitle={`${activePhysicianCount} supervising physicians`}
@@ -789,11 +794,11 @@ const CollaborativeAgreementsPage = () => {
               variant="default"
             />
             <StatCard
-              title="Incomplete"
-              value={incompleteCount}
-              subtitle="Need fixing"
+              title="Needs Fixing"
+              value={needsFixingCount}
+              subtitle={missingDocAgreements.length > 0 ? `Incl. ${missingDocAgreements.length} missing docs` : 'Incomplete agreements'}
               icon={AlertTriangle}
-              variant={incompleteCount > 0 ? 'danger' : 'success'}
+              variant={needsFixingCount > 0 ? 'danger' : 'success'}
               onClick={() => { setSelectedIncompleteId(null); setIncompleteOpen(true); }}
             />
           </div>
@@ -801,12 +806,12 @@ const CollaborativeAgreementsPage = () => {
           <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Incomplete agreements ({incompleteCount})</DialogTitle>
+                <DialogTitle>Needs fixing ({needsFixingCount})</DialogTitle>
                 <DialogDescription>Click an agreement to see why it's incomplete and how to fix it.</DialogDescription>
               </DialogHeader>
               {requiredFlagsLoading && <p className="text-sm text-muted-foreground">Checking required agreements…</p>}
               {requiredFlagsError && <p className="text-sm text-destructive">Required agreement checks unavailable.</p>}
-              {incompleteCount === 0 && !requiredFlagsLoading && !requiredFlagsError && (
+              {needsFixingCount === 0 && !requiredFlagsLoading && !requiredFlagsError && (
                 <p className="text-sm text-muted-foreground">Nothing to fix — all agreements are complete.</p>
               )}
               <div className="space-y-2">
@@ -824,6 +829,18 @@ const CollaborativeAgreementsPage = () => {
                         }}>Add / link agreement</Button>}
                         <Button size="sm" variant="outline" asChild><Link to="/directory">Provider directory</Link></Button>
                       </div>
+                    </div>
+                  );
+                })}
+                {missingDocAgreements.map(a => {
+                  const names = dbProviders.filter(p => p.agreement_id === a.id && p.is_active).map(p => p.provider_name).join(', ') || a.provider_name || 'No provider';
+                  return (
+                    <div key={`doc:${a.id}`} className="rounded-lg border p-3 space-y-2">
+                      <p className="text-sm font-medium">{names} — {a.state_abbreviation}</p>
+                      <p className="text-xs text-muted-foreground">{a.physician_name || 'No physician'}</p>
+                      <p className="text-sm text-destructive">Why: Active agreement has no document attached.</p>
+                      <p className="text-sm text-muted-foreground">How to fix: Open the agreement and upload or link the signed agreement document.</p>
+                      <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${a.id}`}>Open agreement</Link></Button>
                     </div>
                   );
                 })}
