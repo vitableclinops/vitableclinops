@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
+import { physicianStateLimit } from '@/lib/physicianSlots';
 import { StateProfileModal } from './StateProfileModal';
 
 interface StateData {
@@ -111,6 +112,16 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                     {state.activeProviders.length}
                   </span>
                 </div>
+
+                {/* MD supervision limit from State Requirements */}
+                <p className="text-sm text-muted-foreground">
+                  {(() => {
+                    const limit = physicianStateLimit(compliance);
+                    return limit
+                      ? <>MD supervision limit: <span className="font-medium text-foreground">{limit}</span></>
+                      : 'MD supervision limit: No limit';
+                  })()}
+                </p>
 
                 {/* Compliance Requirements Section */}
                 {compliance && (
