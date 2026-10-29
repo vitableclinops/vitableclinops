@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { physicianSlots, type SlotAgreement, type SlotPerson } from '@/lib/physicianSlots';
+import { allUSStates } from '@/data/allStates';
 
 const people: SlotPerson[] = [{ id: 'np1', full_name: 'Kelsie', profession: 'NP', credentials: null, employment_status: 'active' },
   { id: 'np2', full_name: 'Former', profession: 'NP', credentials: null, employment_status: 'terminated' },
@@ -14,6 +15,13 @@ describe('physician slots', () => {
   it('uses the confirmed Ohio limit of five for display and verification without a conflict', () => {
     expect(physicianSlots([agreement], people, [{ state_abbreviation: 'OH', np_md_ratio: '5', np_md_ratio_limit: 5 }])[0])
       .toMatchObject({ filled: 1, limit: 5, verificationLimit: null });
+  });
+  it.each([['CA', 4], ['OK', 2], ['TX', 7], ['VA', 6]] as const)('uses the confirmed %s limit of %i for both display and verification', (state, limit) => {
+    expect(physicianSlots([{ ...agreement, state }], people, [{ state_abbreviation: state, np_md_ratio: String(limit), np_md_ratio_limit: limit }])[0])
+      .toMatchObject({ filled: 1, limit, verificationLimit: null });
+  });
+  it.each(allUSStates.filter(s => !['OH', 'CA', 'OK', 'TX', 'VA'].includes(s.abbreviation)).map(s => s.abbreviation))('%s has no numeric supervision limit', state => {
+    expect(physicianSlots([{ ...agreement, state }], people, [{ state_abbreviation: state, np_md_ratio: 'None', np_md_ratio_limit: null }])).toHaveLength(0);
   });
   it('counts one NP once across duplicate agreements and direct/participant links', () => {
     expect(physicianSlots([agreement, { ...agreement, providerIds: ['np1', 'np1'] }], people, rules)[0].filled).toBe(1);

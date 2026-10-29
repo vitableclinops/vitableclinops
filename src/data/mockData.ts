@@ -249,9 +249,9 @@ export const states: State[] = [
       supervisoryActivities: ['Prescriptive authority agreement', 'Physician supervision documentation'],
     },
     requiresPrescriptiveAuthority: true,
-    prescriptiveAuthorityNotes: 'Apply through OK nursing portal. Physician must be in active practice 20+ hrs/week. Max 6 NPs per physician unless exception granted.',
-    notes: 'Supervising physician must have 20+ hours/week direct patient contact. NP:MD ratio is 6. Agreement must be notarized.',
-    scopeLimitations: ['Max 6 NPs per physician'],
+    prescriptiveAuthorityNotes: 'Apply through OK nursing portal. Physician must be in active practice 20+ hrs/week. Max 2 NPs per physician.',
+    notes: 'Supervising physician must have 20+ hours/week direct patient contact. NP:MD ratio is 2. Agreement must be notarized.',
+    scopeLimitations: ['Max 2 NPs per physician'],
     applicationFeeRange: { min: 85, max: 150 },
     processingTimeWeeks: { min: 4, max: 8 },
     lastUpdated: new Date('2024-01-12'),
@@ -1147,7 +1147,7 @@ Ohio requires APRNs to have Standard Care Arrangements (SCAs) with collaborating
 ## Requirements
 - Prescriptive agreement with physician required
 - Supervising physician must be in active clinical practice (20+ hours/week direct patient contact)
-- **NP:MD Ratio**: Maximum 6 NPs per physician unless board exception granted
+- **NP:MD Ratio**: Maximum 2 NPs per physician
 - Agreement must be signed AND notarized by supervising physician
 
 ## Application Process

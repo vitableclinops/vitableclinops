@@ -35,7 +35,8 @@ export const usePhysicianCapacity = (
           .eq('state_abbreviation', stateAbbreviation)
           .single();
 
-        const ratioLimit = stateConfig?.np_md_ratio_limit ?? _ratioLimitFallback;
+        // A saved null means unlimited, not a reason to reuse a stale cached limit.
+        const ratioLimit = stateConfig ? stateConfig.np_md_ratio_limit : _ratioLimitFallback;
         if (!ratioLimit) {
           setCapacity(null);
           setLoading(false);
