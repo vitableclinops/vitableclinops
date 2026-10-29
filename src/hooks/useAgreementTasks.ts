@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
@@ -18,6 +20,7 @@ export const useAgreementTasks = (options: UseAgreementTasksOptions = {}) => {
   const [tasks, setTasks] = useState<AgreementTask[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -97,6 +100,7 @@ export const useAgreementTasks = (options: UseAgreementTasksOptions = {}) => {
       if (error) throw error;
 
       setTasks(prev => prev.map(t => t.id === id ? data : t));
+      await refreshAgreementViews(queryClient);
       return data;
     } catch (error) {
       console.error('Error updating task:', error);

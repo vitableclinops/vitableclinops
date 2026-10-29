@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { AGREEMENT_REFRESH_OPTIONS, refreshAgreementViews } from '@/lib/agreementRefresh';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
@@ -204,59 +205,38 @@ const CollaborativeAgreementsPage = () => {
   const transfers = allTransfers.filter(t => t.status !== 'cancelled' && t.status !== 'completed');
 
   // Database agreements and providers
-  const [dbAgreements, setDbAgreements] = useState<DbAgreement[]>([]);
-  const [dbProviders, setDbProviders] = useState<DbProvider[]>([]);
-  const [agreementDocCounts, setAgreementDocCounts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
-  const [pendingFlagIds, setPendingFlagIds] = useState<Set<string>>(new Set());
+  const { data: agreementData, isPending: loading } = useQuery({
+    queryKey: ['agreements', 'overview'],
+    ...AGREEMENT_REFRESH_OPTIONS,
+    queryFn: async () => {
+      const [agreements, providers, documents, flags] = await Promise.all([
+        supabase.from('collaborative_agreements').select('*').order('created_at', { ascending: false }).range(0, 9999),
+        supabase.from('agreement_providers').select('*').range(0, 9999),
+        supabase.from('task_documents').select('agreement_id').not('agreement_id', 'is', null).range(0, 9999),
+        supabase.from('profiles').select('id').eq('activation_status', 'pending_agreements').or(CURRENT_EMPLOYEE_FILTER),
+      ]);
+      for (const result of [agreements, providers, documents, flags]) if (result.error) throw result.error;
+      const documentCounts: Record<string, number> = {};
+      for (const row of documents.data ?? []) {
+        if (row.agreement_id) documentCounts[row.agreement_id] = (documentCounts[row.agreement_id] ?? 0) + 1;
+      }
+      return {
+        agreements: agreements.data ?? [], providers: providers.data ?? [], documentCounts,
+        pendingFlagIds: new Set((flags.data ?? []).map(row => row.id)),
+      };
+    },
+  });
+  const dbAgreements = agreementData?.agreements ?? [];
+  const dbProviders = agreementData?.providers ?? [];
+  const agreementDocCounts = agreementData?.documentCounts ?? {};
+  const pendingFlagIds = agreementData?.pendingFlagIds ?? new Set<string>();
   
   // Derived values from auth
   const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'admin');
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
 
-  const fetchDbAgreements = async () => {
-    const [agreementsRes, providersRes, docCountsRes] = await Promise.all([
-      supabase
-        .from('collaborative_agreements')
-        .select('*')
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('agreement_providers')
-        .select('*'),
-      supabase
-        .from('task_documents')
-        .select('agreement_id')
-        .not('agreement_id', 'is', null),
-    ]);
-
-    if (agreementsRes.error) {
-      console.error('Error fetching agreements:', agreementsRes.error);
-    } else {
-      setDbAgreements(agreementsRes.data || []);
-    }
-    
-    if (!providersRes.error) {
-      setDbProviders(providersRes.data || []);
-    }
-    const flagRes = await supabase.from('profiles').select('id').eq('activation_status', 'pending_agreements').or(CURRENT_EMPLOYEE_FILTER);
-    if (!flagRes.error) setPendingFlagIds(new Set((flagRes.data || []).map(r => r.id)));
-
-    // Build a set of agreement IDs that have at least one task document
-    if (!docCountsRes.error && docCountsRes.data) {
-      const counts: Record<string, number> = {};
-      for (const row of docCountsRes.data) {
-        if (row.agreement_id) counts[row.agreement_id] = (counts[row.agreement_id] || 0) + 1;
-      }
-      setAgreementDocCounts(counts);
-    }
-    
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchDbAgreements();
-  }, []);
+  const fetchDbAgreements = () => refreshAgreementViews(queryClient);
 
   // Incomplete agreements (shell records with no provider assigned)
   const isLiveAgreement = (a: DbAgreement) =>
