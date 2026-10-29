@@ -63,9 +63,9 @@ const collabBadgeStyles: Record<CollabRequirementType, string> = {
   never: 'bg-success/10 text-success border-success/20',
 };
 
-const CollabBadge = ({ type }: { type: CollabRequirementType }) => (
-  <Badge variant="outline" className={cn('text-xs font-medium whitespace-nowrap', collabBadgeStyles[type])}>
-    {getCollabRequirementLabel(type)}
+const CollabBadge = ({ type, stateAbbr }: { type: CollabRequirementType; stateAbbr: string }) => (
+  <Badge variant="outline" className={cn('text-xs font-medium', collabBadgeStyles[type])}>
+    {getCollabRequirementLabel(type, stateAbbr)}
   </Badge>
 );
 
@@ -324,7 +324,7 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange,
                     {editing && editValues ? (
                       <EditableBoolCell value={editValues.ca_required} onChange={v => updateField('ca_required', v)} />
                     ) : (
-                      <CollabBadge type={(state.collab_requirement_type as CollabRequirementType) || (state.ca_required ? 'always' : 'never')} />
+                      <CollabBadge stateAbbr={state.state_abbreviation} type={(state.collab_requirement_type as CollabRequirementType) || (state.ca_required ? 'always' : 'never')} />
                     )}
                   </TableCell>
 

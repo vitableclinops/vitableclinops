@@ -409,7 +409,7 @@ const StateCompliancePage = () => {
                                     return (
                                       <Badge variant="outline" className="text-xs border-warning text-warning">
                                         <AlertTriangle className="h-3 w-3 mr-1" />
-                                        Unless Autonomous
+                                        {getCollabRequirementLabel('conditional', state.abbreviation)}
                                       </Badge>
                                     );
                                   case 'md_only':

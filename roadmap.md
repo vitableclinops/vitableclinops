@@ -53,3 +53,4 @@
 - [x] Apply confirmed physician limits everywhere: OH 5, CA 4, OK 2, TX 7, VA 6; all others no limit. Verified 51 saved states with zero mismatches, signed-in physician cards and 63 tests; corrected Oklahoma descriptions and prevented stale fallback limits for unlimited states.
 - [x] Refresh agreement physician/state counts and related views after additions and terminations; 82 tests passed, signed-in views verified and one-minute automatic fetch confirmed without reloading. Preserve supplied outside-practice totals.
 - [x] Stop missing-license agreement invalidations; deployed evidence check, restored eight missing/pending/renewed-license agreements with audit entries, retained Shadae PA recorded expiration; 71 tests and signed-in Genevieve FL verified.
+- [x] Change NY to conditional collaboration only without prescriptive authority; update saved requirement and default classification.
