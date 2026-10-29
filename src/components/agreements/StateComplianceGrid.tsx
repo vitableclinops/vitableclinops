@@ -53,7 +53,7 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
     <>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {[...stateData]
-          .sort((a, b) => a.name.localeCompare(b.name))
+          .sort((a, b) => a.abbreviation.localeCompare(b.abbreviation))
           .map((state) => {
           const compliance = getComplianceInfo(state.abbreviation);
           const hasComplianceRisk = state.agreements.some(
