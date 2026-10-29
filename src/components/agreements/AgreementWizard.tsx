@@ -300,7 +300,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       case 3:
         return <AgreementDetailsStep formData={formData} updateFormData={updateFormData} />;
       case 4:
-        return <ReviewStep formData={formData} updateFormData={updateFormData} requireDocument={requireDocument} />;
+        return <ReviewStep formData={formData} updateFormData={updateFormData} requireDocument={requireDocument && !isDocumentExemptPhysician(formData.physicianName)} />;
       default:
         return null;
     }

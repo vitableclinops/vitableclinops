@@ -38,3 +38,11 @@ describe('active EHR state agreement checks', () => {
     expect(activeStateAgreementFlags({ id: 'md', profession: 'physician' }, ['PA'], [], [], [], today)).toEqual([]);
   });
 });
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
+describe('DirectShifts physician exemption', () => {
+  it('recognizes Anika Ramos and Dave Webster only', () => {
+    expect(isDocumentExemptPhysician('Dr. Anika Ramos (Direct Shifts)')).toBe(true);
+    expect(isDocumentExemptPhysician('Dave Webster')).toBe(true);
+    expect(isDocumentExemptPhysician('Kate Baron')).toBe(false);
+  });
+});
