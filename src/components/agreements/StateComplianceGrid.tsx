@@ -196,7 +196,9 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                               <span className="text-sm font-medium">Dr. {physician}</span>
                             </div>
                             <span className="text-sm text-muted-foreground">
-                              {providerCount} provider{providerCount !== 1 ? 's' : ''}
+                              {physicianStateLimit(compliance)
+                                ? `${providerCount}/${physicianStateLimit(compliance)} providers`
+                                : `${providerCount} provider${providerCount !== 1 ? 's' : ''}`}
                             </span>
                           </div>
                         ))}
@@ -210,8 +212,8 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                   {(() => {
                     const limit = physicianStateLimit(compliance);
                     return limit
-                      ? <>(MD supervision limit: <span className="font-medium text-foreground">{limit}</span>)</>
-                      : '(MD supervision limit: No limit)';
+                      ? <>(MD supervision limit: <span className="font-medium text-foreground">{limit}</span> per physician)</>
+                      : '(MD supervision limit: No limit per physician)';
                   })()}
                 </p>
 
