@@ -574,7 +574,7 @@ const CollaborativeAgreementsPage = () => {
       if (existing) {
         if (active) existing.agreements.push(agreement);
         existing.activeProviders.push(...activeProviders);
-        if (!existing.states.includes(agreement.state_abbreviation)) {
+        if (active && !existing.states.includes(agreement.state_abbreviation)) {
           existing.states.push(agreement.state_abbreviation);
         }
       } else {
@@ -584,7 +584,7 @@ const CollaborativeAgreementsPage = () => {
           npi: agreement.physician_npi,
           agreements: active ? [agreement] : [],
           activeProviders: [...activeProviders],
-          states: [agreement.state_abbreviation]
+          states: active ? [agreement.state_abbreviation] : []
         });
       }
     });
@@ -604,10 +604,8 @@ const CollaborativeAgreementsPage = () => {
 
     dbAgreements.forEach(agreement => {
       const existing = map.get(agreement.state_abbreviation);
-      // Only providers on agreements that are live count toward this state's totals
-      const isActiveAgreement =
-        !['cancelled', 'terminated', 'termination_initiated', 'invalid'].includes(agreement.workflow_status || '') &&
-        !agreement.terminated_at;
+      // Same active rule as By Physician and the wizard capacity check
+      const isActiveAgreement = isActiveSlotAgreement({ status: agreement.workflow_status, terminated: agreement.terminated_at, start: agreement.start_date, end: agreement.end_date });
       const activeProviders = isActiveAgreement
         ? dbProviders.filter(p => p.agreement_id === agreement.id && p.is_active)
         : [];
