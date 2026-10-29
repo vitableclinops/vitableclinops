@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { AGREEMENT_REFRESH_OPTIONS } from '@/lib/agreementRefresh';
 import { supabase } from '@/integrations/supabase/client';
 import { isActiveSlotAgreement } from '@/lib/physicianSlots';
 import { CONFIRMED_PHYSICIAN_COUNTS_KEY, confirmedPhysicianCount } from '@/lib/confirmedPhysicianCounts';
@@ -17,16 +18,14 @@ export const usePhysicianCapacity = (
   stateAbbreviation: string | undefined,
   _ratioLimitFallback: number | null
 ) => {
-  const [capacity, setCapacity] = useState<PhysicianCapacityInfo | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!physicianEmail || !stateAbbreviation) {
-      setCapacity(null);
-      return;
-    }
-
-    const fetchCapacity = async () => {
+  const query = useQuery({
+    queryKey: ['agreements', 'physician-capacity', physicianEmail, stateAbbreviation, _ratioLimitFallback],
+    enabled: !!physicianEmail && !!stateAbbreviation,
+    ...AGREEMENT_REFRESH_OPTIONS,
+    queryFn: async (): Promise<PhysicianCapacityInfo | null> => {
+      let capacity: PhysicianCapacityInfo | null = null;
+      const setCapacity = (c: PhysicianCapacityInfo | null) => { capacity = c; };
+      const setLoading = (_: boolean) => {};
       try {
         setLoading(true);
 
@@ -82,10 +81,10 @@ export const usePhysicianCapacity = (
       } finally {
         setLoading(false);
       }
-    };
 
-    fetchCapacity();
-  }, [physicianEmail, stateAbbreviation, _ratioLimitFallback]);
+      return capacity;
+    },
+  });
 
-  return { capacity, loading };
+  return { capacity: query.data ?? null, loading: query.isFetching };
 };
