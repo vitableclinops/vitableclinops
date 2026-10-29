@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { AGREEMENT_REFRESH_OPTIONS } from '@/lib/agreementRefresh';
 
 export function useLocalSupervisionAgreements() {
   return useQuery({
     queryKey: ['local-supervision-agreements'],
+    ...AGREEMENT_REFRESH_OPTIONS,
     queryFn: async () => {
       const { data, error } = await supabase.from('agreement_providers')
         .select('id, provider_id, provider_name, provider_email, collaborative_agreements(id, physician_name, physician_npi, state_abbreviation, workflow_status, start_date, end_date, agreement_document_url, medallion_document_url)')

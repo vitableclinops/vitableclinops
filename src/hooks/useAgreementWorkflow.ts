@@ -1,4 +1,6 @@
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
@@ -66,6 +68,7 @@ export const getTerminationTasks = (
  */
 export const useAgreementWorkflow = () => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   /**
    * Check if all required tasks for a given trigger are completed.
@@ -181,6 +184,8 @@ export const useAgreementWorkflow = () => {
       return false;
     }
 
+    await refreshAgreementViews(queryClient);
+
     // Log the transition
     await supabase.from('agreement_audit_log').insert({
       entity_type: 'agreement',
@@ -206,7 +211,7 @@ export const useAgreementWorkflow = () => {
     }
 
     return true;
-  }, [checkTasksComplete, toast]);
+  }, [checkTasksComplete, toast, queryClient]);
 
   /**
    * Create agreement with full task generation and proper status transition.
@@ -327,8 +332,9 @@ export const useAgreementWorkflow = () => {
       },
     });
 
+    await refreshAgreementViews(queryClient);
     return agreement;
-  }, []);
+  }, [queryClient]);
 
   /**
    * Initiate termination with task generation.
@@ -359,6 +365,8 @@ export const useAgreementWorkflow = () => {
       .eq('id', agreementId);
 
     if (statusError) throw statusError;
+
+    await refreshAgreementViews(queryClient);
 
     let taskCount = 0;
 
@@ -397,7 +405,7 @@ export const useAgreementWorkflow = () => {
     });
 
     return taskCount;
-  }, []);
+  }, [queryClient]);
 
   return {
     createAgreementWithTasks,
