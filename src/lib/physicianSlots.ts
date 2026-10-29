@@ -20,14 +20,18 @@ export function physicianStateLimit(rule?: SlotRule): number | null {
   return limit && limit > 0 ? limit : null;
 }
 
+export function isActiveSlotAgreement(a: { status: string | null; terminated?: string | null; start?: string | null; end?: string | null }, today = new Date()): boolean {
+  const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase()) && !a.terminated
+    && (!a.start || parseLocalDate(a.start.slice(0, 10)) <= day)
+    && (!a.end || parseLocalDate(a.end.slice(0, 10)) >= day);
+}
+
 export function physicianSlots(agreements: SlotAgreement[], people: SlotPerson[], rules: SlotRule[], today = new Date()): PhysicianSlots[] {
   const byId = new Map(people.map(p => [p.id, p]));
-  const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const rows = new Map<string, PhysicianSlots>();
   for (const a of agreements) {
-    if (!['active', 'fully_executed'].includes((a.status ?? '').toLowerCase()) || a.terminated) continue;
-    if (a.start && parseLocalDate(a.start.slice(0, 10)) > day) continue;
-    if (a.end && parseLocalDate(a.end.slice(0, 10)) < day) continue;
+    if (!isActiveSlotAgreement(a, today)) continue;
     if (a.physicianId && isOffboarded(byId.get(a.physicianId)?.employment_status)) continue;
     const rule = rules.find(r => r.state_abbreviation === a.state);
     // Use the displayed State Requirements ratio; expose conflicting verification values.

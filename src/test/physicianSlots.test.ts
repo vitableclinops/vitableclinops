@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { physicianSlots, physicianStateLimit, type SlotAgreement, type SlotPerson } from '@/lib/physicianSlots';
+import { physicianSlots, physicianStateLimit, isActiveSlotAgreement, type SlotAgreement, type SlotPerson } from '@/lib/physicianSlots';
 import { allUSStates } from '@/data/allStates';
 
 const people: SlotPerson[] = [{ id: 'np1', full_name: 'Kelsie', profession: 'NP', credentials: null, employment_status: 'active' },
@@ -9,6 +9,11 @@ const rules = [{ state_abbreviation: 'OH', np_md_ratio: '5', np_md_ratio_limit: 
 const agreement: SlotAgreement = { physicianKey: 'patel', physicianName: 'Dr. Patel', state: 'OH', providerIds: ['np1'], status: 'active' };
 
 describe('physician slots', () => {
+  it('counts only active agreements in physician totals, never terminated or termination-in-progress records', () => {
+    const records = ['active', 'terminated', 'termination_initiated', 'draft'].map(status => ({ status }));
+    expect(records.filter(a => isActiveSlotAgreement(a))).toEqual([{ status: 'active' }]);
+    expect(isActiveSlotAgreement({ status: 'active', terminated: '2026-10-29' })).toBe(false);
+  });
   it('retains California’s limit of four when Kate has no active California agreements', () => {
     const caRule = { state_abbreviation: 'CA', np_md_ratio: '4', np_md_ratio_limit: 4 };
     const rows = physicianSlots([{ ...agreement, physicianName: 'Kate Baron', state: 'CA', status: 'termination_initiated' }], people, [caRule]);
