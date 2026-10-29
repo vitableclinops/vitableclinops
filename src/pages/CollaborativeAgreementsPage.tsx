@@ -1,3 +1,4 @@
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
 import { useState } from 'react';
 import { AGREEMENT_REFRESH_OPTIONS, refreshAgreementViews } from '@/lib/agreementRefresh';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -757,7 +758,7 @@ const CollaborativeAgreementsPage = () => {
           )}
 
           {/* Stats Grid */}
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 mb-8">
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-5 mb-8">
             <StatCard
               title="Active Agreements"
               value={activeAgreementsCount}
