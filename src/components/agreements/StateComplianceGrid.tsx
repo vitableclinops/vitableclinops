@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ExternalLink, AlertCircle, Shield, Users, Settings } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
@@ -73,9 +73,6 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                     </div>
                     <div>
                       <CardTitle className="text-lg">{state.name}</CardTitle>
-                      <CardDescription>
-                        {state.physicians.length} physician{state.physicians.length !== 1 ? 's' : ''}
-                      </CardDescription>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
