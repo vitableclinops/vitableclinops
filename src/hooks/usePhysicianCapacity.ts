@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { isActiveSlotAgreement } from '@/lib/physicianSlots';
+import { CONFIRMED_PHYSICIAN_COUNTS_KEY, confirmedPhysicianCount } from '@/lib/confirmedPhysicianCounts';
 
 export interface PhysicianCapacityInfo {
   physicianName: string;
@@ -43,17 +45,26 @@ export const usePhysicianCapacity = (
           return;
         }
 
-        // Get all active collaborative agreements for this physician in this state
-        const { data: agreements, error } = await supabase
+        // Only currently active, date-valid agreements count toward capacity
+        const { data: rawAgreements, error } = await supabase
           .from('collaborative_agreements')
-          .select('id, physician_email, physician_name')
-          .eq('physician_email', physicianEmail)
-          .eq('state_abbreviation', stateAbbreviation)
-          .neq('workflow_status', 'cancelled');
+          .select('id, physician_email, physician_name, physician_id, workflow_status, start_date, end_date')
+          .ilike('physician_email', physicianEmail)
+          .eq('state_abbreviation', stateAbbreviation);
 
         if (error) throw error;
 
-        const activeCount = agreements?.length ?? 0;
+        const agreements = (rawAgreements ?? []).filter(a =>
+          isActiveSlotAgreement({ status: a.workflow_status, start: a.start_date, end: a.end_date })
+        );
+
+        // Confirmed physician totals (incl. outside practices) take precedence when saved
+        const physicianId = (rawAgreements ?? []).find(a => a.physician_id)?.physician_id ?? null;
+        const { data: cfg } = await supabase
+          .from('system_config').select('value').eq('key', CONFIRMED_PHYSICIAN_COUNTS_KEY).maybeSingle();
+        const confirmed = confirmedPhysicianCount(cfg?.value, physicianId, stateAbbreviation);
+
+        const activeCount = confirmed ?? agreements.length;
         const isAtCapacity = activeCount >= ratioLimit;
         const utilization = Math.round((activeCount / ratioLimit) * 100);
 
