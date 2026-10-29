@@ -782,7 +782,7 @@ const CollaborativeAgreementsPage = () => {
               active={statFilter === 'missing_docs'}
             />
             <StatCard
-              title="Total Providers"
+              title="Supervised Providers"
               value={totalActiveProviders}
               subtitle={`${activePhysicianCount} physicians`}
               icon={Users}
