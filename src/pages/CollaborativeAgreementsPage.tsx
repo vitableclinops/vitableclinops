@@ -559,19 +559,9 @@ const CollaborativeAgreementsPage = () => {
   const agreementsWithoutDocument = flattenedAgreements.filter(
     a => a.isActive && !a.documentUrl && !a.medallionDocumentUrl
   ).length;
-  // Missing-document agreements shown as flags inside Needs fixing (deduped against
-  // required-agreement flags and incomplete shells; DirectShifts physicians exempt)
-  const requiredFlagKeys = new Set(requiredAgreementFlags.map(f => `${f.provider.id}:${f.state}`));
-  const incompleteIds = new Set(incompleteAgreements.map(a => a.id));
-  const missingDocAgreements = dbAgreements.filter(a => {
-    if (!activeAgreementIds.has(a.id) || incompleteIds.has(a.id)) return false;
-    if (isDocumentExemptPhysician(a.physician_name)) return false;
-    const providers = dbProviders.filter(p => p.agreement_id === a.id && p.is_active);
-    if (a.agreement_document_url || a.medallion_document_url || providers.some(p => p.medallion_document_url)) return false;
-    if ((agreementDocCounts as Record<string, number>)[a.id] > 0) return false;
-    return !providers.some(p => p.provider_id && requiredFlagKeys.has(`${p.provider_id}:${a.state_abbreviation}`));
-  });
-  const needsFixingCount = incompleteCount + missingDocAgreements.length;
+  // Required document gaps come exclusively from the shared active-EHR-state audit.
+  // Existing historical/licensed-only agreements remain accessible, not compliance flags.
+  const needsFixingCount = incompleteCount;
   
   // Upcoming meetings in next 14 days
   const upcomingMeetings = flattenedAgreements.filter(
@@ -802,7 +792,7 @@ const CollaborativeAgreementsPage = () => {
             <StatCard
               title="Needs Fixing"
               value={needsFixingCount}
-              subtitle={missingDocAgreements.length > 0 ? `Incl. ${missingDocAgreements.length} missing docs` : 'Incomplete agreements'}
+              subtitle="Incomplete agreements / active-state reviews"
               icon={AlertTriangle}
               variant={needsFixingCount > 0 ? 'danger' : 'success'}
               onClick={() => { setSelectedIncompleteId(null); setIncompleteOpen(true); }}
@@ -826,27 +816,17 @@ const CollaborativeAgreementsPage = () => {
                   return (
                     <div key={`required:${flag.provider.id}:${flag.state}`} className="rounded-lg border p-3 space-y-2">
                       <p className="text-sm font-medium">{flag.name} — {flag.state}</p>
+                      {flag.newlyActive && <p className="text-sm text-warning">Newly active in EHR</p>}
                       <p className="text-sm text-destructive">Why: {flag.reason}</p>
                       <p className="text-sm text-muted-foreground">How to fix: {flag.howToFix}</p>
                       <div className="flex flex-wrap gap-2">
+                        {flag.authorityReview && <Button size="sm" variant="outline" asChild><Link to="/directory?tab=management">Review prescriptive authority</Link></Button>}
                         {existing ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.id}`}>Open agreement</Link></Button> : <Button size="sm" onClick={() => {
                           setGapPrefill({ stateAbbr: flag.state, skipProcess: true, provider: { id: flag.provider.id, name: flag.name, email: flag.provider.email, npi: flag.provider.npi_number ?? undefined } });
                           setIncompleteOpen(false); setWizardOpen(true);
                         }}>Add / link agreement</Button>}
                         <Button size="sm" variant="outline" asChild><Link to="/directory">Provider directory</Link></Button>
                       </div>
-                    </div>
-                  );
-                })}
-                {missingDocAgreements.map(a => {
-                  const names = dbProviders.filter(p => p.agreement_id === a.id && p.is_active).map(p => p.provider_name).join(', ') || a.provider_name || 'No provider';
-                  return (
-                    <div key={`doc:${a.id}`} className="rounded-lg border p-3 space-y-2">
-                      <p className="text-sm font-medium">{names} — {a.state_abbreviation}</p>
-                      <p className="text-xs text-muted-foreground">{a.physician_name || 'No physician'}</p>
-                      <p className="text-sm text-destructive">Why: Active agreement has no document attached.</p>
-                      <p className="text-sm text-muted-foreground">How to fix: Open the agreement and upload or link the signed agreement document.</p>
-                      <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${a.id}`}>Open agreement</Link></Button>
                     </div>
                   );
                 })}
