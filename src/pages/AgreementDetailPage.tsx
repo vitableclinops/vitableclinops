@@ -55,7 +55,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn, parseLocalDate } from '@/lib/utils';
-import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
+import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
 import { format } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -377,7 +377,7 @@ export default function AgreementDetailPage() {
 
   // Build a descriptive breadcrumb: Provider ↔ Physician in State
   const breadcrumbLabel = agreement?.provider_name
-    ? `${agreement.provider_name} ↔ Dr. ${agreement.physician_name} (${agreement.state_abbreviation})`
+    ? `${agreement.provider_name} ↔ Dr. ${stripDrPrefix(agreement.physician_name)} (${agreement.state_abbreviation})`
     : agreement?.state_name || 'Agreement';
 
   const breadcrumbs = [
@@ -434,7 +434,7 @@ export default function AgreementDetailPage() {
                       <span className="text-muted-foreground/50">↔</span>
                       <div className="flex items-center gap-1.5">
                         <Stethoscope className="h-4 w-4" />
-                        <span className="font-medium text-foreground">Dr. {agreement.physician_name}</span>
+                        <span className="font-medium text-foreground">Dr. {stripDrPrefix(agreement.physician_name)}</span>
                       </div>
                       <span className="text-muted-foreground/50">•</span>
                       <div className="flex items-center gap-1.5">
@@ -639,7 +639,7 @@ export default function AgreementDetailPage() {
                             to={`/physicians/${encodeURIComponent(agreement.physician_email)}`}
                             className="font-medium text-primary hover:underline"
                           >
-                            Dr. {agreement.physician_name}
+                            Dr. {stripDrPrefix(agreement.physician_name)}
                           </Link>
                         </div>
                         <div>
@@ -1093,7 +1093,7 @@ export default function AgreementDetailPage() {
                         description: 'View state compliance details',
                       },
                       {
-                        label: `Dr. ${agreement.physician_name}`,
+                        label: `Dr. ${stripDrPrefix(agreement.physician_name)}`,
                         href: `/physicians/${encodeURIComponent(agreement.physician_email)}`,
                         icon: Stethoscope,
                         description: 'Physician profile',
