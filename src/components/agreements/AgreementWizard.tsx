@@ -1,3 +1,4 @@
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
 import { useState, useCallback, useEffect } from 'react';
 import { allUSStates } from '@/data/allStates';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -144,13 +145,13 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
         if (capacity?.isAtCapacity) {
           return false;
         }
-        return formData.physicianName.trim() !== '' && formData.physicianEmail.trim() !== '';
+        return formData.physicianName.trim() !== '' && (formData.physicianEmail.trim() !== '' || isDocumentExemptPhysician(formData.physicianName));
       case 2:
         return formData.providers.length > 0;
       case 3:
         return formData.startDate !== undefined;
       case 4:
-        return !requireDocument || hasAgreementDocument(formData.documentFile, formData.documentLink);
+        return !requireDocument || isDocumentExemptPhysician(formData.physicianName) || hasAgreementDocument(formData.documentFile, formData.documentLink);
       default:
         return false;
     }
@@ -299,7 +300,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       case 3:
         return <AgreementDetailsStep formData={formData} updateFormData={updateFormData} />;
       case 4:
-        return <ReviewStep formData={formData} updateFormData={updateFormData} requireDocument={requireDocument} />;
+        return <ReviewStep formData={formData} updateFormData={updateFormData} requireDocument={requireDocument && !isDocumentExemptPhysician(formData.physicianName)} />;
       default:
         return null;
     }

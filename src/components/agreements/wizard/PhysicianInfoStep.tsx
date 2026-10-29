@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useStateCompliance } from '@/hooks/useStateCompliance';
 import { usePhysicianCapacity } from '@/hooks/usePhysicianCapacity';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DIRECT_SHIFTS_PHYSICIANS } from '@/lib/directShiftsPhysicians';
 import type { AgreementFormData } from '../AgreementWizard';
 
 interface PhysicianInfoStepProps {
@@ -201,6 +202,20 @@ export const PhysicianInfoStep = ({ formData, updateFormData }: PhysicianInfoSte
                 <strong>{capacity.physicianName}</strong> has reached the NP:MD supervision capacity limit for {formData.selectedState?.name} ({capacity.activeProviderCount}/{capacity.capacityLimit} NPs). No new agreements can be created until a provider is removed or transferred.
               </AlertDescription>
             </Alert>
+          )}
+
+          {!selectedPhysician && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">DirectShifts physicians (no agreement link required)</Label>
+              <div className="flex flex-wrap gap-2">
+                {DIRECT_SHIFTS_PHYSICIANS.map(name => (
+                  <Button key={name} type="button" size="sm" variant={formData.physicianName === name ? 'default' : 'outline'}
+                    onClick={() => updateFormData({ physicianId: null, physicianName: name, physicianEmail: '', physicianNpi: '' })}>
+                    {formData.physicianName === name && <Check className="h-3 w-3 mr-1" />}{name}
+                  </Button>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Manual escape hatch */}

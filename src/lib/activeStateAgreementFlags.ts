@@ -9,6 +9,8 @@ export interface StateAgreement {
   document: string | null;
   start?: string | null;
   end?: string | null;
+  /** Led by a DirectShifts physician: no document link required. */
+  documentExempt?: boolean;
 }
 export interface AgreementReview { state: string; reason: string; howToFix: string }
 export interface CollaborationRule { state_abbreviation: string; collab_requirement_type: string | null; ca_required: boolean }
@@ -34,7 +36,7 @@ export function activeStateAgreementFlags(
       && ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase())
       && (!a.start || parseLocalDate(a.start.slice(0, 10)) <= day)
       && (!a.end || parseLocalDate(a.end.slice(0, 10)) >= day));
-    if (matching.some(a => a.document?.trim())) return [];
+    if (matching.some(a => a.document?.trim() || a.documentExempt)) return [];
     return [{ state, reason: matching.length ? 'Active agreement has no attached document.' : 'Missing active linked collaborative agreement.', howToFix: matching.length
       ? 'Open Agreements and attach the signed document or its link to the existing agreement.'
       : 'Open Agreements and link the existing signed agreement to this provider and state. Use the completed-process option to avoid repeat notifications; do not mark it active without verified evidence.' }];

@@ -27,3 +27,4 @@
 - Active-state agreement flags use identity-resolved EHR states and only saved ca_required rules with linked local/source document evidence; no default or conditional-only alerts. Why: the State Requirements directory is authoritative and missing agreements must not be inferred.
 - Agreement attachment audits include task uploads by saved agreement/task IDs and participant documents by profile ID. Why: existing uploads must satisfy evidence checks without borrowing another provider's documents.
 - Agreements Needs fixing uses the same active-state audit as directory flags. Why: missing agreement/link corrections must stay consistent across both views.
+- Agreements led by DirectShifts physicians (src/lib/directShiftsPhysicians.ts) are exempt from the agreement-document requirement in the wizard and active-state audit. Why: DirectShifts holds those documents.
