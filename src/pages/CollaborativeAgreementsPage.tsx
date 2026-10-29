@@ -9,6 +9,7 @@ import { NotificationQueue } from '@/components/agreements/NotificationQueue';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
 import { StateComplianceGrid } from '@/components/agreements/StateComplianceGrid';
 import { usePhysicianSlots } from '@/hooks/usePhysicianSlots';
+import { physicianStateLimit, isActiveSlotAgreement } from '@/lib/physicianSlots';
 import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { TransferWorkflowCard } from '@/components/agreements/TransferWorkflowCard';
 import { CompletedTransfersTab } from '@/components/agreements/CompletedTransfersTab';
@@ -161,7 +162,7 @@ const CollaborativeAgreementsPage = () => {
   const [gapPrefill, setGapPrefill] = useState<{ stateAbbr: string; skipProcess: boolean; provider: { id: string; name: string; email: string; npi?: string } } | null>(null);
   const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
   const { getNextMeetingForAgreement, hasMeetingScheduled, loading: meetingsLoading } = useScheduledMeetings();
-  const { data: physicianSlotRows } = usePhysicianSlots();
+  const { data: physicianSlotRows, isPending: slotsLoading, isError: slotsError } = usePhysicianSlots();
   const slotsByPhysicianState = new Map((physicianSlotRows ?? []).map(r => [`${r.physicianName.trim().toLowerCase()}|${r.state}`, r]));
   const [searchParams] = useSearchParams();
   
@@ -577,7 +578,6 @@ const CollaborativeAgreementsPage = () => {
       npi: string | null;
       agreements: DbAgreement[];
       activeProviders: DbProvider[];
-      terminatedProviders: DbProvider[];
       states: string[];
     }>();
 
@@ -585,13 +585,12 @@ const CollaborativeAgreementsPage = () => {
       const phEmail = agreement.physician_email || 'unknown';
       const phName = agreement.physician_name || 'Unassigned';
       const existing = map.get(phEmail);
-      const activeProviders = dbProviders.filter(p => p.agreement_id === agreement.id && p.is_active);
-      const terminatedProviders = dbProviders.filter(p => p.agreement_id === agreement.id && !p.is_active);
+      const active = isActiveSlotAgreement({ status: agreement.workflow_status, terminated: agreement.terminated_at, start: agreement.start_date, end: agreement.end_date });
+      const activeProviders = active ? dbProviders.filter(p => p.agreement_id === agreement.id && p.is_active) : [];
       
       if (existing) {
-        existing.agreements.push(agreement);
+        if (active) existing.agreements.push(agreement);
         existing.activeProviders.push(...activeProviders);
-        existing.terminatedProviders.push(...terminatedProviders);
         if (!existing.states.includes(agreement.state_abbreviation)) {
           existing.states.push(agreement.state_abbreviation);
         }
@@ -600,15 +599,14 @@ const CollaborativeAgreementsPage = () => {
           name: phName,
           email: phEmail,
           npi: agreement.physician_npi,
-          agreements: [agreement],
+          agreements: active ? [agreement] : [],
           activeProviders: [...activeProviders],
-          terminatedProviders: [...terminatedProviders],
           states: [agreement.state_abbreviation]
         });
       }
     });
 
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(map.values()).filter(p => p.agreements.length > 0).sort((a, b) => a.name.localeCompare(b.name));
   })();
 
   // Group by state
@@ -1418,16 +1416,16 @@ const CollaborativeAgreementsPage = () => {
                         </div>
                         <div className="flex items-center gap-6 text-sm">
                           <div className="text-center">
-                            <p className="text-2xl font-bold text-foreground">{physician.agreements.length}</p>
+                            <p className="text-2xl font-bold text-foreground">{new Set(physician.agreements.map(a => a.state_abbreviation)).size}</p>
                             <p className="text-muted-foreground">States</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-2xl font-bold text-success">{physician.activeProviders.length}</p>
+                            <p className="text-2xl font-bold text-success">{physician.agreements.length}</p>
                             <p className="text-muted-foreground">Active</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-2xl font-bold text-muted-foreground">{physician.terminatedProviders.length}</p>
-                            <p className="text-muted-foreground">Terminated</p>
+                            <p className="text-2xl font-bold text-foreground">{new Set(physician.activeProviders.map(p => p.provider_id || p.provider_email)).size}</p>
+                            <p className="text-muted-foreground">Providers</p>
                           </div>
                         </div>
                       </div>
@@ -1439,6 +1437,7 @@ const CollaborativeAgreementsPage = () => {
                           const stateCompliance = stateComplianceData.find(c => c.state_abbreviation === state);
                           const caRequired = stateCompliance?.ca_required ?? false;
                           const slot = slotsByPhysicianState.get(`${physician.name.trim().toLowerCase()}|${state}`);
+                          const limit = slot?.limit ?? physicianStateLimit(stateCompliance);
                           return (
                             <div key={state} className="flex flex-col items-center gap-0.5">
                               <Badge 
@@ -1447,9 +1446,13 @@ const CollaborativeAgreementsPage = () => {
                               >
                                 {state}
                               </Badge>
-                              {slot ? (
-                                <span className={`text-[10px] font-medium ${slot.filled >= slot.limit ? 'text-destructive' : 'text-foreground'}`}>
-                                  {slot.filled}/{slot.limit}
+                              {slotsLoading || complianceLoading ? (
+                                <span className="text-[10px] text-muted-foreground">Checking…</span>
+                              ) : slotsError ? (
+                                <span className="text-[10px] text-destructive">Unavailable</span>
+                              ) : limit !== null ? (
+                                <span className={`text-[10px] font-medium ${(slot?.filled ?? 0) >= limit ? 'text-destructive' : 'text-foreground'}`}>
+                                  {slot?.filled ?? 0}/{limit}
                                 </span>
                               ) : (
                                 <span className="text-[10px] text-muted-foreground">No limit</span>
@@ -1476,7 +1479,7 @@ const CollaborativeAgreementsPage = () => {
                               View all supervised providers ({
                                 // Count unique providers by email
                                 new Set(physician.activeProviders.map(p => p.provider_email)).size
-                              } providers, {physician.activeProviders.length} agreements)
+                              } providers, {physician.agreements.length} active agreements)
                             </span>
                           </AccordionTrigger>
                           <AccordionContent>

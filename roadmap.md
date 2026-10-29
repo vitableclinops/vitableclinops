@@ -45,4 +45,6 @@
 - [x] Refresh both directory and Needs fixing flags after document uploads/links; save handlers invalidate shared audit queries and evidence-removal tests pass.
 - [x] Show and verify collaborating physician slots filled per state using saved MD:NP limits; signed-in Patel OH shows 1/5 and Kelsie Hardy.
 - [x] Correct Ohio’s saved verification limit to 5 as confirmed by Emily; both saved values verified as 5.
+- [x] Correct Kate’s CA badge to retain the saved limit of four when no active California agreements are counted.
+- [x] Make By Physician numbers count only active agreements, excluding terminated records; verified Kate’s 59 active agreements and CA 0/4, with 64 tests passing.
 - [x] Apply confirmed physician limits everywhere: OH 5, CA 4, OK 2, TX 7, VA 6; all others no limit. Verified 51 saved states with zero mismatches, signed-in physician cards and 63 tests; corrected Oklahoma descriptions and prevented stale fallback limits for unlimited states.
