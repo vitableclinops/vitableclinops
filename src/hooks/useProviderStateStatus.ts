@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Tables, Enums } from '@/integrations/supabase/types';
+import { isIndependentPhysician } from '@/lib/clinicianRoles';
 
 export type ProviderStateStatus = Tables<'provider_state_status'>;
 export type ReadinessStatus = Enums<'readiness_status'>;
@@ -20,6 +21,10 @@ export async function evaluateReadiness(
   stateAbbreviation: string
 ): Promise<EvaluatedReadiness> {
   const today = new Date().toISOString().split('T')[0];
+
+  const { data: provider, error: providerError } = await supabase
+    .from('profiles').select('profession, credentials').eq('id', providerId).single();
+  if (providerError) throw providerError;
 
   // Fetch provider license for this state
   const { data: license } = await supabase
@@ -63,8 +68,8 @@ export async function evaluateReadiness(
   const licenseExpired = license?.expiration_date && license.expiration_date < today;
 
   // Check if collab is required (based on state requirements or license flag)
-  const collabRequired = stateReqs?.collab_requirement_type === 'always' || 
-    license?.requires_collab_agreement === true;
+  const collabRequired = !isIndependentPhysician(provider) && (
+    stateReqs?.collab_requirement_type === 'always' || license?.requires_collab_agreement === true);
 
   // Check collab agreement validity
   const hasValidCollab = stateAgreement?.agreement?.workflow_status === 'active' &&

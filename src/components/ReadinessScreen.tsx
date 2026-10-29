@@ -18,6 +18,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
+import { isIndependentPhysician } from '@/lib/clinicianRoles';
 import type { Tables } from '@/integrations/supabase/types';
 
 type AgreementTask = Tables<'agreement_tasks'>;
@@ -123,7 +124,7 @@ export function ReadinessScreen() {
         selectedStates.forEach(state => {
           const license = licenseData?.find(l => l.state_abbreviation === state);
           const hasVerifiedLicense = license?.status === 'verified' || license?.status === 'active';
-          const requiresCollab = license?.requires_collab_agreement;
+          const requiresCollab = license?.requires_collab_agreement && !isIndependentPhysician(profile);
 
           items.push({
             id: `license-${state}`,
@@ -168,7 +169,7 @@ export function ReadinessScreen() {
     };
 
     fetchReadinessData();
-  }, [profile?.id, profile?.onboarding_completed, profile?.bio, profile?.avatar_url]);
+  }, [profile?.id, profile?.onboarding_completed, profile?.bio, profile?.avatar_url, profile?.profession, profile?.credentials]);
 
   const completedCount = readinessItems.filter(i => i.status === 'completed').length;
   const totalCount = readinessItems.length;

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { isIndependentPhysician } from '@/lib/clinicianRoles';
 import type { GridData, GridCell, LicensureStatus, CredentialingStatus, CellStatus, CredentialingRequirement } from '@/types/grid';
 
 interface RealProvider {
@@ -7,6 +8,7 @@ interface RealProvider {
   full_name: string | null;
   email: string;
   credentials: string | null;
+  profession: string | null;
 }
 
 interface RealStateConfig {
@@ -72,7 +74,7 @@ export function useRealGridData() {
       ] = await Promise.all([
         supabase
           .from('profiles')
-          .select('id, full_name, email, credentials')
+          .select('id, full_name, email, credentials, profession')
           .eq('employment_status', 'active')
           .order('full_name'),
         supabase
@@ -145,7 +147,7 @@ export function useRealGridData() {
           // Calculate credentialing status
           const credentialing = calculateCredentialingStatus(
             licensure,
-            state,
+            isIndependentPhysician(provider) ? { ...state, ca_required: false } : state,
             providerAgreements,
             existingStatus
           );

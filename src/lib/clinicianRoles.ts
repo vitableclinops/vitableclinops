@@ -59,6 +59,13 @@ function credentialsIndicateClinician(credentials: string | null | undefined): b
 }
 
 /** True when the record carries a clinical Type (or clinical credentials). */
+export function isIndependentPhysician(record: ClinicianIdentifiable | null | undefined): boolean {
+  if (!record) return false;
+  const role = normalizeRole(record.profession);
+  return ['md', 'do', 'md do', 'md/do', 'physician', 'doctor of medicine', 'doctor of osteopathic medicine'].includes(role)
+    || /\b(?:md|do|m\.d\.?|d\.o\.?)\b/i.test(record.credentials ?? '');
+}
+
 export function isClinician(record: ClinicianIdentifiable | null | undefined): boolean {
   if (!record) return false;
   const profession = normalizeRole(record.profession);

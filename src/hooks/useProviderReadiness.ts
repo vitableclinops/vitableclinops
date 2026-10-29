@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
+import { isIndependentPhysician } from '@/lib/clinicianRoles';
 
 export interface ChecklistItem {
   key: string;
@@ -158,8 +159,8 @@ export function useProviderReadiness() {
           const pss = statusMap.get(licenseKey);
 
           const collabRequired = stateRule?.ca_required === true || stateRule?.collab_requirement_type === 'always';
-          const isMD = provider.profession === 'MD' || provider.credentials === 'MD';
-          const effectiveCollabRequired = collabRequired && !isMD;
+          const independentPhysician = isIndependentPhysician(provider);
+          const effectiveCollabRequired = collabRequired && !independentPhysician;
 
           // License checks
           const licenseVerified = bestLicense && (bestLicense.status === 'active' || bestLicense.status === 'verified');
@@ -244,8 +245,8 @@ export function useProviderReadiness() {
           checklist.push({
             key: 'chart_review',
             label: 'Chart review linked',
-            status: hasChartReview ? 'complete' : 'incomplete',
-            detail: hasChartReview ? 'Linked' : 'Not linked',
+            status: independentPhysician ? 'not_required' : hasChartReview ? 'complete' : 'incomplete',
+            detail: independentPhysician ? 'Independent practice; no supervision chart review required' : hasChartReview ? 'Linked' : 'Not linked',
             completed_at: null,
             completed_by: null,
           });
@@ -292,7 +293,7 @@ export function useProviderReadiness() {
           }
 
           if (licenseExpiringSoon) expiringSoon = true;
-          if (collabInfo?.end_date && collabInfo.end_date >= today && collabInfo.end_date <= thirtyDaysOut) expiringSoon = true;
+          if (effectiveCollabRequired && collabInfo?.end_date && collabInfo.end_date >= today && collabInfo.end_date <= thirtyDaysOut) expiringSoon = true;
 
           // Guardrail: If EHR is active but compliance incomplete, NOT ready
           if (ehrApproved && !allComplete) {
@@ -396,7 +397,7 @@ function computeNextAction(
   }
 
   // Chart review not linked
-  if (states.some(s => !s.chart_review_linked)) {
+  if (states.some(s => !s.chart_review_linked && s.checklist.some(c => c.key === 'chart_review' && c.status !== 'not_required'))) {
     return { label: 'Link Chart Review', type: 'link_chart_review', provider_id: providerId };
   }
 
