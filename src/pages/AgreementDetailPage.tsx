@@ -32,6 +32,7 @@ import {
   FileText,
   Calendar,
   ChevronRight,
+  ChevronDown,
   ExternalLink,
   Clock,
   CheckCircle2,
@@ -78,6 +79,7 @@ export default function AgreementDetailPage() {
   const [providers, setProviders] = useState<DbProvider[]>([]);
   const [meetings, setMeetings] = useState<DbMeeting[]>([]);
   const [loading, setLoading] = useState(true);
+  const [physicianInfoOpen, setPhysicianInfoOpen] = useState(false);
   const [terminationOpen, setTerminationOpen] = useState(false);
   const [verificationOpen, setVerificationOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
