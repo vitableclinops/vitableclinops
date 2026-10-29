@@ -73,9 +73,6 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                     </div>
                     <div>
                       <CardTitle className="text-lg">{state.name}</CardTitle>
-                      <CardDescription>
-                        {state.physicians.length} physician{state.physicians.length !== 1 ? 's' : ''}
-                      </CardDescription>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
