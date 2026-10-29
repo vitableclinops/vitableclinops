@@ -8,6 +8,7 @@ import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance'
 import { physicianStateLimit } from '@/lib/physicianSlots';
 import { confirmedPhysicianCount } from '@/lib/confirmedPhysicianCounts';
 import { useConfirmedPhysicianCounts } from '@/hooks/useConfirmedPhysicianCounts';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 import { StateProfileModal } from './StateProfileModal';
 
 interface StateData {
@@ -198,7 +199,7 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                           >
                             <div className="flex items-center gap-2">
                               <Shield className="h-4 w-4 text-primary" />
-                              <span className="text-sm font-medium">Dr. {physician}</span>
+                              <span className="text-sm font-medium">Dr. {stripDrPrefix(physician)}</span>
                             </div>
                             <span className="text-sm text-muted-foreground">
                               {physicianStateLimit(compliance)

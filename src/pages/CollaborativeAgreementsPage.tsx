@@ -1,4 +1,4 @@
-import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
+import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
 import { useState } from 'react';
 import { AGREEMENT_REFRESH_OPTIONS, refreshAgreementViews } from '@/lib/agreementRefresh';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -368,7 +368,8 @@ const CollaborativeAgreementsPage = () => {
 
   // Extract unique values for filters
   const uniqueStates = [...new Set(flattenedAgreements.map(a => a.stateAbbreviation))].sort();
-  const uniquePhysicians = [...new Set(flattenedAgreements.map(a => a.physicianName))].sort();
+  const uniquePhysicians = [...new Set(flattenedAgreements.map(a => a.physicianName))]
+    .sort((a, b) => (isDocumentExemptPhysician(a) ? 1 : 0) - (isDocumentExemptPhysician(b) ? 1 : 0) || a.localeCompare(b));
 
   // Filter flattened agreements
   const filteredFlatAgreements = flattenedAgreements.filter(agreement => {
@@ -616,7 +617,8 @@ const CollaborativeAgreementsPage = () => {
       }
     });
 
-    return Array.from(map.values()).filter(p => p.agreements.length > 0).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(map.values()).filter(p => p.agreements.length > 0)
+      .sort((a, b) => (isDocumentExemptPhysician(a.name) ? 1 : 0) - (isDocumentExemptPhysician(b.name) ? 1 : 0) || a.name.localeCompare(b.name));
   })();
 
   // Group by state
@@ -1004,7 +1006,7 @@ const CollaborativeAgreementsPage = () => {
                   <SelectContent>
                     <SelectItem value="all">All Physicians</SelectItem>
                     {uniquePhysicians.map(physician => (
-                      <SelectItem key={physician} value={physician}>Dr. {physician}</SelectItem>
+                      <SelectItem key={physician} value={physician}>Dr. {stripDrPrefix(physician)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1419,7 +1421,7 @@ const CollaborativeAgreementsPage = () => {
                             </span>
                           </div>
                           <div>
-                            <CardTitle className="text-xl">Dr. {physician.name}</CardTitle>
+                            <CardTitle className="text-xl">Dr. {stripDrPrefix(physician.name)}</CardTitle>
                             <CardDescription className="text-sm">
                               {physician.email} {physician.npi && `• NPI: ${physician.npi}`}
                             </CardDescription>
@@ -1698,7 +1700,7 @@ const CollaborativeAgreementsPage = () => {
                                           <Badge variant={item.caRequired ? "default" : "outline"} className="text-[10px] px-1.5 py-0">
                                             {item.stateAbbreviation}
                                           </Badge>
-                                          <span>Dr. {item.physicianName.split(' ')[1] || item.physicianName}</span>
+                                          <span>Dr. {stripDrPrefix(item.physicianName).split(' ')[1] || item.physicianName}</span>
                                           {item.meetingCadence && (
                                             <span className="text-muted-foreground/70">• {formatCadence(item.meetingCadence)}</span>
                                           )}
@@ -1743,7 +1745,7 @@ const CollaborativeAgreementsPage = () => {
                                           <Badge variant={item.caRequired ? "default" : "outline"} className="text-[10px] px-1.5 py-0">
                                             {item.stateAbbreviation}
                                           </Badge>
-                                          <span>Dr. {item.physicianName.split(' ')[1] || item.physicianName}</span>
+                                          <span>Dr. {stripDrPrefix(item.physicianName).split(' ')[1] || item.physicianName}</span>
                                           {item.meetingCadence && (
                                             <span className="text-muted-foreground/70">• {formatCadence(item.meetingCadence)}</span>
                                           )}

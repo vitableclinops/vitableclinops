@@ -11,3 +11,8 @@ const EXEMPT = new Set(['anikaramos', 'davewebster', 'davidwebster', 'anniecasta
 export function isDocumentExemptPhysician(name: string | null | undefined): boolean {
   return !!name && EXEMPT.has(key(name));
 }
+
+/** Remove a leading "Dr."/"Dr" so displays that prepend "Dr." never double it. */
+export function stripDrPrefix(name: string | null | undefined): string {
+  return (name || '').replace(/^\s*dr\.?\s+/i, '');
+}
