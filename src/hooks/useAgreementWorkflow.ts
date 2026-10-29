@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
 import { getInitiationTaskTemplates, getTerminationTaskTemplates, hydrateTaskTemplates } from '@/data/taskTemplates';
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
 
 type AgreementTask = Tables<'agreement_tasks'>;
 type AgreementTaskInsert = TablesInsert<'agreement_tasks'>;
