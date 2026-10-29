@@ -10,6 +10,8 @@ import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTra
 import { StateComplianceGrid } from '@/components/agreements/StateComplianceGrid';
 import { usePhysicianSlots } from '@/hooks/usePhysicianSlots';
 import { physicianStateLimit, isActiveSlotAgreement } from '@/lib/physicianSlots';
+import { useConfirmedPhysicianCounts } from '@/hooks/useConfirmedPhysicianCounts';
+import { confirmedPhysicianCount } from '@/lib/confirmedPhysicianCounts';
 import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { TransferWorkflowCard } from '@/components/agreements/TransferWorkflowCard';
 import { CompletedTransfersTab } from '@/components/agreements/CompletedTransfersTab';
@@ -163,6 +165,7 @@ const CollaborativeAgreementsPage = () => {
   const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
   const { getNextMeetingForAgreement, hasMeetingScheduled, loading: meetingsLoading } = useScheduledMeetings();
   const { data: physicianSlotRows, isPending: slotsLoading, isError: slotsError } = usePhysicianSlots();
+  const { data: confirmedCounts, isPending: countsLoading, isError: countsError } = useConfirmedPhysicianCounts();
   const slotsByPhysicianState = new Map((physicianSlotRows ?? []).map(r => [`${r.physicianName.trim().toLowerCase()}|${r.state}`, r]));
   const [searchParams] = useSearchParams();
   
@@ -1438,6 +1441,9 @@ const CollaborativeAgreementsPage = () => {
                           const caRequired = stateCompliance?.ca_required ?? false;
                           const slot = slotsByPhysicianState.get(`${physician.name.trim().toLowerCase()}|${state}`);
                           const limit = slot?.limit ?? physicianStateLimit(stateCompliance);
+                          const physicianId = physician.agreements.find(a => a.physician_id)?.physician_id ?? null;
+                          const confirmed = confirmedPhysicianCount(confirmedCounts, physicianId, state);
+                          const filled = confirmed ?? slot?.filled ?? 0;
                           return (
                             <div key={state} className="flex flex-col items-center gap-0.5">
                               <Badge 
@@ -1446,16 +1452,24 @@ const CollaborativeAgreementsPage = () => {
                               >
                                 {state}
                               </Badge>
-                              {slotsLoading || complianceLoading ? (
+                              {slotsLoading || complianceLoading || countsLoading ? (
                                 <span className="text-[10px] text-muted-foreground">Checking…</span>
-                              ) : slotsError ? (
+                              ) : slotsError || countsError ? (
                                 <span className="text-[10px] text-destructive">Unavailable</span>
                               ) : limit !== null ? (
-                                <span className={`text-[10px] font-medium ${(slot?.filled ?? 0) >= limit ? 'text-destructive' : 'text-foreground'}`}>
-                                  {slot?.filled ?? 0}/{limit}
+                                <span className={`text-[10px] font-medium ${filled >= limit ? 'text-destructive' : 'text-foreground'}`}>
+                                  {filled}/{limit}
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-muted-foreground">No limit</span>
+                                <span className="text-[10px] text-muted-foreground">{confirmed !== null ? `${confirmed} · No limit` : 'No limit'}</span>
+                              )}
+                              {confirmed !== null && (
+                                <span className="text-[9px] text-muted-foreground" title="Confirmed active total including Vitable and other practices">Confirmed total</span>
+                              )}
+                              {confirmed !== null && slot && slot.filled !== confirmed && (
+                                <span className={`text-[9px] ${slot.filled > confirmed ? 'text-warning' : 'text-muted-foreground'}`} title="Linked Vitable records are preserved; counts are not added to the confirmed total">
+                                  Vitable linked: {slot.filled}{slot.filled > confirmed ? ' — review' : ''}
+                                </span>
                               )}
                               {slot && slot.verificationLimit !== null && (
                                 <span className="text-[9px] text-warning" title={`State Requirements ${slot.limit}; verification ${slot.verificationLimit}`}>
