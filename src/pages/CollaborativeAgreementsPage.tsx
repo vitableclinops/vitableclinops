@@ -534,7 +534,20 @@ const CollaborativeAgreementsPage = () => {
   // Stats calculations
   const activeAgreementsCount = flattenedAgreements.filter(a => a.isActive).length;
   const terminatedCount = flattenedAgreements.filter(a => !a.isActive).length;
-  const totalActiveProviders = dbProviders.filter(p => p.is_active).length;
+  // Unique providers on currently active agreements only
+  const activeAgreementIds = new Set(
+    dbAgreements
+      .filter(a => isActiveSlotAgreement({ status: a.workflow_status, terminated: a.terminated_at, start: a.start_date, end: a.end_date }))
+      .map(a => a.id)
+  );
+  const totalActiveProviders = new Set(
+    dbProviders
+      .filter(p => p.is_active && activeAgreementIds.has(p.agreement_id))
+      .map(p => p.provider_id || p.provider_email?.toLowerCase() || p.provider_name)
+  ).size;
+  const activePhysicianCount = new Set(
+    dbAgreements.filter(a => activeAgreementIds.has(a.id)).map(a => a.physician_email?.toLowerCase() || a.physician_name)
+  ).size;
   
   // Check for compliance risks
   const agreementsWithoutDocument = flattenedAgreements.filter(
@@ -771,7 +784,7 @@ const CollaborativeAgreementsPage = () => {
             <StatCard
               title="Total Providers"
               value={totalActiveProviders}
-              subtitle={`${uniquePhysicians.length} physicians`}
+              subtitle={`${activePhysicianCount} physicians`}
               icon={Users}
               variant="default"
             />
