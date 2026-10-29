@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { WorkflowStatusTracker } from './WorkflowStatusTracker';
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -162,18 +163,27 @@ export function AgreementDetailCard({
             <Users className="h-4 w-4" />
             <span>{providers.length} provider{providers.length !== 1 ? 's' : ''}</span>
           </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Clock className="h-4 w-4" />
-            <span>
-              {agreement.meeting_cadence === 'as_needed'
-                ? 'As-needed supervision'
-                : `${agreement.meeting_cadence || 'Monthly'} meetings`}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <RefreshCw className="h-4 w-4" />
-            <span>{agreement.renewal_cadence || 'Annual'} renewal</span>
-          </div>
+          {isDocumentExemptPhysician(agreement.physician_name) ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span>Meetings & renewals managed by DirectShifts</span>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                <span>
+                  {agreement.meeting_cadence === 'as_needed'
+                    ? 'As-needed supervision'
+                    : `${agreement.meeting_cadence || 'Monthly'} meetings`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <RefreshCw className="h-4 w-4" />
+                <span>{agreement.renewal_cadence || 'Annual'} renewal</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Expandable details */}

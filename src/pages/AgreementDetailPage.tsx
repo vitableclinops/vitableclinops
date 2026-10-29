@@ -55,6 +55,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn, parseLocalDate } from '@/lib/utils';
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
 import { format } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -643,7 +644,11 @@ export default function AgreementDetailPage() {
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Meeting Cadence</p>
-                          <p className="font-medium capitalize">{agreement.meeting_cadence || 'Not set'}</p>
+                          <p className="font-medium capitalize">
+                            {isDocumentExemptPhysician(agreement.physician_name)
+                              ? 'Managed by DirectShifts'
+                              : agreement.meeting_cadence || 'Not set'}
+                          </p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Start Date</p>
