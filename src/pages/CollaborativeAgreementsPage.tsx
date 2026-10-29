@@ -8,6 +8,7 @@ import { TerminationDialog } from '@/components/agreements/TerminationDialog';
 import { NotificationQueue } from '@/components/agreements/NotificationQueue';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
 import { StateComplianceGrid } from '@/components/agreements/StateComplianceGrid';
+import { PhysicianSlotsSummary } from '@/components/agreements/PhysicianSlotsSummary';
 import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { TransferWorkflowCard } from '@/components/agreements/TransferWorkflowCard';
 import { CompletedTransfersTab } from '@/components/agreements/CompletedTransfersTab';
@@ -912,6 +913,7 @@ const CollaborativeAgreementsPage = () => {
           </Collapsible>
 
           {/* Main Tabs */}
+          <PhysicianSlotsSummary />
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-6 h-12">
               <TabsTrigger value="all-agreements" className="gap-2 px-4">
