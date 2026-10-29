@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { cn, formatDisplayDate } from '@/lib/utils';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 interface AgreementWithProviders {
   id: string;
@@ -353,7 +354,7 @@ export default function StateDetailPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">
-                              Dr. {physician.name}
+                              Dr. {stripDrPrefix(physician.name)}
                             </p>
                             {physician.atCapacity && (
                               <Badge variant="destructive" className="text-xs shrink-0">
@@ -566,7 +567,7 @@ export default function StateDetailPage() {
                             >
                               <div className="flex-1">
                                 <p className="font-medium text-foreground group-hover:text-primary transition-colors">
-                                  Dr. {agreement.physician_name}
+                                  Dr. {stripDrPrefix(agreement.physician_name)}
                                 </p>
                                 <p className="text-sm text-muted-foreground">
                                   {agreement.providers.filter(p => p.is_active).length} active providers • {agreement.meeting_cadence || 'No cadence set'}
@@ -804,7 +805,7 @@ export default function StateDetailPage() {
               <RelatedLinksCard
                 title="Related Physicians"
                 links={uniquePhysicians.map(p => ({
-                  label: `Dr. ${p.physician_name}`,
+                  label: `Dr. ${stripDrPrefix(p.physician_name)}`,
                   href: `/physicians/${encodeURIComponent(p.physician_email)}`,
                   description: `${agreements.filter(a => a.physician_email === p.physician_email && a.workflow_status === 'active').length} agreements`,
                 }))}

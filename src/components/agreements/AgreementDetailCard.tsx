@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { WorkflowStatusTracker } from './WorkflowStatusTracker';
-import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
+import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -117,7 +117,7 @@ export function AgreementDetailCard({
                 {agreement.state_name} Agreement
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Dr. {agreement.physician_name}
+                Dr. {stripDrPrefix(agreement.physician_name)}
               </p>
             </div>
           </div>

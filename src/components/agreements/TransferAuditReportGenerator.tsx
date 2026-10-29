@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { parseLocalDate } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type Transfer = Tables<'agreement_transfers'>;
 type Task = Tables<'agreement_tasks'>;
@@ -165,7 +166,7 @@ function buildReportHtml(data: TransferAuditData): string {
 <body>
 <div class="header">
   <h1>Transfer ${isCancelled ? 'Cancellation' : 'Completion'} Audit Report</h1>
-  <div class="subtitle">${escapeHtml(transfer.state_name)} (${transfer.state_abbreviation}) — ${escapeHtml(transfer.source_physician_name || 'Source')} → Dr. ${escapeHtml(transfer.target_physician_name)}</div>
+  <div class="subtitle">${escapeHtml(transfer.state_name)} (${transfer.state_abbreviation}) — ${escapeHtml(transfer.source_physician_name || 'Source')} → Dr. ${escapeHtml(stripDrPrefix(transfer.target_physician_name))}</div>
   <div class="meta">Generated ${format(now, "MMMM d, yyyy 'at' h:mm a")} • Transfer ID: ${transfer.id.slice(0, 8)}</div>
 </div>
 
@@ -174,7 +175,7 @@ function buildReportHtml(data: TransferAuditData): string {
   <div class="summary-item"><label>State</label><div class="value">${escapeHtml(transfer.state_name)} (${transfer.state_abbreviation})</div></div>
   <div class="summary-item"><label>Status</label><div class="value"><span class="status-badge ${isCancelled ? 'status-cancelled' : 'status-completed'}">${transfer.status}</span></div></div>
   <div class="summary-item"><label>Source Physician</label><div class="value">${escapeHtml(transfer.source_physician_name || '—')}${transfer.source_physician_email ? ` (${escapeHtml(transfer.source_physician_email)})` : ''}</div></div>
-  <div class="summary-item"><label>Target Physician</label><div class="value">Dr. ${escapeHtml(transfer.target_physician_name)}${transfer.target_physician_email ? ` (${escapeHtml(transfer.target_physician_email)})` : ''}</div></div>
+  <div class="summary-item"><label>Target Physician</label><div class="value">Dr. ${escapeHtml(stripDrPrefix(transfer.target_physician_name))}${transfer.target_physician_email ? ` (${escapeHtml(transfer.target_physician_email)})` : ''}</div></div>
   <div class="summary-item"><label>Initiated</label><div class="value">${formatTimestamp(transfer.initiated_at)}</div></div>
   <div class="summary-item"><label>${isCancelled ? 'Cancelled' : 'Completed'}</label><div class="value">${formatTimestamp(transfer.completed_at || transfer.updated_at)}</div></div>
   <div class="summary-item"><label>Termination Effective Date</label><div class="value">${formatLocalDate(transfer.termination_effective_date)}</div></div>
@@ -198,7 +199,7 @@ ${buildTaskRows(terminationTasks, 'termination')}
 </table>
 
 <h2>3. Phase 2 — Initiation</h2>
-<p style="font-size: 12px; color: #888; margin-bottom: 4px;">Tasks related to initiation of the new agreement with Dr. ${escapeHtml(transfer.target_physician_name)}</p>
+<p style="font-size: 12px; color: #888; margin-bottom: 4px;">Tasks related to initiation of the new agreement with Dr. ${escapeHtml(stripDrPrefix(transfer.target_physician_name))}</p>
 <table>
 <thead><tr><th>Task</th><th>Required</th><th>Status</th><th>Completed</th><th>Assigned To</th></tr></thead>
 <tbody>

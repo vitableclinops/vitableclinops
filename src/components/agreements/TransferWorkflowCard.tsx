@@ -43,6 +43,7 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { parseLocalDate } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type Transfer = Tables<'agreement_transfers'>;
 type Task = Tables<'agreement_tasks'>;
@@ -233,7 +234,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
             workflow_status: 'terminated',
             terminated_at: new Date().toISOString(),
             terminated_by: user?.id,
-            termination_reason: `Transferred to Dr. ${transfer.target_physician_name}`,
+            termination_reason: `Transferred to Dr. ${stripDrPrefix(transfer.target_physician_name)}`,
           })
           .eq('id', transfer.source_agreement_id);
 
@@ -333,7 +334,7 @@ export function TransferWorkflowCard({ transfer, onUpdate }: TransferWorkflowCar
             workflow_status: 'terminated',
             terminated_at: new Date().toISOString(),
             terminated_by: user?.id,
-            termination_reason: `Transferred to Dr. ${transfer.target_physician_name}`,
+            termination_reason: `Transferred to Dr. ${stripDrPrefix(transfer.target_physician_name)}`,
           })
           .eq('id', transfer.source_agreement_id);
 

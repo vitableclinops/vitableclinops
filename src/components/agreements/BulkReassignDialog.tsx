@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useEmailNotifications } from '@/hooks/useEmailNotifications';
 import { getTerminationTaskTemplates, getInitiationTaskTemplates, hydrateTaskTemplates } from '@/data/taskTemplates';
 import { AlertTriangle, Users, ArrowRight, Calendar, FileText, Info, Shield, ShieldCheck, XCircle } from 'lucide-react';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 interface SelectedAgreement {
   id: string;
@@ -511,7 +512,7 @@ export function BulkReassignDialog({
                 ))}
               </div>
               <p className="text-xs text-muted-foreground mt-1.5">
-                These state agreements for Dr. {selectedAgreements[0]?.physicianName} remain untouched by this transfer.
+                These state agreements for Dr. {stripDrPrefix(selectedAgreements[0]?.physicianName)} remain untouched by this transfer.
               </p>
             </div>
           )}
@@ -539,7 +540,7 @@ export function BulkReassignDialog({
               <SelectContent className="z-[200] max-h-60 overflow-y-auto bg-popover">
                 {physicians.map(physician => (
                   <SelectItem key={physician.id} value={physician.id}>
-                    Dr. {physician.name}
+                    Dr. {stripDrPrefix(physician.name)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -584,7 +585,7 @@ export function BulkReassignDialog({
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
-                    Dr. {selectedPhysician?.name} would exceed the NP:MD ratio limit. Remove some agreements from this transfer or choose a different physician.
+                    Dr. {stripDrPrefix(selectedPhysician?.name)} would exceed the NP:MD ratio limit. Remove some agreements from this transfer or choose a different physician.
                   </AlertDescription>
                 </Alert>
               )}

@@ -1249,7 +1249,7 @@ const CollaborativeAgreementsPage = () => {
                                 <p className="text-sm truncate">
                                   {agreement.physicianName.startsWith('Dr.') 
                                     ? agreement.physicianName 
-                                    : `Dr. ${agreement.physicianName}`}
+                                    : `Dr. ${stripDrPrefix(agreement.physicianName)}`}
                                 </p>
                               )}
                               <p className="text-xs text-muted-foreground">

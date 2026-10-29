@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import type { Tables } from '@/integrations/supabase/types';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
 
@@ -129,7 +130,7 @@ function buildReportHtml(data: AuditReportData): string {
 <body>
 <div class="header">
   <h1>Collaborative Agreement Compliance Report</h1>
-  <div class="subtitle">${escapeHtml(agreement.state_name)} — ${escapeHtml(agreement.provider_name || 'Provider')} ↔ Dr. ${escapeHtml(agreement.physician_name || 'Physician')}</div>
+  <div class="subtitle">${escapeHtml(agreement.state_name)} — ${escapeHtml(agreement.provider_name || 'Provider')} ↔ Dr. ${escapeHtml(stripDrPrefix(agreement.physician_name || 'Physician'))}</div>
   <div class="meta">Generated ${format(now, 'MMMM d, yyyy \'at\' h:mm a')} • Agreement ID: ${agreement.id.slice(0, 8)}</div>
 </div>
 
@@ -138,7 +139,7 @@ function buildReportHtml(data: AuditReportData): string {
   <div class="summary-item"><label>State</label><div class="value">${escapeHtml(agreement.state_name)} (${agreement.state_abbreviation})</div></div>
   <div class="summary-item"><label>Status</label><div class="value"><span class="status-badge ${agreement.workflow_status === 'active' ? 'status-active' : agreement.workflow_status === 'terminated' ? 'status-terminated' : 'status-default'}">${agreement.workflow_status.replace(/_/g, ' ')}</span></div></div>
   <div class="summary-item"><label>Provider</label><div class="value">${escapeHtml(agreement.provider_name || '—')}</div></div>
-  <div class="summary-item"><label>Physician</label><div class="value">Dr. ${escapeHtml(agreement.physician_name || '—')}</div></div>
+  <div class="summary-item"><label>Physician</label><div class="value">Dr. ${escapeHtml(stripDrPrefix(agreement.physician_name || '—'))}</div></div>
   <div class="summary-item"><label>Start Date</label><div class="value">${formatDateShort(agreement.start_date)}</div></div>
   <div class="summary-item"><label>Renewal Date</label><div class="value">${formatDateShort(agreement.next_renewal_date)}</div></div>
   <div class="summary-item"><label>Meeting Cadence</label><div class="value" style="text-transform: capitalize;">${agreement.meeting_cadence || '—'}</div></div>

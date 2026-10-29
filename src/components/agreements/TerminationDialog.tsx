@@ -28,6 +28,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { useAgreementWorkflow } from '@/hooks/useAgreementWorkflow';
 import type { Tables } from '@/integrations/supabase/types';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type Agreement = Tables<'collaborative_agreements'>;
 type AgreementProvider = Tables<'agreement_providers'>;
@@ -158,7 +159,7 @@ export function TerminationDialog({
             <div>
               <DialogTitle>Terminate Agreement</DialogTitle>
               <DialogDescription>
-                {agreement.state_name} - Dr. {agreement.physician_name}
+                {agreement.state_name} - Dr. {stripDrPrefix(agreement.physician_name)}
               </DialogDescription>
             </div>
           </div>
@@ -172,7 +173,7 @@ export function TerminationDialog({
               <Alert className="border-primary/30 bg-primary/5">
                 <ArrowRightLeft className="h-4 w-4" />
                 <AlertDescription>
-                  <span className="font-medium">Active transfer detected.</span> This agreement has a pending transfer to Dr. {transferPhysicianName}. Termination tasks from the transfer workflow will be reused — no duplicate tasks will be created.
+                  <span className="font-medium">Active transfer detected.</span> This agreement has a pending transfer to Dr. {stripDrPrefix(transferPhysicianName)}. Termination tasks from the transfer workflow will be reused — no duplicate tasks will be created.
                 </AlertDescription>
               </Alert>
             )}

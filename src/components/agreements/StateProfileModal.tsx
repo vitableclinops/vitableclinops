@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import type { StateCompliance } from '@/hooks/useStateCompliance';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 interface StateProfileModalProps {
   open: boolean;
@@ -283,7 +284,7 @@ export const StateProfileModal = ({
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{a.provider_name || a.provider_email || 'Unassigned'}</p>
                         <p className="text-xs text-muted-foreground">
-                          with Dr. {a.physician_name || 'Unassigned'}{a.state_abbreviation ? ` (${a.state_abbreviation})` : ''}
+                          with Dr. {stripDrPrefix(a.physician_name || 'Unassigned')}{a.state_abbreviation ? ` (${a.state_abbreviation})` : ''}
                         </p>
                       </div>
                       <div className="shrink-0">
@@ -315,7 +316,7 @@ export const StateProfileModal = ({
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{name}</p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {ags.map((a) => `Dr. ${a.physician_name || 'Unassigned'}${a.state_abbreviation ? ` (${a.state_abbreviation})` : ''}`).join(', ')}
+                        {ags.map((a) => `Dr. ${stripDrPrefix(a.physician_name || 'Unassigned')}${a.state_abbreviation ? ` (${a.state_abbreviation})` : ''}`).join(', ')}
                       </p>
                     </div>
                     <Badge variant="outline" className="text-[10px] shrink-0">
@@ -340,7 +341,7 @@ export const StateProfileModal = ({
                         </span>
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">Dr. {name}</p>
+                        <p className="text-sm font-medium truncate">Dr. {stripDrPrefix(name)}</p>
                         <p className="text-xs text-muted-foreground truncate">
                           {group.providerNames.size > 0
                             ? `Supervising ${Array.from(group.providerNames).join(', ')}`
@@ -622,7 +623,7 @@ export const StateProfileModal = ({
                           {physician.split(' ').map(n => n[0]).join('')}
                         </span>
                       </div>
-                      <span className="text-sm font-medium">Dr. {physician}</span>
+                      <span className="text-sm font-medium">Dr. {stripDrPrefix(physician)}</span>
                     </div>
                   ))}
                 </div>

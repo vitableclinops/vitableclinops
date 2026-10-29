@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import type { Tables } from '@/integrations/supabase/types';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type Task = Tables<'agreement_tasks'>;
 
@@ -223,7 +224,7 @@ export function useAdminDashboard() {
           .in('id', agreementIds);
         const labelMap = new Map((agreements || []).map(a => {
           const provider = a.provider_name || 'Provider';
-          const physician = a.physician_name ? `Dr. ${a.physician_name}` : 'Physician';
+          const physician = a.physician_name ? `Dr. ${stripDrPrefix(a.physician_name)}` : 'Physician';
           return [a.id, `${provider} ↔ ${physician} (${a.state_abbreviation})`];
         }));
         tasks.forEach(t => { if (t.agreement_id) t.agreement_label = labelMap.get(t.agreement_id); });

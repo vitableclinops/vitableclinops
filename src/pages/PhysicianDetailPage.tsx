@@ -29,6 +29,7 @@ import {
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import type { Tables } from '@/integrations/supabase/types';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
 
@@ -110,7 +111,7 @@ export default function PhysicianDetailPage() {
 
   const breadcrumbs = [
     { label: 'Agreements', href: '/admin/agreements' },
-    { label: `Dr. ${physician?.name || 'Physician'}` },
+    { label: `Dr. ${stripDrPrefix(physician?.name || 'Physician')}` },
   ];
 
   if (!physicianEmail) {
@@ -161,7 +162,7 @@ export default function PhysicianDetailPage() {
                   </Avatar>
                   <div>
                     <h1 className="text-3xl font-bold text-foreground">
-                      Dr. {physician.name}
+                      Dr. {stripDrPrefix(physician.name)}
                     </h1>
                     <div className="flex items-center gap-4 mt-2 text-muted-foreground">
                       <span className="flex items-center gap-1">
@@ -209,7 +210,7 @@ export default function PhysicianDetailPage() {
                     Collaborative Agreements
                   </CardTitle>
                   <CardDescription>
-                    All agreements where Dr. {physician.name} is the supervising physician
+                    All agreements where Dr. {stripDrPrefix(physician.name)} is the supervising physician
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
