@@ -9,6 +9,7 @@ import { NotificationQueue } from '@/components/agreements/NotificationQueue';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
 import { StateComplianceGrid } from '@/components/agreements/StateComplianceGrid';
 import { usePhysicianSlots } from '@/hooks/usePhysicianSlots';
+import { physicianStateLimit } from '@/lib/physicianSlots';
 import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { TransferWorkflowCard } from '@/components/agreements/TransferWorkflowCard';
 import { CompletedTransfersTab } from '@/components/agreements/CompletedTransfersTab';
@@ -161,7 +162,7 @@ const CollaborativeAgreementsPage = () => {
   const [gapPrefill, setGapPrefill] = useState<{ stateAbbr: string; skipProcess: boolean; provider: { id: string; name: string; email: string; npi?: string } } | null>(null);
   const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
   const { getNextMeetingForAgreement, hasMeetingScheduled, loading: meetingsLoading } = useScheduledMeetings();
-  const { data: physicianSlotRows } = usePhysicianSlots();
+  const { data: physicianSlotRows, isPending: slotsLoading, isError: slotsError } = usePhysicianSlots();
   const slotsByPhysicianState = new Map((physicianSlotRows ?? []).map(r => [`${r.physicianName.trim().toLowerCase()}|${r.state}`, r]));
   const [searchParams] = useSearchParams();
   
@@ -1439,6 +1440,7 @@ const CollaborativeAgreementsPage = () => {
                           const stateCompliance = stateComplianceData.find(c => c.state_abbreviation === state);
                           const caRequired = stateCompliance?.ca_required ?? false;
                           const slot = slotsByPhysicianState.get(`${physician.name.trim().toLowerCase()}|${state}`);
+                          const limit = slot?.limit ?? physicianStateLimit(stateCompliance);
                           return (
                             <div key={state} className="flex flex-col items-center gap-0.5">
                               <Badge 
@@ -1447,9 +1449,13 @@ const CollaborativeAgreementsPage = () => {
                               >
                                 {state}
                               </Badge>
-                              {slot ? (
-                                <span className={`text-[10px] font-medium ${slot.filled >= slot.limit ? 'text-destructive' : 'text-foreground'}`}>
-                                  {slot.filled}/{slot.limit}
+                              {slotsLoading || complianceLoading ? (
+                                <span className="text-[10px] text-muted-foreground">Checking…</span>
+                              ) : slotsError ? (
+                                <span className="text-[10px] text-destructive">Unavailable</span>
+                              ) : limit !== null ? (
+                                <span className={`text-[10px] font-medium ${(slot?.filled ?? 0) >= limit ? 'text-destructive' : 'text-foreground'}`}>
+                                  {slot?.filled ?? 0}/{limit}
                                 </span>
                               ) : (
                                 <span className="text-[10px] text-muted-foreground">No limit</span>

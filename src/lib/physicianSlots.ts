@@ -14,6 +14,12 @@ export interface PhysicianSlots {
   verificationLimit: number | null; providers: SlotPerson[];
 }
 
+export function physicianStateLimit(rule?: SlotRule): number | null {
+  const text = rule?.np_md_ratio?.trim() ?? '';
+  const limit = /^\d+$/.test(text) ? Number(text) : rule?.np_md_ratio_limit;
+  return limit && limit > 0 ? limit : null;
+}
+
 export function physicianSlots(agreements: SlotAgreement[], people: SlotPerson[], rules: SlotRule[], today = new Date()): PhysicianSlots[] {
   const byId = new Map(people.map(p => [p.id, p]));
   const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -25,9 +31,7 @@ export function physicianSlots(agreements: SlotAgreement[], people: SlotPerson[]
     if (a.physicianId && isOffboarded(byId.get(a.physicianId)?.employment_status)) continue;
     const rule = rules.find(r => r.state_abbreviation === a.state);
     // Use the displayed State Requirements ratio; expose conflicting verification values.
-    const text = rule?.np_md_ratio?.trim() ?? '';
-    const displayLimit = /^\d+$/.test(text) ? Number(text) : null;
-    const limit = displayLimit ?? rule?.np_md_ratio_limit;
+    const limit = physicianStateLimit(rule);
     if (!limit || limit <= 0 || !a.physicianKey) continue;
     const key = `${a.physicianKey}:${a.state}`;
     const row = rows.get(key) ?? { key, physicianName: a.physicianName, state: a.state, filled: 0, limit,
