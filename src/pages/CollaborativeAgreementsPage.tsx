@@ -1445,7 +1445,7 @@ const CollaborativeAgreementsPage = () => {
                           const confirmed = confirmedPhysicianCount(confirmedCounts, physicianId, state);
                           const filled = confirmed ?? slot?.filled ?? 0;
                           return (
-                            <div key={state} className="flex flex-col items-center gap-0.5">
+                            <div key={state} className="flex flex-col items-center gap-0.5" title={confirmed !== null ? `Total including all practices${slot && slot.filled !== confirmed ? `; linked Vitable providers: ${slot.filled}` : ''}` : undefined}>
                               <Badge 
                                 variant={caRequired ? "default" : "outline"} 
                                 className="px-3 py-1 text-sm"
@@ -1461,15 +1461,7 @@ const CollaborativeAgreementsPage = () => {
                                   {filled}/{limit}
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-muted-foreground">{confirmed !== null ? `${confirmed} · No limit` : 'No limit'}</span>
-                              )}
-                              {confirmed !== null && (
-                                <span className="text-[9px] text-muted-foreground" title="Confirmed active total including Vitable and other practices">Confirmed total</span>
-                              )}
-                              {confirmed !== null && slot && slot.filled !== confirmed && (
-                                <span className={`text-[9px] ${slot.filled > confirmed ? 'text-warning' : 'text-muted-foreground'}`} title="Linked Vitable records are preserved; counts are not added to the confirmed total">
-                                  Vitable linked: {slot.filled}{slot.filled > confirmed ? ' — review' : ''}
-                                </span>
+                                <span className="text-[10px] text-muted-foreground">{confirmed !== null ? `${confirmed} No Limit` : 'No Limit'}</span>
                               )}
                               {slot && slot.verificationLimit !== null && (
                                 <span className="text-[9px] text-warning" title={`State Requirements ${slot.limit}; verification ${slot.verificationLimit}`}>
