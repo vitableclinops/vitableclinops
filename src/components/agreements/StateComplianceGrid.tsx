@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
 import { physicianStateLimit } from '@/lib/physicianSlots';
+import { confirmedPhysicianCount } from '@/lib/confirmedPhysicianCounts';
+import { useConfirmedPhysicianCounts } from '@/hooks/useConfirmedPhysicianCounts';
 import { StateProfileModal } from './StateProfileModal';
 
 interface StateData {
@@ -22,6 +24,7 @@ interface StateComplianceGridProps {
 
 const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
   const { allData: complianceData, refetch } = useStateCompliance();
+  const { data: confirmedCounts } = useConfirmedPhysicianCounts();
   const [selectedState, setSelectedState] = useState<StateCompliance | null>(null);
   const [selectedStateInfo, setSelectedStateInfo] = useState<StateData | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -168,14 +171,16 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                 {/* Supervising physicians — only those with at least one active provider */}
                 {(() => {
                   const physiciansWithProviders = state.physicians
-                    .map((physician) => ({
-                      physician,
-                      providerCount: state.activeProviders.filter(p =>
+                    .map((physician) => {
+                      const linked = state.activeProviders.filter(p =>
                         state.agreements.some(
                           a => a.id === p.agreement_id && a.physician_name === physician
                         )
-                      ).length,
-                    }))
+                      ).length;
+                      const physicianId = (state.agreements as any[]).find(a => a.physician_name === physician && a.physician_id)?.physician_id ?? null;
+                      const confirmed = confirmedPhysicianCount(confirmedCounts, physicianId, state.abbreviation);
+                      return { physician, providerCount: confirmed ?? linked };
+                    })
                     .filter(entry => entry.providerCount > 0);
 
                   if (physiciansWithProviders.length === 0) return null;
