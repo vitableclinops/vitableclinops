@@ -481,7 +481,7 @@ export default function AgreementDetailPage() {
                       </Button>
                     )
                   )}
-                  {hasRole('admin') && agreement.workflow_status === 'active' && (
+                  {hasRole('admin') && agreement.workflow_status === 'active' && !isDocumentExemptPhysician(agreement.physician_name) && (
                     <Button 
                       variant="outline"
                       size="sm"
@@ -986,7 +986,9 @@ export default function AgreementDetailPage() {
                           <CardTitle>Supervision Meetings</CardTitle>
                           {agreement.meeting_cadence && (
                             <CardDescription>
-                              Cadence: {agreement.meeting_cadence} · {agreement.state_name}
+                              {isDocumentExemptPhysician(agreement.physician_name)
+                                ? `Meetings managed by DirectShifts · ${agreement.state_name}`
+                                : `Cadence: ${agreement.meeting_cadence} · ${agreement.state_name}`}
                             </CardDescription>
                           )}
                         </CardHeader>
