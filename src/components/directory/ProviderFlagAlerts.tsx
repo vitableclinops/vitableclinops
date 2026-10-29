@@ -98,8 +98,8 @@ export function ProviderFlagAlerts({
                 ))}
                 {provider.agreementReviews?.map(review => (
                   <div key={review.state} className="mt-2 space-y-1">
-                    <p><strong>{review.state} collaboration:</strong> {review.reason}</p>
-                    <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => navigate('/admin/agreements')}>Review agreements</Button></p>
+                    <p><strong>{review.state} {review.authorityReview ? 'authority / collaboration' : 'collaboration'}:</strong> {review.newlyActive && 'Newly active in EHR. '}{review.reason}</p>
+                    <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix} {review.authorityReview && <Button variant="link" size="sm" className="h-auto p-0" onClick={() => { if (provider.profileId) onReview(provider.profileId); }}>Review licenses</Button>} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => navigate('/admin/agreements')}>Review agreements</Button></p>
                   </div>
                 ))}
               </section>
