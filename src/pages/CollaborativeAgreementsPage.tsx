@@ -1,4 +1,4 @@
-import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
+import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
 import { useState } from 'react';
 import { AGREEMENT_REFRESH_OPTIONS, refreshAgreementViews } from '@/lib/agreementRefresh';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
