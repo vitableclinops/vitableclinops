@@ -1,5 +1,5 @@
 import { getCollabRequirementType } from '@/constants/stateRestrictions';
-import { normalizeRole } from '@/lib/clinicianRoles';
+import { isIndependentPhysician, normalizeRole } from '@/lib/clinicianRoles';
 import { parseLocalDate } from '@/lib/utils';
 
 export interface StateAgreement {
@@ -22,6 +22,7 @@ export function activeStateAgreementFlags(
   _decisions: { profile_id: string; state_abbreviation: string; decision: string }[],
   today = new Date(),
 ): AgreementReview[] {
+  if (isIndependentPhysician(provider)) return [];
   const role = normalizeRole(provider.profession);
   const np = ['np', 'apn', 'aprn', 'npp', 'nurse practitioner', 'nurse practitioner, certified'].includes(role)
     || (!role && /\b(np|aprn|fnp|agpcnp)\b/i.test(provider.credentials ?? ''));

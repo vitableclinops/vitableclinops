@@ -27,6 +27,7 @@ import { CopyValueButton } from '@/components/directory/CopyValueButton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { CURRENT_EMPLOYEE_FILTER, isOffboarded } from '@/lib/employeeVisibility';
+import { isIndependentPhysician } from '@/lib/clinicianRoles';
 
 const PROFESSION_OPTIONS = [
   'NP',
@@ -482,7 +483,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
           </DialogTitle>
         </DialogHeader>
 
-        {!isOffboarded(provider.employment_status) && missingDocAgreements.length > 0 && (
+        {!isOffboarded(provider.employment_status) && !isIndependentPhysician(provider) && missingDocAgreements.length > 0 && (
           <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
             <div className="text-sm">

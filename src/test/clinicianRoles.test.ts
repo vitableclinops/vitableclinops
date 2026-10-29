@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { isClinician } from '@/lib/clinicianRoles';
+import { isClinician, isIndependentPhysician } from '@/lib/clinicianRoles';
 
 describe('Directory clinician scope', () => {
+  it.each(['MD', 'DO', 'physician', ' md ', 'do'])('recognizes %s as independently practicing', profession => {
+    expect(isIndependentPhysician({ profession })).toBe(true);
+  });
+  it.each(['MD', 'DO', 'M.D.', 'D.O.', 'MD, MPH'])('recognizes physician credentials %s with blank Type', credentials => {
+    expect(isIndependentPhysician({ profession: null, credentials })).toBe(true);
+  });
+  it('does not exempt NPs from their own agreements', () => {
+    expect(isIndependentPhysician({ profession: 'NP', credentials: 'MSN, FNP-BC' })).toBe(false);
+  });
   it('hides staff records that carry no clinical Type', () => {
     expect(isClinician({ profession: null, credentials: null })).toBe(false);
     expect(isClinician({ profession: '-', credentials: null })).toBe(false);

@@ -35,7 +35,12 @@ describe('active EHR state agreement checks', () => {
     expect(activeStateAgreementFlags(provider, ['AR'], [{ state_abbreviation: 'AR', ca_required: true, collab_requirement_type: 'conditional' }], [], [], today).map(r => r.state)).toEqual(['AR']);
   });
   it('does not impose NP agreements on physicians', () => {
-    expect(activeStateAgreementFlags({ id: 'md', profession: 'physician' }, ['PA'], [], [], [], today)).toEqual([]);
+    expect(activeStateAgreementFlags({ id: 'md', profession: 'physician' }, ['PA'], rules, [], [], today)).toEqual([]);
+  });
+  it.each(['MD', 'DO'])('%s needs no own agreement or document in required states', profession => {
+    expect(activeStateAgreementFlags({ id: 'doctor', profession }, ['PA', 'OH'], rules, [], [], today)).toEqual([]);
+    expect(activeStateAgreementFlags({ id: 'doctor', profession }, ['PA'], rules,
+      [{ profileId: 'doctor', state: 'PA', status: 'active', document: null }], [], today)).toEqual([]);
   });
 });
 import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
