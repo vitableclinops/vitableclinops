@@ -360,6 +360,7 @@ const CollaborativeAgreementsPage = () => {
       renewalDate,
       daysUntilMeeting: getDaysUntil(nextMeetingDate),
       daysUntilRenewal: getDaysUntil(renewalDate),
+      directShifts,
       workflowStatus: agreement.workflow_status || 'draft',
       caRequired: stateCompliance?.ca_required ?? false,
       fpaStatus: stateCompliance?.fpa_status || null,
@@ -1273,6 +1274,8 @@ const CollaborativeAgreementsPage = () => {
                                     </span>
                                   </div>
                                 </div>
+                              ) : agreement.directShifts ? (
+                                <span className="text-sm text-muted-foreground">Handled by DirectShifts</span>
                               ) : (
                                 <span className="text-sm text-muted-foreground">None scheduled</span>
                               )}
@@ -1293,6 +1296,8 @@ const CollaborativeAgreementsPage = () => {
                                     {agreement.renewalDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
                                   </span>
                                 </div>
+                              ) : agreement.directShifts ? (
+                                <span className="text-sm text-muted-foreground">Handled by DirectShifts</span>
                               ) : (
                                 <span className="text-sm text-muted-foreground">Not set</span>
                               )}
