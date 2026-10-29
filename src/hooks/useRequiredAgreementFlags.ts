@@ -22,7 +22,7 @@ export function useRequiredAgreementFlags(enabled: boolean) {
   const flags = !audit.data || !coverage.data || !profiles.data ? [] : profiles.data.flatMap(provider => {
     if (isOffboarded(provider.employment_status) || isTestAccountDirectoryRecord(provider) || OUT_OF_SCOPE_PROFILE_IDS[provider.id]) return [];
     const states = coverage.data.statesByProfile.get(provider.id) ?? [];
-    return activeStateAgreementFlags(provider, states, audit.data.rules, audit.data.agreements, audit.data.decisions)
+    return activeStateAgreementFlags(provider, states, audit.data.rules, audit.data.agreements, audit.data.decisions, new Date(), audit.data.authorityEvidence, coverage.data.newlyActiveStatesByProfile?.get(provider.id))
       .map(review => ({ ...review, provider, name: directoryDisplayName(provider) }));
   }).sort((a, b) => a.name.localeCompare(b.name) || a.state.localeCompare(b.state));
   return { flags, loading: profiles.isLoading || audit.isLoading || coverage.isLoading, error: profiles.error || audit.error || coverage.error };
