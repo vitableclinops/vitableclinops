@@ -1461,7 +1461,10 @@ const CollaborativeAgreementsPage = () => {
                                   {filled}/{limit}
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-muted-foreground">{confirmed !== null ? `${confirmed} No Limit` : 'No Limit'}</span>
+                                <>
+                                  {confirmed !== null && <span className="text-[10px] font-medium text-foreground">{confirmed}</span>}
+                                  <span className="text-[10px] text-muted-foreground">No limit</span>
+                                </>
                               )}
                               {slot && slot.verificationLimit !== null && (
                                 <span className="text-[9px] text-warning" title={`State Requirements ${slot.limit}; verification ${slot.verificationLimit}`}>
