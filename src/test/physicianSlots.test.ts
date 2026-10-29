@@ -11,6 +11,10 @@ describe('physician slots', () => {
   it('shows Dr. Patel Ohio as 1/5 from State Requirements and exposes the conflicting verification limit', () => {
     expect(physicianSlots([agreement], people, rules)[0]).toMatchObject({ filled: 1, limit: 5, verificationLimit: 3 });
   });
+  it('uses the confirmed Ohio limit of five for display and verification without a conflict', () => {
+    expect(physicianSlots([agreement], people, [{ state_abbreviation: 'OH', np_md_ratio: '5', np_md_ratio_limit: 5 }])[0])
+      .toMatchObject({ filled: 1, limit: 5, verificationLimit: null });
+  });
   it('counts one NP once across duplicate agreements and direct/participant links', () => {
     expect(physicianSlots([agreement, { ...agreement, providerIds: ['np1', 'np1'] }], people, rules)[0].filled).toBe(1);
   });
