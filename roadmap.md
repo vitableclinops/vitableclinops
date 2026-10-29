@@ -54,3 +54,5 @@
 - [x] Refresh agreement physician/state counts and related views after additions and terminations; 82 tests passed, signed-in views verified and one-minute automatic fetch confirmed without reloading. Preserve supplied outside-practice totals.
 - [x] Stop missing-license agreement invalidations; deployed evidence check, restored eight missing/pending/renewed-license agreements with audit entries, retained Shadae PA recorded expiration; 71 tests and signed-in Genevieve FL verified.
 - [x] Change NY to conditional collaboration only without prescriptive authority; update saved requirement and default classification.
+- [ ] Restrict ongoing agreement-link checks to active EHR states and verify daily refresh updates flags.
+- [ ] Check NY prescriptive-authority evidence as an alternative to collaboration, with clickable correction and regression tests.
