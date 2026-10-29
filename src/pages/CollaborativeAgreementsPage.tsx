@@ -130,6 +130,7 @@ interface FlattenedAgreement {
   renewalDate: Date | null;
   daysUntilMeeting: number | null;
   daysUntilRenewal: number | null;
+  directShifts: boolean;
   workflowStatus: string;
   // State compliance fields
   caRequired: boolean;
@@ -322,9 +323,11 @@ const CollaborativeAgreementsPage = () => {
     .map(agreement => {
     const stateCadence = getStateMeetingCadence(agreement.state_abbreviation, stateComplianceData);
     const effectiveCadence = stateCadence || agreement.meeting_cadence;
-    const nextScheduledMeeting = getNextMeetingForAgreement(agreement.id);
+    // DirectShifts handles its own renewals and meetings: no dates tracked here
+    const directShifts = isDocumentExemptPhysician(agreement.physician_name);
+    const nextScheduledMeeting = directShifts ? null : getNextMeetingForAgreement(agreement.id);
     const nextMeetingDate = nextScheduledMeeting ? new Date(nextScheduledMeeting.scheduled_date) : null;
-    const renewalDate = calculateRenewalDate(agreement.start_date);
+    const renewalDate = directShifts ? null : calculateRenewalDate(agreement.start_date);
     const stateCompliance = stateComplianceData.find(c => c.state_abbreviation === agreement.state_abbreviation);
     // Resolve actual provider names from agreement_providers
     const activeProviders = dbProviders.filter(p => p.agreement_id === agreement.id && p.is_active);
@@ -357,6 +360,7 @@ const CollaborativeAgreementsPage = () => {
       renewalDate,
       daysUntilMeeting: getDaysUntil(nextMeetingDate),
       daysUntilRenewal: getDaysUntil(renewalDate),
+      directShifts,
       workflowStatus: agreement.workflow_status || 'draft',
       caRequired: stateCompliance?.ca_required ?? false,
       fpaStatus: stateCompliance?.fpa_status || null,
@@ -1270,6 +1274,8 @@ const CollaborativeAgreementsPage = () => {
                                     </span>
                                   </div>
                                 </div>
+                              ) : agreement.directShifts ? (
+                                <span className="text-sm text-muted-foreground">Handled by DirectShifts</span>
                               ) : (
                                 <span className="text-sm text-muted-foreground">None scheduled</span>
                               )}
@@ -1290,6 +1296,8 @@ const CollaborativeAgreementsPage = () => {
                                     {agreement.renewalDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
                                   </span>
                                 </div>
+                              ) : agreement.directShifts ? (
+                                <span className="text-sm text-muted-foreground">Handled by DirectShifts</span>
                               ) : (
                                 <span className="text-sm text-muted-foreground">Not set</span>
                               )}

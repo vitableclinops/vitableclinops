@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
 import { getInitiationTaskTemplates, getTerminationTaskTemplates, hydrateTaskTemplates } from '@/data/taskTemplates';
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
 
 type AgreementTask = Tables<'agreement_tasks'>;
 type AgreementTaskInsert = TablesInsert<'agreement_tasks'>;
@@ -222,9 +223,11 @@ export const useAgreementWorkflow = () => {
     options?: { chartReviewRequired?: boolean; meetingCadence?: string; providerMessage?: string; skipProcess?: boolean }
   ) => {
     const skip = !!options?.skipProcess;
+    // DirectShifts physicians handle their own renewals and meetings: no renewal date tracked
+    const directShifts = isDocumentExemptPhysician(agreementData.physician_name);
     // Compute next_renewal_date from start_date + renewal_cadence
     let computedRenewalDate: string | null = null;
-    if (agreementData.start_date && agreementData.renewal_cadence) {
+    if (!directShifts && agreementData.start_date && agreementData.renewal_cadence) {
       const startDate = new Date(agreementData.start_date);
       const yearsToAdd = agreementData.renewal_cadence === 'biennial' ? 2 : 1;
       const renewalDate = new Date(startDate);
