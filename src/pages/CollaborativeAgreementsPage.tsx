@@ -553,6 +553,19 @@ const CollaborativeAgreementsPage = () => {
   const agreementsWithoutDocument = flattenedAgreements.filter(
     a => a.isActive && !a.documentUrl && !a.medallionDocumentUrl
   ).length;
+  // Missing-document agreements shown as flags inside Needs fixing (deduped against
+  // required-agreement flags and incomplete shells; DirectShifts physicians exempt)
+  const requiredFlagKeys = new Set(requiredAgreementFlags.map(f => `${f.provider.id}:${f.state}`));
+  const incompleteIds = new Set(incompleteAgreements.map(a => a.id));
+  const missingDocAgreements = dbAgreements.filter(a => {
+    if (!activeAgreementIds.has(a.id) || incompleteIds.has(a.id)) return false;
+    if (isDocumentExemptPhysician(a.physician_name)) return false;
+    const providers = dbProviders.filter(p => p.agreement_id === a.id && p.is_active);
+    if (a.agreement_document_url || a.medallion_document_url || providers.some(p => p.medallion_document_url)) return false;
+    if ((agreementDocCounts as Record<string, number>)[a.id] > 0) return false;
+    return !providers.some(p => p.provider_id && requiredFlagKeys.has(`${p.provider_id}:${a.state_abbreviation}`));
+  });
+  const needsFixingCount = incompleteCount + missingDocAgreements.length;
   
   // Upcoming meetings in next 14 days
   const upcomingMeetings = flattenedAgreements.filter(
