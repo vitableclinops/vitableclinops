@@ -658,6 +658,9 @@ export default function AgreementDetailPage() {
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Renewal Date</p>
+                          {isDocumentExemptPhysician(agreement.physician_name) ? (
+                            <p className="font-medium">Managed by DirectShifts</p>
+                          ) : (
                           <Popover>
                             <PopoverTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-auto p-0 font-medium hover:text-primary">
@@ -685,6 +688,7 @@ export default function AgreementDetailPage() {
                               />
                             </PopoverContent>
                           </Popover>
+                          )}
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Chart Review</p>
