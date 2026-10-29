@@ -113,16 +113,6 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                   </span>
                 </div>
 
-                {/* MD supervision limit from State Requirements */}
-                <p className="text-sm text-muted-foreground">
-                  {(() => {
-                    const limit = physicianStateLimit(compliance);
-                    return limit
-                      ? <>MD supervision limit: <span className="font-medium text-foreground">{limit}</span></>
-                      : 'MD supervision limit: No limit';
-                  })()}
-                </p>
-
                 {/* Compliance Requirements Section */}
                 {compliance && (
                   <div className="space-y-3 border-t pt-4">
