@@ -205,6 +205,16 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                   );
                 })()}
 
+                {/* MD supervision limit from State Requirements */}
+                <p className="text-xs text-muted-foreground">
+                  {(() => {
+                    const limit = physicianStateLimit(compliance);
+                    return limit
+                      ? <>(MD supervision limit: <span className="font-medium text-foreground">{limit}</span>)</>
+                      : '(MD supervision limit: No limit)';
+                  })()}
+                </p>
+
                 {/* Provider names preview */}
                 {state.activeProviders.length > 0 && (() => {
                   const sortedProviders = [...state.activeProviders].sort((a, b) =>
@@ -241,15 +251,6 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                   );
                 })()}
 
-                {/* MD supervision limit from State Requirements */}
-                <p className="text-xs text-muted-foreground">
-                  {(() => {
-                    const limit = physicianStateLimit(compliance);
-                    return limit
-                      ? <>(MD supervision limit: <span className="font-medium text-foreground">{limit}</span>)</>
-                      : '(MD supervision limit: No limit)';
-                  })()}
-                </p>
               </CardContent>
             </Card>
           );
