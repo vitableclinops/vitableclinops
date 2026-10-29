@@ -1,4 +1,5 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { agreementLicenseEvidence } from "../_shared/agreementLicenseEvidence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,8 +12,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !supabaseKey) throw new Error("Missing service configuration");
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const today = new Date().toISOString().split("T")[0];
@@ -135,7 +137,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const licenseExpired = true;
+        const licenseExpired = agreementLicenseEvidence([...(licenses || []), ...(medLic || [])], today) === 'invalid';
 
         if (licenseExpired) {
           // Invalidate the agreement
