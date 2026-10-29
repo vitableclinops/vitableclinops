@@ -1211,7 +1211,7 @@ const CollaborativeAgreementsPage = () => {
                                   <div className="min-w-0">
                                     <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{agreement.providerName}</p>
                                     <div className="flex items-center gap-2">
-                                      {!hasDocument && agreement.isActive && (
+                                      {!hasDocument && agreement.isActive && !isDocumentExemptPhysician(agreement.physicianName) && (
                                         <Badge variant="outline" className="text-[10px] px-1 py-0 text-warning border-warning/30">No Doc</Badge>
                                       )}
                                     </div>
