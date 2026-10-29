@@ -55,6 +55,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn, parseLocalDate } from '@/lib/utils';
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
 import { format } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -480,7 +481,7 @@ export default function AgreementDetailPage() {
                       </Button>
                     )
                   )}
-                  {hasRole('admin') && agreement.workflow_status === 'active' && (
+                  {hasRole('admin') && agreement.workflow_status === 'active' && !isDocumentExemptPhysician(agreement.physician_name) && (
                     <Button 
                       variant="outline"
                       size="sm"
@@ -643,7 +644,11 @@ export default function AgreementDetailPage() {
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Meeting Cadence</p>
-                          <p className="font-medium capitalize">{agreement.meeting_cadence || 'Not set'}</p>
+                          <p className="font-medium capitalize">
+                            {isDocumentExemptPhysician(agreement.physician_name)
+                              ? 'Managed by DirectShifts'
+                              : agreement.meeting_cadence || 'Not set'}
+                          </p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Start Date</p>
@@ -653,6 +658,9 @@ export default function AgreementDetailPage() {
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Renewal Date</p>
+                          {isDocumentExemptPhysician(agreement.physician_name) ? (
+                            <p className="font-medium">Managed by DirectShifts</p>
+                          ) : (
                           <Popover>
                             <PopoverTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-auto p-0 font-medium hover:text-primary">
@@ -680,6 +688,7 @@ export default function AgreementDetailPage() {
                               />
                             </PopoverContent>
                           </Popover>
+                          )}
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Chart Review</p>
@@ -977,7 +986,9 @@ export default function AgreementDetailPage() {
                           <CardTitle>Supervision Meetings</CardTitle>
                           {agreement.meeting_cadence && (
                             <CardDescription>
-                              Cadence: {agreement.meeting_cadence} · {agreement.state_name}
+                              {isDocumentExemptPhysician(agreement.physician_name)
+                                ? `Meetings managed by DirectShifts · ${agreement.state_name}`
+                                : `Cadence: ${agreement.meeting_cadence} · ${agreement.state_name}`}
                             </CardDescription>
                           )}
                         </CardHeader>

@@ -175,6 +175,8 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
 
     setIsSubmitting(true);
     try {
+      // DirectShifts physicians manage their own renewals and meetings: no cadence tracked
+      const directShifts = isDocumentExemptPhysician(formData.physicianName);
       const newAgreement = await createAgreementWithTasks(
         {
           state_id: formData.selectedState.id,
@@ -185,8 +187,8 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
           physician_email: formData.physicianEmail,
           physician_npi: formData.physicianNpi || null,
           start_date: formData.startDate?.toISOString().split('T')[0],
-          renewal_cadence: formData.renewalCadence,
-          meeting_cadence: formData.meetingCadence,
+          renewal_cadence: directShifts ? null : formData.renewalCadence,
+          meeting_cadence: directShifts ? 'as_needed' : formData.meetingCadence,
           chart_review_required: formData.chartReviewRequired,
           chart_review_frequency: formData.chartReviewFrequency || null,
         },
