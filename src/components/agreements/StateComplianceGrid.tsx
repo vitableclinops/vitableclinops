@@ -242,7 +242,7 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                 })()}
 
                 {/* MD supervision limit from State Requirements */}
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   {(() => {
                     const limit = physicianStateLimit(compliance);
                     return limit
