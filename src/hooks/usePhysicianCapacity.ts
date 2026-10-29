@@ -41,7 +41,7 @@ export const usePhysicianCapacity = (
         if (!ratioLimit) {
           setCapacity(null);
           setLoading(false);
-          return;
+          return null;
         }
 
         // Only currently active, date-valid agreements count toward capacity
