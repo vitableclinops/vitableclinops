@@ -784,7 +784,7 @@ const CollaborativeAgreementsPage = () => {
             <StatCard
               title="Supervised Providers"
               value={totalActiveProviders}
-              subtitle={`${activePhysicianCount} physicians`}
+              subtitle={`${activePhysicianCount} supervising physicians`}
               icon={Users}
               variant="default"
             />
