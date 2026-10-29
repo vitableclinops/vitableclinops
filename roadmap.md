@@ -48,5 +48,5 @@
 - [x] Correct Kate’s CA badge to retain the saved limit of four when no active California agreements are counted.
 - [x] Make By Physician numbers count only active agreements, excluding terminated records; verified Kate’s 59 active agreements and CA 0/4, with 64 tests passing.
 - [x] Add agreement and saved-document links to supervised-provider dropdowns; verified Antonia Jackson’s OH link opens her active Kate Baron agreement.
-- [ ] Save and display Kate’s confirmed combined-practice totals for AR, CA, OH, OK, TX, VA without altering individual agreements; verify persisted values.
+- [x] Save and display Kate’s confirmed combined-practice totals for AR, CA, OH, OK, TX, VA without altering individual agreements; persisted values and signed-in display verified, 71 tests passed.
 - [x] Apply confirmed physician limits everywhere: OH 5, CA 4, OK 2, TX 7, VA 6; all others no limit. Verified 51 saved states with zero mismatches, signed-in physician cards and 63 tests; corrected Oklahoma descriptions and prevented stale fallback limits for unlimited states.
