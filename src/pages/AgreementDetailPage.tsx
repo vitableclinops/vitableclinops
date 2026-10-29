@@ -637,12 +637,31 @@ export default function AgreementDetailPage() {
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Physician</p>
+                          {isDocumentExemptPhysician(agreement.physician_name) ? (
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => setPhysicianInfoOpen(o => !o)}
+                                className="flex items-center gap-1 font-medium text-foreground hover:text-primary"
+                              >
+                                Dr. {stripDrPrefix(agreement.physician_name)}
+                                <ChevronDown className={cn("h-4 w-4 transition-transform", physicianInfoOpen && "rotate-180")} />
+                              </button>
+                              {physicianInfoOpen && (
+                                <div className="mt-1 text-sm text-muted-foreground space-y-0.5">
+                                  <p>NPI: {agreement.physician_npi || 'Not on file'}</p>
+                                  {agreement.physician_email && <p>{agreement.physician_email}</p>}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
                           <Link 
                             to={`/physicians/${encodeURIComponent(agreement.physician_email)}`}
                             className="font-medium text-primary hover:underline"
                           >
                             Dr. {stripDrPrefix(agreement.physician_name)}
                           </Link>
+                          )}
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Meeting Cadence</p>
