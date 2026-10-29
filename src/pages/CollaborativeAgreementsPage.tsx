@@ -1494,6 +1494,7 @@ const CollaborativeAgreementsPage = () => {
                                     state: string;
                                     startDate: string | null;
                                     agreementId: string;
+                                    documentUrl: string | null;
                                   }>;
                                 }>();
                                 
@@ -1507,6 +1508,7 @@ const CollaborativeAgreementsPage = () => {
                                       state: agreement.state_abbreviation,
                                       startDate: provider.start_date,
                                       agreementId: agreement.id
+                                      , documentUrl: agreement.agreement_document_url || provider.medallion_document_url || agreement.medallion_document_url
                                     });
                                   } else {
                                     providerMap.set(provider.provider_email, {
@@ -1516,6 +1518,7 @@ const CollaborativeAgreementsPage = () => {
                                         state: agreement.state_abbreviation,
                                         startDate: provider.start_date,
                                         agreementId: agreement.id
+                                        , documentUrl: agreement.agreement_document_url || provider.medallion_document_url || agreement.medallion_document_url
                                       }]
                                     });
                                   }
@@ -1526,7 +1529,7 @@ const CollaborativeAgreementsPage = () => {
                                   .map(provider => (
                                     <div 
                                       key={provider.email} 
-                                      className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
+                                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-muted/30"
                                     >
                                       <div className="flex items-center gap-3">
                                         <div className="h-8 w-8 rounded-full bg-success/10 flex items-center justify-center">
@@ -1546,14 +1549,20 @@ const CollaborativeAgreementsPage = () => {
                                               const stateCompliance = stateComplianceData.find(c => c.state_abbreviation === sa.state);
                                               const caRequired = stateCompliance?.ca_required ?? false;
                                               return (
-                                                <Badge 
-                                                  key={sa.agreementId} 
-                                                  variant={caRequired ? "default" : "secondary"} 
-                                                  className="text-xs"
-                                                  title={caRequired ? `${sa.state} requires CA` : sa.state}
-                                                >
-                                                  {sa.state}
-                                                </Badge>
+                                                <div key={sa.agreementId} className="flex items-center gap-1">
+                                                  <Button asChild variant="outline" size="sm" className="h-7 px-2 text-xs">
+                                                    <Link to={`/admin/agreements/${sa.agreementId}`} aria-label={`Open ${provider.name} ${sa.state} agreement`} title={caRequired ? `${sa.state} requires CA` : sa.state}>
+                                                      {sa.state}<FileText className="h-3 w-3 ml-1" />
+                                                    </Link>
+                                                  </Button>
+                                                  {sa.documentUrl && (
+                                                    <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                                                      <a href={sa.documentUrl} target="_blank" rel="noopener noreferrer" aria-label={`View ${provider.name} ${sa.state} agreement document`}>
+                                                        <ExternalLink className="h-3 w-3 mr-1" />Document
+                                                      </a>
+                                                    </Button>
+                                                  )}
+                                                </div>
                                               );
                                             })
                                           }
