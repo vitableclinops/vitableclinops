@@ -127,7 +127,7 @@ export const PhysicianInfoStep = ({ formData, updateFormData }: PhysicianInfoSte
                 </div>
               </Card>
             ) : (
-              <Popover open={open} onOpenChange={setOpen}>
+              <Popover open={open} onOpenChange={setOpen} modal>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
