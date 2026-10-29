@@ -3,6 +3,7 @@ import { ExternalLink, AlertCircle, Shield, Users, Settings } from 'lucide-react
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
 import { StateProfileModal } from './StateProfileModal';
 
@@ -206,7 +207,28 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
                   <div className="pt-2 border-t">
                     <p className="text-xs text-muted-foreground">
                       {state.activeProviders.slice(0, 3).map(p => p.provider_name).join(', ')}
-                      {state.activeProviders.length > 3 && ` +${state.activeProviders.length - 3} more`}
+                      {state.activeProviders.length > 3 && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className="cursor-help underline decoration-dotted underline-offset-2"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {` +${state.activeProviders.length - 3} more`}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p className="text-xs font-medium mb-1">
+                                All {state.activeProviders.length} providers
+                              </p>
+                              <p className="text-xs">
+                                {state.activeProviders.map(p => p.provider_name).join(', ')}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </p>
                   </div>
                 )}
