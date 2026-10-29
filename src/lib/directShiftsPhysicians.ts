@@ -2,10 +2,11 @@
 export const DIRECT_SHIFTS_PHYSICIANS = [
   'Dr. Anika Ramos (Direct Shifts)',
   'Dr. Dave Webster (Direct Shifts)',
+  'Dr. Annie Casta (Direct Shifts)',
 ] as const;
 
 const key = (s: string) => s.toLowerCase().replace(/\(.*?\)|\bdr\.?\s*/g, '').replace(/[^a-z]/g, '');
-const EXEMPT = new Set(['anikaramos', 'davewebster', 'davidwebster'].map(key));
+const EXEMPT = new Set(['anikaramos', 'davewebster', 'davidwebster', 'anniecasta'].map(key));
 
 export function isDocumentExemptPhysician(name: string | null | undefined): boolean {
   return !!name && EXEMPT.has(key(name));
