@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { refreshAgreementViews, AGREEMENT_REFRESH_OPTIONS } from '@/lib/agreementRefresh';
 import { useParams, Link } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
@@ -108,9 +109,9 @@ export default function AgreementDetailPage() {
   const userRole = roles.includes('admin') ? 'admin' : 
                    roles.includes('physician') ? 'physician' : 'provider';
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (background = false) => {
     if (!agreementId) return;
-    setLoading(true);
+    if (!background) setLoading(true);
 
     const [agreementRes, providersRes, meetingsRes, physiciansRes] = await Promise.all([
       supabase
@@ -154,10 +155,22 @@ export default function AgreementDetailPage() {
     }
 
     setLoading(false);
-  }, [agreementId]);
+    void refreshAgreementViews(queryClient);
+  }, [agreementId, queryClient]);
 
   useEffect(() => {
     fetchData();
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchData(true);
+    };
+    const interval = window.setInterval(refresh, AGREEMENT_REFRESH_OPTIONS.refetchInterval);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [fetchData]);
 
   // Task stats — exclude archived tasks from all operational counts
@@ -233,6 +246,7 @@ export default function AgreementDetailPage() {
       
       toast({ title: 'Task completed' });
       refetchTasks();
+      await fetchData(true);
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to complete task', variant: 'destructive' });
     }
@@ -253,6 +267,7 @@ export default function AgreementDetailPage() {
       
       toast({ title: 'Task reopened' });
       refetchTasks();
+      await fetchData(true);
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to reopen task', variant: 'destructive' });
     }
