@@ -1,4 +1,5 @@
 import type { TablesInsert } from '@/integrations/supabase/types';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type AgreementTaskInsert = TablesInsert<'agreement_tasks'>;
 
@@ -22,7 +23,7 @@ export const getTerminationTaskTemplates = (
   },
   {
     title: 'Email NP + physician confirming termination initiated',
-    description: `Send notification email to ${providerCount} provider(s) and Dr. ${physicianName} about the pending termination`,
+    description: `Send notification email to ${providerCount} provider(s) and Dr. ${stripDrPrefix(physicianName)} about the pending termination`,
     category: 'custom' as const,
     priority: 'high',
     is_required: true,

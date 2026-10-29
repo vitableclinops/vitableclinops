@@ -21,6 +21,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { TaskDialog } from '@/components/tasks/TaskDialog';
 import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type TaskStatus = 'active' | 'all' | 'pending' | 'in_progress' | 'completed' | 'blocked' | 'waiting_on_signature' | 'archived';
 type TaskCategory = 'all' | 'document' | 'signature' | 'supervision_meeting' | 'chart_review' | 'compliance' | 'transfer' | 'onboarding' | 'milestone' | 'outreach' | 'communication' | 'custom';
@@ -225,7 +226,7 @@ export default function TaskRepositoryPage() {
           .in('id', agreementIds);
         const labelMap = new Map((agreements || []).map(a => {
           const provider = a.provider_name || 'Provider';
-          const physician = a.physician_name ? `Dr. ${a.physician_name}` : 'Physician';
+          const physician = a.physician_name ? `Dr. ${stripDrPrefix(a.physician_name)}` : 'Physician';
           return [a.id, `${provider} ↔ ${physician} (${a.state_abbreviation})`];
         }));
         enriched.forEach(t => { if (t.agreement_id) t.agreement_label = labelMap.get(t.agreement_id); });

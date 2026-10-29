@@ -25,6 +25,7 @@ import {
   Download,
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type Transfer = Tables<'agreement_transfers'>;
 type Task = Tables<'agreement_tasks'>;
@@ -264,7 +265,7 @@ export function CompletedTransfersTab() {
                     <div>
                       <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
                         <Badge variant="outline" className="text-[10px]">Phase 2</Badge>
-                        Initiation — Dr. {transfer.target_physician_name}
+                        Initiation — Dr. {stripDrPrefix(transfer.target_physician_name)}
                       </h4>
                       <div className="space-y-1">
                         {initiationTasks.map(task => (

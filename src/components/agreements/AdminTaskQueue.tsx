@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
+import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 type Task = Tables<'agreement_tasks'>;
 
@@ -210,7 +211,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
           <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
             {agreementCtx && (
               <span className="text-xs text-muted-foreground truncate">
-                {agreementCtx.provider_name || 'Provider'} ↔ Dr. {agreementCtx.physician_name || 'Physician'} ({agreementCtx.state_abbreviation})
+                {agreementCtx.provider_name || 'Provider'} ↔ Dr. {stripDrPrefix(agreementCtx.physician_name || 'Physician')} ({agreementCtx.state_abbreviation})
               </span>
             )}
             {!agreementCtx && task.state_abbreviation && (
