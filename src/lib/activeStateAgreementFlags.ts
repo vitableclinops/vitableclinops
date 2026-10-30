@@ -1,8 +1,8 @@
 import { getCollabRequirementType } from '@/constants/stateRestrictions';
 import { isIndependentPhysician, normalizeRole } from '@/lib/clinicianRoles';
 import { parseLocalDate } from '@/lib/utils';
-import { INDEPENDENT_ALTERNATIVE_STATES, hasVerifiedIndependentPractice, type CollabDecision } from '@/lib/nyIndependentPractice';
-import type { PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
+import { INDEPENDENT_ALTERNATIVE_STATES, RX_AUTHORITY_REQUIRED_STATES, hasVerifiedIndependentPractice, hasVerifiedRxAuthority, type CollabDecision } from '@/lib/nyIndependentPractice';
+import { hasPrescriptiveAuthority, type PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
 
 export interface StateAgreement {
   profileId: string | null;
@@ -23,7 +23,7 @@ export function activeStateAgreementFlags(
   states: string[], rules: CollaborationRule[], agreements: StateAgreement[],
   decisions: CollabDecision[],
   today = new Date(),
-  _authorityEvidence: PrescriptiveAuthorityEvidence[] = [],
+  authorityEvidence: PrescriptiveAuthorityEvidence[] = [],
   newlyActiveStates: string[] = [],
 ): AgreementReview[] {
   if (isIndependentPhysician(provider)) return [];
@@ -43,7 +43,17 @@ export function activeStateAgreementFlags(
       && ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase())
       && (!a.start || parseLocalDate(a.start.slice(0, 10)) <= day)
       && (!a.end || parseLocalDate(a.end.slice(0, 10)) >= day));
-    if (matching.some(a => a.document?.trim() || a.documentExempt)) return [];
+    const agreementOnFile = matching.some(a => a.document?.trim() || a.documentExempt);
+    if (agreementOnFile && RX_AUTHORITY_REQUIRED_STATES.has(state)
+      && !hasVerifiedRxAuthority(provider.id, state, decisions) && !hasPrescriptiveAuthority(provider.id, state, authorityEvidence, day)) {
+      return [{ state, authorityReview: true, independentAlternative: true, newlyActive: newlyActiveStates.includes(state),
+        reason: `${state} collaborative agreement is on file, but the prescriptive authority designation on the license has not been confirmed.`,
+        howToFix: `Verify the ${state} license shows prescriptive authority and note where and when it was verified.` }];
+    }
+    if (agreementOnFile) return [];
+    if (authorityAlternative && RX_AUTHORITY_REQUIRED_STATES.has(state)) return [{ state, authorityReview: true, independentAlternative: true, newlyActive: newlyActiveStates.includes(state),
+      reason: `No ${state} collaborative agreement link is on file and autonomous practice has not been verified.`,
+      howToFix: `${state} needs either a collaborative agreement plus prescriptive authority on the license, or prescriptive authority plus an autonomous practice designation. Upload the agreement and verify Rx authority, or verify both designations and note where and when.` }];
     if (authorityAlternative) return [{ state, authorityReview: true, independentAlternative: true, newlyActive: newlyActiveStates.includes(state),
       reason: `No ${state} collaborative agreement link is on file and independent practice status has not been verified.`,
       howToFix: `Either upload or link the signed ${state} collaborative agreement (completed-process option, no emails), or verify independent practice status and note where and when it was verified.` }];
