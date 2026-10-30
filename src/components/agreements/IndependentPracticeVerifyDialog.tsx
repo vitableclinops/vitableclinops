@@ -33,7 +33,8 @@ export function IndependentPracticeFields({ source, verifiedOn, onChange }: {
     <div className="space-y-3">
       <div className="space-y-1">
         <Label htmlFor="ind-source">Where was it verified?</Label>
-        <Input id="ind-source" placeholder="e.g. state board lookup or written confirmation" value={source} onChange={e => onChange({ source: e.target.value })} />
+        <Input id="ind-source" aria-describedby="ind-source-description" placeholder="Enter verification source" value={source} onChange={e => onChange({ source: e.target.value })} />
+        <p id="ind-source-description" className="text-sm text-muted-foreground">State board communication, Direct Shifts supervision spreadsheet, etc.</p>
       </div>
       <div className="space-y-1">
         <Label htmlFor="ind-date">When was it verified?</Label>
