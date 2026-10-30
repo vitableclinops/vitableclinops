@@ -51,12 +51,12 @@ export function activeStateAgreementFlags(
       if (agreementOnFile && rxVerified) return [];
       return [{ state, authorityReview: !rxVerified, independentAlternative: !rxVerified, newlyActive: newlyActiveStates.includes(state),
         reason: !agreementOnFile && !rxVerified
-          ? 'PA Collab Agreement and verified Rx Authority license designation with a verification link are missing.'
+          ? 'PA Collab Agreement and verified Rx Authority license designation with an uploaded verification file are missing.'
           : !agreementOnFile ? 'Missing active linked PA Collab Agreement with its document.'
-          : 'PA Collab Agreement is on file, but the Rx Authority license designation needs verification with a link.',
+          : 'PA Collab Agreement is on file, but the Rx Authority license designation needs an uploaded verification file.',
         howToFix: !agreementOnFile && rxVerified
           ? 'Add or link the signed PA Collab Agreement (completed-process option, no emails).'
-          : `${!agreementOnFile ? 'Add or link the signed PA Collab Agreement, then verify' : 'Verify'} the Rx Authority license designation with where and when it was verified and a clickable verification link. PA requires both; autonomous practice is not an alternative.` }];
+          : `${!agreementOnFile ? 'Add or link the signed PA Collab Agreement, then verify' : 'Verify'} the Rx Authority license designation with where and when it was verified and an uploaded screenshot or document. PA requires both; autonomous practice is not an alternative.` }];
     }
     if (agreementOnFile && RX_AUTHORITY_REQUIRED_STATES.has(state)
       && !hasVerifiedRxAuthority(provider.id, state, decisions) && !hasPrescriptiveAuthority(provider.id, state, authorityEvidence, day)) {

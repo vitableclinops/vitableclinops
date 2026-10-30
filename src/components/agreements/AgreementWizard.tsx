@@ -20,7 +20,7 @@ import { ChevronLeft, ChevronRight, Check, Loader2 } from 'lucide-react';
 import type { State } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { hasAgreementDocument } from '@/lib/newProviderCollab';
-import { INDEPENDENT_ALTERNATIVE_STATES, hasVerificationLink } from '@/lib/nyIndependentPractice';
+import { INDEPENDENT_ALTERNATIVE_STATES } from '@/lib/nyIndependentPractice';
 import { saveIndependentVerification } from './IndependentPracticeVerifyDialog';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -170,7 +170,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       case 3:
         return formData.startDate !== undefined;
       case 4:
-        if (paState && (!formData.independentSource?.trim() || !formData.independentOn || !hasVerificationLink(formData.independentLink) || formData.providers.some(p => !p.id))) return false;
+        if (paState && (!formData.independentSource?.trim() || !formData.independentOn || !(formData.independentFile instanceof File) || formData.providers.some(p => !p.id))) return false;
         if (independentChosen) return !!formData.independentSource?.trim() && !!formData.independentOn && formData.providers.every(p => !!p.id);
         return !docRequired || hasAgreementDocument(formData.documentFile, formData.documentLink);
       default:

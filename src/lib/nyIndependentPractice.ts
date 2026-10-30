@@ -35,5 +35,5 @@ export function hasVerifiedRxAuthority(profileId: string, state: string, decisio
   return decisions.some(d => d.profile_id === profileId && d.state_abbreviation === state
     && (d.decision === 'rx_authority_verified' || (state !== 'PA' && d.decision === 'independent_verified'))
     && !!d.verified_source?.trim() && !!d.verified_on
-    && (state !== 'PA' || hasVerificationLink(d.verified_link)));
+    && (state !== 'PA' || !!d.verified_attachment_path?.trim()));
 }
