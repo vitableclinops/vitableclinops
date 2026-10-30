@@ -19,12 +19,21 @@ export function hasVerifiedIndependentPractice(profileId: string, state: string,
     && !!d.verified_source?.trim() && !!d.verified_on);
 }
 
-/** States where every path also needs a prescriptive-authority designation on the license (VA). */
-export const RX_AUTHORITY_REQUIRED_STATES = new Set(['VA']);
+/** States where every path also needs a prescriptive-authority designation on the license. */
+export const RX_AUTHORITY_REQUIRED_STATES = new Set(['VA', 'PA']);
+
+export function hasVerificationLink(link?: string | null): boolean {
+  if (!link?.trim()) return false;
+  try {
+    const url = new URL(link.trim());
+    return ['https:', 'http:'].includes(url.protocol) && !!url.hostname;
+  } catch { return false; }
+}
 
 /** Rx authority is confirmed by a saved source-and-date verification; autonomous verification includes Rx authority. */
 export function hasVerifiedRxAuthority(profileId: string, state: string, decisions: CollabDecision[]) {
   return decisions.some(d => d.profile_id === profileId && d.state_abbreviation === state
-    && ['rx_authority_verified', 'independent_verified'].includes(d.decision)
-    && !!d.verified_source?.trim() && !!d.verified_on);
+    && (d.decision === 'rx_authority_verified' || (state !== 'PA' && d.decision === 'independent_verified'))
+    && !!d.verified_source?.trim() && !!d.verified_on
+    && (state !== 'PA' || hasVerificationLink(d.verified_link)));
 }
