@@ -69,6 +69,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Label } from '@/components/ui/label';
 import { cn, formatDisplayDate } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
+import { IndependentPracticeVerifyDialog } from '@/components/agreements/IndependentPracticeVerifyDialog';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
 type DbProvider = Tables<'agreement_providers'>;
@@ -164,6 +165,7 @@ const CollaborativeAgreementsPage = () => {
   const queryClient = useQueryClient();
   const { profile, roles, hasRole } = useAuth();
   const { flags: requiredAgreementFlags, loading: requiredFlagsLoading, error: requiredFlagsError } = useRequiredAgreementFlags(roles.includes('admin'));
+  const [verifyIndependent, setVerifyIndependent] = useState<{ profileId: string; name: string; state: string } | null>(null);
   const [gapPrefill, setGapPrefill] = useState<{ stateAbbr: string; skipProcess: boolean; provider: { id: string; name: string; email: string; npi?: string } } | null>(null);
   const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
   const { getNextMeetingForAgreement, hasMeetingScheduled, loading: meetingsLoading } = useScheduledMeetings();
@@ -799,6 +801,7 @@ const CollaborativeAgreementsPage = () => {
             />
           </div>
 
+          {verifyIndependent && <IndependentPracticeVerifyDialog open onOpenChange={o => { if (!o) setVerifyIndependent(null); }} profileId={verifyIndependent.profileId} providerName={verifyIndependent.name} state={verifyIndependent.state} />}
           <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
@@ -820,7 +823,7 @@ const CollaborativeAgreementsPage = () => {
                       <p className="text-sm text-destructive">Why: {flag.reason}</p>
                       <p className="text-sm text-muted-foreground">How to fix: {flag.howToFix}</p>
                       <div className="flex flex-wrap gap-2">
-                        {flag.authorityReview && <Button size="sm" variant="outline" asChild><Link to="/directory?tab=management">Review prescriptive authority</Link></Button>}
+                        {flag.independentAlternative && <Button size="sm" variant="outline" onClick={() => { setVerifyIndependent({ profileId: flag.provider.id, name: flag.name, state: flag.state }); setIncompleteOpen(false); }}>Verify independent practice</Button>}
                         {existing ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.id}`}>Open agreement</Link></Button> : <Button size="sm" onClick={() => {
                           setGapPrefill({ stateAbbr: flag.state, skipProcess: true, provider: { id: flag.provider.id, name: flag.name, email: flag.provider.email, npi: flag.provider.npi_number ?? undefined } });
                           setIncompleteOpen(false); setWizardOpen(true);
