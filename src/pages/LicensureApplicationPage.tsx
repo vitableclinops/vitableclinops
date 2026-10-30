@@ -23,6 +23,7 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 
 export default function LicensureApplicationPage() {
   const { applicationId } = useParams<{ applicationId: string }>();
@@ -294,10 +295,10 @@ export default function LicensureApplicationPage() {
                               <Upload className="h-3.5 w-3.5 text-primary" />
                               Upload your receipt here to get reimbursed
                             </Label>
-                            {step.uploaded_file_name ? (
+                            {step.uploaded_file_name || step.uploaded_file_url || step.fee_receipt_url ? (
                               <div className="flex items-center gap-2 text-sm">
                                 <FileText className="h-4 w-4 text-primary" />
-                                <span>{step.uploaded_file_name}</span>
+                                {step.uploaded_file_url || step.fee_receipt_url ? <EvidenceLink reference={step.uploaded_file_url || step.fee_receipt_url || ''}>{step.uploaded_file_name || 'View receipt'}</EvidenceLink> : <span>{step.uploaded_file_name} — file link unavailable</span>}
                                 {canEdit && (
                                   <Button size="sm" variant="ghost" onClick={() => updateStepField(step.id, 'uploaded_file_name', null)}>
                                     Remove
@@ -317,10 +318,10 @@ export default function LicensureApplicationPage() {
                         ) : (
                           <div className="space-y-1">
                             <Label className="text-xs">Upload Document</Label>
-                            {step.uploaded_file_name ? (
+                            {step.uploaded_file_name || step.uploaded_file_url ? (
                               <div className="flex items-center gap-2 text-sm">
                                 <FileText className="h-4 w-4 text-primary" />
-                                <span>{step.uploaded_file_name}</span>
+                                {step.uploaded_file_url ? <EvidenceLink reference={step.uploaded_file_url}>{step.uploaded_file_name || 'View document'}</EvidenceLink> : <span>{step.uploaded_file_name} — file link unavailable</span>}
                                 {canEdit && (
                                   <Button size="sm" variant="ghost" onClick={() => updateStepField(step.id, 'uploaded_file_name', null)}>
                                     Remove
