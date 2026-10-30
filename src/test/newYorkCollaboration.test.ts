@@ -53,3 +53,11 @@ describe('New York conditional collaboration requirement', () => {
     expect(addedActiveEhrStates(new Map([['np', ['NY']]])).size).toBe(0);
   });
 });
+import { hasVerifiedIndependentPractice } from '@/lib/nyIndependentPractice';
+describe('NY independent practice alternative', () => {
+  const d = (o: object) => ({ profile_id: 'p1', state_abbreviation: 'NY', decision: 'independent_verified', verified_source: 'NYSED', verified_on: '2026-10-01', ...o });
+  it('counts when source and date are recorded', () => expect(hasVerifiedIndependentPractice('p1', 'NY', [d({})])).toBe(true));
+  it('requires where it was verified', () => expect(hasVerifiedIndependentPractice('p1', 'NY', [d({ verified_source: ' ' })])).toBe(false));
+  it('requires when it was verified', () => expect(hasVerifiedIndependentPractice('p1', 'NY', [d({ verified_on: null })])).toBe(false));
+  it('does not apply outside NY', () => expect(hasVerifiedIndependentPractice('p1', 'NJ', [d({ state_abbreviation: 'NJ' })])).toBe(false));
+});
