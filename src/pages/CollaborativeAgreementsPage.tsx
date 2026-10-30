@@ -851,16 +851,17 @@ const CollaborativeAgreementsPage = () => {
           <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Needs fixing ({needsFixingCount})</DialogTitle>
+                <DialogTitle>Needs fixing{stateFilter !== 'all' ? ` — ${stateFilter}` : ''} ({dialogCount})</DialogTitle>
                 <DialogDescription>Click an agreement to see why it's incomplete and how to fix it.</DialogDescription>
+                {stateFilter !== 'all' && <p className="text-xs text-muted-foreground">Filtered to {stateFilter}. Select "All states" in the state filter to see everything.</p>}
               </DialogHeader>
               {requiredFlagsLoading && <p className="text-sm text-muted-foreground">Checking required agreements…</p>}
               {requiredFlagsError && <p className="text-sm text-destructive">Required agreement checks unavailable.</p>}
-              {needsFixingCount === 0 && !requiredFlagsLoading && !requiredFlagsError && (
+              {dialogCount === 0 && !requiredFlagsLoading && !requiredFlagsError && (
                 <p className="text-sm text-muted-foreground">Nothing to fix — all agreements are complete.</p>
               )}
               <div className="space-y-2">
-                {requiredAgreementFlags.map(flag => {
+                {dialogFlags.map(flag => {
                   const existing = dbAgreements.find(a => a.state_abbreviation === flag.state && isLiveAgreement(a) && (a.provider_id === flag.provider.id || dbProviders.some(p => p.agreement_id === a.id && p.provider_id === flag.provider.id && p.is_active)));
                   return (
                     <div key={`required:${flag.provider.id}:${flag.state}`} className="rounded-lg border p-3 space-y-2">
@@ -879,7 +880,7 @@ const CollaborativeAgreementsPage = () => {
                     </div>
                   );
                 })}
-                {incompleteAgreements.map(a => {
+                {dialogIncomplete.map(a => {
                   const { linked, issues } = getIncompleteIssues(a);
                   const open = selectedIncompleteId === a.id;
                   return (
