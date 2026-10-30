@@ -68,9 +68,7 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
               <div className="flex flex-wrap gap-2 text-xs">
                 {agreements.map((a, i) => (
                   <span key={i} className="inline-flex items-center gap-2">
-                    {a.agreementId
-                      ? <Link to={`/admin/agreements/${a.agreementId}`} className="inline-flex items-center gap-1 text-primary hover:underline"><FileText className="h-3 w-3" />Agreement{a.documentExempt ? ' (Direct Shifts)' : ''}</Link>
-                      : <span className="inline-flex items-center gap-1 text-muted-foreground"><FileText className="h-3 w-3" />Agreement</span>}
+                    <span className="inline-flex items-center gap-1 text-muted-foreground"><FileText className="h-3 w-3" />Agreement{a.documentExempt ? ' (Direct Shifts)' : ''}</span>
                     {a.document?.trim()
                       ? <EvidenceLink reference={a.document} className="inline-flex items-center gap-1 text-primary hover:underline">View document</EvidenceLink>
                       : !a.documentExempt && <span className="text-muted-foreground">(no document)</span>}
