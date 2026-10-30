@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import type { StateCompliance } from '@/hooks/useStateCompliance';
-import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
+import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 interface StateProfileModalProps {
   open: boolean;
@@ -274,7 +274,7 @@ export const StateProfileModal = ({
                   <p className="p-4 text-sm text-muted-foreground">No active agreements in this state</p>
                 )}
                 {activeAgreements.map((a) => {
-                  const hasDoc = Boolean(a.agreement_document_url || a.medallion_document_url);
+                  const hasDoc = Boolean(a.agreement_document_url || a.medallion_document_url) || isDocumentExemptPhysician(a.physician_name);
                   return (
                     <Link
                       key={a.id}
