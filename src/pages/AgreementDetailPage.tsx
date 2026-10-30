@@ -300,8 +300,7 @@ export default function AgreementDetailPage() {
         .update({ agreement_document_url: docUrl })
         .eq('id', agreement.id);
       if (updateError) throw updateError;
-      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
-      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
+      await refreshAgreementViews(queryClient);
 
       await supabase.from('agreement_audit_log').insert({
         entity_type: 'agreement',

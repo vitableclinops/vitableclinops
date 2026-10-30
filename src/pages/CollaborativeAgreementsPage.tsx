@@ -528,9 +528,7 @@ const CollaborativeAgreementsPage = () => {
       setUploadDialogOpen(false);
       setDocumentUrl('');
       setSelectedFlatAgreement(null);
-      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
-      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
-      fetchDbAgreements();
+      await fetchDbAgreements();
     } catch (error) {
       console.error('Error saving document:', error);
       toast({

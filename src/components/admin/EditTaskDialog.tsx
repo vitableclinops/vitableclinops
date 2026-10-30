@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import {
   Dialog,
   DialogContent,
@@ -47,6 +49,7 @@ interface EditTaskDialogProps {
 }
 
 export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps) {
+  const queryClient = useQueryClient();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('medium');
@@ -230,10 +233,11 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
                 ? { termination_document_url: docUrl }
                 : { agreement_document_url: docUrl };
 
-              await supabase
+              const { error: agreementError } = await supabase
                 .from('collaborative_agreements')
                 .update(updateField)
                 .eq('id', task.agreement_id);
+              if (agreementError) throw agreementError;
             }
           }
         }
@@ -274,6 +278,7 @@ export function EditTaskDialog({ task, onClose, onSuccess }: EditTaskDialogProps
         }
       }
 
+      if (task.category !== 'milestone') await refreshAgreementViews(queryClient);
       toast({ title: 'Task updated', description: 'Changes saved successfully.' });
       onSuccess();
     } catch (err: any) {
