@@ -32,7 +32,7 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
             <CardTitle className="flex items-center gap-2"><UserRound className="h-5 w-5" />Active providers in {state}</CardTitle>
             <CardDescription>Providers active in the EHR here, with their saved requirements. Updates automatically when agreements or verifications are saved.</CardDescription>
           </div>
-          <Button asChild size="sm" variant="outline"><Link to={`/admin/agreements?state=${state}`}>{state} agreements</Link></Button>
+          <Button size="sm" variant="outline" onClick={() => window.location.assign(`/admin/agreements?state=${state}`)}>{state} agreements</Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
