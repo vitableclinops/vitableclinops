@@ -10,11 +10,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { EvidenceLink } from './EvidenceLink';
+import { RX_AUTHORITY_REQUIRED_STATES } from '@/lib/nyIndependentPractice';
 
 /** Save a verified independent-practice status for one provider/state. */
 export async function saveIndependentVerification(input: {
   profileId: string; state: string; source: string; verifiedOn: string; notes?: string; decidedBy?: string | null;
-  link?: string; file?: File | null;
+  link?: string; file?: File | null; decision?: 'independent_verified' | 'rx_authority_verified';
 }) {
   let attachmentPath: string | null = null;
   if (input.file) {
@@ -26,7 +27,7 @@ export async function saveIndependentVerification(input: {
   const { error } = await supabase.from('provider_state_collab_decisions').upsert({
     profile_id: input.profileId,
     state_abbreviation: input.state,
-    decision: 'independent_verified',
+    decision: input.decision ?? 'independent_verified',
     verified_source: input.source.trim(),
     verified_on: input.verifiedOn,
     decision_notes: input.notes?.trim() || null,
@@ -88,12 +89,14 @@ export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId,
   const [link, setLink] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const rxState = RX_AUTHORITY_REQUIRED_STATES.has(state);
+  const [vaPath, setVaPath] = useState<'independent_verified' | 'rx_authority_verified'>('independent_verified');
 
   const save = async () => {
     setSaving(true);
     try {
-      await saveIndependentVerification({ profileId, state, source, verifiedOn, notes, link, file, decidedBy: profile?.id });
-      toast.success(`${providerName}: independent practice verified in ${state}`);
+      await saveIndependentVerification({ profileId, state, source, verifiedOn, notes, link, file, decidedBy: profile?.id, decision: rxState ? vaPath : 'independent_verified' });
+      toast.success(rxState && vaPath === 'rx_authority_verified' ? `${providerName}: ${state} prescriptive authority verified` : `${providerName}: independent practice verified in ${state}`);
       queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
       queryClient.invalidateQueries({ queryKey: ['agreements'] });
       queryClient.invalidateQueries({ queryKey: ['independent-verifications'] });
@@ -108,9 +111,18 @@ export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId,
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Verify independent practice — {state}</DialogTitle>
-          <DialogDescription>{providerName} will no longer need a {state} collaborative agreement once saved.</DialogDescription>
+          <DialogTitle>{rxState ? `Verify license designations — ${state}` : `Verify independent practice — ${state}`}</DialogTitle>
+          <DialogDescription>{rxState
+            ? `${providerName} needs either a collaborative agreement plus prescriptive authority, or prescriptive authority plus autonomous practice.`
+            : `${providerName} will no longer need a ${state} collaborative agreement once saved.`}</DialogDescription>
         </DialogHeader>
+        {rxState && (
+          <div className="space-y-2 rounded-md border p-3 text-sm">
+            <p className="font-medium">What did you verify on the license?</p>
+            <label className="flex items-start gap-2"><input type="radio" name="va-path" className="mt-1" checked={vaPath === 'independent_verified'} onChange={() => setVaPath('independent_verified')} /><span>Prescriptive authority + autonomous practice (no agreement needed)</span></label>
+            <label className="flex items-start gap-2"><input type="radio" name="va-path" className="mt-1" checked={vaPath === 'rx_authority_verified'} onChange={() => setVaPath('rx_authority_verified')} /><span>Prescriptive authority only (a signed collaborative agreement is also required)</span></label>
+          </div>
+        )}
         <IndependentPracticeFields source={source} verifiedOn={verifiedOn} link={link} file={file} onChange={v => { if (v.source !== undefined) setSource(v.source); if (v.verifiedOn !== undefined) setVerifiedOn(v.verifiedOn); if (v.link !== undefined) setLink(v.link); if (v.file !== undefined) setFile(v.file); }} />
         <div className="space-y-1">
           <Label htmlFor="ind-notes">Notes (optional)</Label>
@@ -131,8 +143,8 @@ export function IndependentVerificationList({ profileId }: { profileId: string }
     queryKey: ['independent-verifications', profileId],
     queryFn: async () => {
       const { data, error } = await supabase.from('provider_state_collab_decisions')
-        .select('state_abbreviation, verified_source, verified_on, verified_link, verified_attachment_path, verified_attachment_name')
-        .eq('profile_id', profileId).eq('decision', 'independent_verified').order('state_abbreviation');
+        .select('state_abbreviation, decision, verified_source, verified_on, verified_link, verified_attachment_path, verified_attachment_name')
+        .eq('profile_id', profileId).in('decision', ['independent_verified', 'rx_authority_verified']).order('state_abbreviation');
       if (error) throw error;
       return data ?? [];
     },
@@ -143,7 +155,7 @@ export function IndependentVerificationList({ profileId }: { profileId: string }
       <p className="text-sm font-medium">Verified independent practice</p>
       {data.map(d => (
         <div key={d.state_abbreviation} className="rounded-md border p-2 text-sm space-y-1">
-          <p><span className="font-medium">{d.state_abbreviation}</span> — {d.verified_source} ({d.verified_on})</p>
+          <p><span className="font-medium">{d.state_abbreviation}</span>{d.decision === 'rx_authority_verified' ? ' (Rx authority)' : ''} — {d.verified_source} ({d.verified_on})</p>
           <div className="flex flex-wrap gap-3">
             {d.verified_link && (
               <a href={d.verified_link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary underline break-all">
