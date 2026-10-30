@@ -10,13 +10,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { EvidenceLink } from './EvidenceLink';
-import { RX_AUTHORITY_REQUIRED_STATES } from '@/lib/nyIndependentPractice';
+import { RX_AUTHORITY_REQUIRED_STATES, hasVerificationLink } from '@/lib/nyIndependentPractice';
+import { refreshAgreementViews } from '@/lib/agreementRefresh';
 
 /** Save a verified independent-practice status for one provider/state. */
 export async function saveIndependentVerification(input: {
   profileId: string; state: string; source: string; verifiedOn: string; notes?: string; decidedBy?: string | null;
   link?: string; file?: File | null; decision?: 'independent_verified' | 'rx_authority_verified';
 }) {
+  if (input.state === 'PA' && (input.decision !== 'rx_authority_verified' || !input.source.trim() || !input.verifiedOn || !hasVerificationLink(input.link))) {
+    throw new Error('PA requires Rx Authority verification with source, date and a valid verification link.');
+  }
   let attachmentPath: string | null = null;
   if (input.file) {
     const safe = input.file.name.replace(/[^\w.-]+/g, '_');
@@ -33,7 +37,7 @@ export async function saveIndependentVerification(input: {
     decision_notes: input.notes?.trim() || null,
     decided_by: input.decidedBy ?? null,
     verified_link: normalizeLink(input.link),
-    ...(attachmentPath && { verified_attachment_path: attachmentPath, verified_attachment_name: input.file!.name }),
+    ...(attachmentPath && input.file && { verified_attachment_path: attachmentPath, verified_attachment_name: input.file.name }),
     decided_at: new Date().toISOString(),
   }, { onConflict: 'profile_id,state_abbreviation' });
   if (error) throw error;
@@ -47,8 +51,8 @@ export function normalizeLink(link?: string | null): string | null {
 
 export type IndependentFieldChange = { source?: string; verifiedOn?: string; link?: string; file?: File | null };
 
-export function IndependentPracticeFields({ source, verifiedOn, link = '', file = null, onChange }: {
-  source: string; verifiedOn: string; link?: string; file?: File | null; onChange: (v: IndependentFieldChange) => void;
+export function IndependentPracticeFields({ source, verifiedOn, link = '', file = null, onChange, requireLink = false }: {
+  source: string; verifiedOn: string; link?: string; file?: File | null; onChange: (v: IndependentFieldChange) => void; requireLink?: boolean;
 }) {
   return (
     <div className="space-y-3">
@@ -59,10 +63,10 @@ export function IndependentPracticeFields({ source, verifiedOn, link = '', file 
       </div>
       <div className="space-y-2 rounded-md border p-3">
         <p className="text-sm font-medium">Proof of verification</p>
-        <p className="text-sm text-muted-foreground">Upload a download of the verification (e.g. a saved email or screenshot) or paste a link to it. Links become clickable once saved.</p>
+        <p className="text-sm text-muted-foreground">{requireLink ? 'Paste a link to verification of the Rx Authority license designation. You may also upload a screenshot or saved document. The link is clickable once saved.' : 'Upload a download of the verification (e.g. a saved email or screenshot) or paste a link to it. Links become clickable once saved.'}</p>
         <div className="space-y-1">
-          <Label htmlFor="ind-link">Link (optional)</Label>
-          <Input id="ind-link" type="url" placeholder="https://…" value={link} onChange={e => onChange({ link: e.target.value })} />
+          <Label htmlFor="ind-link">{requireLink ? 'Verification link (required)' : 'Link (optional)'}</Label>
+          <Input id="ind-link" type="url" required={requireLink} placeholder="https://…" value={link} onChange={e => onChange({ link: e.target.value })} />
         </div>
         <div className="space-y-1">
           <Label htmlFor="ind-file">Attachment (optional)</Label>
@@ -90,16 +94,15 @@ export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId,
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const rxState = RX_AUTHORITY_REQUIRED_STATES.has(state);
+  const paState = state === 'PA';
   const [vaPath, setVaPath] = useState<'independent_verified' | 'rx_authority_verified'>('independent_verified');
 
   const save = async () => {
     setSaving(true);
     try {
-      await saveIndependentVerification({ profileId, state, source, verifiedOn, notes, link, file, decidedBy: profile?.id, decision: rxState ? vaPath : 'independent_verified' });
-      toast.success(rxState && vaPath === 'rx_authority_verified' ? `${providerName}: ${state} prescriptive authority verified` : `${providerName}: independent practice verified in ${state}`);
-      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
-      queryClient.invalidateQueries({ queryKey: ['agreements'] });
-      queryClient.invalidateQueries({ queryKey: ['independent-verifications'] });
+      await saveIndependentVerification({ profileId, state, source, verifiedOn, notes, link, file, decidedBy: profile?.id, decision: paState ? 'rx_authority_verified' : rxState ? vaPath : 'independent_verified' });
+      await Promise.all([refreshAgreementViews(queryClient), queryClient.invalidateQueries({ queryKey: ['independent-verifications'] })]);
+      toast.success(rxState && (paState || vaPath === 'rx_authority_verified') ? `${providerName}: ${state} prescriptive authority verified` : `${providerName}: independent practice verified in ${state}`);
       onOpenChange(false);
     } catch (e) {
       console.error(e);
@@ -112,25 +115,25 @@ export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId,
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{rxState ? `Verify license designations — ${state}` : `Verify independent practice — ${state}`}</DialogTitle>
-          <DialogDescription>{rxState
+          <DialogDescription>{paState ? `${providerName} needs a Collab Agreement plus an Rx Authority license designation. Verify the designation with a source, date and link; a Collab Agreement is still required.` : rxState
             ? `${providerName} needs either a collaborative agreement plus prescriptive authority, or prescriptive authority plus autonomous practice.`
             : `${providerName} will no longer need a ${state} collaborative agreement once saved.`}</DialogDescription>
         </DialogHeader>
-        {rxState && (
+        {rxState && !paState && (
           <div className="space-y-2 rounded-md border p-3 text-sm">
             <p className="font-medium">What did you verify on the license?</p>
             <label className="flex items-start gap-2"><input type="radio" name="va-path" className="mt-1" checked={vaPath === 'independent_verified'} onChange={() => setVaPath('independent_verified')} /><span>Prescriptive authority + autonomous practice (no agreement needed)</span></label>
             <label className="flex items-start gap-2"><input type="radio" name="va-path" className="mt-1" checked={vaPath === 'rx_authority_verified'} onChange={() => setVaPath('rx_authority_verified')} /><span>Prescriptive authority only (a signed collaborative agreement is also required)</span></label>
           </div>
         )}
-        <IndependentPracticeFields source={source} verifiedOn={verifiedOn} link={link} file={file} onChange={v => { if (v.source !== undefined) setSource(v.source); if (v.verifiedOn !== undefined) setVerifiedOn(v.verifiedOn); if (v.link !== undefined) setLink(v.link); if (v.file !== undefined) setFile(v.file); }} />
+        <IndependentPracticeFields requireLink={paState} source={source} verifiedOn={verifiedOn} link={link} file={file} onChange={v => { if (v.source !== undefined) setSource(v.source); if (v.verifiedOn !== undefined) setVerifiedOn(v.verifiedOn); if (v.link !== undefined) setLink(v.link); if (v.file !== undefined) setFile(v.file); }} />
         <div className="space-y-1">
           <Label htmlFor="ind-notes">Notes (optional)</Label>
           <Textarea id="ind-notes" value={notes} onChange={e => setNotes(e.target.value)} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={saving || !source.trim() || !verifiedOn} onClick={save}>Save verification</Button>
+          <Button disabled={saving || !source.trim() || !verifiedOn || (paState && !hasVerificationLink(link))} onClick={save}>Save verification</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

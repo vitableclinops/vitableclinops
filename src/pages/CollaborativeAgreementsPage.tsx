@@ -858,7 +858,7 @@ const CollaborativeAgreementsPage = () => {
                       <p className="text-sm text-destructive">Why: {flag.reason}</p>
                       <p className="text-sm text-muted-foreground">How to fix: {flag.howToFix}</p>
                       <div className="flex flex-wrap gap-2">
-                        {flag.independentAlternative && <Button size="sm" variant="outline" onClick={() => { setVerifyIndependent({ profileId: flag.provider.id, name: flag.name, state: flag.state }); setIncompleteOpen(false); }}>{flag.state === 'VA' ? 'Verify license designations' : 'Verify independent practice'}</Button>}
+                        {flag.independentAlternative && <Button size="sm" variant="outline" onClick={() => { setVerifyIndependent({ profileId: flag.provider.id, name: flag.name, state: flag.state }); setIncompleteOpen(false); }}>{flag.state === 'VA' || flag.state === 'PA' ? 'Verify license designations' : 'Verify independent practice'}</Button>}
                         {existing ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.id}`}>Open agreement</Link></Button> : <Button size="sm" onClick={() => {
                           setGapPrefill({ stateAbbr: flag.state, skipProcess: true, provider: { id: flag.provider.id, name: flag.name, email: flag.provider.email, npi: flag.provider.npi_number ?? undefined } });
                           setIncompleteOpen(false); setWizardOpen(true);

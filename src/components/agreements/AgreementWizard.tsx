@@ -20,7 +20,7 @@ import { ChevronLeft, ChevronRight, Check, Loader2 } from 'lucide-react';
 import type { State } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { hasAgreementDocument } from '@/lib/newProviderCollab';
-import { INDEPENDENT_ALTERNATIVE_STATES } from '@/lib/nyIndependentPractice';
+import { INDEPENDENT_ALTERNATIVE_STATES, hasVerificationLink } from '@/lib/nyIndependentPractice';
 import { saveIndependentVerification } from './IndependentPracticeVerifyDialog';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -145,8 +145,9 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
   );
 
   const eitherOrState = !!formData.selectedState && INDEPENDENT_ALTERNATIVE_STATES.has(formData.selectedState.abbreviation);
+  const paState = formData.selectedState?.abbreviation === 'PA';
   const independentChosen = eitherOrState && formData.independentPath === 'independent';
-  const docRequired = (requireDocument || eitherOrState) && !isDocumentExemptPhysician(formData.physicianName);
+  const docRequired = (requireDocument || eitherOrState || paState) && !isDocumentExemptPhysician(formData.physicianName);
 
   const progress = ((currentStep + 1) / STEPS.length) * 100;
 
@@ -169,6 +170,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       case 3:
         return formData.startDate !== undefined;
       case 4:
+        if (paState && (!formData.independentSource?.trim() || !formData.independentOn || !hasVerificationLink(formData.independentLink) || formData.providers.some(p => !p.id))) return false;
         if (independentChosen) return !!formData.independentSource?.trim() && !!formData.independentOn && formData.providers.every(p => !!p.id);
         return !docRequired || hasAgreementDocument(formData.documentFile, formData.documentLink);
       default:
@@ -197,7 +199,8 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       if (independentChosen) {
         const st = formData.selectedState.abbreviation;
         for (const p of formData.providers) {
-          await saveIndependentVerification({ profileId: p.id!, state: st, source: formData.independentSource!, verifiedOn: formData.independentOn!, link: formData.independentLink, file: formData.independentFile, decidedBy: profile?.id });
+          if (!p.id || !formData.independentSource || !formData.independentOn) return;
+          await saveIndependentVerification({ profileId: p.id, state: st, source: formData.independentSource, verifiedOn: formData.independentOn, link: formData.independentLink, file: formData.independentFile, decidedBy: profile?.id });
         }
         toast.success(`Independent practice verified in ${st}`, { description: 'No agreement was created and no emails were sent.' });
         clearSaved();
@@ -207,6 +210,12 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
         setCurrentStep(0);
         setFormData(DEFAULT_FORM);
         return;
+      }
+      if (paState) {
+        for (const p of formData.providers) {
+          if (!p.id || !formData.independentSource || !formData.independentOn) return;
+          await saveIndependentVerification({ profileId: p.id, state: 'PA', decision: 'rx_authority_verified', source: formData.independentSource, verifiedOn: formData.independentOn, link: formData.independentLink, file: formData.independentFile, decidedBy: profile?.id });
+        }
       }
       // DirectShifts physicians manage their own renewals and meetings: no cadence tracked
       const directShifts = isDocumentExemptPhysician(formData.physicianName);
