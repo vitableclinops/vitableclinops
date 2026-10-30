@@ -76,9 +76,13 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
                 ))}
                 {decisions.map((d, i) => (
                   <span key={`d${i}`} className="inline-flex flex-wrap items-center gap-1 text-muted-foreground">
-                    <ShieldCheck className="h-3 w-3" />{DECISION_LABEL[d.decision]}{d.verified_source ? ` · ${d.verified_source}` : ''}{d.verified_on ? ` · ${d.verified_on}` : ''}
-                    {d.verified_link && <EvidenceLink reference={d.verified_link} className="text-primary hover:underline">· Open link</EvidenceLink>}
-                    {d.verified_attachment_path && <EvidenceLink reference={d.verified_attachment_path} className="text-primary hover:underline">· {d.verified_attachment_name ?? 'Attachment'}</EvidenceLink>}
+                    <ShieldCheck className="h-3 w-3" />{DECISION_LABEL[d.decision]}
+                    <span className="whitespace-nowrap">
+                      {d.verified_on ? `· Verified ${d.verified_on}` : ''}
+                      {d.verified_attachment_path && <> <EvidenceLink reference={d.verified_attachment_path} className="text-primary hover:underline">· {d.verified_attachment_name ?? 'Attachment'}</EvidenceLink></>}
+                      {d.verified_link && <> <EvidenceLink reference={d.verified_link} className="text-primary hover:underline">· Open link</EvidenceLink></>}
+                    </span>
+                    {d.verified_source ? <span>· {d.verified_source}</span> : null}
                   </span>
                 ))}
               </div>
