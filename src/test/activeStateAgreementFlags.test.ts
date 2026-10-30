@@ -5,6 +5,27 @@ const today = new Date(2026, 9, 28);
 const rules = ['PA', 'OH'].map(state_abbreviation => ({ state_abbreviation, ca_required: true, collab_requirement_type: 'always' }));
 const check = (states: string[], agreements: StateAgreement[] = []) => activeStateAgreementFlags(provider, states, rules, agreements, [], today);
 describe('active EHR state agreement checks', () => {
+  it('clears Moensania AR when a refreshed EHR state list deactivates AR without changing her agreement', () => {
+    const moensania = { id: 'fd1f3e33-9057-45f6-8950-3004bdcdbd27', profession: 'NP' };
+    const arRules = [{ state_abbreviation: 'AR', ca_required: true, collab_requirement_type: 'always' }];
+    const agreements = [{ profileId: moensania.id, state: 'AR', status: 'active', document: null }];
+    const audit = (states: string[]) => activeStateAgreementFlags(moensania, states, arRules, agreements, [], today);
+    expect(audit(['AR', 'PA']).map(flag => flag.state)).toEqual(['AR']);
+    expect(audit(['PA'])).toEqual([]);
+    expect(agreements[0].status).toBe('active');
+  });
+  it('adds the missing requirement when a future EHR refresh activates AR', () => {
+    const arRules = [{ state_abbreviation: 'AR', ca_required: true, collab_requirement_type: 'always' }];
+    expect(activeStateAgreementFlags(provider, [], arRules, [], [], today)).toEqual([]);
+    expect(activeStateAgreementFlags(provider, ['AR'], arRules, [], [], today, [], ['AR']))
+      .toEqual([expect.objectContaining({ state: 'AR', newlyActive: true })]);
+  });
+  it('requires updated evidence on activation when the linked AR agreement has expired', () => {
+    const arRules = [{ state_abbreviation: 'AR', ca_required: true, collab_requirement_type: 'always' }];
+    const expired = [{ profileId: provider.id, state: 'AR', status: 'active', document: 'signed.pdf', end: '2026-10-27' }];
+    expect(activeStateAgreementFlags(provider, [], arRules, expired, [], today)).toEqual([]);
+    expect(activeStateAgreementFlags(provider, ['AR'], arRules, expired, [], today).map(flag => flag.state)).toEqual(['AR']);
+  });
   it('flags required PA but not Ohio when Ohio is not active in EHR', () => {
     expect(check(['PA', 'AZ']).map(r => r.state)).toEqual(['PA']);
   });
