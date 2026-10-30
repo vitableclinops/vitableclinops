@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { activeStateAgreementFlags } from '@/lib/activeStateAgreementFlags';
-import { hasVerifiedRxAuthority, hasVerificationLink } from '@/lib/nyIndependentPractice';
+import { hasVerifiedRxAuthority, hasVerificationLink, type CollabDecision } from '@/lib/nyIndependentPractice';
 
 const np = { id: 'pa-provider', profession: 'NP' };
 const rules = [{ state_abbreviation: 'PA', collab_requirement_type: 'always', ca_required: true }];
 const agreements = [{ profileId: np.id, state: 'PA', status: 'active', document: 'https://example.org/agreement.pdf' }];
 const verification = { profile_id: np.id, state_abbreviation: 'PA', decision: 'rx_authority_verified', verified_source: 'State board', verified_on: '2026-10-30', verified_link: 'https://example.org/license' };
-const audit = (agreementsOnFile = agreements, decisions = [verification], states = ['PA']) => activeStateAgreementFlags(np, states, rules, agreementsOnFile, decisions);
+const audit = (agreementsOnFile = agreements, decisions: CollabDecision[] = [verification], states = ['PA']) => activeStateAgreementFlags(np, states, rules, agreementsOnFile, decisions);
 
 describe('PA Collab Agreement plus Rx Authority designation', () => {
   it('requires Rx verification even when the agreement is saved', () => expect(audit(agreements, [])).toHaveLength(1));
