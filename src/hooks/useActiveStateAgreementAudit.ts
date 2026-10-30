@@ -17,7 +17,7 @@ export function useActiveStateAgreementAudit(enabled: boolean) {
         supabase.from('external_agreements').select('agency_id, external_provider_id, supervision_state, collaborative_agreement_status, document_reference, supervision_start_date, supervision_end_date').range(0, 9999),
         supabase.from('external_providers').select('agency_id, external_provider_id, profile_id').range(0, 9999),
         supabase.from('state_compliance_requirements').select('state_abbreviation, collab_requirement_type, ca_required'),
-        supabase.from('provider_state_collab_decisions').select('profile_id, state_abbreviation, decision, verified_source, verified_on').range(0, 9999),
+        supabase.from('provider_state_collab_decisions').select('profile_id, state_abbreviation, decision, verified_source, verified_on, verified_link, verified_attachment_path, verified_attachment_name').range(0, 9999),
         supabase.from('task_documents').select('agreement_id, task_id, file_path').range(0, 9999),
         supabase.from('agreement_tasks').select('id, agreement_id').range(0, 9999),
         supabase.from('provider_licenses').select('profile_id, state_abbreviation, license_type, status, issue_date, expiration_date').eq('state_abbreviation', 'NY').range(0, 9999),
@@ -29,7 +29,7 @@ export function useActiveStateAgreementAudit(enabled: boolean) {
       const localById = new Map((local.data ?? []).map(a => [a.id, a]));
       for (const a of local.data ?? []) {
         if (a.terminated_at) continue;
-        const record = { documentExempt: isDocumentExemptPhysician(a.physician_name), state: a.state_abbreviation, status: a.workflow_status, document: a.agreement_document_url || a.medallion_document_url, start: a.start_date, end: a.end_date };
+        const record = { agreementId: a.id as string, documentExempt: isDocumentExemptPhysician(a.physician_name), state: a.state_abbreviation, status: a.workflow_status, document: a.agreement_document_url || a.medallion_document_url, start: a.start_date, end: a.end_date };
         const documentFor = (profileId: string | null) => agreementDocumentEvidence(a.id, profileId, record.document, participants.data ?? [], documents.data ?? [], tasks.data ?? []);
         agreements.push({ ...record, profileId: a.provider_id, document: documentFor(a.provider_id) });
         for (const p of participants.data ?? []) if (p.agreement_id === a.id && p.is_active) agreements.push({ ...record, profileId: p.provider_id, document: documentFor(p.provider_id) });
