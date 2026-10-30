@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { activeStateAgreementFlags } from '@/lib/activeStateAgreementFlags';
 import { hasVerifiedIndependentPractice } from '@/lib/nyIndependentPractice';
+import { getCollabRequirementType } from '@/constants/stateRestrictions';
 
 const provider = { id: 'np', profession: 'NP' };
 const rules = [{ state_abbreviation: 'WV', ca_required: false, collab_requirement_type: 'conditional' }];
@@ -8,6 +9,9 @@ const today = new Date(2026, 9, 30);
 const decision = { profile_id: 'np', state_abbreviation: 'WV', decision: 'independent_verified', verified_source: 'WV Board confirmation', verified_on: '2026-10-29' };
 
 describe('West Virginia agreement or confirmed independence', () => {
+  it('classifies WV as conditional rather than always requiring an agreement', () => {
+    expect(getCollabRequirementType('WV')).toBe('conditional');
+  });
   it('flags an EHR-active WV NP with both correction alternatives when evidence is missing', () => {
     expect(activeStateAgreementFlags(provider, ['WV'], rules, [], [], today).map(f => [f.state, f.independentAlternative])).toEqual([['WV', true]]);
   });
