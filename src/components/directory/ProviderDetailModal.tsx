@@ -30,6 +30,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { CURRENT_EMPLOYEE_FILTER, isOffboarded } from '@/lib/employeeVisibility';
 import { isIndependentPhysician } from '@/lib/clinicianRoles';
+import { agreementMissingDocument } from '@/lib/agreementDocumentRequired';
+import { AGREEMENT_REFRESH_OPTIONS } from '@/lib/agreementRefresh';
 
 const PROFESSION_OPTIONS = [
   'NP',
@@ -300,18 +302,19 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
   // (currently: agreements with no documentation on file — same rule as the
   // "Missing Docs" status square on the agreements page).
   const { data: missingDocAgreements = [] } = useQuery({
-    queryKey: ['provider-missing-requirements', provider?.id],
+    queryKey: ['directory-collaboration', 'provider-missing-requirements', provider?.id],
+    ...AGREEMENT_REFRESH_OPTIONS,
     queryFn: async () => {
       if (!provider) return [];
       const { data, error } = await supabase
         .from('agreement_providers')
-        .select('agreement_id, collaborative_agreements(id, state_abbreviation, physician_name, workflow_status, agreement_document_url, medallion_document_url)')
+        .select('agreement_id, medallion_document_url, collaborative_agreements(id, state_abbreviation, physician_name, workflow_status, agreement_document_url, medallion_document_url)')
         .eq('provider_id', provider.id)
         .eq('is_active', true);
       if (error) throw error;
       return (data || [])
-        .map((row: any) => row.collaborative_agreements)
-        .filter((a: any) => a && a.workflow_status === 'active' && !a.agreement_document_url && !a.medallion_document_url);
+        .filter(row => row.collaborative_agreements && agreementMissingDocument(row.collaborative_agreements, row.medallion_document_url))
+        .map(row => row.collaborative_agreements);
     },
     enabled: !!provider,
   });

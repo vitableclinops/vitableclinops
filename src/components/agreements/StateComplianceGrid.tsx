@@ -10,6 +10,7 @@ import { confirmedPhysicianCount } from '@/lib/confirmedPhysicianCounts';
 import { useConfirmedPhysicianCounts } from '@/hooks/useConfirmedPhysicianCounts';
 import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 import { StateProfileModal } from './StateProfileModal';
+import { agreementMissingDocument } from '@/lib/agreementDocumentRequired';
 
 interface StateData {
   abbreviation: string;
@@ -62,7 +63,7 @@ const StateComplianceGrid = ({ stateData }: StateComplianceGridProps) => {
           .map((state) => {
           const compliance = getComplianceInfo(state.abbreviation);
           const hasComplianceRisk = state.agreements.some(
-            a => a.workflow_status === 'active' && !a.medallion_document_url && !a.agreement_document_url
+            a => agreementMissingDocument(a)
           );
 
           return (

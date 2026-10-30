@@ -61,3 +61,5 @@
 - [x] Extend the documented-agreement or source/date independent-verification option to WV, including flags and agreement finalization; saved conditional rule verified, 27 tests passed, Jarrod WV correction prompt checked signed in without recording unverified evidence.
 - [x] Verify manual and scheduled EHR refreshes clear deactivated-state requirement flags and add newly activated missing requirements; 41 tests passed, signed-in Needs fixing simulation removed Moensania AR and restored its required review on activation, without source changes. Latest real snapshot still contains AR.
 - [x] Make saved collaboration and independent-verification screenshots and links reopenable from provider profiles; 10 tests passed and Van Tu’s saved NY screenshot reopened signed in.
+
+- [x] Remove DirectShifts missing-upload flags from profile, agreement filters, state grid and verification; known and explicitly designated supervisors exempt, 24 tests passed, Brittney profile verified signed in.

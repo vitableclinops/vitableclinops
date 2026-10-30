@@ -19,6 +19,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
 
 interface VerificationCheck {
   id: string;
@@ -111,6 +112,9 @@ export function VerificationChecklistDialog({
   };
 
   const checkDocument = async (): Promise<{ passed: boolean; detail: string }> => {
+    if (isDocumentExemptPhysician(agreement.physician_name)) {
+      return { passed: true, detail: 'DirectShifts holds the agreement; no upload required.' };
+    }
     const { data: docTasks } = await supabase
       .from('agreement_tasks')
       .select('id, title, status')

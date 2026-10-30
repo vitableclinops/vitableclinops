@@ -729,7 +729,7 @@ export default function AgreementDetailPage() {
                             </a>
                           </Button>
                         </>
-                      ) : hasRole('admin') ? (
+                      ) : hasRole('admin') && !isDocumentExemptPhysician(agreement.physician_name) ? (
                         <>
                           <Separator className="my-4" />
                           <Button

@@ -9,7 +9,7 @@ const key = (s: string) => s.toLowerCase().replace(/\(.*?\)|\bdr\.?\s*/g, '').re
 const EXEMPT = new Set(['anikaramos', 'davewebster', 'davidwebster', 'anniecasta'].map(key));
 
 export function isDocumentExemptPhysician(name: string | null | undefined): boolean {
-  return !!name && EXEMPT.has(key(name));
+  return !!name && (EXEMPT.has(key(name)) || /\bdirect\s*shifts\b/i.test(name));
 }
 
 /** Remove a leading "Dr."/"Dr" so displays that prepend "Dr." never double it. */
