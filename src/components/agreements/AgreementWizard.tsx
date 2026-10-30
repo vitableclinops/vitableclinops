@@ -1,4 +1,5 @@
 import { isDocumentExemptPhysician } from '@/lib/directShiftsPhysicians';
+import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import { useState, useCallback, useEffect } from 'react';
 import { allUSStates } from '@/data/allStates';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -200,8 +201,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
         }
         toast.success(`Independent practice verified in ${st}`, { description: 'No agreement was created and no emails were sent.' });
         clearSaved();
-        queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
-        queryClient.invalidateQueries({ queryKey: ['agreements'] });
+        await refreshAgreementViews(queryClient);
         onOpenChange(false);
         onSuccess?.({ documentAttached: false });
         setCurrentStep(0);
@@ -303,11 +303,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       }
 
       clearSaved();
-      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
-      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
-      queryClient.invalidateQueries({ queryKey: ['agreements'] });
-      queryClient.invalidateQueries({ queryKey: ['provider-agreements-count'] });
-      queryClient.invalidateQueries({ queryKey: ['provider-missing-doc-agreements'] });
+      await refreshAgreementViews(queryClient);
       onOpenChange(false);
       onSuccess?.({ documentAttached });
 

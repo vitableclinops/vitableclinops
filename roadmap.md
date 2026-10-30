@@ -38,6 +38,7 @@
 - [x] Audit all directory collaboration labels and statuses against linked agreements and verify consistency; 50 visible clinicians match.
 - [x] Keep collaboration checks current after new providers and agreements are saved, on window focus and every minute while visible.
 - [ ] Link Jonathan Luker’s confirmed Ohio and Pennsylvania collaborations with Kate Baron; awaiting signed documents/effective dates and Ohio capacity review. No status changes authorized.
+- [x] Ensure saved agreement documents and DirectShifts supervisor settings refresh directory requirement flags before save success; 24 tests passed and signed-in Brittney’s existing DirectShifts states verified clear while her unfulfilled OK flag remains.
 - [x] Check active EHR states for required linked agreements and flag missing agreements with clickable corrections; tests and signed-in correction flow verified.
 - [x] Compare Jonathan’s directory, latest EHR states and agreements without changing statuses: Active profile, OH license in Medallion, PA in latest five EHR snapshots but no OH, no linked agreements. Warehouse-side reason for absent OH cannot be confirmed from saved active-only results.
 - [x] Include existing linked task uploads and participant documents in agreement attachment checks; verified with tests and signed-in directory, without changing statuses.

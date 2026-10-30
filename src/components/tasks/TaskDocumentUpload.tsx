@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -122,8 +123,7 @@ export function TaskDocumentUpload({
         });
 
       if (insertError) throw insertError;
-      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
-      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
+      await refreshAgreementViews(queryClient);
 
       // Audit log
       await supabase.from('agreement_audit_log').insert({
@@ -161,8 +161,7 @@ export function TaskDocumentUpload({
     try {
       await supabase.storage.from('task-documents').remove([doc.file_path]);
       await supabase.from('task_documents').delete().eq('id', doc.id);
-      queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
-      queryClient.invalidateQueries({ queryKey: ['local-supervision-agreements'] });
+      await refreshAgreementViews(queryClient);
 
       const { data: { user } } = await supabase.auth.getUser();
       await supabase.from('agreement_audit_log').insert({
