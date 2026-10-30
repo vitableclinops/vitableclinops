@@ -2,7 +2,7 @@ import { getCollabRequirementType } from '@/constants/stateRestrictions';
 import { isIndependentPhysician, normalizeRole } from '@/lib/clinicianRoles';
 import { parseLocalDate } from '@/lib/utils';
 import { hasVerifiedIndependentPractice, type CollabDecision } from '@/lib/nyIndependentPractice';
-import { hasPrescriptiveAuthority, type PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
+import type { PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
 
 export interface StateAgreement {
   profileId: string | null;
@@ -23,7 +23,7 @@ export function activeStateAgreementFlags(
   states: string[], rules: CollaborationRule[], agreements: StateAgreement[],
   decisions: CollabDecision[],
   today = new Date(),
-  authorityEvidence: PrescriptiveAuthorityEvidence[] = [],
+  _authorityEvidence: PrescriptiveAuthorityEvidence[] = [],
   newlyActiveStates: string[] = [],
 ): AgreementReview[] {
   if (isIndependentPhysician(provider)) return [];
@@ -35,11 +35,10 @@ export function activeStateAgreementFlags(
   return [...new Set(states)].sort().flatMap(state => {
     if (getCollabRequirementType(state) === 'md_only') return [];
     const rule = rules.find(r => r.state_abbreviation === state);
-    // NY's saved conditional rule allows explicit prescribing authority as an alternative.
+    // NY requires a documented agreement or a source-and-date independent verification.
     const authorityAlternative = state === 'NY' && rule?.collab_requirement_type === 'conditional';
     if (!rule || (!rule.ca_required && !authorityAlternative) || rule.collab_requirement_type === 'never' || rule.collab_requirement_type === 'md_only') return [];
     if (authorityAlternative && hasVerifiedIndependentPractice(provider.id, state, decisions)) return [];
-    if (authorityAlternative && hasPrescriptiveAuthority(provider.id, state, authorityEvidence, day)) return [];
     const matching = agreements.filter(a => a.profileId === provider.id && a.state === state
       && ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase())
       && (!a.start || parseLocalDate(a.start.slice(0, 10)) <= day)

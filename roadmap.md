@@ -56,3 +56,4 @@
 - [x] Change NY to conditional collaboration only without prescriptive authority; update saved requirement and default classification.
 - [x] Restrict ongoing agreement-link checks to active EHR states; compare daily successful snapshots for newly active states, retaining unresolved flags until satisfied or deactivated.
 - [x] Check NY current linked prescriptive-authority evidence as an alternative to collaboration; verified matching directory/Agreements flags signed in, clickable corrections, 66 tests.
+- [ ] Flag current NY EHR-active NPs lacking a documented agreement or source-and-date independent verification; verify both correction prompts.

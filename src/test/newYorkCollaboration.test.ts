@@ -20,8 +20,14 @@ describe('New York conditional collaboration requirement', () => {
       { state_abbreviation: 'NY', ca_required: false, collab_requirement_type: 'conditional' },
     ])).toEqual([]);
   });
-  it('clears NY review with explicit current prescriptive authority', () => {
-    expect(activeStateAgreementFlags(provider, ['NY'], rules, [], [], today, [authority])).toEqual([]);
+  it('requires confirmed independent status even when a license lists prescriptive authority', () => {
+    expect(activeStateAgreementFlags(provider, ['NY'], rules, [], [], today, [authority]).map(f => f.state)).toEqual(['NY']);
+  });
+  it('clears NY review only when independent status includes its verification source and date', () => {
+    const decision = { profile_id: 'np', state_abbreviation: 'NY', decision: 'independent_verified', verified_source: 'NYSED lookup', verified_on: '2026-10-29' };
+    expect(activeStateAgreementFlags(provider, ['NY'], rules, [], [decision], today, [authority])).toEqual([]);
+    expect(activeStateAgreementFlags(provider, ['NY'], rules, [], [{ ...decision, verified_source: '' }], today, [authority])).toHaveLength(1);
+    expect(activeStateAgreementFlags(provider, ['NY'], rules, [], [{ ...decision, verified_on: null }], today, [authority])).toHaveLength(1);
   });
   it('flags unknown NY authority without claiming the provider lacks it', () => {
     const flags = activeStateAgreementFlags(provider, ['NY'], rules, [], [], today);
@@ -45,8 +51,8 @@ describe('New York conditional collaboration requirement', () => {
     const current = new Map([['np', ['NY', 'PA']]]);
     const added = addedActiveEhrStates(current, previous);
     const flags = activeStateAgreementFlags(provider, current.get('np') ?? [], rules, [], [], today, [authority], added.get('np'));
-    expect(flags.map(f => [f.state, f.newlyActive])).toEqual([['PA', true]]);
-    expect(activeStateAgreementFlags(provider, ['NY'], rules, [], [], today, [authority])).toEqual([]);
+    expect(flags.map(f => [f.state, f.newlyActive])).toEqual([['NY', false], ['PA', true]]);
+    expect(activeStateAgreementFlags(provider, [], rules, [], [], today, [authority])).toEqual([]);
   });
   it('ignores licensed-only states and does not label the initial snapshot as a change', () => {
     expect(activeStateAgreementFlags(provider, [], rules, [], [], today, [authority])).toEqual([]);
