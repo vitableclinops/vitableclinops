@@ -17,7 +17,7 @@ export function useActiveStateAgreementAudit(enabled: boolean) {
         supabase.from('external_agreements').select('agency_id, external_provider_id, supervision_state, collaborative_agreement_status, document_reference, supervision_start_date, supervision_end_date').range(0, 9999),
         supabase.from('external_providers').select('agency_id, external_provider_id, profile_id').range(0, 9999),
         supabase.from('state_compliance_requirements').select('state_abbreviation, collab_requirement_type, ca_required'),
-        supabase.from('provider_state_collab_decisions').select('profile_id, state_abbreviation, decision').range(0, 9999),
+        supabase.from('provider_state_collab_decisions').select('profile_id, state_abbreviation, decision, verified_source, verified_on').range(0, 9999),
         supabase.from('task_documents').select('agreement_id, task_id, file_path').range(0, 9999),
         supabase.from('agreement_tasks').select('id, agreement_id').range(0, 9999),
         supabase.from('provider_licenses').select('profile_id, state_abbreviation, license_type, status, issue_date, expiration_date').eq('state_abbreviation', 'NY').range(0, 9999),
