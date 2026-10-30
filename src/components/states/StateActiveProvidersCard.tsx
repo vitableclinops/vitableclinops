@@ -89,7 +89,18 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
               {providerFlags.map((f, i) => (
                 <div key={i} className="rounded bg-muted p-2 text-xs space-y-1">
                   <p><span className="font-medium">{f.reason}</span> {f.howToFix}</p>
-                  <Button asChild size="sm" variant="outline" className="h-7"><Link to="/admin/agreements">Fix in Needs fixing</Link></Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={() => {
+                      // Full navigation so the Agreements page picks up the ?state filter
+                      // even when the user is already on /admin/agreements.
+                      window.location.assign(`/admin/agreements?state=${state}`);
+                    }}
+                  >
+                    Fix in Needs fixing
+                  </Button>
                 </div>
               ))}
             </div>
