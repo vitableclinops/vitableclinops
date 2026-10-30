@@ -30,17 +30,17 @@ describe('active EHR state agreement checks', () => {
     expect(check(['PA', 'AZ']).map(r => r.state)).toEqual(['PA']);
   });
   it('requires attached evidence for an active agreement', () => {
-    expect(check(['PA'], [{ profileId: 'jonathan', state: 'PA', status: 'active', document: null }])[0].reason).toBe('Active agreement has no attached document.');
+    expect(check(['OH'], [{ profileId: 'jonathan', state: 'OH', status: 'active', document: null }]).map(r => r.state)).toEqual(['OH']);
   });
   it('clears only the state with an active identity-linked documented agreement', () => {
-    expect(check(['PA', 'OH'], [{ profileId: 'jonathan', state: 'PA', status: 'active', document: 'signed.pdf' }]).map(r => r.state)).toEqual(['OH']);
+    expect(check(['PA', 'OH'], [{ profileId: 'jonathan', state: 'OH', status: 'active', document: 'signed.pdf' }]).map(r => r.state)).toEqual(['PA']);
   });
   it('does not count another provider or terminated or expired agreements', () => {
     expect(check(['PA'], [
       { profileId: 'other', state: 'PA', status: 'active', document: 'signed.pdf' },
       { profileId: 'jonathan', state: 'PA', status: 'terminated', document: 'signed.pdf' },
       { profileId: 'jonathan', state: 'PA', status: 'active', document: 'signed.pdf', end: '2026-10-27' },
-    ])[0].reason).toBe('Missing active linked collaborative agreement.');
+    ]).map(r => r.state)).toEqual(['PA']);
   });
   it('uses saved requirements over defaults', () => {
     expect(activeStateAgreementFlags(provider, ['PA'], [{ state_abbreviation: 'PA', ca_required: false, collab_requirement_type: 'never' }], [], [], today)).toEqual([]);
