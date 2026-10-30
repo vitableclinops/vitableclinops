@@ -57,3 +57,4 @@
 - [x] Restrict ongoing agreement-link checks to active EHR states; compare daily successful snapshots for newly active states, retaining unresolved flags until satisfied or deactivated.
 - [x] Check NY current linked prescriptive-authority evidence as an alternative to collaboration; verified matching directory/Agreements flags signed in, clickable corrections, 66 tests.
 - [x] Flag current NY EHR-active NPs lacking a documented agreement or source-and-date independent verification; verified seven providers in both directory and Needs fixing, source/date prompt and 31 tests.
+- [ ] Extend the documented-agreement or source/date independent-verification option to WV, including flags and agreement finalization.

@@ -7,7 +7,7 @@ export interface CollabDecision {
 }
 
 /** States where a confirmed independent-practice verification is an alternative to a collaborative agreement. */
-export const INDEPENDENT_ALTERNATIVE_STATES = new Set(['NY']);
+export const INDEPENDENT_ALTERNATIVE_STATES = new Set(['NY', 'WV']);
 
 /** Independent status counts only when it was recorded with where and when it was verified. */
 export function hasVerifiedIndependentPractice(profileId: string, state: string, decisions: CollabDecision[]) {
