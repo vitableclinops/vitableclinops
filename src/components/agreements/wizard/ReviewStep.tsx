@@ -67,7 +67,8 @@ export const ReviewStep = ({ formData, updateFormData, requireDocument = false, 
           {independent && (
             <>
               <IndependentPracticeFields source={formData.independentSource ?? ''} verifiedOn={formData.independentOn ?? ''}
-                onChange={v => updateFormData?.({ ...(v.source !== undefined && { independentSource: v.source }), ...(v.verifiedOn !== undefined && { independentOn: v.verifiedOn }) })} />
+                link={formData.independentLink ?? ''} file={formData.independentFile ?? null}
+                onChange={v => updateFormData?.({ ...(v.source !== undefined && { independentSource: v.source }), ...(v.verifiedOn !== undefined && { independentOn: v.verifiedOn }), ...(v.link !== undefined && { independentLink: v.link }), ...(v.file !== undefined && { independentFile: v.file }) })} />
               <p className="text-xs text-muted-foreground">No agreement is created and no emails are sent; the verification is saved for each selected provider.</p>
               {formData.providers.some(p => !p.id) && <p className="text-xs text-destructive">Every provider must be an existing directory profile to record verification.</p>}
             </>

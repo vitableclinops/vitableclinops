@@ -24,6 +24,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileText, ExternalLink, Pencil, Save, X, Link2, AlertTriangle, Upload, Loader2 } from 'lucide-react';
 import { CopyValueButton } from '@/components/directory/CopyValueButton';
+import { IndependentVerificationList } from '@/components/agreements/IndependentPracticeVerifyDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { CURRENT_EMPLOYEE_FILTER, isOffboarded } from '@/lib/employeeVisibility';
@@ -735,6 +736,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                     </Button>
                   </div>
                 )}
+                <IndependentVerificationList profileId={provider.id} />
                 <p className="text-sm text-muted-foreground">
                   View the Licenses tab on the provider's profile for detailed license information.
                 </p>
