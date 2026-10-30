@@ -32,7 +32,7 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
             <CardTitle className="flex items-center gap-2"><UserRound className="h-5 w-5" />Active providers in {state}</CardTitle>
             <CardDescription>Providers active in the EHR here, with their saved requirements. Updates automatically when agreements or verifications are saved.</CardDescription>
           </div>
-          <Button asChild size="sm" variant="outline"><Link to={`/admin/agreements?state=${state}`}>{state} agreements</Link></Button>
+          <Button size="sm" variant="outline" onClick={() => window.location.assign(`/admin/agreements?state=${state}`)}>{state} agreements</Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -89,7 +89,18 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
               {providerFlags.map((f, i) => (
                 <div key={i} className="rounded bg-muted p-2 text-xs space-y-1">
                   <p><span className="font-medium">{f.reason}</span> {f.howToFix}</p>
-                  <Button asChild size="sm" variant="outline" className="h-7"><Link to="/admin/agreements">Fix in Needs fixing</Link></Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={() => {
+                      // Full navigation so the Agreements page picks up the ?state filter
+                      // even when the user is already on /admin/agreements.
+                      window.location.assign(`/admin/agreements?state=${state}`);
+                    }}
+                  >
+                    Fix in Needs fixing
+                  </Button>
                 </div>
               ))}
             </div>
