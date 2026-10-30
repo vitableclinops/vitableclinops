@@ -10,6 +10,7 @@ import { MEDALLION_STALE_HOURS, agreementTypeLabel, useMedallionDirectoryData } 
 import { formatRelativeTime } from '@/hooks/useDataFreshness';
 import { useExternalDirectoryData } from '@/hooks/useExternalImport';
 import { useLocalSupervisionAgreements } from '@/hooks/useLocalSupervisionAgreements';
+import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 
 /**
  * Every collaborative agreement from Medallion, across all providers.
@@ -125,7 +126,7 @@ export function SupervisionAgreementsTable({ offboardedProfiles = [] }: { offboa
                         <TableCell className="whitespace-nowrap text-sm">{a.start_date ?? '?'} → {a.end_date ?? 'open'}</TableCell>
                         <TableCell className="text-xs max-w-[220px]">
                           {a.document_url ? (
-                            <a href={a.document_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1"><FileText className="h-3 w-3" />Signed agreement</a>
+                            <EvidenceLink reference={a.document_url}><FileText className="h-3 w-3" />{a.document_title || 'Signed agreement'}</EvidenceLink>
                           ) : a.document_title ? (
                             <span className="flex items-start gap-1" title="The file is stored in Medallion; open it there.">
                               <FileText className="h-3 w-3 mt-0.5 shrink-0" /><span className="break-all">{a.document_title}</span>

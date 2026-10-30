@@ -6,6 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { StatCard } from '@/components/StatCard';
 import { AgreementWizard } from '@/components/agreements/AgreementWizard';
+import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 import { TerminationDialog } from '@/components/agreements/TerminationDialog';
 import { NotificationQueue } from '@/components/agreements/NotificationQueue';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
@@ -1346,12 +1347,9 @@ const CollaborativeAgreementsPage = () => {
                                     <LinkIcon className="h-4 w-4 mr-2" />
                                     {hasDocument ? 'Update Document' : 'Add Document'}
                                   </DropdownMenuItem>
-                                  {hasDocument && (
-                                    <DropdownMenuItem asChild>
-                                      <a href={documentLink!} target="_blank" rel="noopener noreferrer">
-                                        <ExternalLink className="h-4 w-4 mr-2" />
-                                        Open Document
-                                      </a>
+                                  {documentLink && (
+                                    <DropdownMenuItem onSelect={event => event.preventDefault()}>
+                                      <EvidenceLink reference={documentLink}>Open Document</EvidenceLink>
                                     </DropdownMenuItem>
                                   )}
                                   {agreement.isActive && (
@@ -1600,11 +1598,7 @@ const CollaborativeAgreementsPage = () => {
                                                     </Link>
                                                   </Button>
                                                   {sa.documentUrl && (
-                                                    <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
-                                                      <a href={sa.documentUrl} target="_blank" rel="noopener noreferrer" aria-label={`View ${provider.name} ${sa.state} agreement document`}>
-                                                        <ExternalLink className="h-3 w-3 mr-1" />Document
-                                                      </a>
-                                                    </Button>
+                                                    <EvidenceLink reference={sa.documentUrl} className="text-xs" label={`View ${provider.name} ${sa.state} agreement document`}>Document</EvidenceLink>
                                                   )}
                                                 </div>
                                               );

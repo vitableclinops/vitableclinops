@@ -4,6 +4,7 @@ import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
@@ -145,18 +146,6 @@ export function TaskDocumentUpload({
     }
   };
 
-  const handleView = async (doc: TaskDocument) => {
-    const { data, error } = await supabase.storage
-      .from('task-documents')
-      .createSignedUrl(doc.file_path, 300);
-
-    if (error || !data?.signedUrl) {
-      toast({ title: 'Error', description: 'Could not generate download link.', variant: 'destructive' });
-      return;
-    }
-    window.open(data.signedUrl, '_blank');
-  };
-
   const handleDelete = async (doc: TaskDocument) => {
     try {
       await supabase.storage.from('task-documents').remove([doc.file_path]);
@@ -233,14 +222,11 @@ export function TaskDocumentUpload({
             >
               <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate">{doc.file_name}</p>
+                <EvidenceLink reference={doc.file_path} className="text-xs">{doc.file_name}</EvidenceLink>
                 <p className="text-[10px] text-muted-foreground">
                   {formatFileSize(doc.file_size)} · {doc.uploaded_by_name || 'Unknown'} · {new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </p>
               </div>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleView(doc)} title="View">
-                <Eye className="h-3 w-3" />
-              </Button>
               {!disabled && (
                 <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete(doc)} title="Delete">
                   <Trash2 className="h-3 w-3" />
