@@ -440,7 +440,7 @@ const CollaborativeAgreementsPage = () => {
     } else if (statFilter === 'renewals') {
       matchesStat = agreement.isActive && agreement.daysUntilRenewal !== null && agreement.daysUntilRenewal <= 30;
     } else if (statFilter === 'missing_docs') {
-      matchesStat = agreement.isActive && !agreement.documentUrl && !agreement.medallionDocumentUrl;
+      matchesStat = agreement.isActive && !agreement.directShifts && !agreement.hasTaskDocuments && !agreement.documentUrl && !agreement.medallionDocumentUrl;
     }
 
     return matchesSearch && matchesStatus && matchesState && matchesPhysician && matchesMeeting && matchesStat;
@@ -581,7 +581,7 @@ const CollaborativeAgreementsPage = () => {
   
   // Check for compliance risks
   const agreementsWithoutDocument = flattenedAgreements.filter(
-    a => a.isActive && !a.documentUrl && !a.medallionDocumentUrl
+    a => a.isActive && !a.directShifts && !a.hasTaskDocuments && !a.documentUrl && !a.medallionDocumentUrl
   ).length;
   // Required document gaps come exclusively from the shared active-EHR-state audit.
   // Existing historical/licensed-only agreements remain accessible, not compliance flags.
