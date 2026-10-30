@@ -1,5 +1,5 @@
 import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AGREEMENT_REFRESH_OPTIONS, refreshAgreementViews } from '@/lib/agreementRefresh';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -198,6 +198,13 @@ const CollaborativeAgreementsPage = () => {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [incompleteOpen, setIncompleteOpen] = useState(false);
   const [selectedIncompleteId, setSelectedIncompleteId] = useState<string | null>(null);
+
+  // Deep link: /admin/agreements?state=XX opens Needs fixing scoped to that state
+  // (used by the "Fix in Needs fixing" links on state cards).
+  useEffect(() => {
+    if (searchParams.get('state')) setIncompleteOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [selectedFlatAgreement, setSelectedFlatAgreement] = useState<FlattenedAgreement | null>(null);
   const [documentUrl, setDocumentUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -587,6 +594,10 @@ const CollaborativeAgreementsPage = () => {
   // Required document gaps come exclusively from the shared active-EHR-state audit.
   // Existing historical/licensed-only agreements remain accessible, not compliance flags.
   const needsFixingCount = incompleteCount;
+  // When a state filter is active (e.g. arrived via a state card link), scope the Needs fixing dialog to it.
+  const dialogFlags = stateFilter === 'all' ? requiredAgreementFlags : requiredAgreementFlags.filter(f => f.state === stateFilter);
+  const dialogIncomplete = stateFilter === 'all' ? incompleteAgreements : incompleteAgreements.filter(a => a.state_abbreviation === stateFilter);
+  const dialogCount = dialogFlags.length + dialogIncomplete.length;
   
   // Upcoming meetings in next 14 days
   const upcomingMeetings = flattenedAgreements.filter(
