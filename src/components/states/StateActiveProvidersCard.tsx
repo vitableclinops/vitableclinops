@@ -41,8 +41,18 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
         {!loading && !error && active.length === 0 && <p className="text-sm text-muted-foreground">No providers are active in the EHR in {state}.</p>}
         {active.map(({ p, name }) => {
           const providerFlags = flags.filter(f => f.provider.id === p.id && f.state === state);
-          const agreements = (audit?.agreements ?? []).filter(a => a.profileId === p.id && a.state === state
+          const rawAgreements = (audit?.agreements ?? []).filter(a => a.profileId === p.id && a.state === state
             && ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase()) && (!a.end || a.end.slice(0, 10) >= today));
+          // Local agreements and their linked source copies describe the same agreement: show each once.
+          const hasLocal = rawAgreements.some(a => a.agreementId);
+          const seen = new Set<string>();
+          const agreements = [...rawAgreements].sort((x, y) => Number(!!y.agreementId) - Number(!!x.agreementId)).filter(a => {
+            if (hasLocal && !a.agreementId) return false;
+            const key = a.agreementId || a.document?.trim() || '';
+            if (key && seen.has(key)) return false;
+            if (key) seen.add(key);
+            return true;
+          });
           const decisions = (audit?.decisions ?? []).filter(d => d.profile_id === p.id && d.state_abbreviation === state && DECISION_LABEL[d.decision]);
           return (
             <div key={p.id} className="rounded-md border p-3 space-y-2">
