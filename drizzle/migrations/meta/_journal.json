@@ -92,6 +92,13 @@
       "when": 1793321034250,
       "tag": "0012_ny_independent_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793325209395,
+      "tag": "0013_independent_verification_evidence",
+      "breakpoints": true
     }
   ]
 }
