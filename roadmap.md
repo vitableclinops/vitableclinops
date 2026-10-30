@@ -60,3 +60,4 @@
 - [x] Flag current NY EHR-active NPs lacking a documented agreement or source-and-date independent verification; verified seven providers in both directory and Needs fixing, source/date prompt and 31 tests.
 - [x] Extend the documented-agreement or source/date independent-verification option to WV, including flags and agreement finalization; saved conditional rule verified, 27 tests passed, Jarrod WV correction prompt checked signed in without recording unverified evidence.
 - [x] Verify manual and scheduled EHR refreshes clear deactivated-state requirement flags and add newly activated missing requirements; 41 tests passed, signed-in Needs fixing simulation removed Moensania AR and restored its required review on activation, without source changes. Latest real snapshot still contains AR.
+- [ ] Make saved collaboration and independent-verification screenshots and links reopenable from provider profiles.
