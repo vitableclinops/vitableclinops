@@ -15,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { StateCompliance } from '@/hooks/useStateCompliance';
 import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
 import { EvidenceLink } from './EvidenceLink';
+import { stateRequirementSummary } from '@/lib/stateRequirementSummary';
 import { StateActiveProvidersCard } from '@/components/states/StateActiveProvidersCard';
 
 interface StateProfileModalProps {
@@ -224,6 +225,11 @@ export const StateProfileModal = ({
             )}
           </div>
         </DialogHeader>
+
+        <div className="mt-2 rounded-md border bg-muted/50 p-3 text-sm">
+          <span className="font-semibold">Requirements: </span>
+          {stateRequirementSummary(stateData.state_abbreviation, stateData.collab_requirement_type, stateData.ca_required)}
+        </div>
 
         <Tabs defaultValue="active" className="mt-4">
           <TabsList className="grid w-full grid-cols-4">
