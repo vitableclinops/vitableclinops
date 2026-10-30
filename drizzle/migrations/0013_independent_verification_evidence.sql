@@ -1,0 +1,1 @@
+ALTER TABLE public.provider_state_collab_decisions ADD COLUMN IF NOT EXISTS verified_link text, ADD COLUMN IF NOT EXISTS verified_attachment_path text, ADD COLUMN IF NOT EXISTS verified_attachment_name text;

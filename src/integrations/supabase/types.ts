@@ -4297,6 +4297,9 @@ export type Database = {
           profile_id: string
           state_abbreviation: string
           updated_at: string
+          verified_attachment_name: string | null
+          verified_attachment_path: string | null
+          verified_link: string | null
           verified_on: string | null
           verified_source: string | null
         }
@@ -4310,6 +4313,9 @@ export type Database = {
           profile_id: string
           state_abbreviation: string
           updated_at?: string
+          verified_attachment_name?: string | null
+          verified_attachment_path?: string | null
+          verified_link?: string | null
           verified_on?: string | null
           verified_source?: string | null
         }
@@ -4323,6 +4329,9 @@ export type Database = {
           profile_id?: string
           state_abbreviation?: string
           updated_at?: string
+          verified_attachment_name?: string | null
+          verified_attachment_path?: string | null
+          verified_link?: string | null
           verified_on?: string | null
           verified_source?: string | null
         }

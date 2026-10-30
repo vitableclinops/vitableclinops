@@ -68,6 +68,8 @@ export interface AgreementFormData {
   independentPath?: 'agreement' | 'independent';
   independentSource?: string;
   independentOn?: string;
+  independentLink?: string;
+  independentFile?: File | null;
 }
 
 const STEPS = [
@@ -194,7 +196,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       if (independentChosen) {
         const st = formData.selectedState.abbreviation;
         for (const p of formData.providers) {
-          await saveIndependentVerification({ profileId: p.id!, state: st, source: formData.independentSource!, verifiedOn: formData.independentOn!, decidedBy: profile?.id });
+          await saveIndependentVerification({ profileId: p.id!, state: st, source: formData.independentSource!, verifiedOn: formData.independentOn!, link: formData.independentLink, file: formData.independentFile, decidedBy: profile?.id });
         }
         toast.success(`Independent practice verified in ${st}`, { description: 'No agreement was created and no emails were sent.' });
         clearSaved();
