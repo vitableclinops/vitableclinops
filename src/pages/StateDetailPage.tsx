@@ -38,6 +38,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { cn, formatDisplayDate } from '@/lib/utils';
 import { StateActiveProvidersCard } from '@/components/states/StateActiveProvidersCard';
+import { stateRequirementSummary } from '@/lib/stateRequirementSummary';
 import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 interface AgreementWithProviders {
@@ -299,6 +300,12 @@ export default function StateDetailPage() {
           <div className="grid gap-6 lg:grid-cols-3">
             {/* Main content */}
             <div className="lg:col-span-2 space-y-6">
+              {stateAbbr && (() => { const c = getStateCompliance(stateAbbr); return (
+                <div className="rounded-md border bg-muted/50 p-3 text-sm">
+                  <span className="font-semibold">Requirements: </span>
+                  {stateRequirementSummary(stateAbbr, c?.collab_requirement_type, c?.ca_required)}
+                </div>
+              ); })()}
               {stateAbbr && <StateActiveProvidersCard state={stateAbbr} />}
               {/* Stats */}
               <div className="grid gap-4 md:grid-cols-4">
