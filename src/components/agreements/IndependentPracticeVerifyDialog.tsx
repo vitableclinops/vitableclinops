@@ -133,7 +133,7 @@ export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId,
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={saving || !source.trim() || !verifiedOn || (paState && !(file instanceof File)))} onClick={save}>Save verification</Button>
+          <Button disabled={saving || !source.trim() || !verifiedOn || (paState && !(file instanceof File))} onClick={save}>Save verification</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
