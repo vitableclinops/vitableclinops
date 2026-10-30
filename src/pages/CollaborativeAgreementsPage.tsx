@@ -58,6 +58,7 @@ import {
   Info,
   ChevronDown,
   X,
+  RefreshCw,
 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -241,6 +242,29 @@ const CollaborativeAgreementsPage = () => {
   const userEmail = profile?.email || '';
 
   const fetchDbAgreements = () => refreshAgreementViews(queryClient);
+
+  // Pull a fresh provider active-states (PCP coverage) snapshot from the source,
+  // then refresh the views that read it. Admin-only.
+  const [syncingCoverage, setSyncingCoverage] = useState(false);
+  const handleRefreshCoverage = async () => {
+    setSyncingCoverage(true);
+    toast({ title: 'Refreshing active states…', description: 'Pulling the latest coverage snapshot from the source.' });
+    try {
+      const { error } = await supabase.functions.invoke('sync-pcp-coverage', { body: { mode: 'refresh' } });
+      if (error) throw error;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['pcp-coverage-by-id'] }),
+        queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] }),
+      ]);
+      await fetchDbAgreements();
+      toast({ title: 'Active states refreshed', description: 'The latest provider active-states snapshot is loaded.' });
+    } catch (err: any) {
+      toast({ title: 'Could not refresh active states', description: err?.message ?? 'Please try again shortly.', variant: 'destructive' });
+    } finally {
+      setSyncingCoverage(false);
+    }
+  };
+
 
   // Incomplete agreements (shell records with no provider assigned)
   const isLiveAgreement = (a: DbAgreement) =>
@@ -712,6 +736,18 @@ const CollaborativeAgreementsPage = () => {
               </p>
             </div>
             <div className="flex gap-2">
+              {/* Small refresh: re-pull provider active states from the source (admin only) */}
+              {hasRole('admin') && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title={syncingCoverage ? 'Refreshing active states…' : 'Refresh provider active states from the source'}
+                  onClick={handleRefreshCoverage}
+                  disabled={syncingCoverage}
+                >
+                  <RefreshCw className={cn('h-4 w-4', syncingCoverage && 'animate-spin')} />
+                </Button>
+              )}
               {/* Only admins and physicians can schedule meetings */}
               {(hasRole('admin') || hasRole('physician')) && (
                 <Button variant="outline" onClick={() => setMeetingWizardOpen(true)} size="lg">
