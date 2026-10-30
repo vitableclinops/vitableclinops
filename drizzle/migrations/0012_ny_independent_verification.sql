@@ -1,0 +1,3 @@
+ALTER TABLE public.provider_state_collab_decisions DROP CONSTRAINT IF EXISTS provider_state_collab_decisions_decision_check;
+ALTER TABLE public.provider_state_collab_decisions ADD CONSTRAINT provider_state_collab_decisions_decision_check CHECK (decision = ANY (ARRAY['requires_collab','no_collab_required','pending_review','independent_verified']));
+ALTER TABLE public.provider_state_collab_decisions ADD COLUMN IF NOT EXISTS verified_source text, ADD COLUMN IF NOT EXISTS verified_on date;

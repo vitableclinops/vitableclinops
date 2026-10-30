@@ -85,6 +85,13 @@
       "when": 1793226153226,
       "tag": "0011_admin_no_npi_exception",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793321034250,
+      "tag": "0012_ny_independent_verification",
+      "breakpoints": true
     }
   ]
 }
