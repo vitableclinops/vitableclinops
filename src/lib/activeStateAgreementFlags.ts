@@ -13,6 +13,8 @@ export interface StateAgreement {
   end?: string | null;
   /** Led by a DirectShifts physician: no document link required. */
   documentExempt?: boolean;
+  /** Local agreement record ID, used to open the agreement page. */
+  agreementId?: string;
 }
 export interface AgreementReview { state: string; reason: string; howToFix: string; authorityReview?: boolean; independentAlternative?: boolean; newlyActive?: boolean }
 export interface CollaborationRule { state_abbreviation: string; collab_requirement_type: string | null; ca_required: boolean }

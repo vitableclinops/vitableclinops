@@ -4,6 +4,9 @@ export interface CollabDecision {
   decision: string;
   verified_source?: string | null;
   verified_on?: string | null;
+  verified_link?: string | null;
+  verified_attachment_path?: string | null;
+  verified_attachment_name?: string | null;
 }
 
 /** States where a confirmed independent-practice verification is an alternative to a collaborative agreement. */
