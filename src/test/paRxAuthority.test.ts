@@ -5,16 +5,16 @@ import { hasVerifiedRxAuthority, hasVerificationLink, type CollabDecision } from
 const np = { id: 'pa-provider', profession: 'NP' };
 const rules = [{ state_abbreviation: 'PA', collab_requirement_type: 'always', ca_required: true }];
 const agreements = [{ profileId: np.id, state: 'PA', status: 'active', document: 'https://example.org/agreement.pdf' }];
-const verification = { profile_id: np.id, state_abbreviation: 'PA', decision: 'rx_authority_verified', verified_source: 'State board', verified_on: '2026-10-30', verified_link: 'https://example.org/license' };
+const verification = { profile_id: np.id, state_abbreviation: 'PA', decision: 'rx_authority_verified', verified_source: 'State board', verified_on: '2026-10-30', verified_attachment_path: 'independent-verification/pa-provider/proof.png' };
 const audit = (agreementsOnFile = agreements, decisions: CollabDecision[] = [verification], states = ['PA']) => activeStateAgreementFlags(np, states, rules, agreementsOnFile, decisions);
 
 describe('PA Collab Agreement plus Rx Authority designation', () => {
   it('requires Rx verification even when the agreement is saved', () => expect(audit(agreements, [])).toHaveLength(1));
   it('requires a Collab Agreement even when Rx Authority is verified', () => expect(audit([])).toHaveLength(1));
   it('clears only with both agreement and linked Rx designation verification', () => expect(audit()).toHaveLength(0));
-  it('requires a verification link, not just source/date or an attachment', () => expect(audit(agreements, [{ ...verification, verified_link: '', verified_attachment_path: 'proof.png' }])).toHaveLength(1));
+  it('requires an uploaded file, not just source/date or a pasted link', () => expect(audit(agreements, [{ ...verification, verified_link: 'https://example.org/license', verified_attachment_path: '' }])).toHaveLength(1));
   it('does not accept independent status as the PA alternative', () => expect(audit([], [{ ...verification, decision: 'independent_verified' }])).toHaveLength(1));
-  it('requires source and date along with the verification link', () => {
+  it('requires source and date along with the uploaded file', () => {
     expect(hasVerifiedRxAuthority(np.id, 'PA', [{ ...verification, verified_source: '' }])).toBe(false);
     expect(hasVerifiedRxAuthority(np.id, 'PA', [{ ...verification, verified_on: '' }])).toBe(false);
   });

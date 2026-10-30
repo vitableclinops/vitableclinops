@@ -60,7 +60,7 @@ export const ReviewStep = ({ formData, updateFormData, requireDocument = false, 
       {stateCode === 'PA' && (
         <div className="space-y-3 border-b pb-4">
           <p className="text-sm font-medium">PA requires a Collab Agreement + "Rx Authority" License Designation</p>
-          <IndependentPracticeFields requireLink source={formData.independentSource ?? ''} verifiedOn={formData.independentOn ?? ''}
+          <IndependentPracticeFields requireFile source={formData.independentSource ?? ''} verifiedOn={formData.independentOn ?? ''}
             link={formData.independentLink ?? ''} file={formData.independentFile ?? null}
             onChange={v => updateFormData?.({ ...(v.source !== undefined && { independentSource: v.source }), ...(v.verifiedOn !== undefined && { independentOn: v.verifiedOn }), ...(v.link !== undefined && { independentLink: v.link }), ...(v.file !== undefined && { independentFile: v.file }) })} />
           {formData.providers.some(p => !p.id) && <p className="text-xs text-destructive">Select existing directory profiles to save license verification.</p>}

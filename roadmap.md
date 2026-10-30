@@ -1,4 +1,5 @@
 - [x] Delete test accounts: Maddi PodLead, Test User
+- [ ] Change PA verification to uploaded file only and verify required-file enforcement.
 - [x] Require PA Collab Agreement + Rx Authority verification link; 48 tests passed, 18 current PA reviews found signed in, and save stays disabled without a link. No unverified evidence saved; final save/readback requires real verification proof.
 - [x] Confirm PA requirement prompts cover future EHR activations as well as currently active providers.
 - [x] Remove MD/DO own-practice agreement requirement errors across readiness, activation, grid and directory; 42 targeted tests passed and Gina’s DO profile verified signed in; NP supervision records preserved.
