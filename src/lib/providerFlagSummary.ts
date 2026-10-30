@@ -9,6 +9,7 @@ export interface FlaggedProvider {
   identityReview?: IdentityReview;
   agreementReviews?: import('@/lib/activeStateAgreementFlags').AgreementReview[];
   sourceIdentityReviews?: IdentityReview[];
+  profileReviews?: (IdentityReview & { id: string; label: string })[];
   profileId?: string;
 }
 

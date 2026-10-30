@@ -63,3 +63,5 @@
 - [x] Make saved collaboration and independent-verification screenshots and links reopenable from provider profiles; 10 tests passed and Van Tu’s saved NY screenshot reopened signed in.
 
 - [x] Remove DirectShifts missing-upload flags from profile, agreement filters, state grid and verification; known and explicitly designated supervisors exempt, 24 tests passed, Brittney profile verified signed in.
+
+- [x] Include profile-level missing-document, invalid-agreement, activation mismatch and Medallion lookup warnings in top alerts; shared profile checks, 13 tests passed, Shadae correction flow verified signed in.

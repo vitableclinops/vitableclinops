@@ -26,6 +26,7 @@ import { ExternalImportPanel } from '@/components/directory/ExternalImportPanel'
 import { useExternalDirectoryData } from '@/hooks/useExternalImport';
 import { useDirectoryCollaboration } from '@/hooks/useDirectoryCollaboration';
 import { useActiveStateAgreementAudit } from '@/hooks/useActiveStateAgreementAudit';
+import { useDirectoryProfileWarnings } from '@/hooks/useDirectoryProfileWarnings';
 import { activeStateAgreementFlags } from '@/lib/activeStateAgreementFlags';
 import { summarizeLicenses } from '@/lib/externalImport';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
@@ -125,6 +126,7 @@ const ProviderDirectoryPage = () => {
   const isAdmin = roles.includes('admin');
   const { data: collaborationIds } = useDirectoryCollaboration(isAdmin);
   const { data: agreementAudit, error: agreementAuditError } = useActiveStateAgreementAudit(isAdmin);
+  const { data: profileWarnings } = useDirectoryProfileWarnings(isAdmin);
   const defaultTab = isAdmin && ['management', 'medallion', 'agency-import', 'offboarded'].includes(tabParam ?? '') ? (tabParam ?? 'directory') : 'directory';
   
   const [activeTab, setActiveTab] = useState(defaultTab);
@@ -488,13 +490,20 @@ const ProviderDirectoryPage = () => {
       id: p.id, name: directoryDisplayName(p),
       conflicts: directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []),
       identityReview: directoryIdentityAlert(pcpCellFor(p, pcpCoverageLoading ? undefined : pcpCoverage)),
+      profileReviews: [
+        ...(p.activation_status === 'pending_agreements' && (collaborationIds?.get(p.id) ?? 0) > 0 ? [{ id: 'activation-mismatch', label: 'Pending agreements status needs review', reason: 'The profile says Pending Agreements even though linked collaborations are on file.', howToFix: 'Open the profile’s Overview tab, review the linked requirements, then use Mark agreements done if they are satisfied.' }] : []),
+        ...(profileWarnings?.get(p.id)?.missing ?? []).map(a => ({ id: a.id, label: `${a.state_abbreviation} missing document`, reason: `No documentation on file for the agreement with ${a.physician_name ?? 'Unassigned physician'}.`, howToFix: 'Open the profile to upload proof, or check saved documents under Documents.' })),
+        ...(profileWarnings?.get(p.id)?.invalid ?? []).map(a => ({ id: a.id, label: `${a.state_abbreviation} invalid agreement`, reason: a.reason ?? 'Agreement marked invalid; no reason recorded.', howToFix: 'Open the profile to review the invalid agreement and correct its requirements in Agreements.' })),
+        ...(medallion?.byProfile.get(p.id)?.detail_state === 'failed' ? [{ id: 'medallion-detail', label: 'Medallion lookup failed', reason: 'The latest provider detail lookup failed; previously saved information may be shown.', howToFix: 'Open the profile’s Medallion tab and refresh this provider.' }] : []),
+        ...(medallion?.agreementsByProfile.get(p.id) ?? []).filter(a => a.last_returned_at && medallion?.byProfile.get(p.id)?.last_returned_at && a.last_returned_at < (medallion.byProfile.get(p.id)?.last_returned_at ?? '')).map(a => ({ id: a.medallion_agreement_id, label: `${a.state ?? ''} Medallion agreement not refreshed`, reason: 'This agreement was not refreshed in the latest provider lookup; saved information remains unchanged.', howToFix: 'Open the profile’s Medallion tab and refresh this provider; verify the source before changing any agreement status.' })),
+      ],
       agreementReviews: (() => {
         const states = !pcpCoverageLoading ? pcpCoverage?.statesByProfile.get(p.id) : undefined;
         return agreementAudit && states && !isTestAccountDirectoryRecord(p)
           ? activeStateAgreementFlags(p, states, agreementAudit.rules, agreementAudit.agreements, agreementAudit.decisions, new Date(), agreementAudit.authorityEvidence, pcpCoverage?.newlyActiveStatesByProfile?.get(p.id)) : [];
       })(),
     }))
-    .filter(p => p.conflicts.length > 0 || p.identityReview || p.agreementReviews.length > 0)
+    .filter(p => p.conflicts.length > 0 || p.identityReview || p.agreementReviews.length > 0 || p.profileReviews.length > 0)
     .sort((a, b) => a.name.localeCompare(b.name)) : [];
   const flaggedProviders = mergeProviderFlags(directoryFlags, pcpCoverageLoading ? [] : coverageAlertSummary(pcpCoverage ?? null).review, providers.map(p => ({
     id: p.id, name: directoryDisplayName(p),
