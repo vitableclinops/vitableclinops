@@ -25,5 +25,5 @@ export function useRequiredAgreementFlags(enabled: boolean) {
     return activeStateAgreementFlags(provider, states, audit.data.rules, audit.data.agreements, audit.data.decisions, new Date(), audit.data.authorityEvidence, coverage.data.newlyActiveStatesByProfile?.get(provider.id))
       .map(review => ({ ...review, provider, name: directoryDisplayName(provider) }));
   }).sort((a, b) => a.name.localeCompare(b.name) || a.state.localeCompare(b.state));
-  return { flags, loading: profiles.isLoading || audit.isLoading || coverage.isLoading, error: profiles.error || audit.error || coverage.error };
+  return { flags, profiles: profiles.data ?? [], coverage: coverage.data, audit: audit.data, loading: profiles.isLoading || audit.isLoading || coverage.isLoading, error: profiles.error || audit.error || coverage.error };
 }

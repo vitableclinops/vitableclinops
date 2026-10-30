@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { cn, formatDisplayDate } from '@/lib/utils';
+import { StateActiveProvidersCard } from '@/components/states/StateActiveProvidersCard';
 import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 interface AgreementWithProviders {
@@ -298,6 +299,7 @@ export default function StateDetailPage() {
           <div className="grid gap-6 lg:grid-cols-3">
             {/* Main content */}
             <div className="lg:col-span-2 space-y-6">
+              {stateAbbr && <StateActiveProvidersCard state={stateAbbr} />}
               {/* Stats */}
               <div className="grid gap-4 md:grid-cols-4">
                 <Card>
