@@ -178,7 +178,7 @@ const CollaborativeAgreementsPage = () => {
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [stateFilter, setStateFilter] = useState<string>('all');
+  const [stateFilter, setStateFilter] = useState<string>(() => new URLSearchParams(window.location.search).get('state') || 'all');
   const [physicianFilter, setPhysicianFilter] = useState<string>('all');
   const [showGuide, setShowGuide] = useState(false);
   const [meetingFilter, setMeetingFilter] = useState<string>('all');
