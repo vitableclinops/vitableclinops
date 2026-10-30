@@ -1,4 +1,5 @@
 - [x] Delete test accounts: Maddi PodLead, Test User
+- [ ] Require PA Collab Agreement + Rx Authority verification link, prompt active providers, and verify the shared correction flow.
 - [x] Remove MD/DO own-practice agreement requirement errors across readiness, activation, grid and directory; 42 targeted tests passed and Gina’s DO profile verified signed in; NP supervision records preserved.
 - [x] Delete IL no-provider agreement
 - [x] Fix CompanyMeetingWizard date picker being cut off (user can't see all calendar dates at 100% zoom)
