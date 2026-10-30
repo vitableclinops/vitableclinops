@@ -15,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { StateCompliance } from '@/hooks/useStateCompliance';
 import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
 import { EvidenceLink } from './EvidenceLink';
+import { StateActiveProvidersCard } from '@/components/states/StateActiveProvidersCard';
 
 interface StateProfileModalProps {
   open: boolean;
@@ -224,12 +225,17 @@ export const StateProfileModal = ({
           </div>
         </DialogHeader>
 
-        <Tabs defaultValue="requirements" className="mt-4">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs defaultValue="active" className="mt-4">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="active">Active in EHR</TabsTrigger>
             <TabsTrigger value="requirements">Requirements</TabsTrigger>
             <TabsTrigger value="eligibility">Eligibility</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="active" className="mt-4">
+            <StateActiveProvidersCard state={stateData.state_abbreviation} />
+          </TabsContent>
 
           <TabsContent value="requirements" className="space-y-6 mt-4">
             {/* Quick Stats */}
