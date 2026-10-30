@@ -9,12 +9,12 @@ export const COLLAB_NEVER_STATES = [
 
 // "Yes" = always required
 export const COLLAB_ALWAYS_STATES = [
-  'CA', 'NC', 'NJ', 'OH', 'OK', 'PA', 'TX', 'WI', 'WV'
+  'CA', 'NC', 'NJ', 'OH', 'OK', 'PA', 'TX', 'WI'
 ] as const;
 
 // "Unless Autonomous" or "TTP" = conditional on autonomous practice verification
 export const COLLAB_CONDITIONAL_STATES = [
-  'AR', 'CO', 'CT', 'FL', 'IL', 'KY', 'MA', 'MD', 'ME', 'MN', 'NE', 'NY', 'SD', 'UT', 'VA', 'VT'
+  'AR', 'CO', 'CT', 'FL', 'IL', 'KY', 'MA', 'MD', 'ME', 'MN', 'NE', 'NY', 'SD', 'UT', 'VA', 'VT', 'WV'
 ] as const;
 
 export type CollabRequirementType = 'never' | 'always' | 'conditional' | 'md_only';
@@ -35,7 +35,7 @@ export function isNPProhibitedState(stateAbbr: string): boolean {
  * Returns a human-readable label for the CA requirement type
  */
 export function getCollabRequirementLabel(type: CollabRequirementType, stateAbbr?: string): string {
-  if (type === 'conditional' && stateAbbr === 'NY') return 'Only without prescriptive authority';
+  if (type === 'conditional' && (stateAbbr === 'NY' || stateAbbr === 'WV')) return 'Agreement or verified independent status';
   switch (type) {
     case 'md_only': return 'MD Only';
     case 'never': return 'No';

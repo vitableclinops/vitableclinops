@@ -1,7 +1,7 @@
 import { getCollabRequirementType } from '@/constants/stateRestrictions';
 import { isIndependentPhysician, normalizeRole } from '@/lib/clinicianRoles';
 import { parseLocalDate } from '@/lib/utils';
-import { hasVerifiedIndependentPractice, type CollabDecision } from '@/lib/nyIndependentPractice';
+import { INDEPENDENT_ALTERNATIVE_STATES, hasVerifiedIndependentPractice, type CollabDecision } from '@/lib/nyIndependentPractice';
 import type { PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
 
 export interface StateAgreement {
@@ -35,8 +35,8 @@ export function activeStateAgreementFlags(
   return [...new Set(states)].sort().flatMap(state => {
     if (getCollabRequirementType(state) === 'md_only') return [];
     const rule = rules.find(r => r.state_abbreviation === state);
-    // NY requires a documented agreement or a source-and-date independent verification.
-    const authorityAlternative = state === 'NY' && rule?.collab_requirement_type === 'conditional';
+    // Alternative states require a documented agreement or source-and-date independent verification.
+    const authorityAlternative = INDEPENDENT_ALTERNATIVE_STATES.has(state) && rule?.collab_requirement_type === 'conditional';
     if (!rule || (!rule.ca_required && !authorityAlternative) || rule.collab_requirement_type === 'never' || rule.collab_requirement_type === 'md_only') return [];
     if (authorityAlternative && hasVerifiedIndependentPractice(provider.id, state, decisions)) return [];
     const matching = agreements.filter(a => a.profileId === provider.id && a.state === state
@@ -45,8 +45,8 @@ export function activeStateAgreementFlags(
       && (!a.end || parseLocalDate(a.end.slice(0, 10)) >= day));
     if (matching.some(a => a.document?.trim() || a.documentExempt)) return [];
     if (authorityAlternative) return [{ state, authorityReview: true, independentAlternative: true, newlyActive: newlyActiveStates.includes(state),
-      reason: 'No New York collaborative agreement link is on file and independent practice status has not been verified.',
-      howToFix: 'Either upload or link the signed New York collaborative agreement (completed-process option, no emails), or verify independent practice status and note where and when it was verified.' }];
+      reason: `No ${state} collaborative agreement link is on file and independent practice status has not been verified.`,
+      howToFix: `Either upload or link the signed ${state} collaborative agreement (completed-process option, no emails), or verify independent practice status and note where and when it was verified.` }];
     return [{ state, newlyActive: newlyActiveStates.includes(state), reason: matching.length ? 'Active agreement has no attached document.' : 'Missing active linked collaborative agreement.', howToFix: matching.length
       ? 'Open Agreements and attach the signed document or its link to the existing agreement.'
       : 'Open Agreements and link the existing signed agreement to this provider and state. Use the completed-process option to avoid repeat notifications; do not mark it active without verified evidence.' }];
