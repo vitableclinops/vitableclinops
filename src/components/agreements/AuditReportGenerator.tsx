@@ -66,7 +66,7 @@ function formatDateShort(dateStr: string | null | undefined): string {
 }
 
 function escapeHtml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function buildReportHtml(data: AuditReportData): string {
@@ -146,7 +146,7 @@ function buildReportHtml(data: AuditReportData): string {
   <div class="summary-item"><label>Chart Review</label><div class="value">${agreement.chart_review_required ? (agreement.chart_review_frequency || 'Required') : 'Not required'}</div></div>
 </div>
 
-${agreement.agreement_document_url ? `<p style="margin-top: 12px; font-size: 13px;"><strong>Agreement Document:</strong> <a href="${escapeHtml(agreement.agreement_document_url)}" target="_blank" rel="noopener">${escapeHtml(agreement.agreement_document_url)}</a></p>` : ''}
+${agreement.agreement_document_url || agreement.medallion_document_url ? `<p style="margin-top: 12px; font-size: 13px;"><strong>Agreement Document:</strong> <a href="${escapeHtml(window.location.origin)}/admin/agreements/${encodeURIComponent(agreement.id)}" target="_blank" rel="noopener noreferrer">View saved agreement document</a></p>` : ''}
 
 ${activeProviders.length > 0 ? `
 <h3 style="font-size: 13px; font-weight: 600; margin-top: 16px;">Linked Providers</h3>
@@ -193,7 +193,7 @@ ${documents.length > 0 ? `
 <thead><tr><th>File Name</th><th>Task</th><th>Uploaded By</th><th>Date</th><th>Size</th></tr></thead>
 <tbody>
 ${documents.map(d => `<tr>
-  <td>${escapeHtml(d.file_name)}</td>
+  <td><a href="${escapeHtml(window.location.origin)}/task/${encodeURIComponent(d.task_id)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.file_name)}</a></td>
   <td>${d.task_title ? escapeHtml(d.task_title) : '—'}</td>
   <td>${d.uploaded_by_name ? escapeHtml(d.uploaded_by_name) : '—'}</td>
   <td>${formatDate(d.created_at)}</td>
