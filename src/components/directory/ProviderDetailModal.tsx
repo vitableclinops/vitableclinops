@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { FileText, ExternalLink, Pencil, Save, X, Link2, AlertTriangle, Upload, Loader2 } from 'lucide-react';
 import { CopyValueButton } from '@/components/directory/CopyValueButton';
 import { IndependentVerificationList } from '@/components/agreements/IndependentPracticeVerifyDialog';
+import { ProviderAgreementEvidence } from '@/components/directory/ProviderAgreementEvidence';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { CURRENT_EMPLOYEE_FILTER, isOffboarded } from '@/lib/employeeVisibility';
@@ -535,10 +536,11 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
         )}
 
         <Tabs defaultValue="professional" className="mt-4">
-          <TabsList className="w-full grid grid-cols-6">
+          <TabsList className="w-full flex flex-wrap h-auto gap-1">
             <TabsTrigger value="professional">Professional</TabsTrigger>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="licenses">Licenses</TabsTrigger>
+            <TabsTrigger value="documents">Documents</TabsTrigger>
             <TabsTrigger value="personal">Personal</TabsTrigger>
             <TabsTrigger value="employment">Employment</TabsTrigger>
             <TabsTrigger value="medallion">Medallion</TabsTrigger>
@@ -546,6 +548,10 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
 
           <TabsContent value="medallion" className="mt-4">
             <MedallionProviderSection profileId={provider.id} medallionId={provider.medallion_id} suppressFlags={isOffboarded(provider.employment_status)} />
+          </TabsContent>
+          <TabsContent value="documents" className="mt-4 space-y-5">
+            <ProviderAgreementEvidence profileId={provider.id} />
+            <IndependentVerificationList profileId={provider.id} />
           </TabsContent>
 
           {/* Professional Tab */}

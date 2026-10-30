@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import { EvidenceLink } from './EvidenceLink';
 
 /** Save a verified independent-practice status for one provider/state. */
 export async function saveIndependentVerification(input: {
@@ -137,11 +138,6 @@ export function IndependentVerificationList({ profileId }: { profileId: string }
     },
   });
   if (!data.length) return null;
-  const openFile = async (path: string) => {
-    const { data: signed, error } = await supabase.storage.from('task-documents').createSignedUrl(path, 300);
-    if (error || !signed) { toast.error('Could not open the attachment'); return; }
-    window.open(signed.signedUrl, '_blank', 'noopener');
-  };
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium">Verified independent practice</p>
@@ -155,9 +151,9 @@ export function IndependentVerificationList({ profileId }: { profileId: string }
               </a>
             )}
             {d.verified_attachment_path && (
-              <button type="button" onClick={() => openFile(d.verified_attachment_path!)} className="inline-flex items-center gap-1 text-primary underline">
+              <EvidenceLink reference={d.verified_attachment_path}>
                 <Paperclip className="h-3 w-3" />{d.verified_attachment_name ?? 'Attachment'}
-              </button>
+              </EvidenceLink>
             )}
           </div>
         </div>
