@@ -719,10 +719,10 @@ export default function AgreementDetailPage() {
                         </div>
                       </div>
 
-                      {agreement.agreement_document_url ? (
+                      {agreement.agreement_document_url || agreement.medallion_document_url ? (
                         <>
                           <Separator className="my-4" />
-                          <EvidenceLink reference={agreement.agreement_document_url}>
+                          <EvidenceLink reference={agreement.agreement_document_url || agreement.medallion_document_url || ''}>
                               <FileText className="h-4 w-4 mr-2" />
                               View Agreement Document
                           </EvidenceLink>
