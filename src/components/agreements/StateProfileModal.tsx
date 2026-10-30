@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import type { StateCompliance } from '@/hooks/useStateCompliance';
-import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
+import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
 
 interface StateProfileModalProps {
   open: boolean;
