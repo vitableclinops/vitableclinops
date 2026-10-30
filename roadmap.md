@@ -37,6 +37,7 @@
 - [x] Correct Kate and Moensania collaboration labels using linked agreement records instead of stale profile flags.
 - [x] Audit all directory collaboration labels and statuses against linked agreements and verify consistency; 50 visible clinicians match.
 - [x] Keep collaboration checks current after new providers and agreements are saved, on window focus and every minute while visible.
+- [x] Make saved documents/links clickable across profiles, agreements, supervision, tasks, agency documents, licensure and receipts; reports link to protected records. Seven tests pass; signed-in profile/task screenshots reopen and agreement link verified. Source-only filenames without a supplied file URL cannot be opened.
 - [ ] Link Jonathan Luker’s confirmed Ohio and Pennsylvania collaborations with Kate Baron; awaiting signed documents/effective dates and Ohio capacity review. No status changes authorized.
 - [x] Ensure saved agreement documents and DirectShifts supervisor settings refresh directory requirement flags before save success; 24 tests passed and signed-in Brittney’s existing DirectShifts states verified clear while her unfulfilled OK flag remains.
 - [x] Check active EHR states for required linked agreements and flag missing agreements with clickable corrections; tests and signed-in correction flow verified.

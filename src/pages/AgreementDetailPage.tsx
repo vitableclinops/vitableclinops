@@ -6,6 +6,7 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { RelatedLinksCard } from '@/components/navigation/RelatedLinksCard';
 import { WorkflowStatusTracker } from '@/components/agreements/WorkflowStatusTracker';
+import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 import { TerminationDialog } from '@/components/agreements/TerminationDialog';
 import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { VerificationChecklistDialog } from '@/components/agreements/VerificationChecklistDialog';
@@ -718,16 +719,13 @@ export default function AgreementDetailPage() {
                         </div>
                       </div>
 
-                      {agreement.agreement_document_url ? (
+                      {agreement.agreement_document_url || agreement.medallion_document_url ? (
                         <>
                           <Separator className="my-4" />
-                          <Button variant="outline" asChild>
-                            <a href={agreement.agreement_document_url} target="_blank" rel="noopener noreferrer">
+                          <EvidenceLink reference={agreement.agreement_document_url || agreement.medallion_document_url || ''}>
                               <FileText className="h-4 w-4 mr-2" />
                               View Agreement Document
-                              <ExternalLink className="h-3 w-3 ml-2" />
-                            </a>
-                          </Button>
+                          </EvidenceLink>
                         </>
                       ) : hasRole('admin') && !isDocumentExemptPhysician(agreement.physician_name) ? (
                         <>
@@ -1466,13 +1464,6 @@ function AgreementDocuments({ agreementId }: { agreementId: string }) {
     fetchDocs();
   }, [agreementId]);
 
-  const handleView = async (filePath: string) => {
-    const { data } = await supabase.storage
-      .from('task-documents')
-      .createSignedUrl(filePath, 3600);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
-  };
-
   const formatSize = (bytes: number | null) => {
     if (!bytes) return '';
     if (bytes < 1024) return `${bytes} B`;
@@ -1526,12 +1517,11 @@ function AgreementDocuments({ agreementId }: { agreementId: string }) {
                   {docs.map(doc => (
                     <div
                       key={doc.id}
-                      className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/30 transition-colors cursor-pointer"
-                      onClick={() => handleView(doc.file_path)}
+                      className="flex items-center gap-3 p-3 rounded-lg border"
                     >
                       <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{doc.file_name}</p>
+                        <EvidenceLink reference={doc.file_path}>{doc.file_name}</EvidenceLink>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           {doc.uploaded_by_name && <span>{doc.uploaded_by_name}</span>}
                           <span>{format(new Date(doc.created_at), 'MMM d, yyyy')}</span>

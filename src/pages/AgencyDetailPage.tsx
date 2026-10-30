@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/form';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusChip } from '@/components/StatusChip';
+import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 import { Separator } from '@/components/ui/separator';
 
 // ── Contact form schema ───────────────────────────────────────────────────────
@@ -202,11 +203,6 @@ const AgencyDetailPage = () => {
       setDocName(''); setDocType('contract'); setDocEffective(''); setDocExpiration(''); setDocNotes(''); setDocFile(null);
     } catch { /* handled */ }
     setSaving(false);
-  };
-
-  const handleDownload = async (doc: AgencyDocument) => {
-    const url = await getDocumentUrl(doc.storage_path);
-    if (url) window.open(url, '_blank');
   };
 
   const openEditAgency = () => {
@@ -444,7 +440,7 @@ const AgencyDetailPage = () => {
                       <TableBody>
                         {documents.map(doc => (
                           <TableRow key={doc.id}>
-                            <TableCell className="font-medium">{doc.document_name}</TableCell>
+                            <TableCell className="font-medium"><EvidenceLink reference={doc.storage_path} bucket="agency-documents">{doc.document_name}</EvidenceLink></TableCell>
                             <TableCell><Badge variant="outline">{doc.document_type}</Badge></TableCell>
                             <TableCell className="text-sm">{doc.effective_date || '—'}</TableCell>
                             <TableCell className="text-sm">
@@ -457,7 +453,6 @@ const AgencyDetailPage = () => {
                             <TableCell className="text-sm text-muted-foreground">{doc.uploaded_by_name || '—'}</TableCell>
                             <TableCell>
                               <div className="flex gap-1">
-                                <Button size="icon" variant="ghost" aria-label="Download document" title="Download" onClick={() => handleDownload(doc)}><Download className="h-4 w-4" /></Button>
                                 <ConfirmDialog
                                   title="Delete this document?"
                                   description={<>This will permanently remove <strong>{doc.document_name}</strong> (and the uploaded file). This can't be undone.</>}

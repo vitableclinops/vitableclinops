@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DollarSign, Plus, Clock, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { allUSStates } from '@/data/allStates';
+import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 
 const statusColors: Record<string, string> = {
   draft: 'bg-muted text-muted-foreground',
@@ -317,9 +318,9 @@ const ReimbursementsPage = () => {
                 {reviewDialog.application_fee_receipt_url && (
                   <div>
                     <Label className="text-muted-foreground">Receipt</Label>
-                    <a href={reviewDialog.application_fee_receipt_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary underline">
+                    <EvidenceLink reference={reviewDialog.application_fee_receipt_url}>
                       View Receipt
-                    </a>
+                    </EvidenceLink>
                   </div>
                 )}
                 <div>

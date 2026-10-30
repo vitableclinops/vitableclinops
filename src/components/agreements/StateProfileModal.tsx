@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import type { StateCompliance } from '@/hooks/useStateCompliance';
 import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
+import { EvidenceLink } from './EvidenceLink';
 
 interface StateProfileModalProps {
   open: boolean;
@@ -276,19 +277,20 @@ export const StateProfileModal = ({
                 {activeAgreements.map((a) => {
                   const hasDoc = Boolean(a.agreement_document_url || a.medallion_document_url) || isDocumentExemptPhysician(a.physician_name);
                   return (
-                    <Link
+                    <div
                       key={a.id}
-                      to={`/admin/agreements/${a.id}`}
                       className="flex items-center justify-between gap-2 p-3 hover:bg-muted/50 transition-colors"
                     >
-                      <div className="min-w-0">
+                      <Link to={`/admin/agreements/${a.id}`} className="min-w-0">
                         <p className="text-sm font-medium truncate">{a.provider_name || a.provider_email || 'Unassigned'}</p>
                         <p className="text-xs text-muted-foreground">
                           with Dr. {stripDrPrefix(a.physician_name || 'Unassigned')}{a.state_abbreviation ? ` (${a.state_abbreviation})` : ''}
                         </p>
-                      </div>
+                      </Link>
                       <div className="shrink-0">
-                        {hasDoc ? (
+                        {a.agreement_document_url || a.medallion_document_url ? (
+                          <EvidenceLink reference={a.agreement_document_url || a.medallion_document_url || ''} className="text-xs">Doc on file</EvidenceLink>
+                        ) : hasDoc ? (
                           <Badge variant="outline" className="gap-1 text-[10px]">
                             <FileText className="h-3 w-3" />
                             Doc on file
@@ -300,7 +302,7 @@ export const StateProfileModal = ({
                           </Badge>
                         )}
                       </div>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>

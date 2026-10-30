@@ -8,7 +8,7 @@ type Transfer = Tables<'agreement_transfers'>;
 type Task = Tables<'agreement_tasks'>;
 
 function escapeHtml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function formatTimestamp(dateStr: string | null | undefined): string {
@@ -43,6 +43,7 @@ interface TransferAuditData {
   auditLog: Tables<'agreement_audit_log'>[];
   providerNames: string[];
   documents: Array<{
+    task_id: string;
     file_name: string;
     uploaded_by_name: string | null;
     created_at: string;
@@ -85,6 +86,7 @@ async function fetchTransferAuditData(transferId: string): Promise<TransferAudit
     const { data: docs } = await supabase.from('task_documents').select('file_name, uploaded_by_name, created_at, file_size, task_id').in('task_id', taskIds).order('created_at');
     const titleMap = new Map(tasks.map(t => [t.id, t.title]));
     documents = (docs || []).map(d => ({
+      task_id: d.task_id,
       file_name: d.file_name,
       uploaded_by_name: d.uploaded_by_name,
       created_at: d.created_at,
@@ -223,7 +225,7 @@ ${documents.length > 0 ? `
 <thead><tr><th>File Name</th><th>Task</th><th>Uploaded By</th><th>Date</th><th>Size</th></tr></thead>
 <tbody>
 ${documents.map(d => `<tr>
-  <td>${escapeHtml(d.file_name)}</td>
+  <td><a href="${escapeHtml(window.location.origin)}/task/${encodeURIComponent(d.task_id)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.file_name)}</a></td>
   <td>${d.task_title ? escapeHtml(d.task_title) : '—'}</td>
   <td>${d.uploaded_by_name ? escapeHtml(d.uploaded_by_name) : '—'}</td>
   <td>${formatTimestamp(d.created_at)}</td>
