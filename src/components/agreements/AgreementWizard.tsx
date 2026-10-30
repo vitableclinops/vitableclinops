@@ -19,6 +19,9 @@ import { ChevronLeft, ChevronRight, Check, Loader2 } from 'lucide-react';
 import type { State } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { hasAgreementDocument } from '@/lib/newProviderCollab';
+import { INDEPENDENT_ALTERNATIVE_STATES } from '@/lib/nyIndependentPractice';
+import { saveIndependentVerification } from './IndependentPracticeVerifyDialog';
+import { useAuth } from '@/hooks/useAuth';
 
 interface AgreementWizardProps {
   open: boolean;
@@ -61,6 +64,10 @@ export interface AgreementFormData {
   skipProcess?: boolean;
   documentFile?: File | null;
   documentLink?: string;
+  // NY: agreement document OR verified independent practice
+  independentPath?: 'agreement' | 'independent';
+  independentSource?: string;
+  independentOn?: string;
 }
 
 const STEPS = [
@@ -77,6 +84,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { createAgreementWithTasks } = useAgreementWorkflow();
   const { getStateCompliance } = useStateCompliance();
+  const { profile } = useAuth();
 
   const DEFAULT_FORM: AgreementFormData = {
     selectedState: null,
@@ -94,6 +102,9 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
     skipProcess: false,
     documentFile: null,
     documentLink: '',
+    independentPath: 'agreement',
+    independentSource: '',
+    independentOn: '',
   };
 
   const [formData, setFormData] = useState<AgreementFormData>(DEFAULT_FORM);
@@ -130,6 +141,10 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
     stateCompliance?.np_md_ratio_limit ?? null
   );
 
+  const eitherOrState = !!formData.selectedState && INDEPENDENT_ALTERNATIVE_STATES.has(formData.selectedState.abbreviation);
+  const independentChosen = eitherOrState && formData.independentPath === 'independent';
+  const docRequired = (requireDocument || eitherOrState) && !isDocumentExemptPhysician(formData.physicianName);
+
   const progress = ((currentStep + 1) / STEPS.length) * 100;
 
   const updateFormData = (updates: Partial<AgreementFormData>) => {
@@ -151,7 +166,8 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       case 3:
         return formData.startDate !== undefined;
       case 4:
-        return !requireDocument || isDocumentExemptPhysician(formData.physicianName) || hasAgreementDocument(formData.documentFile, formData.documentLink);
+        if (independentChosen) return !!formData.independentSource?.trim() && !!formData.independentOn && formData.providers.every(p => !!p.id);
+        return !docRequired || hasAgreementDocument(formData.documentFile, formData.documentLink);
       default:
         return false;
     }
@@ -175,6 +191,21 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
 
     setIsSubmitting(true);
     try {
+      if (independentChosen) {
+        const st = formData.selectedState.abbreviation;
+        for (const p of formData.providers) {
+          await saveIndependentVerification({ profileId: p.id!, state: st, source: formData.independentSource!, verifiedOn: formData.independentOn!, decidedBy: profile?.id });
+        }
+        toast.success(`Independent practice verified in ${st}`, { description: 'No agreement was created and no emails were sent.' });
+        clearSaved();
+        queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
+        queryClient.invalidateQueries({ queryKey: ['agreements'] });
+        onOpenChange(false);
+        onSuccess?.({ documentAttached: false });
+        setCurrentStep(0);
+        setFormData(DEFAULT_FORM);
+        return;
+      }
       // DirectShifts physicians manage their own renewals and meetings: no cadence tracked
       const directShifts = isDocumentExemptPhysician(formData.physicianName);
       const newAgreement = await createAgreementWithTasks(
@@ -201,7 +232,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       );
 
       let documentAttached = false;
-      if ((formData.skipProcess || requireDocument) && newAgreement?.id) {
+      if ((formData.skipProcess || docRequired) && newAgreement?.id) {
         try {
           let docUrl: string | null = null;
           let fileName: string | null = null;
@@ -302,7 +333,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
       case 3:
         return <AgreementDetailsStep formData={formData} updateFormData={updateFormData} />;
       case 4:
-        return <ReviewStep formData={formData} updateFormData={updateFormData} requireDocument={requireDocument && !isDocumentExemptPhysician(formData.physicianName)} />;
+        return <ReviewStep formData={formData} updateFormData={updateFormData} requireDocument={docRequired} eitherOrState={eitherOrState} />;
       default:
         return null;
     }
@@ -374,7 +405,7 @@ export const AgreementWizard = ({ open, onOpenChange, onSuccess, prefill, requir
               ) : (
                 <>
                   <Check className="h-4 w-4 mr-2" />
-                  Create Agreement
+                  {independentChosen ? 'Save verification' : 'Create Agreement'}
                 </>
               )}
             </Button>

@@ -4297,6 +4297,8 @@ export type Database = {
           profile_id: string
           state_abbreviation: string
           updated_at: string
+          verified_on: string | null
+          verified_source: string | null
         }
         Insert: {
           created_at?: string
@@ -4308,6 +4310,8 @@ export type Database = {
           profile_id: string
           state_abbreviation: string
           updated_at?: string
+          verified_on?: string | null
+          verified_source?: string | null
         }
         Update: {
           created_at?: string
@@ -4319,6 +4323,8 @@ export type Database = {
           profile_id?: string
           state_abbreviation?: string
           updated_at?: string
+          verified_on?: string | null
+          verified_source?: string | null
         }
         Relationships: [
           {

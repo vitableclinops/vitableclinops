@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { IndependentPracticeFields } from '../IndependentPracticeVerifyDialog';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -23,9 +25,11 @@ interface ReviewStepProps {
   formData: AgreementFormData;
   updateFormData?: (updates: Partial<AgreementFormData>) => void;
   requireDocument?: boolean;
+  eitherOrState?: boolean;
 }
 
-export const ReviewStep = ({ formData, updateFormData, requireDocument = false }: ReviewStepProps) => {
+export const ReviewStep = ({ formData, updateFormData, requireDocument = false, eitherOrState = false }: ReviewStepProps) => {
+  const independent = eitherOrState && formData.independentPath === 'independent';
   const stateCode = formData.selectedState?.abbreviation;
 
   // Check whether this state has collab email requirements configured.
@@ -53,7 +57,24 @@ export const ReviewStep = ({ formData, updateFormData, requireDocument = false }
 
   return (
     <div className="space-y-4">
-      <Card className="p-4 border-primary/40">
+      {eitherOrState && (
+        <Card className="p-4 border-warning/40 space-y-3">
+          <p className="text-sm font-medium">{formData.selectedState?.abbreviation} needs one of these before finalizing</p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant={!independent ? 'default' : 'outline'} onClick={() => updateFormData?.({ independentPath: 'agreement' })}>Signed collaborative agreement</Button>
+            <Button type="button" size="sm" variant={independent ? 'default' : 'outline'} onClick={() => updateFormData?.({ independentPath: 'independent', skipProcess: false })}>Verified independent practice</Button>
+          </div>
+          {independent && (
+            <>
+              <IndependentPracticeFields source={formData.independentSource ?? ''} verifiedOn={formData.independentOn ?? ''}
+                onChange={v => updateFormData?.({ ...(v.source !== undefined && { independentSource: v.source }), ...(v.verifiedOn !== undefined && { independentOn: v.verifiedOn }) })} />
+              <p className="text-xs text-muted-foreground">No agreement is created and no emails are sent; the verification is saved for each selected provider.</p>
+              {formData.providers.some(p => !p.id) && <p className="text-xs text-destructive">Every provider must be an existing directory profile to record verification.</p>}
+            </>
+          )}
+        </Card>
+      )}
+      {!independent && <Card className="p-4 border-primary/40">
         <label className="flex items-start gap-3 cursor-pointer">
           <Checkbox
             disabled={requireDocument}
@@ -99,7 +120,7 @@ export const ReviewStep = ({ formData, updateFormData, requireDocument = false }
             </p>
           </div>
         )}
-      </Card>
+      </Card>}
 
       <Card className="p-4 bg-muted/30">
         <p className="text-sm text-muted-foreground">
