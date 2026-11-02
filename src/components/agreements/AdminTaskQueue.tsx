@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,6 +26,7 @@ import {
 import type { Tables } from '@/integrations/supabase/types';
 import { BulkArchiveDialog } from '@/components/admin/BulkArchiveDialog';
 import { stripDrPrefix } from '@/lib/directShiftsPhysicians';
+import { TaskDialog } from '@/components/tasks/TaskDialog';
 
 type Task = Tables<'agreement_tasks'>;
 
@@ -43,8 +43,8 @@ interface AdminTaskQueueProps {
 }
 
 export function AdminTaskQueue({ className, compact = false }: AdminTaskQueueProps) {
-  const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, hasRole } = useAuth();
+  const [detailTask, setDetailTask] = useState<Task | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [agreementMap, setAgreementMap] = useState<Map<string, AgreementContext>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -183,11 +183,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
           "flex items-center gap-3 p-3 border-b last:border-0 hover:bg-muted/30 transition-colors group cursor-pointer",
           isOverdue && "bg-destructive/5"
         )}
-        onClick={() => {
-          if (task.agreement_id) {
-            navigate(`/admin/agreements/${task.agreement_id}`);
-          }
-        }}
+        onClick={() => setDetailTask(task)}
       >
         <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
           <Checkbox
@@ -199,7 +195,13 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium truncate">{task.title}</span>
+            <Button
+              variant="link"
+              className="h-auto min-w-0 p-0 text-left text-sm font-medium text-foreground whitespace-normal justify-start"
+              onClick={(event) => { event.stopPropagation(); setDetailTask(task); }}
+            >
+              {task.title}
+            </Button>
             {getPriorityBadge(task.priority)}
             {task.escalated && (
               <Flag className="h-3 w-3 text-destructive" />
@@ -246,9 +248,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
               }
             </span>
           )}
-          {task.agreement_id && (
-            <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
-          )}
+          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
         </div>
       </div>
     );
@@ -266,6 +266,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
 
   if (compact) {
     return (
+      <>
       <Card className={className}>
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
@@ -305,6 +306,14 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
           </ScrollArea>
         </CardContent>
       </Card>
+      <TaskDialog
+        task={detailTask}
+        open={!!detailTask}
+        onOpenChange={(open) => { if (!open) setDetailTask(null); }}
+        isAdmin={hasRole('admin')}
+        onTaskUpdated={() => { setDetailTask(null); fetchTasks(); }}
+      />
+      </>
     );
   }
 
@@ -411,6 +420,13 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
         open={bulkArchiveOpen}
         onClose={() => setBulkArchiveOpen(false)}
         onSuccess={() => { setBulkArchiveOpen(false); setSelectedIds(new Set()); fetchTasks(); }}
+      />
+      <TaskDialog
+        task={detailTask}
+        open={!!detailTask}
+        onOpenChange={(open) => { if (!open) setDetailTask(null); }}
+        isAdmin={hasRole('admin')}
+        onTaskUpdated={() => { setDetailTask(null); fetchTasks(); }}
       />
     </Card>
   );
