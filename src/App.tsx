@@ -152,7 +152,7 @@ const App = () => (
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/" element={
               <ProtectedRoute>
-                <Index />
+                <RestoreLastRoute />
               </ProtectedRoute>
             } />
             <Route path="/provider" element={

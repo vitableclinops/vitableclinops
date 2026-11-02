@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
+import Index from '@/pages/Index';
 
 /**
  * Remembers the last page the user was on (route + query params, e.g. the
@@ -19,36 +20,35 @@ function isRestorable(path: string) {
   return !!path && !SKIP_PREFIXES.some(p => path === p || path.startsWith(`${p}/`));
 }
 
+function readSaved(): string | null {
+  try {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    return saved && saved !== '/' && isRestorable(saved) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Root route: bounce to the last page viewed if one was remembered. */
+export function RestoreLastRoute() {
+  const saved = readSaved();
+  if (saved) return <Navigate to={saved} replace />;
+  return <Index />;
+}
+
+/** Tracks every navigation and remembers it. */
 export function RouteMemory() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const isInitial = useRef(true);
 
   useEffect(() => {
     const full = `${location.pathname}${location.search}`;
-
-    if (isInitial.current) {
-      isInitial.current = false;
-      const saved = sessionStorage.getItem(STORAGE_KEY);
-      if (
-        saved &&
-        saved !== '/' &&
-        isRestorable(saved) &&
-        (location.pathname === '/' || location.pathname === '')
-      ) {
-        navigate(saved, { replace: true });
-      }
-      return;
+    if (!isRestorable(full)) return;
+    try {
+      sessionStorage.setItem(STORAGE_KEY, full);
+    } catch {
+      // sessionStorage unavailable (private browsing) — ignore
     }
-
-    if (isRestorable(full)) {
-      try {
-        sessionStorage.setItem(STORAGE_KEY, full);
-      } catch {
-        // sessionStorage unavailable (private browsing) — ignore
-      }
-    }
-  }, [location.pathname, location.search, navigate]);
+  }, [location.pathname, location.search]);
 
   return null;
 }
