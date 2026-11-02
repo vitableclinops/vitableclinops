@@ -143,6 +143,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <RouteMemory />
           <DocumentTitleWatcher />
           <SessionExpiredWatcher />
           <Routes>
