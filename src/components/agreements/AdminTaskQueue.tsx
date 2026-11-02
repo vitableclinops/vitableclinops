@@ -48,7 +48,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
   const [tasks, setTasks] = useState<Task[]>([]);
   const [agreementMap, setAgreementMap] = useState<Map<string, AgreementContext>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'assigned' | 'overdue' | 'blocked' | 'thisWeek'>('assigned');
+  const [activeTab, setActiveTab] = useState<'all' | 'assigned' | 'overdue' | 'blocked' | 'thisWeek'>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
 
@@ -153,6 +153,7 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
 
   const getFilteredTasks = () => {
     switch (activeTab) {
+      case 'all': return tasks;
       case 'assigned': return assignedToMe;
       case 'overdue': return overdueTasks;
       case 'blocked': return blockedTasks;
@@ -320,7 +321,16 @@ export function AdminTaskQueue({ className, compact = false }: AdminTaskQueuePro
       </CardHeader>
       <CardContent>
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-          <TabsList className="grid grid-cols-4 mb-4">
+          <TabsList className="flex flex-wrap h-auto w-full gap-1 mb-4">
+            <TabsTrigger value="all" className="gap-1">
+              <ClipboardList className="h-3 w-3" />
+              All
+              {tasks.length > 0 && (
+                <Badge variant="secondary" className="h-5 min-w-5 px-1 text-[10px]">
+                  {tasks.length}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="assigned" className="gap-1">
               <User className="h-3 w-3" />
               Mine
