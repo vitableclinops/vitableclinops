@@ -32,7 +32,6 @@ function readSaved(): string | null {
 /** Root route: bounce to the last page viewed if one was remembered. */
 export function RestoreLastRoute() {
   const saved = readSaved();
-  console.log('[RouteMemory] RestoreLastRoute saved=', saved);
   if (saved) return <Navigate to={saved} replace />;
   return <Index />;
 }
@@ -43,6 +42,9 @@ export function RouteMemory() {
 
   useEffect(() => {
     const full = `${location.pathname}${location.search}`;
+    // Never remember the bare root: the app boots there on a reload and the
+    // role redirect immediately records the real destination (/admin, etc.).
+    if (full === '/' || full === '') return;
     if (!isRestorable(full)) return;
     try {
       sessionStorage.setItem(STORAGE_KEY, full);
