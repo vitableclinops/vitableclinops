@@ -7,6 +7,8 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RouteMemory, RestoreLastRoute } from "@/components/RouteMemory";
+
 import Index from "./pages/Index";
 import AuthPage from "./pages/AuthPage";
 import ProviderDashboard from "./pages/ProviderDashboard";
@@ -143,13 +145,14 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <RouteMemory />
           <DocumentTitleWatcher />
           <SessionExpiredWatcher />
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/" element={
               <ProtectedRoute>
-                <Index />
+                <RestoreLastRoute />
               </ProtectedRoute>
             } />
             <Route path="/provider" element={
