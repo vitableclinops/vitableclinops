@@ -13,6 +13,7 @@ import { VerificationChecklistDialog } from '@/components/agreements/Verificatio
 import { generateAuditReport } from '@/components/agreements/AuditReportGenerator';
 import { TaskDialog, type TaskDialogTask } from '@/components/tasks/TaskDialog';
 import { NcbonInstructions } from '@/components/tasks/NcbonInstructions';
+import { ChartReviewTaskUrl } from '@/components/tasks/ChartReviewTaskUrl';
 import { TaskAssignmentSelect } from '@/components/agreements/TaskAssignmentSelect';
 import { CollabEmailPanel } from '@/components/agreements/CollabEmailPanel';
 import { Button } from '@/components/ui/button';
@@ -848,6 +849,7 @@ export default function AgreementDetailPage() {
 
                                     <div className="px-4 pb-2">
                                       <NcbonInstructions title={task.title} />
+                                      <ChartReviewTaskUrl taskId={task.id} title={task.title} disabled={!hasRole('admin') || isArchived} onSaved={refetchTasks} />
                                     </div>
                                     <CollapsibleContent>
                                       <div className="px-4 pb-4 pt-0 border-t border-border/50 mt-0">

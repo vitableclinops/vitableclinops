@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ChartReviewTaskUrl } from './ChartReviewTaskUrl';
 import {
   Dialog,
   DialogContent,
@@ -390,6 +391,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, isAdmin = false, on
             )}
 
             {/* External link */}
+            <ChartReviewTaskUrl taskId={task.id} title={task.title} disabled={!isAdmin || isArchived} onSaved={onTaskUpdated} />
             {task.external_url && (
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">External Link</Label>

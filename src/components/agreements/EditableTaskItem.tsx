@@ -14,6 +14,7 @@ import { TaskAssignmentSelect } from './TaskAssignmentSelect';
 import { TaskDocumentUpload, useTaskDocumentCount } from '@/components/tasks/TaskDocumentUpload';
 import { TaskDialog } from '@/components/tasks/TaskDialog';
 import { NcbonInstructions } from '@/components/tasks/NcbonInstructions';
+import { ChartReviewTaskUrl } from '@/components/tasks/ChartReviewTaskUrl';
 import { ArchiveTaskDialog } from '@/components/admin/ArchiveTaskDialog';
 import { cn, parseLocalDate } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -705,6 +706,7 @@ export function EditableTaskItem({
         )}
         {/* Blocked reason display */}
         <NcbonInstructions title={task.title} />
+        <ChartReviewTaskUrl taskId={task.id} title={task.title} disabled={!isAdmin || task.status === 'archived'} onSaved={onUpdate} />
         {isBlocked && task.blocked_reason && (
           <p className="text-xs text-warning mt-1 flex items-center gap-1">
             <AlertCircle className="h-3 w-3" />
