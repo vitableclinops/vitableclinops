@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { NC_NCBON_INSTRUCTIONS, NC_NCBON_TASK_TITLE } from '@/data/taskTemplates';
-import { CopyValueButton } from '@/components/directory/CopyValueButton';
+import { NcbonInstructions } from './NcbonInstructions';
 import {
   Dialog,
   DialogContent,
@@ -613,15 +612,7 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
               </div>
             )}
 
-            {task.title === NC_NCBON_TASK_TITLE && (
-              <details className="rounded-md border bg-muted/40 p-2">
-                <summary className="cursor-pointer text-sm font-medium flex items-center gap-2">
-                  NCBON upload instructions
-                  <CopyValueButton value={NC_NCBON_INSTRUCTIONS} label="NCBON instructions" />
-                </summary>
-                <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap">{NC_NCBON_INSTRUCTIONS}</p>
-              </details>
-            )}
+            <NcbonInstructions title={task.title} />
 
             {/* Meta grid */}
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">

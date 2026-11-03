@@ -29,6 +29,7 @@
 - Needs fixing shares the active-state audit; profile warnings share useDirectoryProfileWarnings with top directory alerts. Why: opening a profile must not reveal warnings absent from the top box.
 - DirectShifts physicians (known names or explicit DirectShifts designation) are document-exempt in wizard, audit, profile, state-grid and verification checks; no renewal or meeting tracking. Why: DirectShifts holds documents and manages renewals/meetings.
 - Agreement task queues open the shared TaskDialog even without an agreement ID. Why: instructions and evidence must be accessible without navigating away.
+- NCBON task instructions use the shared NcbonInstructions control in agreement task lists and task dialogs. Why: expanding and copying instructions must work directly from the agreement as well as from task details.
 - Saved State Requirements numeric supervision limits govern capacity checks; an explicit null is unlimited and must never fall back to a stale cached numeric limit. Why: removing a state limit must remove its enforcement as well as its display.
 - By Physician state badges resolve limits from saved State Requirements even when no active slot row exists, displaying zero filled rather than unlimited; loading and errors stay explicit. Why: historical agreements must not hide a state's numeric limit.
 - By Physician totals and provider lists use isActiveSlotAgreement, shared with slot counts, excluding terminated, future and ended agreements. Why: current totals must not count historical participants.

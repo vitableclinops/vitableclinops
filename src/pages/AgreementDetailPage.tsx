@@ -12,6 +12,7 @@ import { BulkReassignDialog } from '@/components/agreements/BulkReassignDialog';
 import { VerificationChecklistDialog } from '@/components/agreements/VerificationChecklistDialog';
 import { generateAuditReport } from '@/components/agreements/AuditReportGenerator';
 import { TaskDialog, type TaskDialogTask } from '@/components/tasks/TaskDialog';
+import { NcbonInstructions } from '@/components/tasks/NcbonInstructions';
 import { TaskAssignmentSelect } from '@/components/agreements/TaskAssignmentSelect';
 import { CollabEmailPanel } from '@/components/agreements/CollabEmailPanel';
 import { Button } from '@/components/ui/button';
@@ -845,6 +846,9 @@ export default function AgreementDetailPage() {
                                       </div>
                                     </CollapsibleTrigger>
 
+                                    <div className="px-4 pb-2">
+                                      <NcbonInstructions title={task.title} />
+                                    </div>
                                     <CollapsibleContent>
                                       <div className="px-4 pb-4 pt-0 border-t border-border/50 mt-0">
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-3 text-sm">
