@@ -1016,6 +1016,7 @@ type ProviderTimeOffEntry = {
 };
 const TOP_TAB_VALUES = [
   'readiness',
+  'gap-finder',
   'forecast',
   'intake',
   'review',
@@ -2385,7 +2386,13 @@ export default function SchedulingWorkbenchPage({
             <span className="mr-1 text-muted-foreground">5</span>
             <Send className="h-3.5 w-3.5 mr-1" />Finalize
           </TabsTrigger>
+          <TabsTrigger value="gap-finder">Gap Finder</TabsTrigger>
         </TabsList>
+
+        {/* ============ GAP FINDER ============ */}
+        <TabsContent value="gap-finder" className="mt-4 space-y-4">
+          <GapFinderPanel />
+        </TabsContent>
 
         {/* ============ FORECAST ============ */}
         <TabsContent value="forecast" className="mt-4 space-y-4">
