@@ -14,11 +14,9 @@ import { downloadCSV, cn } from '@/lib/utils';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function nextMonth(): string {
+function currentMonth(): string {
   const d = new Date();
-  const y = d.getMonth() === 11 ? d.getFullYear() + 1 : d.getFullYear();
-  const m = d.getMonth() === 11 ? 1 : d.getMonth() + 2;
-  return `${y}-${String(m).padStart(2, '0')}-01`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
 const bandClass: Record<string, string> = {
@@ -31,7 +29,7 @@ const bandClass: Record<string, string> = {
 type Offer = { id: number; date: string; start: string; end: string };
 
 export function GapFinderPanel() {
-  const [month, setMonth] = useState(nextMonth());
+  const [month, setMonth] = useState(currentMonth());
   const [selected, setSelected] = useState<string | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
   const { data, isLoading, error } = useGapFinder(month);
