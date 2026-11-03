@@ -239,7 +239,7 @@ export const hydrateTaskTemplates = (
     assignedRole?: string;
   }
 ): AgreementTaskInsert[] => {
-  return applyStateSpecificSteps(templates, context.stateAbbreviation).map(template => ({
+  return applyStateSpecificSteps(templates as Array<(typeof templates)[number]>, context.stateAbbreviation).map(template => ({
     agreement_id: context.agreementId || null,
     transfer_id: context.transferId || null,
     provider_id: context.providerId || null,
