@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { NC_NCBON_INSTRUCTIONS, NC_NCBON_TASK_TITLE } from '@/data/taskTemplates';
+import { CopyValueButton } from '@/components/directory/CopyValueButton';
 import {
   Dialog,
   DialogContent,
