@@ -153,6 +153,76 @@ export const getInitiationTaskTemplates = (
   },
 ];
 
+export const NC_NCBON_TASK_TITLE = 'Send NP instructions for uploading agreement to NCBON portal';
+
+export const NC_NCBON_INSTRUCTIONS = `1. Log in to the North Carolina Board of Nursing portal (https://portal.ncbon.com)
+
+2. Navigate to "Nurse Practitioner Approval to Practice" application section
+
+3. Complete the application with required information:
+   - NP's personal and license information
+   - Supervising physician's name, license number, and contact information
+   - Practice site location(s) and contact details
+   - Description of practice setting and patient population
+
+4. Upload a copy of the signed agreement
+
+5. Pay the $100 application fee`;
+
+const NOTIFICATION_TASK_TITLE = 'Confirm NP + physician notification email sent';
+
+/** North Carolina-only steps inserted right after the notification email task. */
+const getNorthCarolinaInitiationSteps = () => [
+  {
+    title: NC_NCBON_TASK_TITLE,
+    description: 'Send the NP the NCBON portal instructions below (expand to copy).',
+    category: 'custom' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 0,
+  },
+  {
+    title: 'Remind physician to watch for NCBON approval email',
+    description: 'Remind the physician to keep an eye out for an email from NCBON to approve the agreement.',
+    category: 'custom' as const,
+    priority: 'medium',
+    is_required: true,
+    sort_order: 0,
+  },
+  {
+    title: 'Monitor NCBON for approved collab agreement status',
+    description: 'Check the NCBON portal until the collaborative agreement shows as approved.',
+    category: 'compliance' as const,
+    priority: 'medium',
+    is_required: true,
+    sort_order: 0,
+  },
+  {
+    title: 'Activate in EHR',
+    description: 'Once NCBON approval is confirmed, activate the NP in the EHR for North Carolina.',
+    category: 'custom' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 0,
+  },
+];
+
+/** Insert state-specific steps into initiation templates and renumber. */
+export const applyStateSpecificSteps = <T extends { title: string; sort_order: number }>(
+  templates: T[],
+  stateAbbreviation: string,
+): T[] => {
+  if (stateAbbreviation?.toUpperCase() !== 'NC') return templates;
+  const idx = templates.findIndex(t => t.title === NOTIFICATION_TASK_TITLE);
+  if (idx === -1) return templates;
+  const out = [
+    ...templates.slice(0, idx + 1),
+    ...(getNorthCarolinaInitiationSteps() as unknown as T[]),
+    ...templates.slice(idx + 1),
+  ];
+  return out.map((t, i) => ({ ...t, sort_order: i + 1 }));
+};
+
 /**
  * Hydrate task templates with agreement/transfer context for DB insertion.
  */
@@ -169,7 +239,7 @@ export const hydrateTaskTemplates = (
     assignedRole?: string;
   }
 ): AgreementTaskInsert[] => {
-  return templates.map(template => ({
+  return applyStateSpecificSteps(templates, context.stateAbbreviation).map(template => ({
     agreement_id: context.agreementId || null,
     transfer_id: context.transferId || null,
     provider_id: context.providerId || null,
