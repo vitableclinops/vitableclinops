@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { NcbonInstructions } from './NcbonInstructions';
+import { ChartReviewTaskUrl } from './ChartReviewTaskUrl';
 import {
   Dialog,
   DialogContent,
@@ -613,6 +614,7 @@ export function TaskDialog({ task, open, onOpenChange, isAdmin = false, onTaskUp
             )}
 
             <NcbonInstructions title={task.title} />
+            <ChartReviewTaskUrl taskId={task.id} title={task.title} disabled={!isAdmin || isArchived} onSaved={onTaskUpdated} />
 
             {/* Meta grid */}
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
