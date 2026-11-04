@@ -67,14 +67,15 @@ export function IndependentPracticeFields({ source, verifiedOn, link = '', file 
         <p id="ind-source-description" className="text-sm text-muted-foreground">State board communication, Direct Shifts supervision spreadsheet, etc.</p>
       </div>
       <div className="space-y-2 rounded-md border p-3">
-        <p className="text-sm font-medium">Proof of verification</p>
+        <p className="text-sm font-medium">Proof of Verification<span className="text-destructive" aria-hidden="true"> *</span></p>
         <p className="text-sm text-muted-foreground">{registration ? 'Upload a screenshot or saved NCBON approval, or paste a link verifying NCBON registration. Proof is required and remains clickable once saved.' : requireFile ? 'Upload a screenshot or saved document verifying the Rx Authority license designation. The file is clickable once saved.' : 'Upload a download of the verification (e.g. a saved email or screenshot) or paste a link to it. Links become clickable once saved.'}</p>
         {!requireFile && <div className="space-y-1">
-          <Label htmlFor="ind-link">Link{registration ? <span className="text-destructive" aria-hidden="true"> *</span> : ' (optional)'}</Label>
+          <Label htmlFor="ind-link">Link</Label>
           <Input id="ind-link" type="url" placeholder="https://…" value={link} onChange={e => onChange({ link: e.target.value })} />
         </div>}
+        {!requireFile && <p className="text-center text-xs font-medium text-muted-foreground">OR</p>}
         <div className="space-y-1">
-          <Label htmlFor="ind-file">{requireFile ? <>Verification file<span className="text-destructive" aria-hidden="true"> *</span></> : <>Attachment{registration ? <span className="text-destructive" aria-hidden="true"> *</span> : ' (optional)'}</>}</Label>
+          <Label htmlFor="ind-file">Verification file</Label>
           <Input id="ind-file" type="file" required={requireFile} onChange={e => onChange({ file: e.target.files?.[0] ?? null })} />
           {file && <p className="text-xs text-muted-foreground">Selected: {file.name}</p>}
         </div>

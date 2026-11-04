@@ -28,8 +28,13 @@ export function StateRequirementVerifyDialog({ open, onOpenChange, profileId, pr
     <Label>Requirement to verify</Label><Select value={key} onValueChange={setKey}><SelectTrigger aria-label="Requirement to verify"><SelectValue /></SelectTrigger><SelectContent>{config?.keys.map(k => <SelectItem key={k} value={k}>{REQUIREMENT_LABELS[k]}</SelectItem>)}</SelectContent></Select>
     <Label htmlFor="req-source">Where was it verified?<span className="text-destructive" aria-hidden="true"> *</span></Label><Input id="req-source" value={source} onChange={e => setSource(e.target.value)} /><p className="text-xs text-muted-foreground">State board communication, Direct Shifts supervision spreadsheet, etc.</p>
     <Label htmlFor="req-date">When was it verified?<span className="text-destructive" aria-hidden="true"> *</span></Label><Input id="req-date" type="date" max={new Date().toISOString().slice(0,10)} value={date} onChange={e => setDate(e.target.value)} />
-    <Label htmlFor="req-link">Verification link<span className="text-destructive" aria-hidden="true"> *</span></Label><Input id="req-link" type="url" placeholder="https://…" value={link} onChange={e => setLink(e.target.value)} />
-    <Label htmlFor="req-file">Or upload verification file<span className="text-destructive" aria-hidden="true"> *</span></Label><Input id="req-file" type="file" onChange={e => setFile(e.target.files?.[0] ?? null)} /><p className="text-xs text-muted-foreground">Upload a screenshot or saved document, or provide a link. Saved proof remains clickable.</p>
+    <div className="space-y-2 rounded-md border p-3">
+      <p className="text-sm font-medium">Proof of Verification<span className="text-destructive" aria-hidden="true"> *</span></p>
+      <p className="text-xs text-muted-foreground">Upload a screenshot or saved document, or provide a link. Saved proof remains clickable.</p>
+      <Label htmlFor="req-link">Verification link</Label><Input id="req-link" type="url" placeholder="https://…" value={link} onChange={e => setLink(e.target.value)} />
+      <p className="text-center text-xs font-medium text-muted-foreground">OR</p>
+      <div className="space-y-1"><Label htmlFor="req-file">Upload verification file</Label><Input id="req-file" type="file" onChange={e => setFile(e.target.files?.[0] ?? null)} /></div>
+    </div>
     <Label htmlFor="req-expiry">Expiration date (if applicable)</Label><Input id="req-expiry" type="date" value={expiration} onChange={e => setExpiration(e.target.value)} />
     <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button onClick={save} disabled={saving || !source.trim() || !date || (!file && !hasVerificationLink(link))}>Save verification</Button></DialogFooter>
   </DialogContent></Dialog>;
