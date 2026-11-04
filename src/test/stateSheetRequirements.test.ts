@@ -79,17 +79,17 @@ describe('User supplied eight-state requirements', () => {
   });
 });
 describe('Remaining sheet states', () => {
-  it('MA prompts only for the outstanding CSR or independent supervision verification', () => {
-    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'aprn_supervision_independent')], [], day)).toEqual(['csr_registration']);
-    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'csr_registration')], [], day)).toEqual(['aprn_supervision_independent']);
-    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'aprn_supervision_independent'), proof('MA', 'csr_registration')], [], day)).toEqual([]);
+  it('MA offers one combined verification or only the outstanding items on the separate path', () => {
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'csr_registration')], [], day)).toEqual(['ma_csr_independent','ma_signed_collab_agreement']);
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'ma_signed_collab_agreement')], [], day)).toEqual(['ma_csr_independent','csr_registration']);
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'ma_csr_independent')], [], day)).toEqual([]);
   });
   it.each(Object.entries(SHEET_REQUIREMENTS).filter(([, config]) => config.keys.length > 1))('%s does not request a saved valid requirement again', (state, config) => {
     const saved = config.keys[0];
     expect(remainingVerificationKeys('np', state, false, [proof(state, saved)], [], day)).not.toContain(saved);
   });
-  it('requires expired CSR again without re-requesting valid independent supervision', () => {
-    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'aprn_supervision_independent'), {...proof('MA', 'csr_registration'), expiration_date: '2026-11-03'}], [], day)).toEqual(['csr_registration']);
+  it('requires expired CSR again without re-requesting the saved signed agreement', () => {
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'ma_signed_collab_agreement'), {...proof('MA', 'csr_registration'), expiration_date: '2026-11-03'}], [], day)).toEqual(['ma_csr_independent','csr_registration']);
   });
   it('does not prompt for Kentucky CAPA-NS again when a signed agreement substitutes for it', () => {
     expect(remainingVerificationKeys('np', 'KY', true, [], [], day)).toEqual(['rx_authority']);
@@ -123,12 +123,15 @@ describe('Remaining sheet states', () => {
       expect(missing('VT',false,[{...proof('VT','aprn_telehealth_registration'),...change}])).toContain('aprn_telehealth_registration');
     }
   });
-  it('MA requires CSR AND independent supervision OR CSR AND a signed collab agreement', () => {
-    expect(missing('MA', false, [proof('MA', 'csr_registration'), proof('MA', 'aprn_supervision_independent')])).toEqual([]);
+  it('MA accepts ONE combined CSR + Independent APRN supervision verification', () => {
+    expect(missing('MA', false, [proof('MA', 'ma_csr_independent')])).toEqual([]);
+    expect(missing('MA', false, [proof('MA', 'aprn_supervision_independent')])).toContain('ma_csr_independent');
+  });
+  it('MA separately requires CSR designation and signed collab agreement on the second path', () => {
+    expect(missing('MA', false, [proof('MA', 'csr_registration'), proof('MA', 'ma_signed_collab_agreement')])).toEqual([]);
     expect(missing('MA', true, [proof('MA', 'csr_registration')])).toEqual([]);
-    expect(missing('MA', true)).toEqual(['csr_registration']);
-    expect(missing('MA', false, [proof('MA', 'aprn_supervision_independent')])).toEqual(['csr_registration']);
-    expect(missing('MA', false, [proof('MA', 'rx_authority'), proof('MA', 'csr_registration')])).toEqual(['aprn_supervision_independent']);
+    expect(missing('MA', true)).toEqual(['ma_csr_independent','csr_registration']);
+    expect(missing('MA', false, [proof('MA', 'rx_authority'), proof('MA', 'csr_registration')])).toEqual(['ma_csr_independent','ma_signed_collab_agreement']);
   });
   it('MA applies both paths to current and future EHR activations without waiving CSR for DirectShifts', () => {
     const np = {id:'np', profession:'NP'};

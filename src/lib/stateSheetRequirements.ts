@@ -27,7 +27,7 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   HI: { label: '"Prescriptive authority" Special Privilege Designation on License', keys: ['rx_authority'] },
   IL: { label: 'Signed Collab Agreement OR Full Practice Authority APRN License', keys: ['full_practice_authority'], agreement: true, alternative: true },
   KY: { label: 'CAPA-NS/Prescriptive authority designations on license (no collab agreement needed unless this is not on the license)', keys: ['capa_ns', 'rx_authority'], agreementSubstitute: 'capa_ns' },
-  MA: { label: 'CSR + APRN Supervision: Independent status OR CSR + Signed Collab Agreement', keys: ['csr_registration', 'aprn_supervision_independent'], agreement: true, agreementSubstitute: 'aprn_supervision_independent' },
+  MA: { label: 'CSR + Independent APRN supervision status (one combined verification) OR CSR designation + Signed Collab Agreement (two separate items)', keys: ['ma_csr_independent', 'csr_registration', 'ma_signed_collab_agreement'], agreement: true },
   NV: { label: 'Active license status only', keys: ['active_license'] },
   NJ: { label: 'Signed Collab Agreement', keys: [], agreement: true },
   ND: { label: '"Prescriptive Authority: YES" on License', keys: ['rx_authority'] },
@@ -44,6 +44,8 @@ export const REQUIREMENT_LABELS: Record<string, string> = {
   nursing_interstate_telehealth_registration: 'Nursing Interstate Telehealth Registration',
   aprn_telehealth_registration: 'Advanced Practice Registered Nurse - Telehealth Registration',
   aprn_supervision_independent: 'APRN Supervision: Independent status',
+  ma_csr_independent: 'CSR + Independent APRN supervision status',
+  ma_signed_collab_agreement: 'Signed Collab Agreement',
   full_practice_authority: 'Full practice authority on license', csr_registration: 'Controlled substance registration (CSR)',
   capa_ns: 'CAPA-NS designation on license (Collaborative Agreement for Prescriptive Authority for Non-Scheduled Drugs)',
   active_prescribing_cii: 'Active Prescribing - CII license status', independent_practice: 'Independent practice designation on license',
@@ -69,6 +71,11 @@ export function sheetLicenseStatus(profileId: string, state: string, licenses: S
 export function missingSheetRequirements(profileId: string, state: string, agreement: boolean, proofs: RequirementProof[], licenses: SheetLicense[], day = new Date()): string[] {
   const config = SHEET_REQUIREMENTS[state];
   if (!config) return [];
+  if (state === 'MA') {
+    const valid = (key: string) => proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day));
+    if (valid('ma_csr_independent') || (valid('csr_registration') && (agreement || valid('ma_signed_collab_agreement')))) return [];
+    return ['ma_csr_independent', ...(!valid('csr_registration') ? ['csr_registration'] : []), ...(!agreement && !valid('ma_signed_collab_agreement') ? ['ma_signed_collab_agreement'] : [])];
+  }
   if (config.keys.length === 1 && config.keys[0] === 'active_license') return sheetLicenseStatus(profileId, state, licenses, proofs, day) === 'invalid' ? ['active_license'] : [];
   const missing = config.keys.filter(key => !(config.agreementSubstitute === key && agreement) && !proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day)));
   if (config.alternative) return (config.agreement && agreement) || (config.anyDesignation ? missing.length < config.keys.length : !missing.length) ? [] : [...missing, ...(config.agreement ? ['collab_agreement'] : [])];
