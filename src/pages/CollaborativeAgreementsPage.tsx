@@ -212,6 +212,21 @@ const CollaborativeAgreementsPage = () => {
   const { transfers: allTransfers, loading: transfersLoading, refetch: refetchTransfers } = useAgreementTransfers();
   const transfers = allTransfers.filter(t => t.status !== 'cancelled' && t.status !== 'completed');
 
+  // Open agreement task count powers the red badge on the Tasks tab, mirroring
+  // the Provider Requirements badge on States & Compliance.
+  const { data: openTaskCount = 0 } = useQuery({
+    queryKey: ['agreement-open-task-count'],
+    ...AGREEMENT_REFRESH_OPTIONS,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('agreement_tasks')
+        .select('id', { count: 'exact', head: true })
+        .not('status', 'in', '("completed","archived")');
+      if (error) return 0;
+      return count ?? 0;
+    },
+  });
+
   // Database agreements and providers
   const { data: agreementData, isPending: loading } = useQuery({
     queryKey: ['agreements', 'overview'],
@@ -938,10 +953,13 @@ const CollaborativeAgreementsPage = () => {
               <TabsTrigger value="transfers" className="gap-2 px-4">
                 <ArrowRightLeft className="h-4 w-4" />
                 Tasks
-                {transfers.filter(t => t.status === 'pending' || t.status === 'in_progress').length > 0 && (
-                  <Badge variant="secondary" className="ml-1 text-xs">
-                    {transfers.filter(t => t.status === 'pending' || t.status === 'in_progress').length}
-                  </Badge>
+                {openTaskCount > 0 && (
+                  <span
+                    className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs font-semibold text-destructive-foreground"
+                    aria-label={`${openTaskCount} open agreement task${openTaskCount === 1 ? '' : 's'}`}
+                  >
+                    {openTaskCount}
+                  </span>
                 )}
               </TabsTrigger>
               <TabsTrigger value="by-physician" className="gap-2 px-4">
