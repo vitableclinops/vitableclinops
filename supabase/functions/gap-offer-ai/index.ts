@@ -17,7 +17,33 @@ Deno.serve(async (req) => {
     const { data: u } = await sb.auth.getUser();
     if (!u?.user) return json({ error: 'Not signed in' }, 401);
 
-    const { text, month, days, providerShifts } = await req.json();
+    const body = await req.json();
+    const { text, month, days, providerShifts } = body;
+    if (body.mode === 'extract') {
+      const k = Deno.env.get('LOVABLE_API_KEY');
+      if (!k || typeof body.advice !== 'string') return json({ error: 'Nothing to read' }, 400);
+      const r = await fetch('https://ai.gateway.lovable.dev/v1/responses', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${k}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'openai/gpt-6-astra',
+          reasoning: { effort: 'low' },
+          instructions: `Extract the final suggested schedule from this scheduling advice for month ${String(month).slice(0, 7)}. Return the provider's full name and every proposed shift. Times are Eastern; give start_min/end_min as minutes from midnight Eastern (9am=540, 9pm=1260). Split shifts (e.g. "9am-noon; 7-9pm") become separate shifts. Dates are YYYY-MM-DD. Only include the suggested schedule, not current or removed shifts.`,
+          input: body.advice.slice(0, 12000),
+          text: { format: { type: 'json_schema', name: 'schedule', strict: true, schema: {
+            type: 'object', additionalProperties: false, required: ['provider_name', 'shifts'],
+            properties: {
+              provider_name: { type: 'string' },
+              shifts: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['date', 'start_min', 'end_min'],
+                properties: { date: { type: 'string' }, start_min: { type: 'integer' }, end_min: { type: 'integer' } } } },
+            } } } },
+        }),
+      });
+      if (!r.ok) return json({ error: `AI error ${r.status}` }, 500);
+      const o = await r.json();
+      const t = o.output_text ?? o.output?.flatMap((x: any) => x.content ?? []).find((c: any) => c.type === 'output_text')?.text;
+      try { return json(JSON.parse(t)); } catch { return json({ error: 'Could not read the schedule' }, 500); }
+    }
     if (!text || typeof text !== 'string' || text.length > 8000) return json({ error: 'Paste a request (up to 8000 characters).' }, 400);
     if (!Array.isArray(days)) return json({ error: 'No gap data for this month.' }, 400);
 
