@@ -1,3 +1,4 @@
+- [ ] Add AK/AZ/AR/CA/CO/CT/DE/FL sheet requirements, shared evidence prompts and current/future activation checks; test and verify signed in.
 - [x] Apply NC signed-agreement + NCBON registration checks to current/future EHR-active NPs; 55 tests pass, signed-in review lists Jarrod, Rachel and Shanta with source/date/proof prompts. No unverified proof saved; real save/readback awaits genuine NCBON evidence.
 - [x] Delete test accounts: Maddi PodLead, Test User
 - [x] Change PA verification to uploaded file only; 48 tests passed, signed-in prompt has no URL field and blocks save without a file. Validation cancelled without saving unverified proof.
