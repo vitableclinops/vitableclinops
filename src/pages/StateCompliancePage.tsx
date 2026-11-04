@@ -53,6 +53,7 @@ import type { State, DemandTag, Task, Provider } from '@/types';
 import { toast } from 'sonner';
 import { ProviderRequirementReviews } from '@/components/state-compliance/ProviderRequirementReviews';
 import { useRequiredAgreementFlags } from '@/hooks/useRequiredAgreementFlags';
+import { useLicensedStateReadiness } from '@/hooks/useLicensedStateReadiness';
 
 type FPAFilter = 'all' | 'fpa' | 'no-fpa';
 type CAFilter = 'all' | 'ca-required' | 'no-ca';
@@ -88,7 +89,7 @@ const StateCompliancePage = () => {
   const { profile, roles } = useAuth();
   // Open provider requirement flags power the red alert badge on the
   // Provider Requirements tab; this reuses the same cached audit queries.
-  const { flags: requirementFlags } = useRequiredAgreementFlags(true);
+  const { flags: requirementFlags, rows: licensedRows, coverage, profiles: currentProfiles, loading: rosterLoading, error: rosterError } = useLicensedStateReadiness();
   const requirementFlagCount = requirementFlags.length;
   const { allData: complianceAllData, loading: complianceLoading, refetch: refetchCompliance } = useStateCompliance();
   // A user may hold several roles; admin takes precedence so edit access
@@ -411,6 +412,13 @@ const StateCompliancePage = () => {
                             </div>
                           </CardHeader>
                           <CardContent className="space-y-4">
+                            <div className="space-y-1 text-sm">
+                              {rosterLoading ? <p className="text-muted-foreground">Loading providers…</p> : rosterError ? <p className="text-destructive">Provider lists unavailable</p> : <>
+                                <Button variant="link" className="h-auto p-0 whitespace-normal text-left justify-start" onClick={e => { e.preventDefault(); e.stopPropagation(); setActiveMainTab('reviews'); setSearchParams({tab:'reviews',state:state.abbreviation,scope:'active'}); }}>Providers active here: {requirementFlags.length >= 0 ? currentProfiles.filter(p => !['terminated','offboarded'].includes((p.employment_status ?? '').toLowerCase()) && coverage?.statesByProfile.get(p.id)?.includes(state.abbreviation)).length : 0}</Button>
+                                <Button variant="link" className="h-auto p-0 whitespace-normal text-left justify-start block" onClick={e => { e.preventDefault(); e.stopPropagation(); setActiveMainTab('reviews'); setSearchParams({tab:'reviews',state:state.abbreviation,scope:'licensed'}); }}>Licensed, but not active: {licensedRows.filter(r => r.state === state.abbreviation && r.activation === 'not_active').length}</Button>
+                                {licensedRows.some(r => r.state === state.abbreviation && r.activation === 'unconfirmed') && <p className="text-xs text-muted-foreground">{licensedRows.filter(r => r.state === state.abbreviation && r.activation === 'unconfirmed').length} licensed · EHR activation unconfirmed</p>}
+                              </>}
+                            </div>
                             <div className="flex flex-wrap gap-2">
                               {(() => {
                                 const dbState = complianceAllData.find(c => c.state_abbreviation === state.abbreviation);
