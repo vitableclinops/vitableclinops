@@ -1,3 +1,4 @@
+- [ ] Add Florida TLHT (Telehealth) verification alternative; check current/future active-state flags and signed-in verification selector.
 - [x] Move active-state reviews to States & Compliance → Provider Requirements; state filter, verification and agreement actions verified signed in; Agreements retains incomplete records only. Existing requirements unchanged; 42 tests pass.
 - [x] Add AK/AZ/AR/CA/CO/CT/DE/FL sheet requirements and shared evidence prompts for current/future EHR activations; 76 tests pass and all eight state review lists verified signed in. Independent per-requirement saves tested; no invented proof saved. Real proof save/readback awaits genuine verification evidence.
 - [x] Apply NC signed-agreement + NCBON registration checks to current/future EHR-active NPs; 55 tests pass, signed-in review lists Jarrod, Rachel and Shanta with source/date/proof prompts. No unverified proof saved; real save/readback awaits genuine NCBON evidence.
