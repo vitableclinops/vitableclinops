@@ -8,7 +8,7 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   CA: { label: '"Nurse Practitioner Furnishing" License + Signed Collab Agreement', keys: ['furnishing_license'], agreement: true },
   CO: { label: 'C-RXN License', keys: ['c_rxn_license'] },
   CT: { label: '"Practice without collaborative agreement: yes" on License', keys: ['practice_without_collab'] },
-  DE: { label: '"Prescriptive authority" Endorsement on License', keys: ['rx_authority'] },
+  DE: { label: '"Prescriptive authority" Endorsement on License OR Nursing Interstate Telehealth Registration', keys: ['rx_authority', 'nursing_interstate_telehealth_registration'], alternative: true, anyDesignation: true },
   FL: { label: 'Autonomous Status on License OR Signed Collab Agreement OR TLHT (Telehealth) Designation', keys: ['autonomous_status', 'tlht_designation'], agreement: true, alternative: true, anyDesignation: true },
   ID: { label: 'Active license status only', keys: ['active_license'] },
   IA: { label: 'Active license status only', keys: ['active_license'] },
@@ -41,6 +41,7 @@ export const REQUIREMENT_LABELS: Record<string, string> = {
   active_license: 'Active license status', rx_authority: 'Prescriptive authority', board_registration: 'Collab Agreement registered with state board',
   furnishing_license: 'Nurse Practitioner Furnishing license', c_rxn_license: 'C-RXN license', practice_without_collab: 'Practice without collaborative agreement: yes', autonomous_status: 'Autonomous status on license',
   tlht_designation: 'TLHT (Telehealth) designation',
+  nursing_interstate_telehealth_registration: 'Nursing Interstate Telehealth Registration',
   full_practice_authority: 'Full practice authority on license', csr_registration: 'Controlled substance registration (CSR)',
   active_prescribing_cii: 'Active Prescribing - CII license status', independent_practice: 'Independent practice designation on license',
 };
@@ -67,6 +68,6 @@ export function missingSheetRequirements(profileId: string, state: string, agree
   if (!config) return [];
   if (config.keys.length === 1 && config.keys[0] === 'active_license') return sheetLicenseStatus(profileId, state, licenses, proofs, day) === 'invalid' ? ['active_license'] : [];
   const missing = config.keys.filter(key => !proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day)));
-  if (config.alternative) return agreement || (config.anyDesignation ? missing.length < config.keys.length : !missing.length) ? [] : [...missing, 'collab_agreement'];
+  if (config.alternative) return (config.agreement && agreement) || (config.anyDesignation ? missing.length < config.keys.length : !missing.length) ? [] : [...missing, ...(config.agreement ? ['collab_agreement'] : [])];
   return [...missing, ...(config.agreement && !agreement ? ['collab_agreement'] : [])];
 }

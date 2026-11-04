@@ -23,7 +23,24 @@ describe('User supplied eight-state requirements', () => {
   });
   it('CO needs C-RXN, not an agreement', () => { expect(missing('CO')).toEqual(['c_rxn_license']); expect(missing('CO',false,[proof('CO','c_rxn_license')])).toEqual([]); });
   it('CT needs practice-without-collab yes designation', () => { expect(missing('CT')).toEqual(['practice_without_collab']); expect(missing('CT',false,[proof('CT','practice_without_collab')])).toEqual([]); });
-  it('DE needs prescriptive-authority endorsement', () => { expect(missing('DE')).toEqual(['rx_authority']); expect(missing('DE',false,[proof('DE','rx_authority')])).toEqual([]); });
+  it('DE accepts Rx endorsement OR Nursing Interstate Telehealth Registration, not an agreement alone', () => {
+    expect(missing('DE')).toEqual(['rx_authority','nursing_interstate_telehealth_registration']);
+    expect(missing('DE',true)).toEqual(['rx_authority','nursing_interstate_telehealth_registration']);
+    expect(missing('DE',false,[proof('DE','rx_authority')])).toEqual([]);
+    expect(missing('DE',false,[proof('DE','nursing_interstate_telehealth_registration')])).toEqual([]);
+  });
+  it('flags current and newly active Delaware NPs until an alternative is verified', () => {
+    const audit = (states: string[], proofs: RequirementProof[] = [], newlyActive: string[] = []) => activeStateAgreementFlags({id:'np',profession:'NP'},states,[],[],[],day,[],newlyActive,proofs);
+    expect(audit(['DE'])).toEqual([expect.objectContaining({state:'DE',sheetReview:true,newlyActive:false})]);
+    expect(audit(['DE'],[],['DE'])).toEqual([expect.objectContaining({state:'DE',newlyActive:true})]);
+    expect(audit(['DE'],[proof('DE','nursing_interstate_telehealth_registration')])).toEqual([]);
+    expect(audit([])).toEqual([]);
+  });
+  it('rejects expired or mismatched Delaware registration proof', () => {
+    for (const change of [{expiration_date:'2026-11-03'},{profile_id:'other'},{state_abbreviation:'FL'},{verified_link:null}]) {
+      expect(missing('DE',false,[{...proof('DE','nursing_interstate_telehealth_registration'),...change}])).toEqual(['rx_authority','nursing_interstate_telehealth_registration']);
+    }
+  });
   it('Florida accepts autonomous status OR signed agreement OR TLHT designation', () => {
     expect(missing('FL')).toEqual(['autonomous_status','tlht_designation','collab_agreement']);
     expect(missing('FL',true)).toEqual([]);
@@ -44,7 +61,7 @@ describe('User supplied eight-state requirements', () => {
     }
   });
   it('requires source date and clickable evidence per fact', () => {
-    for (const change of [{verified_source:''},{verified_on:''},{verified_link:null},{verified_link:'javascript:alert(1)'},{verified_on:'2027-01-01'},{expiration_date:'2025-01-01'}]) expect(missing('DE',false,[{...proof('DE','rx_authority'),...change}])).toEqual(['rx_authority']);
+    for (const change of [{verified_source:''},{verified_on:''},{verified_link:null},{verified_link:'javascript:alert(1)'},{verified_on:'2027-01-01'},{expiration_date:'2025-01-01'}]) expect(missing('DE',false,[{...proof('DE','rx_authority'),...change}])).toEqual(['rx_authority','nursing_interstate_telehealth_registration']);
   });
   it('does not borrow proof from a different provider, state or requirement', () => {
     expect(missing('AR',true,[{...proof('AR','rx_authority'),profile_id:'other'},proof('DE','board_registration')])).toEqual(['rx_authority','board_registration']);
