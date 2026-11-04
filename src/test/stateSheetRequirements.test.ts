@@ -84,8 +84,8 @@ describe('Remaining sheet states', () => {
     const licenses = [{profileId:'np',state:'NV',status:'active',expiration:'2027-01-01'}];
     expect(missingSheetRequirements('np','NV',false,[],licenses,day)).toEqual([]);
     expect(missing('NV')).toEqual([]);
-    expect(activeStateAgreementFlags({id:'np',profession:'NP'},['NV'],[],[],[],day,licenses)).toEqual([]);
-    expect(activeStateAgreementFlags({id:'np',profession:'NP'},['NV'],[],[],[],day,licenses,['NV'])).toEqual([]);
+    expect(activeStateAgreementFlags({id:'np',profession:'NP'},['NV'],[],[],[],day,[],[],[],licenses)).toEqual([]);
+    expect(activeStateAgreementFlags({id:'np',profession:'NP'},['NV'],[],[],[],day,[],['NV'],[],licenses)).toEqual([]);
   });
   it('Nevada retains known expired-license warnings', () => {
     expect(missingSheetRequirements('np','NV',false,[],[{profileId:'np',state:'NV',status:'expired',expiration:'2026-11-03'}],day)).toEqual(['active_license']);
