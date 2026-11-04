@@ -52,8 +52,9 @@ import { cn, formatDisplayDate } from '@/lib/utils';
 import type { State, DemandTag, Task, Provider } from '@/types';
 import { toast } from 'sonner';
 import { ProviderRequirementReviews } from '@/components/state-compliance/ProviderRequirementReviews';
-import { useRequiredAgreementFlags } from '@/hooks/useRequiredAgreementFlags';
 import { useLicensedStateReadiness } from '@/hooks/useLicensedStateReadiness';
+import { isOffboarded } from '@/lib/employeeVisibility';
+import { isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
 
 type FPAFilter = 'all' | 'fpa' | 'no-fpa';
 type CAFilter = 'all' | 'ca-required' | 'no-ca';
@@ -414,7 +415,7 @@ const StateCompliancePage = () => {
                           <CardContent className="space-y-4">
                             <div className="space-y-1 text-sm">
                               {rosterLoading ? <p className="text-muted-foreground">Loading providers…</p> : rosterError ? <p className="text-destructive">Provider lists unavailable</p> : <>
-                                <Button variant="link" className="h-auto p-0 whitespace-normal text-left justify-start" onClick={e => { e.preventDefault(); e.stopPropagation(); setActiveMainTab('reviews'); setSearchParams({tab:'reviews',state:state.abbreviation,scope:'active'}); }}>Providers active here: {requirementFlags.length >= 0 ? currentProfiles.filter(p => !['terminated','offboarded'].includes((p.employment_status ?? '').toLowerCase()) && coverage?.statesByProfile.get(p.id)?.includes(state.abbreviation)).length : 0}</Button>
+                                <Button variant="link" className="h-auto p-0 whitespace-normal text-left justify-start" onClick={e => { e.preventDefault(); e.stopPropagation(); setActiveMainTab('reviews'); setSearchParams({tab:'reviews',state:state.abbreviation,scope:'active'}); }}>Providers active here: {currentProfiles.filter(p => !isOffboarded(p.employment_status) && !isTestAccountDirectoryRecord(p) && !OUT_OF_SCOPE_PROFILE_IDS[p.id] && coverage?.statesByProfile.get(p.id)?.includes(state.abbreviation)).length}</Button>
                                 <Button variant="link" className="h-auto p-0 whitespace-normal text-left justify-start block" onClick={e => { e.preventDefault(); e.stopPropagation(); setActiveMainTab('reviews'); setSearchParams({tab:'reviews',state:state.abbreviation,scope:'licensed'}); }}>Licensed, but not active: {licensedRows.filter(r => r.state === state.abbreviation && r.activation === 'not_active').length}</Button>
                                 {licensedRows.some(r => r.state === state.abbreviation && r.activation === 'unconfirmed') && <p className="text-xs text-muted-foreground">{licensedRows.filter(r => r.state === state.abbreviation && r.activation === 'unconfirmed').length} licensed · EHR activation unconfirmed</p>}
                               </>}

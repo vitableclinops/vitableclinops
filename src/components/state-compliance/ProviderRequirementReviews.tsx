@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useRequiredAgreementFlags } from '@/hooks/useRequiredAgreementFlags';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -28,7 +27,7 @@ export function ProviderRequirementReviews() {
   const filtered = flags.filter(f => (state === 'all' || f.state === state) && f.name.toLowerCase().includes(search.toLowerCase()));
   const rule = audit?.rules.find(r => r.state_abbreviation === state);
   return <section className="space-y-4">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Provider requirement reviews <Badge variant="secondary">{filtered.length}</Badge></h2>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Provider requirement reviews <Badge variant="secondary">{scope === 'licensed' ? licensed.length : filtered.length}</Badge></h2>
       <div className="flex flex-wrap gap-2"><Input aria-label="Search requirement reviews" placeholder="Search providers…" value={search} onChange={e => setSearch(e.target.value)} className="w-56" />
         <Select value={state} onValueChange={value => { const next = new URLSearchParams(params); next.set('tab','reviews'); if (value === 'all') next.delete('state'); else next.set('state',value); setParams(next); }}><SelectTrigger className="w-56" aria-label="Review state"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All states</SelectItem>{allUSStates.map(s => <SelectItem key={s.abbreviation} value={s.abbreviation}>{s.name} ({s.abbreviation})</SelectItem>)}</SelectContent></Select>
       </div>
@@ -45,7 +44,7 @@ export function ProviderRequirementReviews() {
       {r.reviews.map((review, index) => <p key={index} className="text-sm text-destructive">{review.reason}</p>)}
       <div className="flex flex-wrap gap-2">{r.reviews.some(f => f.sheetReview || f.registrationReview || f.independentAlternative) && <Button size="sm" variant="outline" onClick={() => setVerify({profileId:r.provider.id,providerName:r.name,state:r.state})}>Verify state requirements</Button>}{r.reviews.length > 0 && (!SHEET_REQUIREMENTS[r.state] || SHEET_REQUIREMENTS[r.state].agreement || SHEET_REQUIREMENTS[r.state].agreementSubstitute) && <Button size="sm" variant="outline" onClick={() => setPrefill({stateAbbr:r.state,skipProcess:true,provider:{id:r.provider.id,name:r.name,email:r.provider.email,npi:r.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}</div>
       {(audit?.requirementProofs ?? []).filter(p => p.profile_id === r.provider.id && p.state_abbreviation === r.state).map(p => <p key={p.requirement_key} className="text-sm text-muted-foreground">{REQUIREMENT_LABELS[p.requirement_key]} · {p.verified_on} {p.verified_attachment_path && <EvidenceLink reference={p.verified_attachment_path}>{p.verified_attachment_name ?? 'View file'}</EvidenceLink>} {p.verified_link && <EvidenceLink reference={p.verified_link}>Open link</EvidenceLink>} · {p.verified_source}</p>)}
-      {(audit?.agreements ?? []).filter(a => a.profileId === r.provider.id && a.state === r.state && a.document).map((a, i) => <p key={i} className="text-sm">Collab Agreement · <EvidenceLink reference={a.document}>View document</EvidenceLink></p>)}
+      {(audit?.agreements ?? []).filter(a => a.profileId === r.provider.id && a.state === r.state && a.document).map((a, i) => a.document ? <p key={i} className="text-sm">Collab Agreement · <EvidenceLink reference={a.document}>View document</EvidenceLink></p> : null)}
     </div>)}</div>}
     <div className="divide-y border-y">{scope === 'active' && filtered.map(f => {
       const existing = audit?.agreements.find(a => a.profileId === f.provider.id && a.state === f.state && a.agreementId && ['active','fully_executed'].includes(a.status ?? ''));
