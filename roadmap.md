@@ -76,3 +76,4 @@
 - [x] Remove DirectShifts missing-upload flags from profile, agreement filters, state grid and verification; known and explicitly designated supervisors exempt, 24 tests passed, Brittney profile verified signed in.
 
 - [x] Include profile-level missing-document, invalid-agreement, activation mismatch and Medallion lookup warnings in top alerts; shared profile checks, 13 tests passed, Shadae correction flow verified signed in.
+- [x] Change Kentucky to CAPA-NS + Prescriptive Authority OR a signed Collab Agreement; verification dialog offers CAPA-NS proof, EHR-active audits follow, 51 tests passed, migration 0021 applied.
