@@ -47,7 +47,7 @@ export function activeStateAgreementFlags(
       const missing = missingSheetRequirements(provider.id, state, agreement, requirementProofs, sheetLicenses, day);
       return missing.length ? [{ state, sheetReview: missing.some(k => k !== 'collab_agreement'), newlyActive: newlyActiveStates.includes(state),
         reason: `${state} requirements need verification: ${missing.map(k => REQUIREMENT_LABELS[k] ?? 'Signed Collab Agreement').join(SHEET_REQUIREMENTS[state].alternative ? ' OR ' : ' + ')}.`,
-        howToFix: `${SHEET_REQUIREMENTS[state].label}. Save verification source, date and a proof file or link for each designation or registration; add/link the signed agreement when required. DirectShifts exempts agreement-document uploads only.` }] : [];
+        howToFix: `${SHEET_REQUIREMENTS[state].label}. Save verification source, date and a proof file or link for each missing license designation or registration.${SHEET_REQUIREMENTS[state].agreement ? ' Add/link the signed agreement when needed. DirectShifts exempts agreement-document uploads only.' : ''}` }] : [];
     }
     // Alternative states require a documented agreement or source-and-date independent verification.
     const authorityAlternative = INDEPENDENT_ALTERNATIVE_STATES.has(state) && rule?.collab_requirement_type === 'conditional';

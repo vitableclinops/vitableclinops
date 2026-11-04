@@ -72,6 +72,7 @@ import { Label } from '@/components/ui/label';
 import { cn, formatDisplayDate } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
 import { IndependentPracticeVerifyDialog } from '@/components/agreements/IndependentPracticeVerifyDialog';
+import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
 type DbProvider = Tables<'agreement_providers'>;
@@ -871,7 +872,7 @@ const CollaborativeAgreementsPage = () => {
                       <p className="text-sm text-muted-foreground">How to fix: {flag.howToFix}</p>
                       <div className="flex flex-wrap gap-2">
                         {(flag.sheetReview || flag.independentAlternative || flag.registrationReview) && <Button size="sm" variant="outline" onClick={() => { setVerifyIndependent({ profileId: flag.provider.id, name: flag.name, state: flag.state }); setIncompleteOpen(false); }}>{flag.sheetReview ? 'Verify state requirements' : flag.registrationReview ? 'Verify NCBON registration' : flag.state === 'VA' || flag.state === 'PA' ? 'Verify license designations' : 'Verify independent practice'}</Button>}
-                        {existing ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.id}`}>Open agreement</Link></Button> : <Button size="sm" onClick={() => {
+                        {existing ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.id}`}>Open agreement</Link></Button> : (!SHEET_REQUIREMENTS[flag.state] || SHEET_REQUIREMENTS[flag.state].agreement) && <Button size="sm" onClick={() => {
                           setGapPrefill({ stateAbbr: flag.state, skipProcess: true, provider: { id: flag.provider.id, name: flag.name, email: flag.provider.email, npi: flag.provider.npi_number ?? undefined } });
                           setIncompleteOpen(false); setWizardOpen(true);
                         }}>Add / link agreement</Button>}
