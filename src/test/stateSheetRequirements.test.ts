@@ -115,8 +115,8 @@ describe('Remaining sheet states', () => {
     expect(missing('KY',false,[proof('KY','capa_ns')])).toEqual(['rx_authority']);
     expect(missing('KY',false,[proof('KY','capa_ns'),proof('KY','rx_authority')])).toEqual([]);
     for (const change of [{expiration_date:'2026-11-03'},{profile_id:'other'},{state_abbreviation:'TX'},{verified_link:null},{verified_source:''}]) {
-      expect(missing('KY',false,[{...proof('KY','rx_authority'),...change}])).toEqual(['rx_authority']);
-      expect(missing('KY',false,[{...proof('KY','capa_ns'),...change}])).toEqual(['capa_ns','rx_authority']);
+      expect(missing('KY',false,[{...proof('KY','rx_authority'),...change},proof('KY','capa_ns')])).toEqual(['rx_authority']);
+      expect(missing('KY',false,[{...proof('KY','capa_ns'),...change},proof('KY','rx_authority')])).toEqual(['capa_ns']);
     }
   });
   it('TX needs agreement AND board filing', () => { expect(missing('TX')).toEqual(['board_registration','collab_agreement']); expect(missing('TX',true,[proof('TX','board_registration')])).toEqual([]); });
