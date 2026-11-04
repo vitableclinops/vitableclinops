@@ -28,7 +28,7 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   IL: { label: 'Signed Collab Agreement OR Full Practice Authority APRN License', keys: ['full_practice_authority'], agreement: true, alternative: true },
   KY: { label: 'Signed Collab Agreement (CAPA-NS) + Filed with State Board', keys: ['board_registration'], agreement: true },
   MA: { label: 'Rx Authority Designation on License + CSR OR Signed Collab Agreement', keys: ['rx_authority', 'csr_registration'], agreement: true, alternative: true },
-  NV: { label: '"Active Prescribing - CII" License Status', keys: ['active_prescribing_cii'] },
+  NV: { label: 'Active license status only', keys: ['active_license'] },
   NJ: { label: 'Signed Collab Agreement', keys: [], agreement: true },
   ND: { label: '"Prescriptive Authority: YES" on License', keys: ['rx_authority'] },
   OH: { label: 'Signed Collab Agreement', keys: [], agreement: true },
