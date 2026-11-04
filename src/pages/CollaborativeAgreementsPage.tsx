@@ -761,7 +761,7 @@ const CollaborativeAgreementsPage = () => {
               )}
               {/* Only admins can create new agreements */}
               {hasRole('admin') && (
-                <Button onClick={() => { setGapPrefill(null); setWizardOpen(true); }} size="lg">
+                <Button onClick={() => setWizardOpen(true)} size="lg">
                   <Plus className="h-4 w-4 mr-2" />
                   New Agreement
                 </Button>
