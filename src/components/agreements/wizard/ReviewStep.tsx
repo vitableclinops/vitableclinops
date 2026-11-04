@@ -66,6 +66,17 @@ export const ReviewStep = ({ formData, updateFormData, requireDocument = false, 
           {formData.providers.some(p => !p.id) && <p className="text-xs text-destructive">Select existing directory profiles to save license verification.</p>}
         </div>
       )}
+      {stateCode === 'NC' && (
+        <div className="space-y-3 border-b pb-4">
+          <p className="text-sm font-medium">Requirements: Signed Collab Agreement + Verified NCBON Registration</p>
+          {formData.skipProcess ? <>
+            <IndependentPracticeFields registration source={formData.independentSource ?? ''} verifiedOn={formData.independentOn ?? ''}
+              link={formData.independentLink ?? ''} file={formData.independentFile ?? null}
+              onChange={v => updateFormData?.({ ...(v.source !== undefined && { independentSource: v.source }), ...(v.verifiedOn !== undefined && { independentOn: v.verifiedOn }), ...(v.link !== undefined && { independentLink: v.link }), ...(v.file !== undefined && { independentFile: v.file }) })} />
+            {formData.providers.some(p => !p.id) && <p className="text-xs text-destructive">Select existing directory profiles to save NCBON verification.</p>}
+          </> : <p className="text-sm text-muted-foreground">Complete the NCBON registration tasks before activation. EHR-active providers need saved registration verification in Needs fixing.</p>}
+        </div>
+      )}
       {eitherOrState && (
         <Card className="p-4 border-warning/40 space-y-3">
           <p className="text-sm font-medium">{formData.selectedState?.abbreviation} needs one of these before finalizing</p>
