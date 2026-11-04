@@ -1,3 +1,4 @@
+- [ ] Apply the uploaded sheet's NC signed-agreement + NCBON registration requirement to current/future EHR-active NPs; verify shared flags and proof workflow.
 - [x] Delete test accounts: Maddi PodLead, Test User
 - [x] Change PA verification to uploaded file only; 48 tests passed, signed-in prompt has no URL field and blocks save without a file. Validation cancelled without saving unverified proof.
 - [x] Require PA Collab Agreement + Rx Authority verification link; 48 tests passed, 18 current PA reviews found signed in, and save stays disabled without a link. No unverified evidence saved; final save/readback requires real verification proof.
