@@ -1,0 +1,2 @@
+ALTER TABLE public.provider_requirement_verifications DROP CONSTRAINT provider_requirement_verifications_requirement_key_check;
+ALTER TABLE public.provider_requirement_verifications ADD CONSTRAINT provider_requirement_verifications_requirement_key_check CHECK (requirement_key = ANY (ARRAY['active_license','rx_authority','board_registration','furnishing_license','c_rxn_license','practice_without_collab','autonomous_status','full_practice_authority','csr_registration','active_prescribing_cii','independent_practice']));

@@ -10,10 +10,38 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   CT: { label: '"Practice without collaborative agreement: yes" on License', keys: ['practice_without_collab'] },
   DE: { label: '"Prescriptive authority" Endorsement on License', keys: ['rx_authority'] },
   FL: { label: 'Autonomous Status on License OR Signed Collab Agreement', keys: ['autonomous_status'], agreement: true, alternative: true },
+  ID: { label: 'Active license status only', keys: ['active_license'] },
+  IA: { label: 'Active license status only', keys: ['active_license'] },
+  KS: { label: 'Active license status only', keys: ['active_license'] },
+  ME: { label: 'Active license status only', keys: ['active_license'] },
+  MD: { label: 'Active license status only', keys: ['active_license'] },
+  MI: { label: 'Active license status only', keys: ['active_license'] },
+  MT: { label: 'Active license status only', keys: ['active_license'] },
+  NH: { label: 'Active license status only', keys: ['active_license'] },
+  NM: { label: 'Active license status only', keys: ['active_license'] },
+  OR: { label: 'Active license status only', keys: ['active_license'] },
+  RI: { label: 'Active license status only', keys: ['active_license'] },
+  UT: { label: 'Active license status only', keys: ['active_license'] },
+  WA: { label: 'Active license status only', keys: ['active_license'] },
+  WY: { label: 'Active license status only', keys: ['active_license'] },
+  HI: { label: '"Prescriptive authority" Special Privilege Designation on License', keys: ['rx_authority'] },
+  IL: { label: 'Signed Collab Agreement OR Full Practice Authority APRN License', keys: ['full_practice_authority'], agreement: true, alternative: true },
+  KY: { label: 'Signed Collab Agreement (CAPA-NS) + Filed with State Board', keys: ['board_registration'], agreement: true },
+  MA: { label: 'Rx Authority Designation on License + CSR OR Signed Collab Agreement', keys: ['rx_authority', 'csr_registration'], agreement: true, alternative: true },
+  NV: { label: '"Active Prescribing - CII" License Status', keys: ['active_prescribing_cii'] },
+  NJ: { label: 'Signed Collab Agreement', keys: [], agreement: true },
+  ND: { label: '"Prescriptive Authority: YES" on License', keys: ['rx_authority'] },
+  OH: { label: 'Signed Collab Agreement', keys: [], agreement: true },
+  SD: { label: '"Full Practice Authority/Prescriptive Authority: YES" Status', keys: ['full_practice_authority'] },
+  TX: { label: 'Signed Collab Agreement + Filed with State Board', keys: ['board_registration'], agreement: true },
+  VT: { label: '"Independent Practice, Prescriptive Authority" on License OR Signed Collab Agreement', keys: ['independent_practice'], agreement: true, alternative: true },
+  WI: { label: 'Signed Collab Agreement OR Independent Practice Designation on License', keys: ['independent_practice'], agreement: true, alternative: true },
 };
 export const REQUIREMENT_LABELS: Record<string, string> = {
   active_license: 'Active license status', rx_authority: 'Prescriptive authority', board_registration: 'Collab Agreement registered with state board',
   furnishing_license: 'Nurse Practitioner Furnishing license', c_rxn_license: 'C-RXN license', practice_without_collab: 'Practice without collaborative agreement: yes', autonomous_status: 'Autonomous status on license',
+  full_practice_authority: 'Full practice authority on license', csr_registration: 'Controlled substance registration (CSR)',
+  active_prescribing_cii: 'Active Prescribing - CII license status', independent_practice: 'Independent practice designation on license',
 };
 export interface RequirementProof {
   profile_id: string; state_abbreviation: string; requirement_key: string; verified_source: string; verified_on: string;
@@ -36,8 +64,8 @@ export function sheetLicenseStatus(profileId: string, state: string, licenses: S
 export function missingSheetRequirements(profileId: string, state: string, agreement: boolean, proofs: RequirementProof[], licenses: SheetLicense[], day = new Date()): string[] {
   const config = SHEET_REQUIREMENTS[state];
   if (!config) return [];
-  if (state === 'AK' || state === 'AZ') return sheetLicenseStatus(profileId, state, licenses, proofs, day) === 'invalid' ? ['active_license'] : [];
+  if (config.keys.length === 1 && config.keys[0] === 'active_license') return sheetLicenseStatus(profileId, state, licenses, proofs, day) === 'invalid' ? ['active_license'] : [];
   const missing = config.keys.filter(key => !proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day)));
-  if (config.alternative) return agreement || !missing.length ? [] : ['autonomous_status', 'collab_agreement'];
+  if (config.alternative) return agreement || !missing.length ? [] : [...missing, 'collab_agreement'];
   return [...missing, ...(config.agreement && !agreement ? ['collab_agreement'] : [])];
 }

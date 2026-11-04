@@ -46,11 +46,11 @@ describe('active EHR state agreement checks', () => {
     expect(activeStateAgreementFlags(provider, ['PA'], [{ state_abbreviation: 'PA', ca_required: false, collab_requirement_type: 'never' }], [], [], today)).toEqual([]);
   });
   it('does not flag other states saved as not requiring agreements', () => {
-    expect(activeStateAgreementFlags(provider, ['MN', 'VT'],
-      ['MN', 'VT'].map(state_abbreviation => ({ state_abbreviation, ca_required: false, collab_requirement_type: 'conditional' })), [], [], today)).toEqual([]);
+    expect(activeStateAgreementFlags(provider, ['MN', 'NE'],
+      ['MN', 'NE'].map(state_abbreviation => ({ state_abbreviation, ca_required: false, collab_requirement_type: 'conditional' })), [], [], today)).toEqual([]);
   });
   it('does not infer a requirement from defaults when a saved rule is absent', () => {
-    expect(activeStateAgreementFlags(provider, ['PA', 'OH'], [], [], [], today)).toEqual([]);
+    expect(activeStateAgreementFlags(provider, ['PA', 'MN'], [], [], [], today)).toEqual([]);
   });
   it('flags a conditional state only when the directory explicitly requires an agreement', () => {
     expect(activeStateAgreementFlags(provider, ['AR'], [{ state_abbreviation: 'AR', ca_required: true, collab_requirement_type: 'conditional' }], [], [], today).map(r => r.state)).toEqual(['AR']);
