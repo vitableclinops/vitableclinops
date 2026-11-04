@@ -2387,7 +2387,7 @@ export default function SchedulingWorkbenchPage({
             <span className="mr-1 text-muted-foreground">5</span>
             <Send className="h-3.5 w-3.5 mr-1" />Finalize
           </TabsTrigger>
-          <TabsTrigger value="gap-finder">Gap Finder</TabsTrigger>
+          <TabsTrigger value="gap-finder"><Search className="h-3.5 w-3.5 mr-1" />Gap Finder</TabsTrigger>
         </TabsList>
 
         {/* ============ GAP FINDER ============ */}
