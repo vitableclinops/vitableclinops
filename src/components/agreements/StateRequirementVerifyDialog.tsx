@@ -18,7 +18,7 @@ export function StateRequirementVerifyDialog({ open, onOpenChange, profileId, pr
   const [source, setSource] = useState(''); const [date, setDate] = useState(''); const [link, setLink] = useState(''); const [expiration, setExpiration] = useState('');
   const [file, setFile] = useState<File | null>(null); const [saving, setSaving] = useState(false);
   const { data = [], error } = useRequirementProofs(profileId); const { profile } = useAuth(); const client = useQueryClient();
-  const save = async () => { setSaving(true); try { await saveRequirementProof({ profileId, state, key, source, date, link, file, expiration, verifiedBy: profile?.id }); await refreshAgreementViews(client); toast.success('Requirement verification saved'); setSource(''); setDate(''); setLink(''); setFile(null); } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save verification'); } finally { setSaving(false); } };
+  const save = async () => { setSaving(true); try { await saveRequirementProof({ profileId, state, key, source, date, link, file, expiration, verifiedBy: profile?.id }); await refreshAgreementViews(client); toast.success('Requirement verification saved'); setSource(''); setDate(''); setLink(''); setFile(null); onOpenChange(false); } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save verification'); } finally { setSaving(false); } };
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
     <DialogHeader><DialogTitle>Verify state requirements — {state}</DialogTitle><DialogDescription>{providerName} · {config?.label}</DialogDescription></DialogHeader>
     {error && <p className="text-sm text-destructive">Could not load saved verification.</p>}
