@@ -148,6 +148,13 @@
       "when": 1793831680414,
       "tag": "0020_allow_vermont_aprn_telehealth_registration_proof",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793832424390,
+      "tag": "0021_allow_kentucky_capa_ns_proof",
+      "breakpoints": true
     }
   ]
 }
