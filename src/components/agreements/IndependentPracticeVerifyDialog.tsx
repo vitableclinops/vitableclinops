@@ -62,7 +62,7 @@ export function IndependentPracticeFields({ source, verifiedOn, link = '', file 
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <Label htmlFor="ind-source">Where was it verified?</Label>
+        <Label htmlFor="ind-source">Where was it verified?<span className="text-destructive" aria-hidden="true"> *</span></Label>
         <Input id="ind-source" aria-describedby="ind-source-description" placeholder="Enter verification source" value={source} onChange={e => onChange({ source: e.target.value })} />
         <p id="ind-source-description" className="text-sm text-muted-foreground">State board communication, Direct Shifts supervision spreadsheet, etc.</p>
       </div>
