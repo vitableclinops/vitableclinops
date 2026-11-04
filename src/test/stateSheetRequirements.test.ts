@@ -79,17 +79,17 @@ describe('User supplied eight-state requirements', () => {
   });
 });
 describe('Remaining sheet states', () => {
-  it('MA prompts for CSR only after Rx authority is saved, and Rx only after CSR is saved', () => {
-    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'rx_authority')], [], day)).toEqual(['csr_registration']);
-    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'csr_registration')], [], day)).toEqual(['rx_authority']);
-    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'rx_authority'), proof('MA', 'csr_registration')], [], day)).toEqual([]);
+  it('MA prompts only for the outstanding CSR or independent supervision verification', () => {
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'aprn_supervision_independent')], [], day)).toEqual(['csr_registration']);
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'csr_registration')], [], day)).toEqual(['aprn_supervision_independent']);
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'aprn_supervision_independent'), proof('MA', 'csr_registration')], [], day)).toEqual([]);
   });
   it.each(Object.entries(SHEET_REQUIREMENTS).filter(([, config]) => config.keys.length > 1))('%s does not request a saved valid requirement again', (state, config) => {
     const saved = config.keys[0];
     expect(remainingVerificationKeys('np', state, false, [proof(state, saved)], [], day)).not.toContain(saved);
   });
-  it('requires expired CSR again without re-requesting valid Rx authority', () => {
-    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'rx_authority'), {...proof('MA', 'csr_registration'), expiration_date: '2026-11-03'}], [], day)).toEqual(['csr_registration']);
+  it('requires expired CSR again without re-requesting valid independent supervision', () => {
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'aprn_supervision_independent'), {...proof('MA', 'csr_registration'), expiration_date: '2026-11-03'}], [], day)).toEqual(['csr_registration']);
   });
   it('does not prompt for Kentucky CAPA-NS again when a signed agreement substitutes for it', () => {
     expect(remainingVerificationKeys('np', 'KY', true, [], [], day)).toEqual(['rx_authority']);
@@ -123,7 +123,20 @@ describe('Remaining sheet states', () => {
       expect(missing('VT',false,[{...proof('VT','aprn_telehealth_registration'),...change}])).toContain('aprn_telehealth_registration');
     }
   });
-  it('MA needs Rx + CSR OR agreement', () => { expect(missing('MA',false,[proof('MA','rx_authority')])).toEqual(['csr_registration','collab_agreement']); expect(missing('MA',false,[proof('MA','rx_authority'),proof('MA','csr_registration')])).toEqual([]); expect(missing('MA',true)).toEqual([]); });
+  it('MA requires CSR AND independent supervision OR CSR AND a signed collab agreement', () => {
+    expect(missing('MA', false, [proof('MA', 'csr_registration'), proof('MA', 'aprn_supervision_independent')])).toEqual([]);
+    expect(missing('MA', true, [proof('MA', 'csr_registration')])).toEqual([]);
+    expect(missing('MA', true)).toEqual(['csr_registration']);
+    expect(missing('MA', false, [proof('MA', 'aprn_supervision_independent')])).toEqual(['csr_registration']);
+    expect(missing('MA', false, [proof('MA', 'rx_authority'), proof('MA', 'csr_registration')])).toEqual(['aprn_supervision_independent']);
+  });
+  it('MA applies both paths to current and future EHR activations without waiving CSR for DirectShifts', () => {
+    const np = {id:'np', profession:'NP'};
+    const agreements = [{profileId:'np',state:'MA',status:'active',document:null,documentExempt:true}];
+    expect(activeStateAgreementFlags(np,['MA'],[],agreements,[],day,[],['MA'])).toEqual([expect.objectContaining({state:'MA',sheetReview:true,newlyActive:true})]);
+    expect(activeStateAgreementFlags(np,['MA'],[],agreements,[],day,[],[],[proof('MA','csr_registration')])).toEqual([]);
+    expect(activeStateAgreementFlags(np,[],[],agreements,[],day)).toEqual([]);
+  });
   it('Kentucky needs CAPA-NS/Prescriptive authority designations on license; a signed collab agreement substitutes for CAPA-NS', () => {
     expect(missing('KY')).toEqual(['capa_ns','rx_authority']);
     expect(missing('KY',true)).toEqual(['rx_authority']);
