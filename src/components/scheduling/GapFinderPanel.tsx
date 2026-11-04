@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { RefreshCw, Download, Plus, Trash2, Sparkles } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,10 +29,7 @@ const bandClass: Record<string, string> = {
   none: 'bg-muted border-border text-muted-foreground',
 };
 
-type AiResult = {
-  summary: string; total_hours_closed: number; suggestions: string;
-  offers: { date: string; start: string; end: string; hours: number; day_gap: number | null; hours_closed: number; verdict: string; note: string }[];
-};
+type AiResult = { advice: string };
 
 type Offer = { id: number; date: string; start: string; end: string };
 
@@ -61,7 +59,12 @@ export function GapFinderPanel() {
   const ai = useMutation({
     mutationFn: async (): Promise<AiResult> => {
       const payload = (data?.days ?? []).map((d) => ({ date: d.date, dow: d.dow, scheduled: d.scheduled, expected: d.expected, gap: d.gap, holiday: d.holiday ?? null }));
-      const { data: res, error } = await supabase.functions.invoke('gap-offer-ai', { body: { text: aiText, month, days: payload } });
+      const words = new Set(aiText.toLowerCase().match(/[a-z']{3,}/g) ?? []);
+      const providerShifts = (data?.shifts ?? [])
+        .filter((s) => s.employee_name && s.employee_name.toLowerCase().split(/\s+/).some((w) => w.length >= 3 && words.has(w)))
+        .slice(0, 300)
+        .map((s) => ({ name: s.employee_name, start: s.start_at, end: s.end_at, hours: s.scheduled_hours, role: s.role }));
+      const { data: res, error } = await supabase.functions.invoke('gap-offer-ai', { body: { text: aiText, month, days: payload, providerShifts } });
       if (error) {
         let msg = error.message;
         try { msg = (await (error as any).context?.json())?.error ?? msg; } catch { /* keep */ }
@@ -162,37 +165,16 @@ export function GapFinderPanel() {
           <Card>
             <CardHeader><CardTitle className="text-base">Provider offer check</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              <p className="text-xs text-muted-foreground">Paste what the provider is offering (an email, text, or list) and AI will check it against this month's gaps. Nothing is written to Homebase.</p>
+              <p className="text-xs text-muted-foreground">Paste a provider's request (and any notes) and AI will suggest where their hours should go based on this month's gaps and their current shifts. Nothing is written to Homebase.</p>
               <Textarea value={aiText} onChange={(e) => setAiText(e.target.value)} rows={4}
-                placeholder={'e.g. "I can do Nov 12 9am-1pm, every Tuesday 2-6pm, and Nov 28 all day"'} />
+                placeholder={'Paste the provider message, e.g. "Brittney Afram reached out: I can only work till noon on Wednesdays…" — include their name so their current shifts are used.'} />
               <Button size="sm" onClick={() => ai.mutate()} disabled={!aiText.trim() || ai.isPending || !days.length}>
-                <Sparkles className={cn('h-4 w-4 mr-1', ai.isPending && 'animate-pulse')} />{ai.isPending ? 'Checking…' : 'Check with AI'}
+                <Sparkles className={cn('h-4 w-4 mr-1', ai.isPending && 'animate-pulse')} />{ai.isPending ? 'Checking…' : 'Get AI advice'}
               </Button>
               {ai.data && (
                 <div className="border rounded p-3 space-y-2 text-sm">
-                  <p>{ai.data.summary}</p>
-                  <p>Closes <strong>{Number(ai.data.total_hours_closed).toFixed(1)}</strong> gap hours.</p>
-                  {ai.data.offers.length > 0 && (
-                    <Table>
-                      <TableHeader><TableRow>
-                        <TableHead>Date</TableHead><TableHead>Time</TableHead><TableHead className="text-right">Hrs</TableHead>
-                        <TableHead className="text-right">Day gap</TableHead><TableHead>Verdict</TableHead><TableHead>Note</TableHead>
-                      </TableRow></TableHeader>
-                      <TableBody>
-                        {ai.data.offers.map((o, i) => (
-                          <TableRow key={i}>
-                            <TableCell>{o.date}</TableCell><TableCell>{o.start}–{o.end}</TableCell>
-                            <TableCell className="text-right">{o.hours}</TableCell>
-                            <TableCell className="text-right">{o.day_gap ?? '–'}</TableCell>
-                            <TableCell><Badge variant={o.verdict === 'Fills a gap' ? 'default' : o.verdict === 'Marginal' ? 'secondary' : 'outline'}>{o.verdict}</Badge></TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{o.note}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                  {ai.data.suggestions && <p className="text-muted-foreground">{ai.data.suggestions}</p>}
-                  <p className="text-xs text-muted-foreground">AI reading — double-check dates before offering shifts.</p>
+                  <div className="prose prose-sm max-w-none dark:prose-invert"><ReactMarkdown>{ai.data.advice}</ReactMarkdown></div>
+                  <p className="text-xs text-muted-foreground">AI advice — double-check dates and times before changing Homebase.</p>
                 </div>
               )}
               <p className="text-xs text-muted-foreground pt-2">Or enter shifts manually:</p>
