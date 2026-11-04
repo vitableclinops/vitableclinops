@@ -80,7 +80,17 @@ describe('User supplied eight-state requirements', () => {
 });
 describe('Remaining sheet states', () => {
   it.each(['ID','IA','KS','ME','MD','MI','MT','NH','NM','OR','RI','UT','WA','WY'])('%s needs only an active license', s => expect(missing(s)).toEqual([]));
-  it.each([['HI','rx_authority'],['ND','rx_authority'],['NV','active_prescribing_cii'],['SD','full_practice_authority']])('%s needs %s', (s,k) => { expect(missing(s)).toEqual([k]); expect(missing(s,false,[proof(s,k)])).toEqual([]); });
+  it('Nevada needs only an active license, without agreement or prescribing designation', () => {
+    const licenses = [{profileId:'np',state:'NV',status:'active',expiration:'2027-01-01'}];
+    expect(missingSheetRequirements('np','NV',false,[],licenses,day)).toEqual([]);
+    expect(missing('NV')).toEqual([]);
+    expect(activeStateAgreementFlags({id:'np',profession:'NP'},['NV'],[],[],[],day,licenses)).toEqual([]);
+    expect(activeStateAgreementFlags({id:'np',profession:'NP'},['NV'],[],[],[],day,licenses,['NV'])).toEqual([]);
+  });
+  it('Nevada retains known expired-license warnings', () => {
+    expect(missingSheetRequirements('np','NV',false,[],[{profileId:'np',state:'NV',status:'expired',expiration:'2026-11-03'}],day)).toEqual(['active_license']);
+  });
+  it.each([['HI','rx_authority'],['ND','rx_authority'],['SD','full_practice_authority']])('%s needs %s', (s,k) => { expect(missing(s)).toEqual([k]); expect(missing(s,false,[proof(s,k)])).toEqual([]); });
   it.each(['IL','VT','WI'])('%s accepts agreement OR designation', s => { expect(missing(s)).toHaveLength(2); expect(missing(s,true)).toEqual([]); });
   it('MA needs Rx + CSR OR agreement', () => { expect(missing('MA',false,[proof('MA','rx_authority')])).toEqual(['csr_registration','collab_agreement']); expect(missing('MA',false,[proof('MA','rx_authority'),proof('MA','csr_registration')])).toEqual([]); expect(missing('MA',true)).toEqual([]); });
   it.each(['KY','TX'])('%s needs agreement AND board filing', s => { expect(missing(s)).toEqual(['board_registration','collab_agreement']); expect(missing(s,true,[proof(s,'board_registration')])).toEqual([]); });
