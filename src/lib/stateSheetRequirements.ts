@@ -34,7 +34,7 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   OH: { label: 'Signed Collab Agreement', keys: [], agreement: true },
   SD: { label: '"Full Practice Authority/Prescriptive Authority: YES" Status', keys: ['full_practice_authority'] },
   TX: { label: 'Signed Collab Agreement + Filed with State Board', keys: ['board_registration'], agreement: true },
-  VT: { label: '"Independent Practice, Prescriptive Authority" on License OR Signed Collab Agreement', keys: ['independent_practice'], agreement: true, alternative: true },
+  VT: { label: '"Independent Practice, Prescriptive Authority" on License OR Signed Collab Agreement OR Advanced Practice Registered Nurse - Telehealth Registration', keys: ['independent_practice', 'aprn_telehealth_registration'], agreement: true, alternative: true, anyDesignation: true },
   WI: { label: 'Signed Collab Agreement OR Independent Practice Designation on License', keys: ['independent_practice'], agreement: true, alternative: true },
 };
 export const REQUIREMENT_LABELS: Record<string, string> = {
@@ -42,6 +42,7 @@ export const REQUIREMENT_LABELS: Record<string, string> = {
   furnishing_license: 'Nurse Practitioner Furnishing license', c_rxn_license: 'C-RXN license', practice_without_collab: 'Practice without collaborative agreement: yes', autonomous_status: 'Autonomous status on license',
   tlht_designation: 'TLHT (Telehealth) designation',
   nursing_interstate_telehealth_registration: 'Nursing Interstate Telehealth Registration',
+  aprn_telehealth_registration: 'Advanced Practice Registered Nurse - Telehealth Registration',
   full_practice_authority: 'Full practice authority on license', csr_registration: 'Controlled substance registration (CSR)',
   active_prescribing_cii: 'Active Prescribing - CII license status', independent_practice: 'Independent practice designation on license',
 };
