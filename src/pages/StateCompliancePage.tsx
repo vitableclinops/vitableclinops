@@ -52,6 +52,7 @@ import { cn, formatDisplayDate } from '@/lib/utils';
 import type { State, DemandTag, Task, Provider } from '@/types';
 import { toast } from 'sonner';
 import { ProviderRequirementReviews } from '@/components/state-compliance/ProviderRequirementReviews';
+import { useRequiredAgreementFlags } from '@/hooks/useRequiredAgreementFlags';
 
 type FPAFilter = 'all' | 'fpa' | 'no-fpa';
 type CAFilter = 'all' | 'ca-required' | 'no-ca';
@@ -85,6 +86,10 @@ const StateCompliancePage = () => {
   const [complianceTab, setComplianceTab] = useState('overview');
 
   const { profile, roles } = useAuth();
+  // Open provider requirement flags power the red alert badge on the
+  // Provider Requirements tab; this reuses the same cached audit queries.
+  const { flags: requirementFlags } = useRequiredAgreementFlags(true);
+  const requirementFlagCount = requirementFlags.length;
   const { allData: complianceAllData, loading: complianceLoading, refetch: refetchCompliance } = useStateCompliance();
   // A user may hold several roles; admin takes precedence so edit access
   // doesn't depend on the order roles come back from the database.
@@ -216,7 +221,17 @@ const StateCompliancePage = () => {
                 <TableIcon className="h-4 w-4" />
                 Requirements Matrix
               </TabsTrigger>
-              <TabsTrigger value="reviews" className="gap-2"><ShieldCheck className="h-4 w-4" />Provider Requirements</TabsTrigger>
+              <TabsTrigger value="reviews" className="gap-2">
+                <ShieldCheck className="h-4 w-4" />Provider Requirements
+                {requirementFlagCount > 0 && (
+                  <span
+                    className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs font-semibold text-destructive-foreground"
+                    aria-label={`${requirementFlagCount} provider requirement${requirementFlagCount === 1 ? '' : 's'} need attention`}
+                  >
+                    {requirementFlagCount}
+                  </span>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="templates" className="gap-2">
                 <GraduationCap className="h-4 w-4" />
                 Licensure Templates
