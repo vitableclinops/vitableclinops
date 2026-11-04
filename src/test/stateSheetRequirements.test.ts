@@ -43,3 +43,11 @@ describe('User supplied eight-state requirements', () => {
     expect(activeStateAgreementFlags({id:'md',profession:'DO'},[state],[],[],[],day)).toEqual([]);
   });
 });
+describe('Remaining sheet states', () => {
+  it.each(['ID','IA','KS','ME','MD','MI','MT','NH','NM','OR','RI','UT','WA','WY'])('%s needs only an active license', s => expect(missing(s)).toEqual([]));
+  it.each([['HI','rx_authority'],['ND','rx_authority'],['NV','active_prescribing_cii'],['SD','full_practice_authority']])('%s needs %s', (s,k) => { expect(missing(s)).toEqual([k]); expect(missing(s,false,[proof(s,k)])).toEqual([]); });
+  it.each(['IL','VT','WI'])('%s accepts agreement OR designation', s => { expect(missing(s)).toHaveLength(2); expect(missing(s,true)).toEqual([]); });
+  it('MA needs Rx + CSR OR agreement', () => { expect(missing('MA',false,[proof('MA','rx_authority')])).toEqual(['csr_registration','collab_agreement']); expect(missing('MA',false,[proof('MA','rx_authority'),proof('MA','csr_registration')])).toEqual([]); expect(missing('MA',true)).toEqual([]); });
+  it.each(['KY','TX'])('%s needs agreement AND board filing', s => { expect(missing(s)).toEqual(['board_registration','collab_agreement']); expect(missing(s,true,[proof(s,'board_registration')])).toEqual([]); });
+  it.each(['NJ','OH'])('%s needs agreement only', s => { expect(missing(s)).toEqual(['collab_agreement']); expect(missing(s,true)).toEqual([]); });
+});
