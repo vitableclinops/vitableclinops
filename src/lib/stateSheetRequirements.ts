@@ -44,7 +44,7 @@ export const REQUIREMENT_LABELS: Record<string, string> = {
   nursing_interstate_telehealth_registration: 'Nursing Interstate Telehealth Registration',
   aprn_telehealth_registration: 'Advanced Practice Registered Nurse - Telehealth Registration',
   full_practice_authority: 'Full practice authority on license', csr_registration: 'Controlled substance registration (CSR)',
-  capa_ns: 'CAPA-NS (Collaborative Agreement for Prescriptive Authority for Non-Scheduled Drugs)',
+  capa_ns: 'CAPA-NS designation on license (Collaborative Agreement for Prescriptive Authority for Non-Scheduled Drugs)',
   active_prescribing_cii: 'Active Prescribing - CII license status', independent_practice: 'Independent practice designation on license',
 };
 export interface RequirementProof {
