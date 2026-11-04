@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { RefreshCw, Download, Plus, Trash2, Sparkles, Copy } from 'lucide-react';
 import { toast } from 'sonner';
+import { AdviceShiftUpdate } from './AdviceShiftUpdate';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Textarea } from '@/components/ui/textarea';
@@ -179,6 +180,7 @@ export function GapFinderPanel() {
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="secondary" onClick={() => copyText(extractSchedule(ai.data.advice), 'Schedule copied (Eastern Time)')}><Copy className="h-4 w-4 mr-1" />Copy schedule (ET)</Button>
                     <Button size="sm" variant="outline" onClick={() => copyText(ai.data.advice, 'Full advice copied')}><Copy className="h-4 w-4 mr-1" />Copy full advice</Button>
+                    <AdviceShiftUpdate advice={ai.data.advice} month={month} />
                   </div>
                   <p className="text-xs text-muted-foreground">AI advice — all times Eastern. Double-check dates and times before changing Homebase.</p>
                 </div>
