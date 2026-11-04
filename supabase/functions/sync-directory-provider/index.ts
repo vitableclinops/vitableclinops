@@ -88,7 +88,8 @@ Deno.serve(async (req) => {
     source: body.source ?? 'directory',
     is_telemedicine: body.is_telemedicine ?? true,
     is_in_home: body.is_in_home ?? false,
-    active: true,
+    // Offboarded directory providers must never be reactivated in scheduling.
+    active: !['termed', 'terminated'].includes((body.employment_status ?? '').trim().toLowerCase()),
     updated_at: new Date().toISOString(),
   };
 
