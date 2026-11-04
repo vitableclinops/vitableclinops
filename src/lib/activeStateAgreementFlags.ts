@@ -1,7 +1,7 @@
 import { getCollabRequirementType } from '@/constants/stateRestrictions';
 import { isIndependentPhysician, normalizeRole } from '@/lib/clinicianRoles';
 import { parseLocalDate } from '@/lib/utils';
-import { INDEPENDENT_ALTERNATIVE_STATES, RX_AUTHORITY_REQUIRED_STATES, hasVerifiedIndependentPractice, hasVerifiedRxAuthority, type CollabDecision } from '@/lib/nyIndependentPractice';
+import { INDEPENDENT_ALTERNATIVE_STATES, RX_AUTHORITY_REQUIRED_STATES, hasVerifiedIndependentPractice, hasVerifiedRxAuthority, hasVerifiedNcbonRegistration, type CollabDecision } from '@/lib/nyIndependentPractice';
 import { hasPrescriptiveAuthority, type PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
 
 export interface StateAgreement {
@@ -16,7 +16,7 @@ export interface StateAgreement {
   /** Local agreement record ID, used to open the agreement page. */
   agreementId?: string;
 }
-export interface AgreementReview { state: string; reason: string; howToFix: string; authorityReview?: boolean; independentAlternative?: boolean; newlyActive?: boolean }
+export interface AgreementReview { state: string; reason: string; howToFix: string; authorityReview?: boolean; independentAlternative?: boolean; registrationReview?: boolean; newlyActive?: boolean }
 export interface CollaborationRule { state_abbreviation: string; collab_requirement_type: string | null; ca_required: boolean }
 
 /** Audit only identity-resolved EHR states; license lists never imply activation. */
@@ -46,6 +46,15 @@ export function activeStateAgreementFlags(
       && (!a.start || parseLocalDate(a.start.slice(0, 10)) <= day)
       && (!a.end || parseLocalDate(a.end.slice(0, 10)) >= day));
     const agreementOnFile = matching.some(a => a.document?.trim() || a.documentExempt);
+    if (state === 'NC') {
+      const registered = hasVerifiedNcbonRegistration(provider.id, decisions);
+      if (agreementOnFile && registered) return [];
+      return [{ state, registrationReview: !registered, newlyActive: newlyActiveStates.includes(state),
+        reason: !agreementOnFile && !registered ? 'NC signed Collab Agreement and verified NCBON registration are missing.'
+          : !agreementOnFile ? 'Missing active linked NC Collab Agreement with its signed document.'
+          : 'NC Collab Agreement is on file, but NCBON registration has not been verified.',
+        howToFix: `${!agreementOnFile ? 'Add or link the signed NC Collab Agreement. ' : ''}${!registered ? 'Verify registration with NCBON and save where and when it was verified, with a screenshot, document or verification link. ' : ''}NC requires both; independent practice is not an alternative.` }];
+    }
     if (state === 'PA') {
       const rxVerified = hasVerifiedRxAuthority(provider.id, state, decisions);
       if (agreementOnFile && rxVerified) return [];
