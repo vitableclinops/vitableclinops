@@ -162,6 +162,13 @@
       "when": 1793834152041,
       "tag": "0022_allow_ma_aprn_supervision_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793834447345,
+      "tag": "0023_allow_ma_combined_and_agreement_proof",
+      "breakpoints": true
     }
   ]
 }

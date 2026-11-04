@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 export function StateRequirementVerifyDialog({ open, onOpenChange, profileId, providerName, state }: { open: boolean; onOpenChange: (v: boolean) => void; profileId: string; providerName: string; state: string }) {
   const config = SHEET_REQUIREMENTS[state];
   const [selectedKey, setKey] = useState('');
+  const [maPath, setMaPath] = useState('independent');
   const [source, setSource] = useState(''); const [date, setDate] = useState(''); const [link, setLink] = useState(''); const [expiration, setExpiration] = useState('');
   const [file, setFile] = useState<File | null>(null); const [saving, setSaving] = useState(false);
   const { data = [], error, isLoading } = useRequirementProofs(profileId); const { profile } = useAuth(); const client = useQueryClient();
@@ -26,7 +27,8 @@ export function StateRequirementVerifyDialog({ open, onOpenChange, profileId, pr
   const agreement = audit.data?.agreements.some(a => a.profileId === profileId && a.state === state
     && ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase()) && (!!a.document?.trim() || a.documentExempt)
     && (!a.start || parseLocalDate(a.start.slice(0, 10)) <= day) && (!a.end || parseLocalDate(a.end.slice(0, 10)) >= day)) ?? false;
-  const pending = remainingVerificationKeys(profileId, state, agreement, data, audit.data?.sheetLicenses ?? [], day);
+  const remaining = remainingVerificationKeys(profileId, state, agreement, data, audit.data?.sheetLicenses ?? [], day);
+  const pending = state === 'MA' ? remaining.filter(k => maPath === 'independent' ? k === 'ma_csr_independent' : k !== 'ma_csr_independent') : remaining;
   const key = pending.includes(selectedKey) ? selectedKey : pending[0] ?? '';
   const loading = isLoading || audit.isLoading;
   const loadError = error || audit.error;
@@ -35,6 +37,13 @@ export function StateRequirementVerifyDialog({ open, onOpenChange, profileId, pr
     <DialogHeader><DialogTitle>Verify state requirements — {state}</DialogTitle><DialogDescription>{providerName} · {config?.label}</DialogDescription></DialogHeader>
     {loadError && <p className="text-sm text-destructive">Could not load saved verification.</p>}
     {loading && <p className="text-sm text-muted-foreground">Checking saved requirements…</p>}
+    {state === 'MA' && !loading && !loadError && remaining.length > 0 && <>
+      <Label>Verification path</Label>
+      <Select value={maPath} onValueChange={value => { setMaPath(value); setKey(''); setSource(''); setDate(''); setLink(''); setFile(null); setExpiration(''); }}><SelectTrigger aria-label="Verification path"><SelectValue /></SelectTrigger><SelectContent>
+        <SelectItem value="independent">CSR + Independent APRN supervision (one upload)</SelectItem>
+        <SelectItem value="agreement">CSR + Signed Collab Agreement (two items)</SelectItem>
+      </SelectContent></Select>
+    </>}
     {!loading && !loadError && <p className="text-sm font-medium">{pending.length ? `Still to verify: ${pending.map(k => REQUIREMENT_LABELS[k]).join(config?.anyDesignation ? ' OR ' : ' + ')}` : 'No outstanding designation or registration verifications.'}</p>}
     {data.filter(p => p.state_abbreviation === state).map(p => <div key={p.requirement_key} className="text-sm border-b pb-2">
       <p>{REQUIREMENT_LABELS[p.requirement_key]} · {validRequirementProof(p) ? 'Verified' : 'Needs review'} {p.verified_on} {p.verified_attachment_path && <EvidenceLink reference={p.verified_attachment_path}>{p.verified_attachment_name ?? 'View file'}</EvidenceLink>} {p.verified_link && <EvidenceLink reference={p.verified_link}>Open link</EvidenceLink>}</p><p className="text-muted-foreground">{p.verified_source}</p>
