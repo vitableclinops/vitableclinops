@@ -22,6 +22,13 @@ export function hasVerifiedIndependentPractice(profileId: string, state: string,
 /** States where every path also needs a prescriptive-authority designation on the license. */
 export const RX_AUTHORITY_REQUIRED_STATES = new Set(['VA', 'PA']);
 
+/** NCBON registration is separate from the signed agreement and cannot be replaced by independent practice. */
+export function hasVerifiedNcbonRegistration(profileId: string, decisions: CollabDecision[]) {
+  return decisions.some(d => d.profile_id === profileId && d.state_abbreviation === 'NC'
+    && d.decision === 'ncbon_registered' && !!d.verified_source?.trim() && !!d.verified_on
+    && (!!d.verified_attachment_path?.trim() || hasVerificationLink(d.verified_link)));
+}
+
 export function hasVerificationLink(link?: string | null): boolean {
   if (!link?.trim()) return false;
   try {

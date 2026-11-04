@@ -10,16 +10,19 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { EvidenceLink } from './EvidenceLink';
-import { RX_AUTHORITY_REQUIRED_STATES } from '@/lib/nyIndependentPractice';
+import { RX_AUTHORITY_REQUIRED_STATES, hasVerificationLink } from '@/lib/nyIndependentPractice';
 import { refreshAgreementViews } from '@/lib/agreementRefresh';
 
 /** Save a verified independent-practice status for one provider/state. */
 export async function saveIndependentVerification(input: {
   profileId: string; state: string; source: string; verifiedOn: string; notes?: string; decidedBy?: string | null;
-  link?: string; file?: File | null; decision?: 'independent_verified' | 'rx_authority_verified';
+  link?: string; file?: File | null; decision?: 'independent_verified' | 'rx_authority_verified' | 'ncbon_registered';
 }) {
   if (input.state === 'PA' && (input.decision !== 'rx_authority_verified' || !input.source.trim() || !input.verifiedOn || !(input.file instanceof File))) {
     throw new Error('PA requires Rx Authority verification with source, date and an uploaded verification file.');
+  }
+  if (input.state === 'NC' && (input.decision !== 'ncbon_registered' || !input.source.trim() || !input.verifiedOn || (!(input.file instanceof File) && !hasVerificationLink(normalizeLink(input.link))))) {
+    throw new Error('NC requires NCBON registration verification with source, date and a proof file or link.');
   }
   let attachmentPath: string | null = null;
   if (input.file) {
@@ -51,8 +54,8 @@ export function normalizeLink(link?: string | null): string | null {
 
 export type IndependentFieldChange = { source?: string; verifiedOn?: string; link?: string; file?: File | null };
 
-export function IndependentPracticeFields({ source, verifiedOn, link = '', file = null, onChange, requireFile = false }: {
-  source: string; verifiedOn: string; link?: string; file?: File | null; onChange: (v: IndependentFieldChange) => void; requireFile?: boolean;
+export function IndependentPracticeFields({ source, verifiedOn, link = '', file = null, onChange, requireFile = false, registration = false }: {
+  source: string; verifiedOn: string; link?: string; file?: File | null; onChange: (v: IndependentFieldChange) => void; requireFile?: boolean; registration?: boolean;
 }) {
   return (
     <div className="space-y-3">
@@ -63,7 +66,7 @@ export function IndependentPracticeFields({ source, verifiedOn, link = '', file 
       </div>
       <div className="space-y-2 rounded-md border p-3">
         <p className="text-sm font-medium">Proof of verification</p>
-        <p className="text-sm text-muted-foreground">{requireFile ? 'Upload a screenshot or saved document verifying the Rx Authority license designation. The file is clickable once saved.' : 'Upload a download of the verification (e.g. a saved email or screenshot) or paste a link to it. Links become clickable once saved.'}</p>
+        <p className="text-sm text-muted-foreground">{registration ? 'Upload a screenshot or saved NCBON approval, or paste a link verifying NCBON registration. Proof is required and remains clickable once saved.' : requireFile ? 'Upload a screenshot or saved document verifying the Rx Authority license designation. The file is clickable once saved.' : 'Upload a download of the verification (e.g. a saved email or screenshot) or paste a link to it. Links become clickable once saved.'}</p>
         {!requireFile && <div className="space-y-1">
           <Label htmlFor="ind-link">Link (optional)</Label>
           <Input id="ind-link" type="url" placeholder="https://…" value={link} onChange={e => onChange({ link: e.target.value })} />
@@ -95,14 +98,15 @@ export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId,
   const [saving, setSaving] = useState(false);
   const rxState = RX_AUTHORITY_REQUIRED_STATES.has(state);
   const paState = state === 'PA';
+  const ncState = state === 'NC';
   const [vaPath, setVaPath] = useState<'independent_verified' | 'rx_authority_verified'>('independent_verified');
 
   const save = async () => {
     setSaving(true);
     try {
-      await saveIndependentVerification({ profileId, state, source, verifiedOn, notes, link, file, decidedBy: profile?.id, decision: paState ? 'rx_authority_verified' : rxState ? vaPath : 'independent_verified' });
+      await saveIndependentVerification({ profileId, state, source, verifiedOn, notes, link, file, decidedBy: profile?.id, decision: ncState ? 'ncbon_registered' : paState ? 'rx_authority_verified' : rxState ? vaPath : 'independent_verified' });
       await Promise.all([refreshAgreementViews(queryClient), queryClient.invalidateQueries({ queryKey: ['independent-verifications'] })]);
-      toast.success(rxState && (paState || vaPath === 'rx_authority_verified') ? `${providerName}: ${state} prescriptive authority verified` : `${providerName}: independent practice verified in ${state}`);
+      toast.success(ncState ? `${providerName}: NCBON registration verified` : rxState && (paState || vaPath === 'rx_authority_verified') ? `${providerName}: ${state} prescriptive authority verified` : `${providerName}: independent practice verified in ${state}`);
       onOpenChange(false);
     } catch (e) {
       console.error(e);
@@ -114,8 +118,8 @@ export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId,
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{rxState ? `Verify license designations — ${state}` : `Verify independent practice — ${state}`}</DialogTitle>
-          <DialogDescription>{paState ? `${providerName} needs a Collab Agreement plus an Rx Authority license designation. Verify the designation with a source, date and uploaded file; a Collab Agreement is still required.` : rxState
+          <DialogTitle>{ncState ? 'Verify NCBON registration — NC' : rxState ? `Verify license designations — ${state}` : `Verify independent practice — ${state}`}</DialogTitle>
+          <DialogDescription>{ncState ? `${providerName} needs a signed Collab Agreement AND registration with NCBON. Verify registration with a source, date and proof; the Collab Agreement is still required.` : paState ? `${providerName} needs a Collab Agreement plus an Rx Authority license designation. Verify the designation with a source, date and uploaded file; a Collab Agreement is still required.` : rxState
             ? `${providerName} needs either a collaborative agreement plus prescriptive authority, or prescriptive authority plus autonomous practice.`
             : `${providerName} will no longer need a ${state} collaborative agreement once saved.`}</DialogDescription>
         </DialogHeader>
@@ -126,14 +130,14 @@ export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId,
             <label className="flex items-start gap-2"><input type="radio" name="va-path" className="mt-1" checked={vaPath === 'rx_authority_verified'} onChange={() => setVaPath('rx_authority_verified')} /><span>Prescriptive authority only (a signed collaborative agreement is also required)</span></label>
           </div>
         )}
-        <IndependentPracticeFields requireFile={paState} source={source} verifiedOn={verifiedOn} link={link} file={file} onChange={v => { if (v.source !== undefined) setSource(v.source); if (v.verifiedOn !== undefined) setVerifiedOn(v.verifiedOn); if (v.link !== undefined) setLink(v.link); if (v.file !== undefined) setFile(v.file); }} />
+        <IndependentPracticeFields registration={ncState} requireFile={paState} source={source} verifiedOn={verifiedOn} link={link} file={file} onChange={v => { if (v.source !== undefined) setSource(v.source); if (v.verifiedOn !== undefined) setVerifiedOn(v.verifiedOn); if (v.link !== undefined) setLink(v.link); if (v.file !== undefined) setFile(v.file); }} />
         <div className="space-y-1">
           <Label htmlFor="ind-notes">Notes (optional)</Label>
           <Textarea id="ind-notes" value={notes} onChange={e => setNotes(e.target.value)} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={saving || !source.trim() || !verifiedOn || (paState && !(file instanceof File))} onClick={save}>Save verification</Button>
+          <Button disabled={saving || !source.trim() || !verifiedOn || (paState && !(file instanceof File)) || (ncState && !(file instanceof File) && !hasVerificationLink(normalizeLink(link)))} onClick={save}>Save verification</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -147,7 +151,7 @@ export function IndependentVerificationList({ profileId }: { profileId: string }
     queryFn: async () => {
       const { data, error } = await supabase.from('provider_state_collab_decisions')
         .select('state_abbreviation, decision, verified_source, verified_on, verified_link, verified_attachment_path, verified_attachment_name')
-        .eq('profile_id', profileId).in('decision', ['independent_verified', 'rx_authority_verified']).order('state_abbreviation');
+        .eq('profile_id', profileId).in('decision', ['independent_verified', 'rx_authority_verified', 'ncbon_registered']).order('state_abbreviation');
       if (error) throw error;
       return data ?? [];
     },
@@ -155,10 +159,10 @@ export function IndependentVerificationList({ profileId }: { profileId: string }
   if (!data.length) return null;
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium">Verified independent practice</p>
+      <p className="text-sm font-medium">Saved requirement verifications</p>
       {data.map(d => (
         <div key={d.state_abbreviation} className="rounded-md border p-2 text-sm space-y-1">
-          <p><span className="font-medium">{d.state_abbreviation}</span>{d.decision === 'rx_authority_verified' ? ' (Rx authority)' : ''} — {d.verified_source} ({d.verified_on})</p>
+          <p><span className="font-medium">{d.state_abbreviation}</span>{d.decision === 'ncbon_registered' ? ' (NCBON registration)' : d.decision === 'rx_authority_verified' ? ' (Rx authority)' : ''} — {d.verified_source} ({d.verified_on})</p>
           <div className="flex flex-wrap gap-3">
             {d.verified_link && (
               <a href={d.verified_link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary underline break-all">

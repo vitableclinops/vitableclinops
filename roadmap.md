@@ -1,3 +1,4 @@
+- [x] Apply NC signed-agreement + NCBON registration checks to current/future EHR-active NPs; 55 tests pass, signed-in review lists Jarrod, Rachel and Shanta with source/date/proof prompts. No unverified proof saved; real save/readback awaits genuine NCBON evidence.
 - [x] Delete test accounts: Maddi PodLead, Test User
 - [x] Change PA verification to uploaded file only; 48 tests passed, signed-in prompt has no URL field and blocks save without a file. Validation cancelled without saving unverified proof.
 - [x] Require PA Collab Agreement + Rx Authority verification link; 48 tests passed, 18 current PA reviews found signed in, and save stays disabled without a link. No unverified evidence saved; final save/readback requires real verification proof.

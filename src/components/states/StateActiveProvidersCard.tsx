@@ -12,6 +12,7 @@ import { AlertTriangle, CheckCircle2, FileText, ShieldCheck, UserRound } from 'l
 const DECISION_LABEL: Record<string, string> = {
   independent_verified: 'Independent practice verified',
   rx_authority_verified: 'Rx authority verified',
+  ncbon_registered: 'NCBON registration verified',
 };
 
 /** EHR-active providers in one state with their requirement status; shares the live, auto-refreshing audit used by Needs fixing. */
