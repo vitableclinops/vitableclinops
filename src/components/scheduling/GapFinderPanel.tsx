@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { RefreshCw, Download, Plus, Trash2, Sparkles } from 'lucide-react';
+import { RefreshCw, Download, Plus, Trash2, Sparkles, Copy } from 'lucide-react';
+import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Textarea } from '@/components/ui/textarea';
