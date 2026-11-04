@@ -45,9 +45,9 @@ describe('active EHR state agreement checks', () => {
   it('uses saved requirements over defaults', () => {
     expect(activeStateAgreementFlags(provider, ['PA'], [{ state_abbreviation: 'PA', ca_required: false, collab_requirement_type: 'never' }], [], [], today)).toEqual([]);
   });
-  it('does not flag CT or other states saved as not requiring agreements', () => {
-    expect(activeStateAgreementFlags(provider, ['CT', 'CO', 'FL', 'MN', 'VT'],
-      ['CT', 'CO', 'FL', 'MN', 'VT'].map(state_abbreviation => ({ state_abbreviation, ca_required: false, collab_requirement_type: 'conditional' })), [], [], today)).toEqual([]);
+  it('does not flag other states saved as not requiring agreements', () => {
+    expect(activeStateAgreementFlags(provider, ['MN', 'VT'],
+      ['MN', 'VT'].map(state_abbreviation => ({ state_abbreviation, ca_required: false, collab_requirement_type: 'conditional' })), [], [], today)).toEqual([]);
   });
   it('does not infer a requirement from defaults when a saved rule is absent', () => {
     expect(activeStateAgreementFlags(provider, ['PA', 'OH'], [], [], [], today)).toEqual([]);

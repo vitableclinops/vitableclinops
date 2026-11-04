@@ -4,17 +4,17 @@ export const NP_PROHIBITED_STATES = ['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', '
 // Collab requirement classifications based on Notion "CA Required?" field
 // "No" = never required
 export const COLLAB_NEVER_STATES = [
-  'AK', 'AZ', 'DC', 'DE', 'HI', 'ID', 'IA', 'KS', 'MI', 'MT', 'ND', 'NH', 'NM', 'NV', 'OR', 'RI', 'WA', 'WY'
+  'AK', 'AZ', 'CO', 'CT', 'DC', 'DE', 'HI', 'ID', 'IA', 'KS', 'MI', 'MT', 'ND', 'NH', 'NM', 'NV', 'OR', 'RI', 'WA', 'WY'
 ] as const;
 
 // "Yes" = always required
 export const COLLAB_ALWAYS_STATES = [
-  'CA', 'NC', 'NJ', 'OH', 'PA', 'TX', 'WI'
+  'AR', 'CA', 'NC', 'NJ', 'OH', 'PA', 'TX', 'WI'
 ] as const;
 
 // "Unless Autonomous" or "TTP" = conditional on autonomous practice verification
 export const COLLAB_CONDITIONAL_STATES = [
-  'AR', 'CO', 'CT', 'FL', 'IL', 'KY', 'MA', 'MD', 'ME', 'MN', 'NE', 'NY', 'SD', 'UT', 'VA', 'VT', 'WV', 'OK'
+  'FL', 'IL', 'KY', 'MA', 'MD', 'ME', 'MN', 'NE', 'NY', 'SD', 'UT', 'VA', 'VT', 'WV', 'OK'
 ] as const;
 
 export type CollabRequirementType = 'never' | 'always' | 'conditional' | 'md_only';
