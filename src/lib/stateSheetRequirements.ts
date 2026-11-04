@@ -73,3 +73,8 @@ export function missingSheetRequirements(profileId: string, state: string, agree
   if (config.alternative) return (config.agreement && agreement) || (config.anyDesignation ? missing.length < config.keys.length : !missing.length) ? [] : [...missing, ...(config.agreement ? ['collab_agreement'] : [])];
   return [...missing, ...(config.agreement && !agreement ? ['collab_agreement'] : [])];
 }
+
+/** Only outstanding proof fields, in configured order; saved valid proof is never requested again. */
+export function remainingVerificationKeys(profileId: string, state: string, agreement: boolean, proofs: RequirementProof[], licenses: SheetLicense[] = [], day = new Date()): string[] {
+  return missingSheetRequirements(profileId, state, agreement, proofs, licenses, day).filter(key => key !== 'collab_agreement');
+}

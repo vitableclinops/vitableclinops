@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { missingSheetRequirements, sheetLicenseStatus, type RequirementProof } from '@/lib/stateSheetRequirements';
+import { missingSheetRequirements, remainingVerificationKeys, SHEET_REQUIREMENTS, sheetLicenseStatus, type RequirementProof } from '@/lib/stateSheetRequirements';
 import { activeStateAgreementFlags } from '@/lib/activeStateAgreementFlags';
 const day = new Date(2026,10,4);
 const proof = (state: string, key: string): RequirementProof => ({ profile_id:'np', state_abbreviation:state, requirement_key:key, verified_source:'State board', verified_on:'2026-11-03', verified_link:'https://example.org/proof' });
@@ -79,6 +79,21 @@ describe('User supplied eight-state requirements', () => {
   });
 });
 describe('Remaining sheet states', () => {
+  it('MA prompts for CSR only after Rx authority is saved, and Rx only after CSR is saved', () => {
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'rx_authority')], [], day)).toEqual(['csr_registration']);
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'csr_registration')], [], day)).toEqual(['rx_authority']);
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'rx_authority'), proof('MA', 'csr_registration')], [], day)).toEqual([]);
+  });
+  it.each(Object.entries(SHEET_REQUIREMENTS).filter(([, config]) => config.keys.length > 1))('%s does not request a saved valid requirement again', (state, config) => {
+    const saved = config.keys[0];
+    expect(remainingVerificationKeys('np', state, false, [proof(state, saved)], [], day)).not.toContain(saved);
+  });
+  it('requires expired CSR again without re-requesting valid Rx authority', () => {
+    expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'rx_authority'), {...proof('MA', 'csr_registration'), expiration_date: '2026-11-03'}], [], day)).toEqual(['csr_registration']);
+  });
+  it('does not prompt for Kentucky CAPA-NS again when a signed agreement substitutes for it', () => {
+    expect(remainingVerificationKeys('np', 'KY', true, [], [], day)).toEqual(['rx_authority']);
+  });
   it.each(['ID','IA','KS','ME','MD','MI','MT','NH','NM','OR','RI','UT','WA','WY'])('%s needs only an active license', s => expect(missing(s)).toEqual([]));
   it('Nevada needs only an active license, without agreement or prescribing designation', () => {
     const licenses = [{profileId:'np',state:'NV',status:'active',expiration:'2027-01-01'}];
