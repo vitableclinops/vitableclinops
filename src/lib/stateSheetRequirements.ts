@@ -69,7 +69,7 @@ export function missingSheetRequirements(profileId: string, state: string, agree
   const config = SHEET_REQUIREMENTS[state];
   if (!config) return [];
   if (config.keys.length === 1 && config.keys[0] === 'active_license') return sheetLicenseStatus(profileId, state, licenses, proofs, day) === 'invalid' ? ['active_license'] : [];
-  const missing = config.keys.filter(key => (config.agreementSubstitute === key && agreement) || !proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day)));
+  const missing = config.keys.filter(key => !(config.agreementSubstitute === key && agreement) && !proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day)));
   if (config.alternative) return (config.agreement && agreement) || (config.anyDesignation ? missing.length < config.keys.length : !missing.length) ? [] : [...missing, ...(config.agreement ? ['collab_agreement'] : [])];
   return [...missing, ...(config.agreement && !agreement ? ['collab_agreement'] : [])];
 }
