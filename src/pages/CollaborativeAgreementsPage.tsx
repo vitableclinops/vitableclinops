@@ -32,7 +32,6 @@ import { CURRENT_EMPLOYEE_FILTER } from '@/lib/employeeVisibility';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useStateCompliance, StateCompliance } from '@/hooks/useStateCompliance';
-import { useRequiredAgreementFlags } from '@/hooks/useRequiredAgreementFlags';
 import { useScheduledMeetings } from '@/hooks/useScheduledMeetings';
 import { 
   Users,
@@ -71,8 +70,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Label } from '@/components/ui/label';
 import { cn, formatDisplayDate } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
-import { IndependentPracticeVerifyDialog } from '@/components/agreements/IndependentPracticeVerifyDialog';
-import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
 
 type DbAgreement = Tables<'collaborative_agreements'>;
 type DbProvider = Tables<'agreement_providers'>;
@@ -167,9 +164,6 @@ const CollaborativeAgreementsPage = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { profile, roles, hasRole } = useAuth();
-  const { flags: requiredAgreementFlags, loading: requiredFlagsLoading, error: requiredFlagsError } = useRequiredAgreementFlags(roles.includes('admin'));
-  const [verifyIndependent, setVerifyIndependent] = useState<{ profileId: string; name: string; state: string } | null>(null);
-  const [gapPrefill, setGapPrefill] = useState<{ stateAbbr: string; skipProcess: boolean; provider: { id: string; name: string; email: string; npi?: string } } | null>(null);
   const { allData: stateComplianceData, loading: complianceLoading } = useStateCompliance();
   const { getNextMeetingForAgreement, hasMeetingScheduled, loading: meetingsLoading } = useScheduledMeetings();
   const { data: physicianSlotRows, isPending: slotsLoading, isError: slotsError } = usePhysicianSlots();
@@ -283,7 +277,7 @@ const CollaborativeAgreementsPage = () => {
       ? dbProviders.filter(p => p.agreement_id === a.id && p.is_active && p.provider_id && pendingFlagIds.has(p.provider_id))
       : [];
   const incompleteAgreements = dbAgreements.filter(a => (!a.provider_name && !a.provider_email) || staleFlagProviders(a).length > 0);
-  const incompleteCount = incompleteAgreements.length + requiredAgreementFlags.length;
+  const incompleteCount = incompleteAgreements.length;
 
   const getIncompleteIssues = (a: DbAgreement) => {
     const linked = dbProviders.filter(p => p.agreement_id === a.id && p.is_active);
@@ -596,9 +590,8 @@ const CollaborativeAgreementsPage = () => {
   // Existing historical/licensed-only agreements remain accessible, not compliance flags.
   const needsFixingCount = incompleteCount;
   // When a state filter is active (e.g. arrived via a state card link), scope the Needs fixing dialog to it.
-  const dialogFlags = stateFilter === 'all' ? requiredAgreementFlags : requiredAgreementFlags.filter(f => f.state === stateFilter);
   const dialogIncomplete = stateFilter === 'all' ? incompleteAgreements : incompleteAgreements.filter(a => a.state_abbreviation === stateFilter);
-  const dialogCount = dialogFlags.length + dialogIncomplete.length;
+  const dialogCount = dialogIncomplete.length;
   
   // Upcoming meetings in next 14 days
   const upcomingMeetings = flattenedAgreements.filter(
@@ -781,7 +774,6 @@ const CollaborativeAgreementsPage = () => {
             open={wizardOpen} 
             onOpenChange={setWizardOpen}
             onSuccess={() => fetchDbAgreements()}
-            prefill={gapPrefill}
           />
 
           <CompanyMeetingWizard
@@ -841,14 +833,13 @@ const CollaborativeAgreementsPage = () => {
             <StatCard
               title="Needs Fixing"
               value={needsFixingCount}
-              subtitle="Incomplete agreements / active-state reviews"
+              subtitle="Incomplete agreements"
               icon={AlertTriangle}
               variant={needsFixingCount > 0 ? 'danger' : 'success'}
               onClick={() => { setSelectedIncompleteId(null); setIncompleteOpen(true); }}
             />
           </div>
 
-          {verifyIndependent && <IndependentPracticeVerifyDialog open onOpenChange={o => { if (!o) setVerifyIndependent(null); }} profileId={verifyIndependent.profileId} providerName={verifyIndependent.name} state={verifyIndependent.state} />}
           <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
@@ -856,31 +847,9 @@ const CollaborativeAgreementsPage = () => {
                 <DialogDescription>Click an agreement to see why it's incomplete and how to fix it.</DialogDescription>
                 {stateFilter !== 'all' && <p className="text-xs text-muted-foreground">Filtered to {stateFilter}. Select "All states" in the state filter to see everything.</p>}
               </DialogHeader>
-              {requiredFlagsLoading && <p className="text-sm text-muted-foreground">Checking required agreements…</p>}
-              {requiredFlagsError && <p className="text-sm text-destructive">Required agreement checks unavailable.</p>}
-              {dialogCount === 0 && !requiredFlagsLoading && !requiredFlagsError && (
-                <p className="text-sm text-muted-foreground">Nothing to fix — all agreements are complete.</p>
-              )}
+              {dialogCount === 0 && <p className="text-sm text-muted-foreground">Nothing to fix — all agreements are complete.</p>}
+              <Button variant="link" asChild><Link to={`/admin/states?tab=reviews${stateFilter !== 'all' ? `&state=${stateFilter}` : ''}`}>Provider requirement reviews in States &amp; Compliance</Link></Button>
               <div className="space-y-2">
-                {dialogFlags.map(flag => {
-                  const existing = dbAgreements.find(a => a.state_abbreviation === flag.state && isLiveAgreement(a) && (a.provider_id === flag.provider.id || dbProviders.some(p => p.agreement_id === a.id && p.provider_id === flag.provider.id && p.is_active)));
-                  return (
-                    <div key={`required:${flag.provider.id}:${flag.state}`} className="rounded-lg border p-3 space-y-2">
-                      <p className="text-sm font-medium">{flag.name} — {flag.state}</p>
-                      {flag.newlyActive && <p className="text-sm text-warning">Newly active in EHR</p>}
-                      <p className="text-sm text-destructive">Why: {flag.reason}</p>
-                      <p className="text-sm text-muted-foreground">How to fix: {flag.howToFix}</p>
-                      <div className="flex flex-wrap gap-2">
-                        {(flag.sheetReview || flag.independentAlternative || flag.registrationReview) && <Button size="sm" variant="outline" onClick={() => { setVerifyIndependent({ profileId: flag.provider.id, name: flag.name, state: flag.state }); setIncompleteOpen(false); }}>{flag.sheetReview ? 'Verify state requirements' : flag.registrationReview ? 'Verify NCBON registration' : flag.state === 'VA' || flag.state === 'PA' ? 'Verify license designations' : 'Verify independent practice'}</Button>}
-                        {existing ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.id}`}>Open agreement</Link></Button> : (!SHEET_REQUIREMENTS[flag.state] || SHEET_REQUIREMENTS[flag.state].agreement) && <Button size="sm" onClick={() => {
-                          setGapPrefill({ stateAbbr: flag.state, skipProcess: true, provider: { id: flag.provider.id, name: flag.name, email: flag.provider.email, npi: flag.provider.npi_number ?? undefined } });
-                          setIncompleteOpen(false); setWizardOpen(true);
-                        }}>Add / link agreement</Button>}
-                        <Button size="sm" variant="outline" asChild><Link to="/directory">Provider directory</Link></Button>
-                      </div>
-                    </div>
-                  );
-                })}
                 {dialogIncomplete.map(a => {
                   const { linked, issues } = getIncompleteIssues(a);
                   const open = selectedIncompleteId === a.id;
