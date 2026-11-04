@@ -109,11 +109,13 @@ describe('Remaining sheet states', () => {
     }
   });
   it('MA needs Rx + CSR OR agreement', () => { expect(missing('MA',false,[proof('MA','rx_authority')])).toEqual(['csr_registration','collab_agreement']); expect(missing('MA',false,[proof('MA','rx_authority'),proof('MA','csr_registration')])).toEqual([]); expect(missing('MA',true)).toEqual([]); });
-  it('Kentucky accepts CAPA-NS + prescriptive authority OR a signed agreement', () => {
-    expect(missing('KY')).toEqual(['capa_ns','rx_authority','collab_agreement']);
-    expect(missing('KY',false,[proof('KY','capa_ns'),proof('KY','rx_authority')])).toEqual([]);
-    expect(missing('KY',true)).toEqual([]);
-    expect(missing('KY',true,[proof('KY','capa_ns')])).toEqual([]);
+  it('Kentucky needs a CAPA-NS agreement AND a prescriptive authority designation', () => {
+    expect(missing('KY')).toEqual(['rx_authority','collab_agreement']);
+    expect(missing('KY',true)).toEqual(['rx_authority']);
+    expect(missing('KY',true,[proof('KY','rx_authority')])).toEqual([]);
+    for (const change of [{expiration_date:'2026-11-03'},{profile_id:'other'},{state_abbreviation:'TX'},{verified_link:null},{verified_source:''}]) {
+      expect(missing('KY',true,[{...proof('KY','rx_authority'),...change}])).toEqual(['rx_authority']);
+    }
   });
   it('TX needs agreement AND board filing', () => { expect(missing('TX')).toEqual(['board_registration','collab_agreement']); expect(missing('TX',true,[proof('TX','board_registration')])).toEqual([]); });
   it.each(['NJ','OH'])('%s needs agreement only', s => { expect(missing(s)).toEqual(['collab_agreement']); expect(missing(s,true)).toEqual([]); });
