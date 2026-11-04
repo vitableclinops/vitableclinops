@@ -20,6 +20,7 @@ describe('existing agreement uploads', () => {
     const today = new Date(2026, 9, 28);
     expect(activeStateAgreementFlags(provider, ['PA'], rules, [], [], today)).toHaveLength(1);
     const document = agreementDocumentEvidence('a', 'p', null, [], [{ agreement_id: 'a', task_id: null, file_path: 'existing.pdf' }], []);
-    expect(activeStateAgreementFlags(provider, ['PA'], rules, [{ profileId: 'p', state: 'PA', status: 'active', document }], [], today)).toEqual([]);
+    const rxProof = [{ profile_id: 'p', state_abbreviation: 'PA', decision: 'rx_authority_verified', verified_source: 'State board', verified_on: '2026-10-28', verified_attachment_path: 'rx-proof.png' }];
+    expect(activeStateAgreementFlags(provider, ['PA'], rules, [{ profileId: 'p', state: 'PA', status: 'active', document }], rxProof, today)).toEqual([]);
   });
 });
