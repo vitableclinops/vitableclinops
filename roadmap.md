@@ -1,4 +1,4 @@
-- [ ] Change Nevada to active license only and verify current/future provider audits and saved state requirements.
+- [x] Change Nevada to active license only; 50 tests pass including current/future audits and expired-license warnings, saved no-collaboration rule confirmed, and signed-in provider reviews show no Nevada designation prompts.
 - [x] Add Delaware Nursing Interstate Telehealth Registration OR Rx endorsement verification; 49 tests pass, eight signed-in verification actions and registration option verified. No invented proof saved.
 - [x] Add Florida TLHT (Telehealth) verification alternative; 62 tests pass for current/future active-state flags; signed-in Florida reviews show nine verification actions and selectable TLHT proof, with save blocked without evidence. No unverified proof saved.
 - [x] Move active-state reviews to States & Compliance → Provider Requirements; state filter, verification and agreement actions verified signed in; Agreements retains incomplete records only. Existing requirements unchanged; 42 tests pass.
