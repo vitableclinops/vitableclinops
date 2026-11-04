@@ -4286,6 +4286,94 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_requirement_verifications: {
+        Row: {
+          expiration_date: string | null
+          id: string
+          profile_id: string
+          requirement_key: string
+          state_abbreviation: string
+          updated_at: string
+          verified_attachment_name: string | null
+          verified_attachment_path: string | null
+          verified_by: string | null
+          verified_link: string | null
+          verified_on: string
+          verified_source: string
+        }
+        Insert: {
+          expiration_date?: string | null
+          id?: string
+          profile_id: string
+          requirement_key: string
+          state_abbreviation: string
+          updated_at?: string
+          verified_attachment_name?: string | null
+          verified_attachment_path?: string | null
+          verified_by?: string | null
+          verified_link?: string | null
+          verified_on: string
+          verified_source: string
+        }
+        Update: {
+          expiration_date?: string | null
+          id?: string
+          profile_id?: string
+          requirement_key?: string
+          state_abbreviation?: string
+          updated_at?: string
+          verified_attachment_name?: string | null
+          verified_attachment_path?: string | null
+          verified_by?: string | null
+          verified_link?: string | null
+          verified_on?: string
+          verified_source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_requirement_verifications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_requirement_verifications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_requirement_verifications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_requirement_verifications_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "physician_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_requirement_verifications_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_requirement_verifications_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "provider_directory_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       provider_state_collab_decisions: {
         Row: {
           created_at: string
