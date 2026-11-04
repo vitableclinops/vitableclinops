@@ -92,7 +92,7 @@ describe('Remaining sheet states', () => {
     expect(remainingVerificationKeys('np', 'MA', false, [proof('MA', 'ma_signed_collab_agreement'), {...proof('MA', 'csr_registration'), expiration_date: '2026-11-03'}], [], day)).toEqual(['ma_csr_independent','csr_registration']);
   });
   it('does not prompt for Kentucky CAPA-NS again when a signed agreement substitutes for it', () => {
-    expect(remainingVerificationKeys('np', 'KY', true, [], [], day)).toEqual(['rx_authority','independent_ns_rx_authority']);
+    expect(remainingVerificationKeys('np', 'KY', true, [], [], day)).toEqual(['independent_ns_rx_authority']);
   });
   it.each(['ID','IA','KS','ME','MD','MI','MT','NH','NM','OR','RI','UT','WA','WY'])('%s needs only an active license', s => expect(missing(s)).toEqual([]));
   it('Nevada needs only an active license, without agreement or prescribing designation', () => {
@@ -140,18 +140,16 @@ describe('Remaining sheet states', () => {
     expect(activeStateAgreementFlags(np,['MA'],[],agreements,[],day,[],[],[proof('MA','csr_registration')])).toEqual([]);
     expect(activeStateAgreementFlags(np,[],[],agreements,[],day)).toEqual([]);
   });
-  it('Kentucky needs CAPA-NS/Prescriptive authority designations on license; a signed collab agreement substitutes for CAPA-NS', () => {
-    expect(missing('KY')).toEqual(['capa_ns','rx_authority','independent_ns_rx_authority']);
-    expect(missing('KY',true)).toEqual(['rx_authority','independent_ns_rx_authority']);
-    expect(missing('KY',false,[proof('KY','capa_ns')])).toEqual(['rx_authority','independent_ns_rx_authority']);
-    expect(missing('KY',false,[proof('KY','capa_ns'),proof('KY','rx_authority')])).toEqual([]);
-    expect(missing('KY',false,[proof('KY','rx_authority')])).toEqual(['capa_ns','independent_ns_rx_authority']);
+  it('Kentucky needs CAPA-NS designation OR Independent NS prescriptive authority; a signed collab agreement substitutes for CAPA-NS', () => {
+    expect(missing('KY')).toEqual(['capa_ns','independent_ns_rx_authority']);
+    expect(missing('KY',true)).toEqual([]);
+    expect(missing('KY',false,[proof('KY','capa_ns')])).toEqual([]);
     expect(missing('KY',false,[proof('KY','independent_ns_rx_authority')])).toEqual([]);
     expect(missing('KY',true,[proof('KY','independent_ns_rx_authority')])).toEqual([]);
     for (const change of [{expiration_date:'2026-11-03'},{profile_id:'other'},{state_abbreviation:'TX'},{verified_link:null},{verified_source:''}]) {
-      expect(missing('KY',false,[{...proof('KY','rx_authority'),...change},proof('KY','capa_ns')])).toEqual(['rx_authority','independent_ns_rx_authority']);
-      expect(missing('KY',false,[{...proof('KY','capa_ns'),...change},proof('KY','rx_authority')])).toEqual(['capa_ns','independent_ns_rx_authority']);
-      expect(missing('KY',false,[{...proof('KY','independent_ns_rx_authority'),...change}])).toEqual(['capa_ns','rx_authority','independent_ns_rx_authority']);
+      expect(missing('KY',false,[{...proof('KY','capa_ns'),...change}])).toEqual(['capa_ns','independent_ns_rx_authority']);
+      expect(missing('KY',false,[{...proof('KY','independent_ns_rx_authority'),...change}])).toEqual(['capa_ns','independent_ns_rx_authority']);
+      expect(missing('KY',true,[{...proof('KY','capa_ns'),...change}])).toEqual(['independent_ns_rx_authority']);
     }
   });
   it('TX needs agreement AND board filing', () => { expect(missing('TX')).toEqual(['board_registration','collab_agreement']); expect(missing('TX',true,[proof('TX','board_registration')])).toEqual([]); });
