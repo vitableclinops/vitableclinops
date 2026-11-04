@@ -26,7 +26,7 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   WY: { label: 'Active license status only', keys: ['active_license'] },
   HI: { label: '"Prescriptive authority" Special Privilege Designation on License', keys: ['rx_authority'] },
   IL: { label: 'Signed Collab Agreement OR Full Practice Authority APRN License', keys: ['full_practice_authority'], agreement: true, alternative: true },
-  KY: { label: 'CAPA-NS/Prescriptive authority designations on license (no collab agreement needed unless this is not on the license)', keys: ['capa_ns', 'rx_authority'], agreementSubstitute: 'capa_ns' },
+  KY: { label: 'CAPA-NS/Prescriptive authority designations on license OR Independent NS prescriptive authority', keys: ['capa_ns', 'rx_authority', 'independent_ns_rx_authority'], agreementSubstitute: 'capa_ns' },
   MA: { label: 'CSR + Independent APRN supervision status (one combined verification) OR CSR designation + Signed Collab Agreement (two separate items)', keys: ['ma_csr_independent', 'csr_registration', 'ma_signed_collab_agreement'], agreement: true },
   NV: { label: 'Active license status only', keys: ['active_license'] },
   NJ: { label: 'Signed Collab Agreement', keys: [], agreement: true },
@@ -48,6 +48,7 @@ export const REQUIREMENT_LABELS: Record<string, string> = {
   ma_signed_collab_agreement: 'Signed Collab Agreement',
   full_practice_authority: 'Full practice authority on license', csr_registration: 'Controlled substance registration (CSR)',
   capa_ns: 'CAPA-NS designation on license (Collaborative Agreement for Prescriptive Authority for Non-Scheduled Drugs)',
+  independent_ns_rx_authority: 'Independent NS prescriptive authority',
   active_prescribing_cii: 'Active Prescribing - CII license status', independent_practice: 'Independent practice designation on license',
 };
 export interface RequirementProof {
@@ -71,6 +72,11 @@ export function sheetLicenseStatus(profileId: string, state: string, licenses: S
 export function missingSheetRequirements(profileId: string, state: string, agreement: boolean, proofs: RequirementProof[], licenses: SheetLicense[], day = new Date()): string[] {
   const config = SHEET_REQUIREMENTS[state];
   if (!config) return [];
+  if (state === 'KY') {
+    const valid = (key: string) => proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day));
+    if (valid('independent_ns_rx_authority') || (valid('rx_authority') && (agreement || valid('capa_ns')))) return [];
+    return [...(agreement || valid('capa_ns') ? [] : ['capa_ns']), ...(valid('rx_authority') ? [] : ['rx_authority']), ...(valid('independent_ns_rx_authority') ? [] : ['independent_ns_rx_authority'])];
+  }
   if (state === 'MA') {
     const valid = (key: string) => proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day));
     if (valid('ma_csr_independent') || (valid('csr_registration') && (agreement || valid('ma_signed_collab_agreement')))) return [];

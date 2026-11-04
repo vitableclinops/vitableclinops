@@ -46,7 +46,7 @@ export function activeStateAgreementFlags(
         && (!a.start || parseLocalDate(a.start.slice(0,10)) <= day) && (!a.end || parseLocalDate(a.end.slice(0,10)) >= day));
       const missing = missingSheetRequirements(provider.id, state, agreement, requirementProofs, sheetLicenses, day);
       return missing.length ? [{ state, sheetReview: missing.some(k => k !== 'collab_agreement'), newlyActive: newlyActiveStates.includes(state),
-        reason: `${state} requirements need verification: ${state === 'MA' ? `${REQUIREMENT_LABELS.ma_csr_independent} OR ${missing.filter(k => k !== 'ma_csr_independent').map(k => REQUIREMENT_LABELS[k]).join(' + ')}` : missing.map(k => REQUIREMENT_LABELS[k] ?? 'Signed Collab Agreement').join(SHEET_REQUIREMENTS[state].alternative ? ' OR ' : ' + ')}.`,
+        reason: `${state} requirements need verification: ${state === 'MA' ? `${REQUIREMENT_LABELS.ma_csr_independent} OR ${missing.filter(k => k !== 'ma_csr_independent').map(k => REQUIREMENT_LABELS[k]).join(' + ')}` : state === 'KY' ? `${REQUIREMENT_LABELS.capa_ns} + ${REQUIREMENT_LABELS.rx_authority} OR ${REQUIREMENT_LABELS.independent_ns_rx_authority}` : missing.map(k => REQUIREMENT_LABELS[k] ?? 'Signed Collab Agreement').join(SHEET_REQUIREMENTS[state].alternative ? ' OR ' : ' + ')}.`,
         howToFix: `${SHEET_REQUIREMENTS[state].label}. Save verification source, date and a proof file or link for each missing license designation or registration.${SHEET_REQUIREMENTS[state].agreement ? ' Add/link the signed agreement when needed. DirectShifts exempts agreement-document uploads only.' : ''}` }] : [];
     }
     // Alternative states require a documented agreement or source-and-date independent verification.
