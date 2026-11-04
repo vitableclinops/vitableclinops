@@ -23,6 +23,7 @@ import {
   LogOut,
   LayoutDashboard,
   Map as MapIcon,
+  Search,
   Send,
   TrendingUp,
   User,
@@ -53,6 +54,7 @@ const items = [
 // Supporting tools, kept separate from the primary five-stage flow.
 const secondaryItems = [
   { label: 'Exceptions', icon: ClipboardList, href: '/scheduling/workbench?section=review&view=exceptions&scope=all' },
+  { label: 'Gap Finder', icon: Search, href: '/scheduling/workbench?section=gap-finder&scope=all' },
   { label: 'Data & Sources', icon: HelpCircle, href: '/scheduling/workbench?section=data-sources&scope=all' },
   { label: 'Homebase Schedule', icon: Database, href: '/admin/homebase-schedule' },
   { label: 'Mental Health', icon: Brain, href: '/scheduling/workbench?section=readiness&scope=mental_health' },
