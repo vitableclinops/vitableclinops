@@ -169,6 +169,13 @@
       "when": 1793834447345,
       "tag": "0023_allow_ma_combined_and_agreement_proof",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793834666084,
+      "tag": "0024_allow_kentucky_independent_ns_proof",
+      "breakpoints": true
     }
   ]
 }
