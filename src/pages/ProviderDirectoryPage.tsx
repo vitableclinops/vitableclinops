@@ -500,7 +500,7 @@ const ProviderDirectoryPage = () => {
       agreementReviews: (() => {
         const states = !pcpCoverageLoading ? pcpCoverage?.statesByProfile.get(p.id) : undefined;
         return agreementAudit && states && !isTestAccountDirectoryRecord(p)
-          ? activeStateAgreementFlags(p, states, agreementAudit.rules, agreementAudit.agreements, agreementAudit.decisions, new Date(), agreementAudit.authorityEvidence, pcpCoverage?.newlyActiveStatesByProfile?.get(p.id)) : [];
+          ? activeStateAgreementFlags(p, states, agreementAudit.rules, agreementAudit.agreements, agreementAudit.decisions, new Date(), agreementAudit.authorityEvidence, pcpCoverage?.newlyActiveStatesByProfile?.get(p.id), agreementAudit.requirementProofs, agreementAudit.sheetLicenses) : [];
       })(),
     }))
     .filter(p => p.conflicts.length > 0 || p.identityReview || p.agreementReviews.length > 0 || p.profileReviews.length > 0)
