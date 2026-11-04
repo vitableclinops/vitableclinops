@@ -212,6 +212,21 @@ const CollaborativeAgreementsPage = () => {
   const { transfers: allTransfers, loading: transfersLoading, refetch: refetchTransfers } = useAgreementTransfers();
   const transfers = allTransfers.filter(t => t.status !== 'cancelled' && t.status !== 'completed');
 
+  // Open agreement task count powers the red badge on the Tasks tab, mirroring
+  // the Provider Requirements badge on States & Compliance.
+  const { data: openTaskCount = 0 } = useQuery({
+    queryKey: ['agreement-open-task-count'],
+    ...AGREEMENT_REFRESH_OPTIONS,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('agreement_tasks')
+        .select('id', { count: 'exact', head: true })
+        .not('status', 'in', '("completed","archived")');
+      if (error) return 0;
+      return count ?? 0;
+    },
+  });
+
   // Database agreements and providers
   const { data: agreementData, isPending: loading } = useQuery({
     queryKey: ['agreements', 'overview'],
