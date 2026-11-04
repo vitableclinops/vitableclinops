@@ -1,0 +1,2 @@
+ALTER TABLE public.provider_state_collab_decisions DROP CONSTRAINT provider_state_collab_decisions_decision_check;
+ALTER TABLE public.provider_state_collab_decisions ADD CONSTRAINT provider_state_collab_decisions_decision_check CHECK (decision IN ('requires_collab', 'no_collab_required', 'pending_review', 'independent_verified', 'rx_authority_verified', 'ncbon_registered'));

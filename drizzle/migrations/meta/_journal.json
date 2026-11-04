@@ -106,6 +106,13 @@
       "when": 1793391888430,
       "tag": "0014_allow_rx_authority_decision",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793755487684,
+      "tag": "0015_allow_ncbon_registration_verification",
+      "breakpoints": true
     }
   ]
 }
