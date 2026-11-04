@@ -12,6 +12,8 @@ import { toast } from 'sonner';
 import { EvidenceLink } from './EvidenceLink';
 import { RX_AUTHORITY_REQUIRED_STATES, hasVerificationLink } from '@/lib/nyIndependentPractice';
 import { refreshAgreementViews } from '@/lib/agreementRefresh';
+import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
+import { StateRequirementVerifyDialog, StateRequirementProofList } from './StateRequirementVerifyDialog';
 
 /** Save a verified independent-practice status for one provider/state. */
 export async function saveIndependentVerification(input: {
@@ -85,7 +87,7 @@ export function IndependentPracticeFields({ source, verifiedOn, link = '', file 
   );
 }
 
-export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId, providerName, state }: {
+function LegacyPracticeVerifyDialog({ open, onOpenChange, profileId, providerName, state }: {
   open: boolean; onOpenChange: (o: boolean) => void; profileId: string; providerName: string; state: string;
 }) {
   const { profile } = useAuth();
@@ -144,6 +146,10 @@ export function IndependentPracticeVerifyDialog({ open, onOpenChange, profileId,
   );
 }
 
+export function IndependentPracticeVerifyDialog(props: { open: boolean; onOpenChange: (o: boolean) => void; profileId: string; providerName: string; state: string }) {
+  return SHEET_REQUIREMENTS[props.state] ? <StateRequirementVerifyDialog key={`${props.profileId}:${props.state}`} {...props} /> : <LegacyPracticeVerifyDialog {...props} />;
+}
+
 /** Saved independent-practice verifications for a provider, with clickable proof. */
 export function IndependentVerificationList({ profileId }: { profileId: string }) {
   const { data = [] } = useQuery({
@@ -156,9 +162,9 @@ export function IndependentVerificationList({ profileId }: { profileId: string }
       return data ?? [];
     },
   });
-  if (!data.length) return null;
   return (
     <div className="space-y-2">
+      <StateRequirementProofList profileId={profileId} />
       <p className="text-sm font-medium">Saved requirement verifications</p>
       {data.map(d => (
         <div key={d.state_abbreviation} className="rounded-md border p-2 text-sm space-y-1">

@@ -7,6 +7,7 @@ import { useRequiredAgreementFlags } from '@/hooks/useRequiredAgreementFlags';
 import { isOffboarded } from '@/lib/employeeVisibility';
 import { isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
+import { REQUIREMENT_LABELS, SHEET_REQUIREMENTS, sheetLicenseStatus, validRequirementProof } from '@/lib/stateSheetRequirements';
 import { AlertTriangle, CheckCircle2, FileText, ShieldCheck, UserRound } from 'lucide-react';
 
 const DECISION_LABEL: Record<string, string> = {
@@ -64,9 +65,11 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
                 </div>
                 {providerFlags.length
                   ? <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" />Needs fixing</Badge>
-                  : <Badge variant="secondary" className="gap-1"><CheckCircle2 className="h-3 w-3" />Requirements met</Badge>}
+                  : <Badge variant="secondary" className="gap-1"><CheckCircle2 className="h-3 w-3" />{(state === 'AK' || state === 'AZ') && sheetLicenseStatus(p.id, state, audit?.sheetLicenses ?? [], audit?.requirementProofs ?? []) === 'unknown' ? 'License status unconfirmed' : 'Requirements met'}</Badge>}
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
+                {(state === 'AK' || state === 'AZ') && <span>Active license: {sheetLicenseStatus(p.id, state, audit?.sheetLicenses ?? [], audit?.requirementProofs ?? []) === 'unknown' ? 'Not confirmed in saved sources (no additional requirements)' : sheetLicenseStatus(p.id, state, audit?.sheetLicenses ?? [], audit?.requirementProofs ?? [])}</span>}
+                {SHEET_REQUIREMENTS[state] && (audit?.requirementProofs ?? []).filter(d => d.profile_id === p.id && d.state_abbreviation === state).map(d => <span key={d.requirement_key} className="inline-flex flex-wrap items-center gap-1 text-muted-foreground"><ShieldCheck className="h-3 w-3" />{REQUIREMENT_LABELS[d.requirement_key]} · {validRequirementProof(d) ? 'Verified' : 'Needs review'} {d.verified_on} {d.verified_attachment_path && <EvidenceLink reference={d.verified_attachment_path}>{d.verified_attachment_name ?? 'View file'}</EvidenceLink>} {d.verified_link && <EvidenceLink reference={d.verified_link}>Open link</EvidenceLink>} · {d.verified_source}</span>)}
                 {agreements.map((a, i) => (
                   <span key={i} className="inline-flex items-center gap-2">
                     <span className="inline-flex items-center gap-1 text-muted-foreground"><FileText className="h-3 w-3" />Collab Agreement{a.documentExempt ? ' (Direct Shifts)' : ''}</span>

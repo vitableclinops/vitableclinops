@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
+import { StateRequirementVerifyDialog } from '../StateRequirementVerifyDialog';
 import { Button } from '@/components/ui/button';
 import { IndependentPracticeFields } from '../IndependentPracticeVerifyDialog';
 import { Card } from '@/components/ui/card';
@@ -31,6 +34,7 @@ interface ReviewStepProps {
 export const ReviewStep = ({ formData, updateFormData, requireDocument = false, eitherOrState = false }: ReviewStepProps) => {
   const independent = eitherOrState && formData.independentPath === 'independent';
   const stateCode = formData.selectedState?.abbreviation;
+  const [verifyProvider, setVerifyProvider] = useState<{ id: string; name: string } | null>(null);
 
   // Check whether this state has collab email requirements configured.
   // If not, the auto-send on submit will be blocked by send-collab-email.
@@ -57,6 +61,8 @@ export const ReviewStep = ({ formData, updateFormData, requireDocument = false, 
 
   return (
     <div className="space-y-4">
+      {stateCode && SHEET_REQUIREMENTS[stateCode] && <div className="space-y-2 border-b pb-3"><p className="font-medium text-sm">Requirements: {SHEET_REQUIREMENTS[stateCode].label}</p>{formData.providers.map(p => p.id ? <Button key={p.id} size="sm" variant="outline" onClick={() => setVerifyProvider({ id: p.id ?? '', name: p.name })}>Verify {p.name} requirements</Button> : <p key={p.email} className="text-sm text-destructive">Select a saved directory profile for {p.name}.</p>)}</div>}
+      {verifyProvider && stateCode && <StateRequirementVerifyDialog open profileId={verifyProvider.id} providerName={verifyProvider.name} state={stateCode} onOpenChange={v => { if (!v) setVerifyProvider(null); }} />}
       {stateCode === 'PA' && (
         <div className="space-y-3 border-b pb-4">
           <p className="text-sm font-medium">PA requires a Collab Agreement + "Rx Authority" License Designation</p>

@@ -3,6 +3,7 @@ import { isIndependentPhysician, normalizeRole } from '@/lib/clinicianRoles';
 import { parseLocalDate } from '@/lib/utils';
 import { INDEPENDENT_ALTERNATIVE_STATES, RX_AUTHORITY_REQUIRED_STATES, hasVerifiedIndependentPractice, hasVerifiedRxAuthority, hasVerifiedNcbonRegistration, type CollabDecision } from '@/lib/nyIndependentPractice';
 import { hasPrescriptiveAuthority, type PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
+import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, missingSheetRequirements, type RequirementProof, type SheetLicense } from '@/lib/stateSheetRequirements';
 
 export interface StateAgreement {
   profileId: string | null;
@@ -16,7 +17,7 @@ export interface StateAgreement {
   /** Local agreement record ID, used to open the agreement page. */
   agreementId?: string;
 }
-export interface AgreementReview { state: string; reason: string; howToFix: string; authorityReview?: boolean; independentAlternative?: boolean; registrationReview?: boolean; newlyActive?: boolean }
+export interface AgreementReview { state: string; reason: string; howToFix: string; authorityReview?: boolean; independentAlternative?: boolean; registrationReview?: boolean; sheetReview?: boolean; newlyActive?: boolean }
 export interface CollaborationRule { state_abbreviation: string; collab_requirement_type: string | null; ca_required: boolean }
 
 /** Audit only identity-resolved EHR states; license lists never imply activation. */
@@ -27,6 +28,8 @@ export function activeStateAgreementFlags(
   today = new Date(),
   authorityEvidence: PrescriptiveAuthorityEvidence[] = [],
   newlyActiveStates: string[] = [],
+  requirementProofs: RequirementProof[] = [],
+  sheetLicenses: SheetLicense[] = [],
 ): AgreementReview[] {
   if (isIndependentPhysician(provider)) return [];
   const role = normalizeRole(provider.profession);
@@ -37,6 +40,15 @@ export function activeStateAgreementFlags(
   return [...new Set(states)].sort().flatMap(state => {
     if (getCollabRequirementType(state) === 'md_only') return [];
     const rule = rules.find(r => r.state_abbreviation === state);
+    if (SHEET_REQUIREMENTS[state]) {
+      const agreement = agreements.some(a => a.profileId === provider.id && a.state === state
+        && ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase()) && (!!a.document?.trim() || a.documentExempt)
+        && (!a.start || parseLocalDate(a.start.slice(0,10)) <= day) && (!a.end || parseLocalDate(a.end.slice(0,10)) >= day));
+      const missing = missingSheetRequirements(provider.id, state, agreement, requirementProofs, sheetLicenses, day);
+      return missing.length ? [{ state, sheetReview: missing.some(k => k !== 'collab_agreement'), newlyActive: newlyActiveStates.includes(state),
+        reason: `${state} requirements need verification: ${missing.map(k => REQUIREMENT_LABELS[k] ?? 'Signed Collab Agreement').join(SHEET_REQUIREMENTS[state].alternative ? ' OR ' : ' + ')}.`,
+        howToFix: `${SHEET_REQUIREMENTS[state].label}. Save verification source, date and a proof file or link for each missing license designation or registration.${SHEET_REQUIREMENTS[state].agreement ? ' Add/link the signed agreement when needed. DirectShifts exempts agreement-document uploads only.' : ''}` }] : [];
+    }
     // Alternative states require a documented agreement or source-and-date independent verification.
     const authorityAlternative = INDEPENDENT_ALTERNATIVE_STATES.has(state) && rule?.collab_requirement_type === 'conditional';
     if (!rule || (!rule.ca_required && !authorityAlternative) || rule.collab_requirement_type === 'never' || rule.collab_requirement_type === 'md_only') return [];
