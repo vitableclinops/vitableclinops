@@ -26,7 +26,7 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   WY: { label: 'Active license status only', keys: ['active_license'] },
   HI: { label: '"Prescriptive authority" Special Privilege Designation on License', keys: ['rx_authority'] },
   IL: { label: 'Signed Collab Agreement OR Full Practice Authority APRN License', keys: ['full_practice_authority'], agreement: true, alternative: true },
-  KY: { label: 'CAPA-NS/Prescriptive authority designations on license OR Independent NS prescriptive authority', keys: ['capa_ns', 'rx_authority', 'independent_ns_rx_authority'], agreementSubstitute: 'capa_ns' },
+  KY: { label: 'CAPA-NS designation OR Independent NS prescriptive authority', keys: ['capa_ns', 'independent_ns_rx_authority'], agreementSubstitute: 'capa_ns' },
   MA: { label: 'CSR + Independent APRN supervision status (one combined verification) OR CSR designation + Signed Collab Agreement (two separate items)', keys: ['ma_csr_independent', 'csr_registration', 'ma_signed_collab_agreement'], agreement: true },
   NV: { label: 'Active license status only', keys: ['active_license'] },
   NJ: { label: 'Signed Collab Agreement', keys: [], agreement: true },
@@ -74,8 +74,8 @@ export function missingSheetRequirements(profileId: string, state: string, agree
   if (!config) return [];
   if (state === 'KY') {
     const valid = (key: string) => proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day));
-    if (valid('independent_ns_rx_authority') || (valid('rx_authority') && (agreement || valid('capa_ns')))) return [];
-    return [...(agreement || valid('capa_ns') ? [] : ['capa_ns']), ...(valid('rx_authority') ? [] : ['rx_authority']), ...(valid('independent_ns_rx_authority') ? [] : ['independent_ns_rx_authority'])];
+    if (valid('independent_ns_rx_authority') || agreement || valid('capa_ns')) return [];
+    return ['capa_ns', 'independent_ns_rx_authority'];
   }
   if (state === 'MA') {
     const valid = (key: string) => proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day));
