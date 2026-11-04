@@ -51,18 +51,19 @@ import {
 import { cn, formatDisplayDate } from '@/lib/utils';
 import type { State, DemandTag, Task, Provider } from '@/types';
 import { toast } from 'sonner';
+import { ProviderRequirementReviews } from '@/components/state-compliance/ProviderRequirementReviews';
 
 type FPAFilter = 'all' | 'fpa' | 'no-fpa';
 type CAFilter = 'all' | 'ca-required' | 'no-ca';
 
 const StateCompliancePage = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const editParam = searchParams.get('edit');
   
   const [activeMainTab, setActiveMainTab] = useState(
-    tabParam && ['states', 'requirements', 'templates', 'compliance'].includes(tabParam) ? tabParam : 'states'
+    tabParam && ['states', 'reviews', 'requirements', 'templates', 'compliance'].includes(tabParam) ? tabParam : 'states'
   );
   const [editAbbr, setEditAbbr] = useState<string | null>(editParam);
   const openStateEditor = (abbr: string) => {
@@ -205,8 +206,8 @@ const StateCompliancePage = () => {
             </div>
           </div>
 
-          <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="space-y-6">
-            <TabsList>
+          <Tabs value={activeMainTab} onValueChange={value => { setActiveMainTab(value); const next = new URLSearchParams(searchParams); next.set('tab', value); setSearchParams(next); }} className="space-y-6">
+            <TabsList className="h-auto flex flex-wrap justify-start">
               <TabsTrigger value="states" className="gap-2">
                 <MapPin className="h-4 w-4" />
                 State Directory
@@ -215,6 +216,7 @@ const StateCompliancePage = () => {
                 <TableIcon className="h-4 w-4" />
                 Requirements Matrix
               </TabsTrigger>
+              <TabsTrigger value="reviews" className="gap-2"><ShieldCheck className="h-4 w-4" />Provider Requirements</TabsTrigger>
               <TabsTrigger value="templates" className="gap-2">
                 <GraduationCap className="h-4 w-4" />
                 Licensure Templates
@@ -226,6 +228,7 @@ const StateCompliancePage = () => {
             </TabsList>
 
             {/* State Directory Tab */}
+            <TabsContent value="reviews"><ProviderRequirementReviews /></TabsContent>
             <TabsContent value="states" className="space-y-6">
               {/* Actions */}
               <div className="flex items-center justify-end gap-3">
