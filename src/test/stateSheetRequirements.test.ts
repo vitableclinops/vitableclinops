@@ -109,6 +109,12 @@ describe('Remaining sheet states', () => {
     }
   });
   it('MA needs Rx + CSR OR agreement', () => { expect(missing('MA',false,[proof('MA','rx_authority')])).toEqual(['csr_registration','collab_agreement']); expect(missing('MA',false,[proof('MA','rx_authority'),proof('MA','csr_registration')])).toEqual([]); expect(missing('MA',true)).toEqual([]); });
-  it.each(['KY','TX'])('%s needs agreement AND board filing', s => { expect(missing(s)).toEqual(['board_registration','collab_agreement']); expect(missing(s,true,[proof(s,'board_registration')])).toEqual([]); });
+  it('Kentucky accepts CAPA-NS + prescriptive authority OR a signed agreement', () => {
+    expect(missing('KY')).toEqual(['capa_ns','rx_authority','collab_agreement']);
+    expect(missing('KY',false,[proof('KY','capa_ns'),proof('KY','rx_authority')])).toEqual([]);
+    expect(missing('KY',true)).toEqual([]);
+    expect(missing('KY',true,[proof('KY','capa_ns')])).toEqual([]);
+  });
+  it('TX needs agreement AND board filing', () => { expect(missing('TX')).toEqual(['board_registration','collab_agreement']); expect(missing('TX',true,[proof('TX','board_registration')])).toEqual([]); });
   it.each(['NJ','OH'])('%s needs agreement only', s => { expect(missing(s)).toEqual(['collab_agreement']); expect(missing(s,true)).toEqual([]); });
 });

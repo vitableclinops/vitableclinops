@@ -26,7 +26,7 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   WY: { label: 'Active license status only', keys: ['active_license'] },
   HI: { label: '"Prescriptive authority" Special Privilege Designation on License', keys: ['rx_authority'] },
   IL: { label: 'Signed Collab Agreement OR Full Practice Authority APRN License', keys: ['full_practice_authority'], agreement: true, alternative: true },
-  KY: { label: 'Signed Collab Agreement (CAPA-NS) + Filed with State Board', keys: ['board_registration'], agreement: true },
+  KY: { label: 'CAPA-NS + "Prescriptive Authority" License Designation OR Signed Collab Agreement', keys: ['capa_ns', 'rx_authority'], agreement: true, alternative: true },
   MA: { label: 'Rx Authority Designation on License + CSR OR Signed Collab Agreement', keys: ['rx_authority', 'csr_registration'], agreement: true, alternative: true },
   NV: { label: 'Active license status only', keys: ['active_license'] },
   NJ: { label: 'Signed Collab Agreement', keys: [], agreement: true },
@@ -44,6 +44,7 @@ export const REQUIREMENT_LABELS: Record<string, string> = {
   nursing_interstate_telehealth_registration: 'Nursing Interstate Telehealth Registration',
   aprn_telehealth_registration: 'Advanced Practice Registered Nurse - Telehealth Registration',
   full_practice_authority: 'Full practice authority on license', csr_registration: 'Controlled substance registration (CSR)',
+  capa_ns: 'CAPA-NS (Collaborative Agreement for Prescriptive Authority for Non-Scheduled Drugs)',
   active_prescribing_cii: 'Active Prescribing - CII license status', independent_practice: 'Independent practice designation on license',
 };
 export interface RequirementProof {
