@@ -155,6 +155,23 @@ export const getInitiationTaskTemplates = (
 
 export const NC_NCBON_TASK_TITLE = 'Send NP instructions for uploading agreement to NCBON portal';
 
+export const KY_KBN_TASK_TITLE = 'Register collaborative agreement with the Kentucky Board of Nursing (KBN)';
+
+export const KY_KBN_INSTRUCTIONS = `1. Log in to the Kentucky Board of Nursing portal (https://kbn.ky.gov)
+
+2. Navigate to the "Collaborative Agreement for Prescriptive Authority for Non-Scheduled Drugs (CAPA-NS)" application section
+
+3. Complete the application with required information:
+   - NP's personal and license information
+   - Supervising physician's name, license number, and contact information
+   - Practice site location(s) and contact details
+
+4. Upload a copy of the signed agreement
+
+5. Pay the required KBN application fee
+
+6. Monitor KBN until the agreement/CAPA-NS shows as approved or registered`;
+
 export const NC_NCBON_INSTRUCTIONS = `1. Log in to the North Carolina Board of Nursing portal (https://portal.ncbon.com)
 
 2. Navigate to "Nurse Practitioner Approval to Practice" application section
@@ -207,17 +224,31 @@ const getNorthCarolinaInitiationSteps = () => [
   },
 ];
 
+/** Kentucky-only step inserted right after the notification email task. */
+const getKentuckyInitiationSteps = () => [
+  {
+    title: KY_KBN_TASK_TITLE,
+    description: 'Register the signed agreement with the Kentucky Board of Nursing so the NP can practice and prescribe in Kentucky (expand for instructions).',
+    category: 'compliance' as const,
+    priority: 'high',
+    is_required: true,
+    sort_order: 0,
+  },
+];
+
 /** Insert state-specific steps into initiation templates and renumber. */
 export const applyStateSpecificSteps = <T extends { title: string; sort_order: number }>(
   templates: T[],
   stateAbbreviation: string,
 ): T[] => {
-  if (stateAbbreviation?.toUpperCase() !== 'NC') return templates;
+  const stateSteps: Record<string, unknown[]> = { NC: getNorthCarolinaInitiationSteps(), KY: getKentuckyInitiationSteps() };
+  const steps = stateSteps[stateAbbreviation?.toUpperCase() ?? ''];
+  if (!steps) return templates;
   const idx = templates.findIndex(t => t.title === NOTIFICATION_TASK_TITLE);
   if (idx === -1) return templates;
   const out = [
     ...templates.slice(0, idx + 1),
-    ...(getNorthCarolinaInitiationSteps() as unknown as T[]),
+    ...(steps as unknown as T[]),
     ...templates.slice(idx + 1),
   ];
   return out.map((t, i) => ({ ...t, sort_order: i + 1 }));
