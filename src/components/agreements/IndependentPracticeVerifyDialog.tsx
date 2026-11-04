@@ -62,7 +62,7 @@ export function IndependentPracticeFields({ source, verifiedOn, link = '', file 
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <Label htmlFor="ind-source">Where was it verified?</Label>
+        <Label htmlFor="ind-source">Where was it verified?<span className="text-destructive" aria-hidden="true"> *</span></Label>
         <Input id="ind-source" aria-describedby="ind-source-description" placeholder="Enter verification source" value={source} onChange={e => onChange({ source: e.target.value })} />
         <p id="ind-source-description" className="text-sm text-muted-foreground">State board communication, Direct Shifts supervision spreadsheet, etc.</p>
       </div>
@@ -70,17 +70,17 @@ export function IndependentPracticeFields({ source, verifiedOn, link = '', file 
         <p className="text-sm font-medium">Proof of verification</p>
         <p className="text-sm text-muted-foreground">{registration ? 'Upload a screenshot or saved NCBON approval, or paste a link verifying NCBON registration. Proof is required and remains clickable once saved.' : requireFile ? 'Upload a screenshot or saved document verifying the Rx Authority license designation. The file is clickable once saved.' : 'Upload a download of the verification (e.g. a saved email or screenshot) or paste a link to it. Links become clickable once saved.'}</p>
         {!requireFile && <div className="space-y-1">
-          <Label htmlFor="ind-link">Link (optional)</Label>
+          <Label htmlFor="ind-link">Link{registration ? <span className="text-destructive" aria-hidden="true"> *</span> : ' (optional)'}</Label>
           <Input id="ind-link" type="url" placeholder="https://…" value={link} onChange={e => onChange({ link: e.target.value })} />
         </div>}
         <div className="space-y-1">
-          <Label htmlFor="ind-file">{requireFile ? 'Verification file (required)' : 'Attachment (optional)'}</Label>
+          <Label htmlFor="ind-file">{requireFile ? <>Verification file<span className="text-destructive" aria-hidden="true"> *</span></> : <>Attachment{registration ? <span className="text-destructive" aria-hidden="true"> *</span> : ' (optional)'}</>}</Label>
           <Input id="ind-file" type="file" required={requireFile} onChange={e => onChange({ file: e.target.files?.[0] ?? null })} />
           {file && <p className="text-xs text-muted-foreground">Selected: {file.name}</p>}
         </div>
       </div>
       <div className="space-y-1">
-        <Label htmlFor="ind-date">When was it verified?</Label>
+        <Label htmlFor="ind-date">When was it verified?<span className="text-destructive" aria-hidden="true"> *</span></Label>
         <Input id="ind-date" type="date" value={verifiedOn} max={new Date().toISOString().slice(0, 10)} onChange={e => onChange({ verifiedOn: e.target.value })} />
       </div>
     </div>
