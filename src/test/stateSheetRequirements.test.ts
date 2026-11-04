@@ -91,7 +91,23 @@ describe('Remaining sheet states', () => {
     expect(missingSheetRequirements('np','NV',false,[],[{profileId:'np',state:'NV',status:'expired',expiration:'2026-11-03'}],day)).toEqual(['active_license']);
   });
   it.each([['HI','rx_authority'],['ND','rx_authority'],['SD','full_practice_authority']])('%s needs %s', (s,k) => { expect(missing(s)).toEqual([k]); expect(missing(s,false,[proof(s,k)])).toEqual([]); });
-  it.each(['IL','VT','WI'])('%s accepts agreement OR designation', s => { expect(missing(s)).toHaveLength(2); expect(missing(s,true)).toEqual([]); });
+  it.each(['IL','WI'])('%s accepts agreement OR designation', s => { expect(missing(s)).toHaveLength(2); expect(missing(s,true)).toEqual([]); });
+  it('Vermont accepts APRN Telehealth Registration OR independent designation OR agreement', () => {
+    expect(missing('VT')).toEqual(['independent_practice','aprn_telehealth_registration','collab_agreement']);
+    expect(missing('VT',true)).toEqual([]);
+    expect(missing('VT',false,[proof('VT','independent_practice')])).toEqual([]);
+    expect(missing('VT',false,[proof('VT','aprn_telehealth_registration')])).toEqual([]);
+  });
+  it('flags current and future Vermont activations and clears with valid registration proof', () => {
+    const audit = (states: string[], proofs: RequirementProof[] = [], newlyActive: string[] = []) => activeStateAgreementFlags({id:'np',profession:'NP'},states,[],[],[],day,[],newlyActive,proofs);
+    expect(audit(['VT'])).toEqual([expect.objectContaining({state:'VT',sheetReview:true,newlyActive:false})]);
+    expect(audit(['VT'],[],['VT'])).toEqual([expect.objectContaining({state:'VT',newlyActive:true})]);
+    expect(audit(['VT'],[proof('VT','aprn_telehealth_registration')])).toEqual([]);
+    expect(audit([])).toEqual([]);
+    for (const change of [{expiration_date:'2026-11-03'},{profile_id:'other'},{state_abbreviation:'DE'},{verified_link:null},{verified_source:''}]) {
+      expect(missing('VT',false,[{...proof('VT','aprn_telehealth_registration'),...change}])).toContain('aprn_telehealth_registration');
+    }
+  });
   it('MA needs Rx + CSR OR agreement', () => { expect(missing('MA',false,[proof('MA','rx_authority')])).toEqual(['csr_registration','collab_agreement']); expect(missing('MA',false,[proof('MA','rx_authority'),proof('MA','csr_registration')])).toEqual([]); expect(missing('MA',true)).toEqual([]); });
   it.each(['KY','TX'])('%s needs agreement AND board filing', s => { expect(missing(s)).toEqual(['board_registration','collab_agreement']); expect(missing(s,true,[proof(s,'board_registration')])).toEqual([]); });
   it.each(['NJ','OH'])('%s needs agreement only', s => { expect(missing(s)).toEqual(['collab_agreement']); expect(missing(s,true)).toEqual([]); });
