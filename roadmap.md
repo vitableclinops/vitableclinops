@@ -76,4 +76,4 @@
 - [x] Remove DirectShifts missing-upload flags from profile, agreement filters, state grid and verification; known and explicitly designated supervisors exempt, 24 tests passed, Brittney profile verified signed in.
 
 - [x] Include profile-level missing-document, invalid-agreement, activation mismatch and Medallion lookup warnings in top alerts; shared profile checks, 13 tests passed, Shadae correction flow verified signed in.
-- [x] Kentucky requires CAPA-NS (signed collab agreement) AND a Prescriptive Authority designation; no OR alternative, 51 tests passed.
+- [x] Kentucky requires an uploaded CAPA-NS verification AND a Prescriptive Authority designation for all providers, not an agreement record; 51 tests passed.
