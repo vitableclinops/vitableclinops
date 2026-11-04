@@ -953,10 +953,13 @@ const CollaborativeAgreementsPage = () => {
               <TabsTrigger value="transfers" className="gap-2 px-4">
                 <ArrowRightLeft className="h-4 w-4" />
                 Tasks
-                {transfers.filter(t => t.status === 'pending' || t.status === 'in_progress').length > 0 && (
-                  <Badge variant="secondary" className="ml-1 text-xs">
-                    {transfers.filter(t => t.status === 'pending' || t.status === 'in_progress').length}
-                  </Badge>
+                {openTaskCount > 0 && (
+                  <span
+                    className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs font-semibold text-destructive-foreground"
+                    aria-label={`${openTaskCount} open agreement task${openTaskCount === 1 ? '' : 's'}`}
+                  >
+                    {openTaskCount}
+                  </span>
                 )}
               </TabsTrigger>
               <TabsTrigger value="by-physician" className="gap-2 px-4">
