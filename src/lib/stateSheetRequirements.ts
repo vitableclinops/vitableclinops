@@ -1,7 +1,7 @@
 import { hasVerificationLink } from '@/lib/nyIndependentPractice';
 import { parseLocalDate } from '@/lib/utils';
 
-export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[]; agreement?: boolean; alternative?: boolean; anyDesignation?: boolean }> = {
+export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[]; agreement?: boolean; alternative?: boolean; anyDesignation?: boolean; agreementSubstitute?: string }> = {
   AK: { label: 'Active license status only', keys: ['active_license'] },
   AZ: { label: 'Active license status only', keys: ['active_license'] },
   AR: { label: '"Prescriptive authority: yes" + Signed Collab Agreement + State Board Registration', keys: ['rx_authority', 'board_registration'], agreement: true },
@@ -26,7 +26,7 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   WY: { label: 'Active license status only', keys: ['active_license'] },
   HI: { label: '"Prescriptive authority" Special Privilege Designation on License', keys: ['rx_authority'] },
   IL: { label: 'Signed Collab Agreement OR Full Practice Authority APRN License', keys: ['full_practice_authority'], agreement: true, alternative: true },
-  KY: { label: 'CAPA-NS + "Prescriptive Authority" License Designation', keys: ['capa_ns', 'rx_authority'] },
+  KY: { label: 'CAPA-NS/Prescriptive authority designations on license (no collab agreement needed unless this is not on the license)', keys: ['capa_ns', 'rx_authority'], agreementSubstitute: 'capa_ns' },
   MA: { label: 'Rx Authority Designation on License + CSR OR Signed Collab Agreement', keys: ['rx_authority', 'csr_registration'], agreement: true, alternative: true },
   NV: { label: 'Active license status only', keys: ['active_license'] },
   NJ: { label: 'Signed Collab Agreement', keys: [], agreement: true },
@@ -44,7 +44,7 @@ export const REQUIREMENT_LABELS: Record<string, string> = {
   nursing_interstate_telehealth_registration: 'Nursing Interstate Telehealth Registration',
   aprn_telehealth_registration: 'Advanced Practice Registered Nurse - Telehealth Registration',
   full_practice_authority: 'Full practice authority on license', csr_registration: 'Controlled substance registration (CSR)',
-  capa_ns: 'CAPA-NS (Collaborative Agreement for Prescriptive Authority for Non-Scheduled Drugs)',
+  capa_ns: 'CAPA-NS designation on license (Collaborative Agreement for Prescriptive Authority for Non-Scheduled Drugs)',
   active_prescribing_cii: 'Active Prescribing - CII license status', independent_practice: 'Independent practice designation on license',
 };
 export interface RequirementProof {
@@ -69,7 +69,7 @@ export function missingSheetRequirements(profileId: string, state: string, agree
   const config = SHEET_REQUIREMENTS[state];
   if (!config) return [];
   if (config.keys.length === 1 && config.keys[0] === 'active_license') return sheetLicenseStatus(profileId, state, licenses, proofs, day) === 'invalid' ? ['active_license'] : [];
-  const missing = config.keys.filter(key => !proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day)));
+  const missing = config.keys.filter(key => !(config.agreementSubstitute === key && agreement) && !proofs.some(p => p.profile_id === profileId && p.state_abbreviation === state && p.requirement_key === key && validRequirementProof(p, day)));
   if (config.alternative) return (config.agreement && agreement) || (config.anyDesignation ? missing.length < config.keys.length : !missing.length) ? [] : [...missing, ...(config.agreement ? ['collab_agreement'] : [])];
   return [...missing, ...(config.agreement && !agreement ? ['collab_agreement'] : [])];
 }
