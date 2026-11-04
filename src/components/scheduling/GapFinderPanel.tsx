@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { RefreshCw, Download, Plus, Trash2, Sparkles } from 'lucide-react';
+import { RefreshCw, Download, Plus, Trash2, Sparkles, Copy } from 'lucide-react';
+import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Textarea } from '@/components/ui/textarea';
@@ -175,7 +176,11 @@ export function GapFinderPanel() {
               {ai.data && (
                 <div className="border rounded p-3 space-y-2 text-sm">
                   <div className="prose prose-sm max-w-none dark:prose-invert"><ReactMarkdown remarkPlugins={[remarkGfm]}>{ai.data.advice}</ReactMarkdown></div>
-                  <p className="text-xs text-muted-foreground">AI advice — double-check dates and times before changing Homebase.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => copyText(extractSchedule(ai.data.advice), 'Schedule copied (Eastern Time)')}><Copy className="h-4 w-4 mr-1" />Copy schedule (ET)</Button>
+                    <Button size="sm" variant="outline" onClick={() => copyText(ai.data.advice, 'Full advice copied')}><Copy className="h-4 w-4 mr-1" />Copy full advice</Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">AI advice — all times Eastern. Double-check dates and times before changing Homebase.</p>
                 </div>
               )}
               <p className="text-xs text-muted-foreground pt-2">Or enter shifts manually:</p>
@@ -243,4 +248,17 @@ function fmtTime(iso: string | null) {
 }
 function toCsv(d: DailyGap) {
   return { date: d.date, day: DOW[d.dow], scheduled_hours: d.scheduled, expected_hours: d.expected, gap_hours: d.gap, coverage_pct: d.coveragePct ?? '', holiday: d.holiday ?? '' };
+}
+
+function extractSchedule(md: string): string {
+  const m = md.match(/#*\s*\**\s*\d*\.?\s*\**Suggested schedule[^\n]*\n([\s\S]*?)(?=\n#*\s*\**\s*\d*\.?\s*\**(Why|Next steps|Questions)\b|$)/i);
+  const body = (m ? m[1] : md).trim();
+  // Turn markdown table into tab-separated text that pastes cleanly into Slack, email or Sheets.
+  return body.split('\n').filter((l) => !/^\s*\|?\s*:?-{2,}/.test(l))
+    .map((l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim()).join('\t'))
+    .join('\n').replace(/\*\*/g, '');
+}
+
+function copyText(text: string, msg: string) {
+  navigator.clipboard.writeText(text).then(() => toast.success(msg), () => toast.error('Could not copy'));
 }

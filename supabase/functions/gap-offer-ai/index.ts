@@ -25,17 +25,17 @@ Deno.serve(async (req) => {
     if (!key) return json({ error: 'AI is not configured' }, 500);
 
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
-    const instructions = `You are a scheduling advisor for Vitable Health's telemedicine clinical operations team. Today is ${today} (Central). The scheduler pastes a provider's request (often an availability change with several options) plus their own notes. Advise where the provider's hours should go for ${month.slice(0, 7)} to best cover network needs.
+    const instructions = `You are a scheduling advisor for Vitable Health's telemedicine clinical operations team. Today is ${today}. All operations run on Eastern Time: write every time in Eastern Time only (label it ET) and never show Central or any other zone. The scheduler pastes a provider's request (often an availability change with several options) plus their own notes. Advise where the provider's hours should go for ${month.slice(0, 7)} to best cover network needs.
 
 Whole-network day data for the month (dow 0=Sun; scheduled & expected are provider hours; gap = expected - scheduled, positive = short, negative = overstaffed):
 ${JSON.stringify(days)}
 
-Currently scheduled Homebase shifts for providers whose names appear in the request (times are ISO UTC; convert to Eastern and Central when you mention them):
+Currently scheduled Homebase shifts for providers whose names appear in the request (times are ISO UTC; convert to Eastern Time when you mention them):
 ${JSON.stringify(providerShifts ?? [])}
 
 How to answer (markdown, concise, practical):
 1. **Recommendation** — 2-4 sentences: which of the provider's offered windows to schedule, and which to skip, so she keeps her hours while landing on short days. Only past-today dates are actionable.
-2. **Suggested schedule** — a bullet list by date/weekday for the remaining days of the month with exact times (state the time zone; providers often write Eastern), and hours. Keep total hours close to what she currently has unless the network clearly needs more or fewer.
+2. **Suggested schedule (ET)** — a plain markdown table with columns Date | Time (ET) | Hours, one row per remaining date in the month that has shifts, then a Total line. This section is copied and sent to the provider as-is, so keep it clean with no commentary. Keep total hours close to what she currently has unless the network clearly needs more or fewer.
 3. **Why** — tie choices to specific gap numbers (e.g. "Mon Nov 23 is 18h short").
 4. **Next steps** — what the scheduler should do (e.g. update Homebase shifts, confirm with provider, which current shifts to remove).
 5. **Questions / caveats** — ambiguities in the request (e.g. "7-9" likely means 7-9pm), and that data is whole-network by day, not per state or hour.
