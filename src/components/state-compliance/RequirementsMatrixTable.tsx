@@ -1,3 +1,4 @@
+import { stateRequirementSummary } from '@/lib/stateRequirementSummary';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getCollabRequirementLabel, type CollabRequirementType } from '@/constants/stateRestrictions';
 import { Link } from 'react-router-dom';
@@ -324,7 +325,10 @@ const RequirementsMatrixTable = ({ data, loading, isAdmin = false, onDataChange,
                     {editing && editValues ? (
                       <EditableBoolCell value={editValues.ca_required} onChange={v => updateField('ca_required', v)} />
                     ) : (
-                      <CollabBadge stateAbbr={state.state_abbreviation} type={(state.collab_requirement_type as CollabRequirementType) || (state.ca_required ? 'always' : 'never')} />
+                      <div className="space-y-1">
+                        <CollabBadge stateAbbr={state.state_abbreviation} type={(state.collab_requirement_type as CollabRequirementType) || (state.ca_required ? 'always' : 'never')} />
+                        <p className="text-xs text-muted-foreground max-w-[220px] mx-auto">{stateRequirementSummary(state.state_abbreviation, state.collab_requirement_type, state.ca_required)}</p>
+                      </div>
                     )}
                   </TableCell>
 

@@ -1,3 +1,4 @@
+import { stateRequirementSummary } from '@/lib/stateRequirementSummary';
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -90,7 +91,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
     }));
     if ((cfg as any).agreement || OTHER_RULES[stateAbbr]?.includes('Collab')) items.push({ key: 'collab_agreement', label: 'Signed Collab Agreement', saved: false });
     if (stateAbbr === 'PA') items.push({ key: 'pals_collab_registration', label: REQUIREMENT_LABELS.pals_collab_registration, saved: proofs.some((p) => p.requirement_key === 'pals_collab_registration' && validRequirementProof(p)) });
-    return { label: cfg.label, items };
+    return { label: stateRequirementSummary(stateAbbr), items };
   }, [stateAbbr, proofs]);
 
   const filtered = useMemo(() => {

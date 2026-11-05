@@ -1,3 +1,4 @@
+import { stateRequirementSummary } from '@/lib/stateRequirementSummary';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
@@ -20,8 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
-import { OTHER_RULES } from '@/components/state-compliance/AddProviderToStateDialog';
 import { states as initialStates, providers, getAllTasks } from '@/data/mockData';
 import { useAuth } from '@/hooks/useAuth';
 import { useStateCompliance } from '@/hooks/useStateCompliance';
@@ -405,7 +404,7 @@ const StateCompliancePage = () => {
                             </div>
                             <div className="rounded-md bg-muted/50 p-2 text-xs">
                               <p className="font-medium text-foreground mb-0.5">Requirements</p>
-                              <p className="text-muted-foreground">{stateRequirementSummary(state.abbreviation)}</p>
+                              <p className="text-muted-foreground">{(() => { const c = complianceAllData.find(x => x.state_abbreviation === state.abbreviation); return stateRequirementSummary(state.abbreviation, c?.collab_requirement_type ?? getCollabRequirementType(state.abbreviation), c?.ca_required); })()}</p>
                             </div>
                           </CardContent>
                         </Card>
@@ -706,11 +705,5 @@ const StateCompliancePage = () => {
     </div>
   );
 };
-
-const NP_PROHIBITED = ['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA'];
-function stateRequirementSummary(abbr: string): string {
-  if (NP_PROHIBITED.includes(abbr)) return 'NP practice not permitted (MD/DO only)';
-  return SHEET_REQUIREMENTS[abbr]?.label ?? OTHER_RULES[abbr] ?? 'Active license only';
-}
 
 export default StateCompliancePage;
