@@ -283,38 +283,6 @@ const StateCompliancePage = () => {
                 existingStates={states}
               />
 
-              {/* Priority states alerts */}
-              {(criticalStates.length > 0 || atRiskStates.length > 0) && (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {criticalStates.length > 0 && (
-                    <Card className="border-destructive/30 bg-destructive/5">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <AlertTriangle className="h-5 w-5 text-destructive" />
-                          <div className="flex-1">
-                            <p className="font-medium text-foreground">Critical Priority States</p>
-                            <p className="text-sm text-muted-foreground">{criticalStates.map(s => s.abbreviation).join(', ')}</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                  {atRiskStates.length > 0 && (
-                    <Card className="border-warning/30 bg-warning/5">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <AlertTriangle className="h-5 w-5 text-warning" />
-                          <div className="flex-1">
-                            <p className="font-medium text-foreground">At Risk States</p>
-                            <p className="text-sm text-muted-foreground">{atRiskStates.map(s => s.abbreviation).join(', ')}</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              )}
-
               <div className="grid gap-8 lg:grid-cols-3">
                 {/* States list */}
                 <div className="lg:col-span-2">
