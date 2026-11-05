@@ -14,7 +14,7 @@ export function useRequiredAgreementFlags(enabled: boolean) {
     queryKey: ['directory-collaboration', 'flag-profiles'], enabled,
     refetchOnWindowFocus: true, refetchInterval: 60_000,
     queryFn: async () => {
-      const result = await supabase.from('profiles').select('id, full_name, first_name, last_name, preferred_name, email, npi_number, profession, credentials, employment_status, directory_visibility, directory_visibility_reason').range(0, 4999);
+      const result = await supabase.from('profiles').select('id, full_name, first_name, last_name, preferred_name, email, npi_number, profession, credentials, employment_status, directory_visibility, directory_visibility_reason, agency_id').range(0, 4999);
       if (result.error) throw result.error;
       return result.data ?? [];
     },
