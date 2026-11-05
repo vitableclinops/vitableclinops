@@ -38,16 +38,32 @@ export function ProviderRequirementReviews() {
     {loading && <p className="text-muted-foreground">Checking active-state requirements…</p>}
     {error && <p className="text-destructive">Could not load requirement reviews.</p>}
     {!loading && !error && !(scope === 'licensed' ? licensed.length : filtered.length) && <p className="text-muted-foreground">{scope === 'licensed' ? 'No Medallion-licensed providers outside the active EHR list.' : `No requirements need fixing${state !== 'all' ? ` in ${state}` : ''}.`}</p>}
-    {scope === 'licensed' && <div className="divide-y border-y">{!loading && !error && licensed.map(r => <div key={`${r.provider.id}:${r.state}`} className="py-4 space-y-2">
-      <div className="flex flex-wrap items-center gap-2"><Link className="font-medium hover:underline" to={`/providers?search=${encodeURIComponent(r.name)}`}>{r.name} — {r.state}</Link><Badge variant="outline">Medallion license active</Badge><Badge variant={r.reviews.length ? 'outline' : 'secondary'}>{r.reviews.length ? 'Requirements to verify' : 'Saved requirements met'}</Badge></div>
-      <p className="text-sm text-muted-foreground">{r.activation === 'not_active' ? 'Not active in this state in the latest EHR snapshot' : `EHR activation unconfirmed · ${r.activationDetail}`}</p>
-      <StateRequirementLine state={r.state} collabType={audit?.rules.find(rule => rule.state_abbreviation === r.state)?.collab_requirement_type} caRequired={audit?.rules.find(rule => rule.state_abbreviation === r.state)?.ca_required} />
-      {r.reviews.map((review, index) => <p key={index} className="text-sm text-destructive">{review.reason}</p>)}
+    {scope === 'licensed' && <div className="grid gap-3">{!loading && !error && licensed.map(r => {
+      const stateRule = audit?.rules.find(rule => rule.state_abbreviation === r.state);
+      const savedProofs = (audit?.requirementProofs ?? []).filter(p => p.profile_id === r.provider.id && p.state_abbreviation === r.state);
+      const savedDecisions = (audit?.decisions ?? []).filter(d => d.profile_id === r.provider.id && d.state_abbreviation === r.state && d.verified_on);
+      const savedAgreements = (audit?.agreements ?? []).filter(a => a.profileId === r.provider.id && a.state === r.state && a.document).filter((a, index, list) => list.findIndex(other => other.document?.trim() === a.document?.trim()) === index);
+      return <div key={`${r.provider.id}:${r.state}`} className="rounded-lg border bg-card p-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2 border-b pb-3">
+        <Link className="text-base font-semibold hover:underline" to={`/providers?search=${encodeURIComponent(r.name)}`}>{r.name}</Link>
+        <Badge variant="secondary" className="font-mono">{r.state}</Badge>
+        <Badge variant="outline">Medallion license active</Badge>
+        <Badge variant={r.reviews.length ? 'outline' : 'secondary'}>{r.reviews.length ? 'Requirements to verify' : 'Saved requirements met'}</Badge>
+        <span className="text-xs text-muted-foreground ml-auto">{r.activation === 'not_active' ? 'Not active in the latest EHR snapshot' : `EHR activation unconfirmed · ${r.activationDetail}`}</span>
+      </div>
+      <StateRequirementLine state={r.state} collabType={stateRule?.collab_requirement_type} caRequired={stateRule?.ca_required} />
+      {r.reviews.length > 0 && <div className="space-y-1 rounded-md bg-muted/40 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Needs verification ({r.reviews.length})</p>
+        <ul className="list-disc pl-5 space-y-1">{r.reviews.map((review, index) => <li key={index} className="text-sm text-destructive">{review.reason}</li>)}</ul>
+      </div>}
       <div className="flex flex-wrap gap-2">{r.reviews.some(f => f.sheetReview || f.registrationReview || f.independentAlternative) && <Button size="sm" variant="outline" onClick={() => setVerify({profileId:r.provider.id,providerName:r.name,state:r.state})}>Verify state requirements</Button>}{r.reviews.length > 0 && (!SHEET_REQUIREMENTS[r.state] || SHEET_REQUIREMENTS[r.state].agreement || SHEET_REQUIREMENTS[r.state].agreementSubstitute) && <Button size="sm" variant="outline" onClick={() => setPrefill({stateAbbr:r.state,skipProcess:true,provider:{id:r.provider.id,name:r.name,email:r.provider.email,npi:r.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}</div>
-      {(audit?.requirementProofs ?? []).filter(p => p.profile_id === r.provider.id && p.state_abbreviation === r.state).map(p => <p key={p.requirement_key} className="text-sm text-muted-foreground">{REQUIREMENT_LABELS[p.requirement_key]} · {p.verified_on} {p.verified_attachment_path && <EvidenceLink reference={p.verified_attachment_path}>{p.verified_attachment_name ?? 'View file'}</EvidenceLink>} {p.verified_link && <EvidenceLink reference={p.verified_link}>Open link</EvidenceLink>} · {p.verified_source}</p>)}
-      {(audit?.decisions ?? []).filter(d => d.profile_id === r.provider.id && d.state_abbreviation === r.state && d.verified_on).map((d, i) => <p key={`decision-${i}`} className="text-sm text-muted-foreground">{d.decision === 'ncbon_registered' ? 'NCBON registration' : d.decision === 'independent_verified' ? 'Independent practice' : 'Prescriptive authority'} · {d.verified_on} {d.verified_attachment_path && <EvidenceLink reference={d.verified_attachment_path}>{d.verified_attachment_name ?? 'View file'}</EvidenceLink>} {d.verified_link && <EvidenceLink reference={d.verified_link}>Open link</EvidenceLink>} · {d.verified_source}</p>)}
-      {(audit?.agreements ?? []).filter(a => a.profileId === r.provider.id && a.state === r.state && a.document).filter((a, index, list) => list.findIndex(other => other.document?.trim() === a.document?.trim()) === index).map((a, i) => a.document ? <p key={i} className="text-sm">Collab Agreement · <EvidenceLink reference={a.document}>View document</EvidenceLink></p> : null)}
-    </div>)}</div>}
+      {(savedProofs.length > 0 || savedDecisions.length > 0 || savedAgreements.length > 0) && <div className="space-y-1 rounded-md border p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved proof</p>
+        {savedProofs.map(p => <p key={p.requirement_key} className="text-sm text-muted-foreground">{REQUIREMENT_LABELS[p.requirement_key]} · {p.verified_on} {p.verified_attachment_path && <EvidenceLink reference={p.verified_attachment_path}>{p.verified_attachment_name ?? 'View file'}</EvidenceLink>} {p.verified_link && <EvidenceLink reference={p.verified_link}>Open link</EvidenceLink>} · {p.verified_source}</p>)}
+        {savedDecisions.map((d, i) => <p key={`decision-${i}`} className="text-sm text-muted-foreground">{d.decision === 'ncbon_registered' ? 'NCBON registration' : d.decision === 'independent_verified' ? 'Independent practice' : 'Prescriptive authority'} · {d.verified_on} {d.verified_attachment_path && <EvidenceLink reference={d.verified_attachment_path}>{d.verified_attachment_name ?? 'View file'}</EvidenceLink>} {d.verified_link && <EvidenceLink reference={d.verified_link}>Open link</EvidenceLink>} · {d.verified_source}</p>)}
+        {savedAgreements.map((a, i) => a.document ? <p key={i} className="text-sm">Collab Agreement · <EvidenceLink reference={a.document}>View document</EvidenceLink></p> : null)}
+      </div>}
+      </div>;})}</div>}
     <div className="divide-y border-y">{scope === 'active' && filtered.map(f => {
       const existing = audit?.agreements.find(a => a.profileId === f.provider.id && a.state === f.state && a.agreementId && ['active','fully_executed'].includes(a.status ?? ''));
       return <div key={`${f.provider.id}:${f.state}`} className="py-4 space-y-2"><p className="font-medium">{f.name} — {f.state}</p>{f.newlyActive && <Badge variant="outline">Newly active in EHR</Badge>}<p className="text-sm text-destructive">{f.reason}</p><p className="text-sm text-muted-foreground">{f.howToFix}</p><div className="flex flex-wrap gap-2">
