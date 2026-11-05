@@ -62,6 +62,8 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
   const state = states.find((s) => s.abbreviation === stateAbbr);
   const sortedStates = [...states].sort((a, b) => a.name.localeCompare(b.name));
 
+  const alreadyActive = existing?.ehr_activation_status === 'active';
+
   const reset = () => { setProviderId(''); setStateAbbr(''); setSearch(''); };
 
   return (
@@ -98,7 +100,10 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
                 </SelectContent>
               </Select>
             </div>
-            {existing?.ehr_activation_status && (
+            {alreadyActive && (
+              <p className="text-sm font-medium text-destructive">Provider is already active here</p>
+            )}
+            {existing?.ehr_activation_status && !alreadyActive && (
               <p className="text-sm text-muted-foreground">
                 Current status in this state: <span className="font-medium text-foreground">{existing.ehr_activation_status.replace(/_/g, ' ')}</span>
               </p>
@@ -106,7 +111,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>Cancel</Button>
-            <Button disabled={!providerId || !stateAbbr} onClick={() => setActivationOpen(true)}>
+            <Button disabled={!providerId || !stateAbbr || alreadyActive} onClick={() => setActivationOpen(true)}>
               Start activation
             </Button>
           </DialogFooter>
