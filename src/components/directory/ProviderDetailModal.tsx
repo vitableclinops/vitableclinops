@@ -495,14 +495,11 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
           </div>
         )}
 
-        <Tabs defaultValue="professional" className="mt-4">
+        <Tabs defaultValue="overview" className="mt-4">
           <TabsList className="w-full flex flex-wrap h-auto gap-1">
-            <TabsTrigger value="professional">Professional</TabsTrigger>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="licenses">Licenses</TabsTrigger>
             <TabsTrigger value="documents">Documents</TabsTrigger>
-            <TabsTrigger value="personal">Personal</TabsTrigger>
-            <TabsTrigger value="employment">Employment</TabsTrigger>
             <TabsTrigger value="medallion">Medallion</TabsTrigger>
           </TabsList>
 
@@ -513,8 +510,47 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
             <ProviderDocumentsByState profileId={provider.id} chartReviewUrl={provider.chart_review_folder_url} />
           </TabsContent>
 
-          {/* Professional Tab */}
-          <TabsContent value="professional" className="mt-4 space-y-4">
+          <TabsContent value="overview" className="mt-4 space-y-4">
+            {!isOffboarded(provider.employment_status) && isAdminUser && (activationOverride ?? provider.activation_status) === 'pending_agreements' && agreementCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/30 bg-warning/10 p-3">
+                <p className="text-sm">
+                  Activation still says <strong>Pending Agreements</strong>, but {agreementCount} agreement{agreementCount === 1 ? ' is' : 's are'} on file.
+                </p>
+                <Button size="sm" onClick={() => clearAgreementFlag.mutate()} disabled={clearAgreementFlag.isPending}>
+                  Mark agreements done
+                </Button>
+              </div>
+            )}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <InfoRow label="Activation Status" value={(() => {
+                if (isOffboarded(provider.employment_status)) return 'Offboarded';
+                const s = activationOverride ?? provider.activation_status;
+                return s === 'ready' ? 'Ready' :
+                  s === 'pending_onboarding' ? 'Pending Onboarding' :
+                  s === 'pending_agreements' ? 'Pending Agreements' :
+                  s || 'Not Set';
+              })()} />
+              <InfoRow label="Collaborative Physician" value={null} />
+              <InfoRow label="Renewal Handling" value={
+                provider.renewal_handling === 'self' ? 'Self-Managed' :
+                provider.renewal_handling === 'medallion' ? 'Medallion-Managed' :
+                provider.renewal_handling === 'internal' ? 'Internal Admin' :
+                provider.renewal_handling || 'Not Set'
+              } />
+              <InfoRow label="Languages" value={provider.languages} />
+              <InfoRow label="Licensed States" value={medallionStates.length ? medallionStates.join(', ') : null} />
+              <InfoRow label="Home State" value={provider.address_state} />
+            </div>
+            {provider.bio && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Bio</p>
+                  <p className="text-sm">{provider.bio}</p>
+                </div>
+              </>
+            )}
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1 pt-2">Professional</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {isEditing ? (
                 <>
@@ -633,65 +669,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                 </>
               )}
             </div>
-          </TabsContent>
-
-          {/* Overview Tab - Quick summary with enriched fields */}
-          <TabsContent value="overview" className="mt-4 space-y-4">
-            {!isOffboarded(provider.employment_status) && isAdminUser && (activationOverride ?? provider.activation_status) === 'pending_agreements' && agreementCount > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/30 bg-warning/10 p-3">
-                <p className="text-sm">
-                  Activation still says <strong>Pending Agreements</strong>, but {agreementCount} agreement{agreementCount === 1 ? ' is' : 's are'} on file.
-                </p>
-                <Button size="sm" onClick={() => clearAgreementFlag.mutate()} disabled={clearAgreementFlag.isPending}>
-                  Mark agreements done
-                </Button>
-              </div>
-            )}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <InfoRow label="Activation Status" value={(() => {
-                if (isOffboarded(provider.employment_status)) return 'Offboarded';
-                const s = activationOverride ?? provider.activation_status;
-                return s === 'ready' ? 'Ready' :
-                  s === 'pending_onboarding' ? 'Pending Onboarding' :
-                  s === 'pending_agreements' ? 'Pending Agreements' :
-                  s || 'Not Set';
-              })()} />
-              <InfoRow label="Collaborative Physician" value={null} />
-              <InfoRow label="Renewal Handling" value={
-                provider.renewal_handling === 'self' ? 'Self-Managed' :
-                provider.renewal_handling === 'medallion' ? 'Medallion-Managed' :
-                provider.renewal_handling === 'internal' ? 'Internal Admin' :
-                provider.renewal_handling || 'Not Set'
-              } />
-              <InfoRow label="Languages" value={provider.languages} />
-              <InfoRow label="Licensed States" value={medallionStates.length ? medallionStates.join(', ') : null} />
-              <InfoRow label="Home State" value={provider.address_state} />
-            </div>
-            {provider.bio && (
-              <>
-                <Separator />
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Bio</p>
-                  <p className="text-sm">{provider.bio}</p>
-                </div>
-              </>
-            )}
-          </TabsContent>
-
-          <TabsContent value="licenses" className="mt-4 space-y-4">
-            {isEditing ? (
-              <>
-                <EditableField label="Chart Review Folder URL" value={formData.chart_review_folder_url} field="chart_review_folder_url" onChange={handleChange} />
-              </>
-            ) : (
-              <>
-                <ProviderStateSummary provider={provider as any} />
-              </>
-            )}
-          </TabsContent>
-
-          {/* Personal Tab */}
-          <TabsContent value="personal" className="mt-4 space-y-4">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1 pt-2">Personal</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {isEditing ? (
                 <>
@@ -743,10 +721,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                 </>
               )}
             </div>
-          </TabsContent>
-
-          {/* Employment Tab */}
-          <TabsContent value="employment" className="mt-4 space-y-4">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1 pt-2">Employment</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {isEditing ? (
                 <>
@@ -845,6 +820,18 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                 </>
               )}
             </div>
+          </TabsContent>
+
+          <TabsContent value="licenses" className="mt-4 space-y-4">
+            {isEditing ? (
+              <>
+                <EditableField label="Chart Review Folder URL" value={formData.chart_review_folder_url} field="chart_review_folder_url" onChange={handleChange} />
+              </>
+            ) : (
+              <>
+                <ProviderStateSummary provider={provider as any} />
+              </>
+            )}
           </TabsContent>
         </Tabs>
       </DialogContent>
