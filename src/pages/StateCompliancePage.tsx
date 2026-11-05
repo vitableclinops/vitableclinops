@@ -124,7 +124,7 @@ const StateCompliancePage = () => {
       (filterCA === 'ca-required' && state.requiresCollaborativeAgreement) || 
       (filterCA === 'no-ca' && !state.requiresCollaborativeAgreement);
     return matchesSearch && matchesDemand && matchesFPA && matchesCA;
-  });
+  }).sort((a, b) => a.name.localeCompare(b.name));
 
   const activeFiltersCount = [filterDemand !== 'all', filterFPA !== 'all', filterCA !== 'all'].filter(Boolean).length;
 
