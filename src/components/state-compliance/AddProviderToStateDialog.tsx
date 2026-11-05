@@ -20,7 +20,7 @@ export const OTHER_RULES: Record<string, string> = {
   NY: 'Signed Collab Agreement OR verified independent practice',
   OK: 'Signed Collab Agreement OR verified independent practice',
   WV: 'Signed Collab Agreement OR verified independent practice',
-  PA: 'Signed Collab Agreement + "Rx Authority" license designation (file proof)',
+  PA: 'Signed Collab Agreement + "Rx Authority" license designation (file proof) + PALS portal collab confirmed/registration',
   VA: '"Autonomous Practice" + "Rx Authority" License designations OR "Rx Authority" + Signed Collab Agreement',
 };
 
