@@ -15,7 +15,7 @@ import { RX_AUTHORITY_REQUIRED_STATES, hasVerificationLink } from '@/lib/nyIndep
 import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
 import { saveRequirementProof } from '@/hooks/useRequirementProofs';
-import { StateRequirementVerifyDialog, StateRequirementProofList } from './StateRequirementVerifyDialog';
+import { StateRequirementVerifyDialog, StateRequirementProofList, RequirementProofSection, emptyDraft, draftStarted, draftComplete, type ProofDraft } from './StateRequirementVerifyDialog';
 
 /** Save a verified independent-practice status for one provider/state. */
 export async function saveIndependentVerification(input: {
@@ -165,7 +165,36 @@ function LegacyPracticeVerifyDialog({ open, onOpenChange, profileId, providerNam
   );
 }
 
+/** PA: Rx Authority (file) and PALS registration verified together in one window. */
+function PaVerifyDialog({ open, onOpenChange, profileId, providerName }: { open: boolean; onOpenChange: (o: boolean) => void; profileId: string; providerName: string; state: string }) {
+  const { profile } = useAuth();
+  const queryClient = useQueryClient();
+  const [rx, setRx] = useState<ProofDraft>(emptyDraft());
+  const [pals, setPals] = useState<ProofDraft>(emptyDraft());
+  const [saving, setSaving] = useState(false);
+  const rxOn = draftStarted(rx), palsOn = draftStarted(pals);
+  const canSave = (rxOn || palsOn) && (!rxOn || draftComplete(rx, true)) && (!palsOn || draftComplete(pals));
+  const save = async () => {
+    setSaving(true);
+    try {
+      if (rxOn) await saveIndependentVerification({ profileId, state: 'PA', source: rx.source, verifiedOn: rx.date, file: rx.file, decidedBy: profile?.id, decision: 'rx_authority_verified' });
+      if (palsOn) await saveRequirementProof({ profileId, state: 'PA', key: 'pals_collab_registration', source: pals.source, date: pals.date, link: pals.link, file: pals.file, verifiedBy: profile?.id });
+      await Promise.all([refreshAgreementViews(queryClient), queryClient.invalidateQueries({ queryKey: ['independent-verifications'] })]);
+      toast.success(`${providerName}: PA verifications saved`);
+      onOpenChange(false);
+    } catch (e) { console.error(e); toast.error(e instanceof Error ? e.message : 'Could not save the verification'); } finally { setSaving(false); }
+  };
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+    <DialogHeader><DialogTitle>Verify state requirements — PA</DialogTitle><DialogDescription>{providerName} needs a signed Collab Agreement AND Rx Authority license designation AND PALS portal collab confirmation/registration. Fill in any or all below.</DialogDescription></DialogHeader>
+    <p className="text-sm text-muted-foreground">Collab Agreement is added/linked through the Agreements flow.</p>
+    <RequirementProofSection id="pa-rx" label={'"Rx Authority" license designation'} draft={rx} onChange={setRx} fileOnly showExpiration={false} />
+    <RequirementProofSection id="pa-pals" label="PALS portal collab confirmed/registration" draft={pals} onChange={setPals} />
+    <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={saving || !canSave} onClick={save}>{saving ? 'Saving…' : 'Save verifications'}</Button></DialogFooter>
+  </DialogContent></Dialog>;
+}
+
 export function IndependentPracticeVerifyDialog(props: { open: boolean; onOpenChange: (o: boolean) => void; profileId: string; providerName: string; state: string }) {
+  if (props.state === 'PA') return <PaVerifyDialog key={props.profileId} {...props} />;
   return SHEET_REQUIREMENTS[props.state] ? <StateRequirementVerifyDialog key={`${props.profileId}:${props.state}`} {...props} /> : <LegacyPracticeVerifyDialog {...props} />;
 }
 
