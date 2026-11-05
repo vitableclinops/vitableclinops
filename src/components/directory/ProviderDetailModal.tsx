@@ -396,6 +396,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
     provider.address_line_1,
     provider.address_line_2,
     provider.address_city,
+    [provider.address_state, provider.postal_code].filter(Boolean).join(' '),
   ].filter(Boolean).join(', ');
 
   return (
