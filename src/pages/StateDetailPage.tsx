@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { AddProviderToStateDialog } from '@/components/state-compliance/AddProviderToStateDialog';
 import { InitiateLicensureDialog } from '@/components/licensure/InitiateLicensureDialog';
 import { useAllLicensureApplications, useStateTemplates } from '@/hooks/useLicensureApplications';
 import { useParams, Link, useNavigate } from 'react-router-dom';
@@ -287,7 +288,7 @@ export default function StateDetailPage() {
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setShowLicensureDialog(true)}>
                   <FileText className="h-4 w-4 mr-2" />
-                  Initiate Licensure
+                  Add Provider to State
                 </Button>
                 <Button variant="outline" onClick={() => navigate(`/admin/states?tab=requirements&edit=${stateAbbr?.toUpperCase()}`)}>
                   <Edit className="h-4 w-4 mr-2" />

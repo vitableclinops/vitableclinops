@@ -30,11 +30,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   states: StateOption[];
+  defaultState?: string;
 }
 
-export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) {
+export function AddProviderToStateDialog({ open, onOpenChange, states, defaultState }: Props) {
   const [providerId, setProviderId] = useState('');
-  const [stateAbbr, setStateAbbr] = useState('');
+  const [stateAbbr, setStateAbbr] = useState(defaultState ?? '');
   const [search, setSearch] = useState('');
   const [activationOpen, setActivationOpen] = useState(false);
   const [submitted, setSubmitted] = useState<null | { name: string; state: string; stateName: string; queue: { label: string; items: { key: string; label: string; saved: boolean }[] } | null }>(null);
