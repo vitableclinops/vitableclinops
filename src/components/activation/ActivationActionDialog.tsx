@@ -88,7 +88,9 @@ export function ActivationActionDialog({
   const isNotReady = readinessStatus !== 'ready';
   const isActivating = actionType === 'activate' || actionType === 'request_activation';
   const activationReadiness = computeActivationReadiness(readinessStatus, readinessReason, currentStatus);
-  const isHardBlocked = isActivating && isNotReady;
+  // Requests skip the override: unmet requirements are flagged in Compliance instead.
+  const isHardBlocked = actionType === 'activate' && isNotReady;
+  const flagsToCompliance = actionType === 'request_activation' && isNotReady;
 
   const [overrideReason, setOverrideReason] = useState('');
 
@@ -168,6 +170,12 @@ export function ActivationActionDialog({
               readiness={activationReadiness}
               entityLabel={`${providerName} — ${stateName}`}
             />
+          )}
+
+          {flagsToCompliance && (
+            <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+              Requirements still need verification. This request will be flagged in the Compliance tab with what needs to be verified.
+            </div>
           )}
 
           <div className="space-y-2">
