@@ -99,6 +99,10 @@ describe('Remaining sheet states', () => {
     const licenses = [{profileId:'np',state:'NV',status:'active',expiration:'2027-01-01'}];
     expect(missingSheetRequirements('np','NV',false,[],licenses,day)).toEqual([]);
     expect(missing('NV')).toEqual([]);
+    for (const s of ['MN','NE','DC']) {
+      const l = [{profileId:'np',state:s,status:'active',expiration:'2027-01-01'}];
+      expect(missingSheetRequirements('np',s,false,[],l,day)).toEqual([]);
+    }
     expect(activeStateAgreementFlags({id:'np',profession:'NP'},['NV'],[],[],[],day,[],[],[],licenses)).toEqual([]);
     expect(activeStateAgreementFlags({id:'np',profession:'NP'},['NV'],[],[],[],day,[],['NV'],[],licenses)).toEqual([]);
   });
