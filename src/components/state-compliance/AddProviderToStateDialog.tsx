@@ -89,6 +89,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
       saved: proofs.some((p) => p.requirement_key === k && validRequirementProof(p)),
     }));
     if ((cfg as any).agreement || OTHER_RULES[stateAbbr]?.includes('Collab')) items.push({ key: 'collab_agreement', label: 'Signed Collab Agreement', saved: false });
+    if (stateAbbr === 'PA') items.push({ key: 'pals_collab_registration', label: REQUIREMENT_LABELS.pals_collab_registration, saved: proofs.some((p) => p.requirement_key === 'pals_collab_registration' && validRequirementProof(p)) });
     return { label: cfg.label, items };
   }, [stateAbbr, proofs]);
 

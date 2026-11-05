@@ -13,6 +13,7 @@ import { EvidenceLink } from './EvidenceLink';
 import { RX_AUTHORITY_REQUIRED_STATES, hasVerificationLink } from '@/lib/nyIndependentPractice';
 import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
+import { saveRequirementProof } from '@/hooks/useRequirementProofs';
 import { StateRequirementVerifyDialog, StateRequirementProofList } from './StateRequirementVerifyDialog';
 
 /** Save a verified independent-practice status for one provider/state. */
@@ -102,11 +103,20 @@ function LegacyPracticeVerifyDialog({ open, onOpenChange, profileId, providerNam
   const rxState = RX_AUTHORITY_REQUIRED_STATES.has(state);
   const paState = state === 'PA';
   const ncState = state === 'NC';
+  const [paPath, setPaPath] = useState<'rx' | 'pals'>('rx');
+  const palsPath = paState && paPath === 'pals';
   const [vaPath, setVaPath] = useState<'independent_verified' | 'rx_authority_verified'>('independent_verified');
 
   const save = async () => {
     setSaving(true);
     try {
+      if (palsPath) {
+        await saveRequirementProof({ profileId, state: 'PA', key: 'pals_collab_registration', source, date: verifiedOn, link, file, verifiedBy: profile?.id });
+        await refreshAgreementViews(queryClient);
+        toast.success(`${providerName}: PA PALS collab registration verified`);
+        onOpenChange(false);
+        return;
+      }
       await saveIndependentVerification({ profileId, state, source, verifiedOn, notes, link, file, decidedBy: profile?.id, decision: ncState ? 'ncbon_registered' : paState ? 'rx_authority_verified' : rxState ? vaPath : 'independent_verified' });
       await Promise.all([refreshAgreementViews(queryClient), queryClient.invalidateQueries({ queryKey: ['independent-verifications'] })]);
       toast.success(ncState ? `${providerName}: NCBON registration verified` : rxState && (paState || vaPath === 'rx_authority_verified') ? `${providerName}: ${state} prescriptive authority verified` : `${providerName}: independent practice verified in ${state}`);
@@ -122,10 +132,17 @@ function LegacyPracticeVerifyDialog({ open, onOpenChange, profileId, providerNam
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{ncState ? 'Verify NCBON registration — NC' : rxState ? `Verify license designations — ${state}` : `Verify independent practice — ${state}`}</DialogTitle>
-          <DialogDescription>{ncState ? `${providerName} needs a signed Collab Agreement AND registration with NCBON. Verify registration with a source, date and proof; the Collab Agreement is still required.` : paState ? `${providerName} needs a Collab Agreement plus an Rx Authority license designation. Verify the designation with a source, date and uploaded file; a Collab Agreement is still required.` : rxState
+          <DialogDescription>{ncState ? `${providerName} needs a signed Collab Agreement AND registration with NCBON. Verify registration with a source, date and proof; the Collab Agreement is still required.` : paState ? `${providerName} needs a Collab Agreement, an Rx Authority license designation (file proof) and PALS portal collab confirmation/registration. Verify one item at a time.` : rxState
             ? `${providerName} needs either a collaborative agreement plus prescriptive authority, or prescriptive authority plus autonomous practice.`
             : `${providerName} will no longer need a ${state} collaborative agreement once saved.`}</DialogDescription>
         </DialogHeader>
+        {paState && (
+          <div className="space-y-2 rounded-md border p-3 text-sm">
+            <p className="font-medium">What are you verifying?</p>
+            <label className="flex items-start gap-2"><input type="radio" name="pa-path" className="mt-1" checked={paPath === 'rx'} onChange={() => setPaPath('rx')} /><span>"Rx Authority" license designation (file required)</span></label>
+            <label className="flex items-start gap-2"><input type="radio" name="pa-path" className="mt-1" checked={paPath === 'pals'} onChange={() => setPaPath('pals')} /><span>PALS portal collab confirmed/registration</span></label>
+          </div>
+        )}
         {rxState && !paState && (
           <div className="space-y-2 rounded-md border p-3 text-sm">
             <p className="font-medium">What did you verify on the license?</p>
@@ -133,7 +150,7 @@ function LegacyPracticeVerifyDialog({ open, onOpenChange, profileId, providerNam
             <label className="flex items-start gap-2"><input type="radio" name="va-path" className="mt-1" checked={vaPath === 'rx_authority_verified'} onChange={() => setVaPath('rx_authority_verified')} /><span>Prescriptive authority only (a signed collaborative agreement is also required)</span></label>
           </div>
         )}
-        <IndependentPracticeFields registration={ncState} requireFile={paState} source={source} verifiedOn={verifiedOn} link={link} file={file} onChange={v => { if (v.source !== undefined) setSource(v.source); if (v.verifiedOn !== undefined) setVerifiedOn(v.verifiedOn); if (v.link !== undefined) setLink(v.link); if (v.file !== undefined) setFile(v.file); }} />
+        <IndependentPracticeFields registration={ncState} requireFile={paState && !palsPath} source={source} verifiedOn={verifiedOn} link={link} file={file} onChange={v => { if (v.source !== undefined) setSource(v.source); if (v.verifiedOn !== undefined) setVerifiedOn(v.verifiedOn); if (v.link !== undefined) setLink(v.link); if (v.file !== undefined) setFile(v.file); }} />
         <div className="space-y-1">
           <Label htmlFor="ind-notes">Notes (optional)</Label>
           <Textarea id="ind-notes" value={notes} onChange={e => setNotes(e.target.value)} />
