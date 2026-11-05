@@ -30,6 +30,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { CURRENT_EMPLOYEE_FILTER, isOffboarded } from '@/lib/employeeVisibility';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
+import { ProviderCollaboratingPhysicians } from './ProviderCollaboratingPhysicians';
 import { isIndependentPhysician } from '@/lib/clinicianRoles';
 import { useDirectoryProfileWarnings } from '@/hooks/useDirectoryProfileWarnings';
 import { ProviderStateSummary } from './ProviderStateSummary';
@@ -499,6 +500,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
           <TabsList className="w-full flex flex-wrap h-auto gap-1">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="licenses">Licenses</TabsTrigger>
+            <TabsTrigger value="physicians">Collaborating Physicians</TabsTrigger>
             <TabsTrigger value="documents">Documents</TabsTrigger>
             <TabsTrigger value="medallion">Medallion</TabsTrigger>
           </TabsList>
@@ -820,6 +822,10 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                 </>
               )}
             </div>
+          </TabsContent>
+
+          <TabsContent value="physicians" className="mt-4">
+            <ProviderCollaboratingPhysicians providerId={provider.id} />
           </TabsContent>
 
           <TabsContent value="licenses" className="mt-4 space-y-4">
