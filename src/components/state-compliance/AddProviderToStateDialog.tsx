@@ -30,11 +30,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   states: StateOption[];
+  defaultState?: string;
 }
 
-export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) {
+export function AddProviderToStateDialog({ open, onOpenChange, states, defaultState }: Props) {
   const [providerId, setProviderId] = useState('');
-  const [stateAbbr, setStateAbbr] = useState('');
+  const [stateAbbr, setStateAbbr] = useState(defaultState ?? '');
   const [search, setSearch] = useState('');
   const [activationOpen, setActivationOpen] = useState(false);
   const [submitted, setSubmitted] = useState<null | { name: string; state: string; stateName: string; queue: { label: string; items: { key: string; label: string; saved: boolean }[] } | null }>(null);
@@ -104,7 +105,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
   const ehrActive = !!providerId && !!stateAbbr && !!coverage?.statesByProfile.get(providerId)?.includes(stateAbbr);
   const alreadyActive = ehrActive || existing?.ehr_activation_status === 'active';
 
-  const reset = () => { setProviderId(''); setStateAbbr(''); setSearch(''); };
+  const reset = () => { setProviderId(''); setStateAbbr(defaultState ?? ''); setSearch(''); };
 
   return (
     <>
