@@ -64,9 +64,20 @@ export function ProviderRequirementReviews() {
         {savedAgreements.map((a, i) => a.document ? <p key={i} className="text-sm">Collab Agreement · <EvidenceLink reference={a.document}>View document</EvidenceLink></p> : null)}
       </div>}
       </div>;})}</div>}
-    <div className="divide-y border-y">{scope === 'active' && filtered.map(f => {
+    <div className="grid gap-3">{scope === 'active' && filtered.map(f => {
       const existing = audit?.agreements.find(a => a.profileId === f.provider.id && a.state === f.state && a.agreementId && ['active','fully_executed'].includes(a.status ?? ''));
-      return <div key={`${f.provider.id}:${f.state}`} className="py-4 space-y-2"><p className="font-medium">{f.name} — {f.state}</p>{f.newlyActive && <Badge variant="outline">Newly active in EHR</Badge>}<p className="text-sm text-destructive">{f.reason}</p><p className="text-sm text-muted-foreground">{f.howToFix}</p><div className="flex flex-wrap gap-2">
+      return <div key={`${f.provider.id}:${f.state}`} className="rounded-lg border bg-card p-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2 border-b pb-3">
+        <Link className="text-base font-semibold hover:underline" to={`/providers?search=${encodeURIComponent(f.name)}`}>{f.name}</Link>
+        <Badge variant="secondary" className="font-mono">{f.state}</Badge>
+        {f.newlyActive && <Badge variant="outline">Newly active in EHR</Badge>}
+      </div>
+      <div className="space-y-1 rounded-md bg-muted/40 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Needs fixing</p>
+        <p className="text-sm text-destructive">{f.reason}</p>
+        <p className="text-sm text-muted-foreground">{f.howToFix}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
         {(f.sheetReview || f.registrationReview || f.independentAlternative) && <Button size="sm" variant="outline" onClick={() => setVerify({ profileId:f.provider.id,providerName:f.name,state:f.state })}>{f.registrationReview ? 'Verify NCBON registration' : f.sheetReview ? 'Verify state requirements' : ['PA','VA'].includes(f.state) ? 'Verify license designations' : 'Verify independent practice'}</Button>}
         {existing?.agreementId ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.agreementId}`}>Open agreement</Link></Button> : (!SHEET_REQUIREMENTS[f.state] || SHEET_REQUIREMENTS[f.state].agreement) && <Button size="sm" onClick={() => setPrefill({stateAbbr:f.state,skipProcess:true,provider:{id:f.provider.id,name:f.name,email:f.provider.email,npi:f.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}
       </div></div>;
