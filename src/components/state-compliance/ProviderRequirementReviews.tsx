@@ -1,3 +1,4 @@
+import { ProviderNameLink } from '@/components/ProviderNameLink';
 import { ProofEntry, DECISION_PROOF_LABELS } from '@/components/agreements/ProofEntry';
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -66,7 +67,7 @@ export function ProviderRequirementReviews() {
       </Button></CollapsibleTrigger>
       <CollapsibleContent className="px-4 pb-4 sm:pl-11 space-y-4">
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Link className="text-base font-semibold hover:underline" to={`/directory?provider=${r.provider.id}`}>{r.name}</Link>
+        <ProviderNameLink id={r.provider.id} name={r.name} className="text-base font-semibold" />
         <Badge variant="secondary" className="font-mono">{r.state}</Badge>
 
         <span className="text-xs text-muted-foreground">{r.activationRequested ? 'Activation requested · ' : ''}{r.activation === 'requested' ? 'Not yet active in EHR' : r.activation === 'not_active' ? 'Not active in the latest EHR snapshot' : `EHR activation unconfirmed · ${r.activationDetail}`}</span>
@@ -99,7 +100,7 @@ export function ProviderRequirementReviews() {
       </Button></CollapsibleTrigger>
       <CollapsibleContent className="px-4 pb-4 sm:pl-11 space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Link className="text-base font-semibold hover:underline" to={`/directory?provider=${f.provider.id}`}>{f.name}</Link>
+        <ProviderNameLink id={f.provider.id} name={f.name} className="text-base font-semibold" />
         <Badge variant="secondary" className="font-mono">{f.state}</Badge>
         {f.newlyActive && <Badge variant="outline">Newly active in EHR</Badge>}
       </div>
