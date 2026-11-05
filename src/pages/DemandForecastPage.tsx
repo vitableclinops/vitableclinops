@@ -214,6 +214,21 @@ export default function DemandForecastPage() {
     return m;
   }, [rows, priorWeek]);
 
+  const demandPriority = useMemo(() => {
+    const critical: { state: string; pct: number }[] = [];
+    const atRisk: { state: string; pct: number }[] = [];
+    latestRows.forEach((r) => {
+      const prior = priorMap.get(r.state_abbreviation);
+      if (!prior || prior <= 0) return;
+      const pct = ((r.projected_visits - prior) / prior) * 100;
+      if (pct >= 20) critical.push({ state: r.state_abbreviation, pct });
+      else if (pct >= 10) atRisk.push({ state: r.state_abbreviation, pct });
+    });
+    critical.sort((a, b) => b.pct - a.pct);
+    atRisk.sort((a, b) => b.pct - a.pct);
+    return { critical, atRisk };
+  }, [latestRows, priorMap]);
+
   const filtered = useMemo(() => {
     let r = rows;
     if (selectedWeek !== 'all') r = r.filter((row) => row.week_start === selectedWeek);
@@ -395,6 +410,26 @@ export default function DemandForecastPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Demand priority states (real forecast: latest week vs prior week) */}
+          {priorWeek && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {([
+                { label: 'Critical Priority States', hint: 'Projected demand up 20%+ vs last week', list: demandPriority.critical, tone: 'destructive' },
+                { label: 'At Risk States', hint: 'Projected demand up 10–20% vs last week', list: demandPriority.atRisk, tone: 'warning' },
+              ] as const).map((box) => (
+                <Card key={box.label} className={box.tone === 'destructive' ? 'border-destructive/30 bg-destructive/5' : 'border-warning/30 bg-warning/5'}>
+                  <CardContent className="p-4">
+                    <p className="font-medium text-foreground">{box.label}</p>
+                    <p className="text-xs text-muted-foreground">{box.hint}</p>
+                    <p className="text-sm mt-1">
+                      {box.list.length ? box.list.map((x) => `${x.state} (+${x.pct.toFixed(0)}%)`).join(', ') : 'None this week'}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
           {/* Network demand chart */}
           {chartData.length > 0 && (
