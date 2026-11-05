@@ -863,7 +863,7 @@ const CollaborativeAgreementsPage = () => {
                 {stateFilter !== 'all' && <p className="text-xs text-muted-foreground">Filtered to {stateFilter}. Select "All states" in the state filter to see everything.</p>}
               </DialogHeader>
               {dialogCount === 0 && <p className="text-sm text-muted-foreground">Nothing to fix — all agreements are complete.</p>}
-              <Button variant="link" asChild><Link to={`/admin/states?tab=reviews${stateFilter !== 'all' ? `&state=${stateFilter}` : ''}`}>Provider requirement reviews in States &amp; Compliance</Link></Button>
+              <Button variant="link" asChild><Link to={`/admin/states?tab=compliance${stateFilter !== 'all' ? `&state=${stateFilter}` : ''}`}>Review provider requirements in Compliance</Link></Button>
               <div className="space-y-2">
                 {dialogIncomplete.map(a => {
                   const { linked, issues } = getIncompleteIssues(a);

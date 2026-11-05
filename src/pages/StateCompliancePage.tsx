@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
 import { DemandTagBadge } from '@/components/DemandTagBadge';
@@ -66,8 +66,18 @@ const StateCompliancePage = () => {
   const editParam = searchParams.get('edit');
   
   const [activeMainTab, setActiveMainTab] = useState(
-    tabParam && ['states', 'reviews', 'requirements', 'templates', 'compliance'].includes(tabParam) ? tabParam : 'states'
+    tabParam === 'reviews' ? 'compliance' : tabParam && ['states', 'requirements', 'templates', 'compliance'].includes(tabParam) ? tabParam : 'states'
   );
+  useEffect(() => {
+    if (tabParam === 'reviews') {
+      const next = new URLSearchParams(searchParams);
+      next.set('tab', 'compliance');
+      setSearchParams(next, { replace: true });
+      setActiveMainTab('compliance');
+    } else if (tabParam && ['states', 'requirements', 'templates', 'compliance'].includes(tabParam)) {
+      setActiveMainTab(tabParam);
+    }
+  }, [tabParam, searchParams, setSearchParams]);
   const [editAbbr, setEditAbbr] = useState<string | null>(editParam);
   const openStateEditor = (abbr: string) => {
     setEditAbbr(abbr);
@@ -85,11 +95,11 @@ const StateCompliancePage = () => {
   
   // Compliance state
   const [complianceSearchQuery, setComplianceSearchQuery] = useState('');
-  const [complianceTab, setComplianceTab] = useState('overview');
+  const [complianceTab, setComplianceTab] = useState('requirements');
 
   const { profile, roles } = useAuth();
   // Open provider requirement flags power the red alert badge on the
-  // Provider Requirements tab; this reuses the same cached audit queries.
+  // Compliance tab; this reuses the same cached audit queries.
   const { flags: requirementFlags, rows: licensedRows, coverage, profiles: currentProfiles, loading: rosterLoading, error: rosterError } = useLicensedStateReadiness();
   const requirementFlagCount = requirementFlags.length;
   const { allData: complianceAllData, loading: complianceLoading, refetch: refetchCompliance } = useStateCompliance();
@@ -219,8 +229,8 @@ const StateCompliancePage = () => {
                 <MapPin className="h-4 w-4" />
                 State Directory
               </TabsTrigger>
-              <TabsTrigger value="reviews" className="gap-2">
-                <ShieldCheck className="h-4 w-4" />Provider Requirements
+              <TabsTrigger value="compliance" className="gap-2">
+                <ShieldCheck className="h-4 w-4" />Compliance
                 {requirementFlagCount > 0 && (
                   <span
                     className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs font-semibold text-destructive-foreground"
@@ -238,14 +248,9 @@ const StateCompliancePage = () => {
                 <GraduationCap className="h-4 w-4" />
                 Licensure Templates
               </TabsTrigger>
-              <TabsTrigger value="compliance" className="gap-2">
-                <ShieldCheck className="h-4 w-4" />
-                Compliance
-              </TabsTrigger>
             </TabsList>
 
             {/* State Directory Tab */}
-            <TabsContent value="reviews"><ProviderRequirementReviews /></TabsContent>
             <TabsContent value="states" className="space-y-6">
               {/* Actions */}
               <div className="flex items-center justify-end gap-3">
@@ -415,8 +420,8 @@ const StateCompliancePage = () => {
                           <CardContent className="space-y-4">
                             <div className="space-y-1 text-sm">
                               {rosterLoading ? <p className="text-muted-foreground">Loading providers…</p> : rosterError ? <p className="text-destructive">Provider lists unavailable</p> : <>
-                                <Button variant="link" className="h-auto p-0 whitespace-normal text-left justify-start" onClick={e => { e.preventDefault(); e.stopPropagation(); setActiveMainTab('reviews'); setSearchParams({tab:'reviews',state:state.abbreviation,scope:'active'}); }}>Providers active here: {currentProfiles.filter(p => !isOffboarded(p.employment_status) && !isTestAccountDirectoryRecord(p) && !OUT_OF_SCOPE_PROFILE_IDS[p.id] && coverage?.statesByProfile.get(p.id)?.includes(state.abbreviation)).length}</Button>
-                                <Button variant="link" className="h-auto p-0 whitespace-normal text-left justify-start block" onClick={e => { e.preventDefault(); e.stopPropagation(); setActiveMainTab('reviews'); setSearchParams({tab:'reviews',state:state.abbreviation,scope:'licensed'}); }}>Licensed, but not active: {licensedRows.filter(r => r.state === state.abbreviation && r.activation === 'not_active').length}</Button>
+                                <Button variant="link" className="h-auto p-0 whitespace-normal text-left justify-start" onClick={e => { e.preventDefault(); e.stopPropagation(); setComplianceTab('requirements'); setActiveMainTab('compliance'); setSearchParams({tab:'compliance',state:state.abbreviation,scope:'active'}); }}>Providers active here: {currentProfiles.filter(p => !isOffboarded(p.employment_status) && !isTestAccountDirectoryRecord(p) && !OUT_OF_SCOPE_PROFILE_IDS[p.id] && coverage?.statesByProfile.get(p.id)?.includes(state.abbreviation)).length}</Button>
+                                <Button variant="link" className="h-auto p-0 whitespace-normal text-left justify-start block" onClick={e => { e.preventDefault(); e.stopPropagation(); setComplianceTab('requirements'); setActiveMainTab('compliance'); setSearchParams({tab:'compliance',state:state.abbreviation,scope:'licensed'}); }}>Licensed, but not active: {licensedRows.filter(r => r.state === state.abbreviation && r.activation === 'not_active').length}</Button>
                                 {licensedRows.some(r => r.state === state.abbreviation && r.activation === 'unconfirmed') && <p className="text-xs text-muted-foreground">{licensedRows.filter(r => r.state === state.abbreviation && r.activation === 'unconfirmed').length} licensed · EHR activation unconfirmed</p>}
                               </>}
                             </div>
@@ -537,7 +542,7 @@ const StateCompliancePage = () => {
             {/* Compliance Tab */}
             <TabsContent value="compliance" className="space-y-6">
               {/* Stats Grid */}
-              <div className="grid gap-4 md:grid-cols-4">
+              {complianceTab !== 'requirements' && <div className="grid gap-4 md:grid-cols-4">
                 <StatCard
                   title="Compliant Providers"
                   value={compliantProviders.length}
@@ -568,9 +573,14 @@ const StateCompliancePage = () => {
                 />
               </div>
 
+              }
               {/* Compliance Sub-tabs */}
               <Tabs value={complianceTab} onValueChange={setComplianceTab}>
-                <TabsList className="mb-6">
+                <TabsList className="mb-6 h-auto flex flex-wrap justify-start">
+                  <TabsTrigger value="requirements" className="gap-2">
+                    <ShieldCheck className="h-4 w-4" />
+                    Provider requirements
+                  </TabsTrigger>
                   <TabsTrigger value="overview" className="gap-2">
                     <ShieldCheck className="h-4 w-4" />
                     Overview
@@ -585,6 +595,7 @@ const StateCompliancePage = () => {
                   </TabsTrigger>
                 </TabsList>
 
+                <TabsContent value="requirements"><ProviderRequirementReviews /></TabsContent>
                 <TabsContent value="overview">
                   <div className="grid gap-8 lg:grid-cols-3">
                     <div className="lg:col-span-2">
