@@ -16,6 +16,8 @@ import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
 import { saveRequirementProof, useRequirementProofs } from '@/hooks/useRequirementProofs';
 import { validRequirementProof } from '@/lib/stateSheetRequirements';
+import { useActiveStateAgreementAudit } from '@/hooks/useActiveStateAgreementAudit';
+import { parseLocalDate } from '@/lib/utils';
 import { StateRequirementVerifyDialog, StateRequirementProofList, RequirementProofSection, emptyDraft, draftStarted, draftComplete, type ProofDraft } from './StateRequirementVerifyDialog';
 
 /** Save a verified independent-practice status for one provider/state. */
@@ -180,7 +182,12 @@ function PaVerifyDialog({ open, onOpenChange, profileId, providerName }: { open:
     if (error) throw error; return data; } });
   const rxDone = decision.data?.decision === 'rx_authority_verified' && !!decision.data.verified_source && !!decision.data.verified_on && !!decision.data.verified_attachment_path;
   const palsDone = (proofs.data ?? []).some(p => p.state_abbreviation === 'PA' && p.requirement_key === 'pals_collab_registration' && validRequirementProof(p));
-  const loading = proofs.isLoading || decision.isLoading;
+  const audit = useActiveStateAgreementAudit(open);
+  const now = new Date(); const day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const agreementDone = audit.data?.agreements.some(a => a.profileId === profileId && a.state === 'PA'
+    && ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase()) && (!!a.document?.trim() || a.documentExempt)
+    && (!a.start || parseLocalDate(a.start.slice(0, 10)) <= day) && (!a.end || parseLocalDate(a.end.slice(0, 10)) >= day)) ?? false;
+  const loading = proofs.isLoading || decision.isLoading || audit.isLoading;
   const rxOn = !rxDone && draftStarted(rx), palsOn = !palsDone && draftStarted(pals);
   const canSave = (rxOn || palsOn) && (!rxOn || draftComplete(rx, true)) && (!palsOn || draftComplete(pals));
   const save = async () => {
@@ -194,8 +201,8 @@ function PaVerifyDialog({ open, onOpenChange, profileId, providerName }: { open:
     } catch (e) { console.error(e); toast.error(e instanceof Error ? e.message : 'Could not save the verification'); } finally { setSaving(false); }
   };
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-    <DialogHeader><DialogTitle>Verify state requirements — PA</DialogTitle><DialogDescription>{providerName} needs a signed Collab Agreement AND Rx Authority license designation AND PALS portal collab confirmation/registration. Fill in any or all below.</DialogDescription></DialogHeader>
-    <p className="text-sm text-muted-foreground">Collab Agreement is added/linked through the Agreements flow.</p>
+    <DialogHeader><DialogTitle>Verify state requirements — PA</DialogTitle><DialogDescription>{providerName} needs a signed Collab Agreement AND Rx Authority license designation AND PALS portal collab confirmation/registration. Only outstanding items are shown.</DialogDescription></DialogHeader>
+    {!loading && <p className="text-sm">Signed Collab Agreement: {agreementDone ? <span className="font-medium text-primary">already on file</span> : <span className="font-medium text-destructive">missing — add/link it from Agreements</span>}</p>}
     {loading && <p className="text-sm text-muted-foreground">Checking saved proof…</p>}
     {!loading && (rxDone ? <p className="text-sm">"Rx Authority" license designation: <span className="font-medium text-primary">already verified</span></p>
       : <RequirementProofSection id="pa-rx" label={'"Rx Authority" license designation'} draft={rx} onChange={setRx} fileOnly showExpiration={false} />)}
