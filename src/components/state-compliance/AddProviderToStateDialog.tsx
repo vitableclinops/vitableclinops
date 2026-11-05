@@ -11,7 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ActivationActionDialog } from '@/components/activation/ActivationActionDialog';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { isOffboarded } from '@/lib/employeeVisibility';
+import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, validRequirementProof } from '@/lib/stateSheetRequirements';
 import type { EhrActivationStatus } from '@/hooks/useProviderStateStatus';
+
+const OTHER_RULES: Record<string, string> = {
+  NC: 'Signed Collab Agreement + NCBON registration',
+  NY: 'Signed Collab Agreement OR verified independent practice',
+  OK: 'Signed Collab Agreement OR verified independent practice',
+  WV: 'Signed Collab Agreement OR verified independent practice',
+  PA: 'Signed Collab Agreement + "Rx Authority" license designation (file proof)',
+  VA: '"Autonomous Practice" + "Rx Authority" License designations OR "Rx Authority" + Signed Collab Agreement',
+};
 
 interface StateOption { abbreviation: string; name: string }
 
@@ -53,6 +63,29 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
       return data;
     },
   });
+
+  const { data: proofs = [] } = useQuery({
+    queryKey: ['add-provider-to-state-proofs', providerId, stateAbbr],
+    enabled: !!providerId && !!stateAbbr,
+    queryFn: async () => {
+      const { data } = await supabase.from('provider_requirement_verifications').select('*')
+        .eq('profile_id', providerId).eq('state_abbreviation', stateAbbr);
+      return (data ?? []) as any[];
+    },
+  });
+
+  const requirementQueue = useMemo(() => {
+    if (!stateAbbr) return null;
+    const cfg = SHEET_REQUIREMENTS[stateAbbr] ?? (OTHER_RULES[stateAbbr] ? { label: OTHER_RULES[stateAbbr], keys: [] as string[] } : null);
+    if (!cfg) return null;
+    const items = cfg.keys.map((k) => ({
+      key: k,
+      label: REQUIREMENT_LABELS[k] ?? k,
+      saved: proofs.some((p) => p.requirement_key === k && validRequirementProof(p)),
+    }));
+    if ((cfg as any).agreement || OTHER_RULES[stateAbbr]?.includes('Collab')) items.push({ key: 'collab_agreement', label: 'Signed Collab Agreement', saved: false });
+    return { label: cfg.label, items };
+  }, [stateAbbr, proofs]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -116,6 +149,23 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
             {alreadyActive && (
               <p className="text-sm font-medium text-destructive">Provider is already active here</p>
             )}
+            {requirementQueue && !alreadyActive && providerId && (
+              <div className="rounded-md border p-3 space-y-2">
+                <p className="text-sm font-medium">Requirements queued for {stateAbbr}</p>
+                <p className="text-xs text-muted-foreground">{requirementQueue.label}</p>
+                {requirementQueue.items.length > 0 && (
+                  <ul className="space-y-1 text-sm">
+                    {requirementQueue.items.map((i) => (
+                      <li key={i.key} className="flex items-start gap-2">
+                        <span className={i.saved ? 'text-primary' : 'text-destructive'}>{i.saved ? '✓' : '•'}</span>
+                        <span>{i.label}{i.saved ? ' (proof saved)' : ''}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-xs text-muted-foreground">These are added to the activation request. Anything still missing is flagged on the Compliance tab.</p>
+              </div>
+            )}
             {existing?.ehr_activation_status && !alreadyActive && (
               <p className="text-sm text-muted-foreground">
                 Current status in this state: <span className="font-medium text-foreground">{existing.ehr_activation_status.replace(/_/g, ' ')}</span>
@@ -144,7 +194,9 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
           stateName={state.name}
           currentStatus={(existing?.ehr_activation_status as EhrActivationStatus) || 'inactive'}
           readinessStatus={existing?.readiness_status || 'not_ready'}
-          readinessReason={existing?.readiness_reason || 'Requirements for this state have not been reviewed yet'}
+          readinessReason={requirementQueue
+            ? `Requirements to complete for ${state.abbreviation}: ${requirementQueue.items.filter((i) => !i.saved).map((i) => i.label).join('; ') || requirementQueue.label}`
+            : existing?.readiness_reason || 'Requirements for this state have not been reviewed yet'}
           actionType="request_activation"
         />
       )}
