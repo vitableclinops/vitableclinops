@@ -101,7 +101,7 @@ export function ProviderFlagAlerts({
                 {provider.agreementReviews?.map(review => (
                   <div key={review.state} className="mt-2 space-y-1">
                     <p><strong>{review.state} {review.authorityReview ? 'authority / collaboration' : 'collaboration'}:</strong> {review.newlyActive && 'Newly active in EHR. '}{review.reason}</p>
-                    <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => navigate(`/admin/states?tab=reviews&state=${review.state}`)}>Review state requirements</Button></p>
+                    <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => navigate(`/admin/states?tab=compliance&state=${review.state}`)}>Review state requirements</Button></p>
                   </div>
                 ))}
                 {provider.profileReviews?.map(review => (

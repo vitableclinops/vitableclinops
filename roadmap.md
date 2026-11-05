@@ -1,5 +1,7 @@
 # Roadmap
 
+- [x] Move provider requirement reviews and their missing-requirements badge into Compliance; update correction links and preserve existing tracking and proof.
+
 - [x] Simplify provider requirement reviews into compact expandable rows for both active and licensed providers.
 
 - [x] Add Medallion-licensed, not-EHR-active provider lists and advance requirement review to States & Compliance, with state-card summaries.
