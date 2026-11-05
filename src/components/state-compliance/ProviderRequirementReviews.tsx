@@ -100,7 +100,7 @@ export function ProviderRequirementReviews() {
         {existing?.agreementId ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.agreementId}`}>Open agreement</Link></Button> : (!SHEET_REQUIREMENTS[f.state] || SHEET_REQUIREMENTS[f.state].agreement) && <Button size="sm" onClick={() => setPrefill({stateAbbr:f.state,skipProcess:true,provider:{id:f.provider.id,name:f.name,email:f.provider.email,npi:f.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}
       </div></CollapsibleContent></Collapsible>;
     })}</div>
-    {scope === 'active' && state !== 'all' && <Collapsible>
+    {scope === 'active' && state !== 'all' && <Collapsible key={state} defaultOpen>
       <CollapsibleTrigger asChild><Button variant="outline" className="gap-2"><ChevronDown className="h-4 w-4" />All active providers in {state}</Button></CollapsibleTrigger>
       <CollapsibleContent className="pt-3"><StateActiveProvidersCard state={state} /></CollapsibleContent>
     </Collapsible>}
