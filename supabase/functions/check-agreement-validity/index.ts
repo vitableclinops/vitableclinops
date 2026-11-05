@@ -140,6 +140,12 @@ Deno.serve(async (req) => {
         const licenseExpired = agreementLicenseEvidence([...(licenses || []), ...(medLic || [])], today) === 'invalid';
 
         if (licenseExpired) {
+          const medExpired = (medLic || []).find((l) => l.expiration_date && l.expiration_date < today);
+          const invalidReason = medExpired
+            ? `Medallion sync showing license expired: ${ap.provider_name} ${agreement.state_abbreviation} license expired ${medExpired.expiration_date}`
+            : (medLic || []).length
+              ? `Medallion sync showing license inactive: ${ap.provider_name} ${agreement.state_abbreviation}`
+              : `Provider ${ap.provider_name} license expired or invalid in ${agreement.state_abbreviation}`;
           // Invalidate the agreement
           const { error } = await supabase
             .from("collaborative_agreements")
