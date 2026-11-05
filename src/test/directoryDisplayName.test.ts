@@ -8,3 +8,11 @@ describe('Amanda Clement directory identity', () => {
     expect(provider.full_name).toBe('Amanda Clement');
   });
 });
+describe('directory name format for all providers', () => {
+  it('shows First (Preferred) Last for anyone with a preferred name', () => {
+    expect(directoryDisplayName({ id: 'x', full_name: 'Richard Rash', preferred_name: 'Rich' })).toBe('Richard (Rich) Rash');
+  });
+  it('shows the full name when there is no preferred name', () => {
+    expect(directoryDisplayName({ id: 'y', full_name: 'Van Tu', preferred_name: null })).toBe('Van Tu');
+  });
+});
