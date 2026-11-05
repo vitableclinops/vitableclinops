@@ -14,6 +14,10 @@ describe('Medallion licensed-state readiness', () => {
   it('does not count an expired Medallion license as licensed', () => {
     expect(licensedStateReadiness([p], [{...licenses[1],expiration:'2026-11-03'}], {identities:[identity]}, day)).toEqual([]);
   });
+  it('excludes independent physicians from NP requirement reviews', () => {
+    expect(licensedStateReadiness([{...p, profession: 'DO'}], licenses, {identities:[identity]}, day)).toEqual([]);
+    expect(licensedStateReadiness([{...p, profession: 'NP', credentials: 'DO'}], licenses, {identities:[identity]}, day)).toEqual([]);
+  });
   it('excludes terminated providers despite source licenses', () => {
     expect(licensedStateReadiness([{...p,employment_status:'terminated'}],licenses,{identities:[identity]},day)).toEqual([]);
   });
