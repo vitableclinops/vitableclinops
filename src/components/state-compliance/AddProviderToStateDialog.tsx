@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ActivationActionDialog } from '@/components/activation/ActivationActionDialog';
+import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { isOffboarded } from '@/lib/employeeVisibility';
 import type { EhrActivationStatus } from '@/hooks/useProviderStateStatus';
 
@@ -62,7 +63,9 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
   const state = states.find((s) => s.abbreviation === stateAbbr);
   const sortedStates = [...states].sort((a, b) => a.name.localeCompare(b.name));
 
-  const alreadyActive = existing?.ehr_activation_status === 'active';
+  const { data: coverage } = usePcpCoverage(open);
+  const ehrActive = !!providerId && !!stateAbbr && !!coverage?.statesByProfile.get(providerId)?.includes(stateAbbr);
+  const alreadyActive = ehrActive || existing?.ehr_activation_status === 'active';
 
   const reset = () => { setProviderId(''); setStateAbbr(''); setSearch(''); };
 
