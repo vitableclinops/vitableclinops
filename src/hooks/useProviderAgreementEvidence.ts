@@ -32,9 +32,9 @@ export function useProviderAgreementEvidence(profileId: string) {
       ]);
       if (documents.error) throw documents.error;
       if (taskDocuments.error) throw taskDocuments.error;
-      const evidence = [...agreements.values()].flatMap(a => [...new Set([a.agreement_document_url, a.medallion_document_url, ...a.participantDocuments].filter((s): s is string => !!s))].map(reference => ({ id: `${a.id}:${reference}`, label: `${a.state_abbreviation} — ${a.physician_name ?? 'Collaborative agreement'}`, reference })));
+      const evidence = [...agreements.values()].flatMap(a => [...new Set([a.agreement_document_url, a.medallion_document_url, ...a.participantDocuments].filter((s): s is string => !!s))].map(reference => ({ id: `${a.id}:${reference}`, label: `Collab Agreement — ${a.physician_name ?? "physician not recorded"}`, state: a.state_abbreviation as string | null, reference })));
       const uniqueDocs = new Map([...(documents.data ?? []), ...(taskDocuments.data ?? [])].map(d => [d.id, d]));
-      return [...evidence, ...[...uniqueDocs.values()].map(d => ({ id: d.id, label: d.file_name, reference: d.file_path }))];
+      return [...evidence, ...[...uniqueDocs.values()].map(d => ({ id: d.id, label: d.file_name, state: (agreements.get(d.agreement_id as string)?.state_abbreviation ?? null) as string | null, reference: d.file_path }))];
     },
   });
 }
