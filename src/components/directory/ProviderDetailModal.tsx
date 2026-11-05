@@ -303,7 +303,8 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
 
   const { data: profileWarnings } = useDirectoryProfileWarnings(!!provider);
   const warnings = provider ? profileWarnings?.get(provider.id) : undefined;
-  const missingDocAgreements = warnings?.missing ?? [];
+  // Missing-document flags live only in States & Compliance, not the directory.
+  const missingDocAgreements: NonNullable<typeof warnings>['missing'] = [];
   const invalidAgreements = warnings?.invalid ?? [];
 
   const saveMutation = useMutation({
