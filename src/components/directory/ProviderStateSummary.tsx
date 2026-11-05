@@ -50,6 +50,10 @@ export function ProviderStateSummary({ provider }: { provider: Profile }) {
 
   return (
     <div className="space-y-3">
+      <div className="rounded-lg border bg-muted/40 p-3 flex items-baseline gap-2">
+        <span className="text-sm font-semibold">Total # of Licenses:</span>
+        <span className="text-lg font-bold">{new Set(licensed).size}</span>
+      </div>
       <Row title="Active states in EHR" states={active} tone="active"
         empty={coverageKnown ? 'Not active in any state' : cell.detail || cell.text} />
       <Row title="Licensed but not active in EHR" states={notActive} tone="muted"
