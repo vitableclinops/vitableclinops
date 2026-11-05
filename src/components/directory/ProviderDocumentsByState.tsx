@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useProviderAgreementEvidence } from '@/hooks/useProviderAgreementEvidence';
+import { useProviderOtherDocuments } from '@/hooks/useProviderOtherDocuments';
 import { useRequirementProofs } from '@/hooks/useRequirementProofs';
 import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 import { ProofEntry, DECISION_PROOF_LABELS } from '@/components/agreements/ProofEntry';
@@ -14,6 +15,7 @@ const OTHER = 'Other';
 export function ProviderDocumentsByState({ profileId, chartReviewUrl }: { profileId: string; chartReviewUrl?: string | null }) {
   const evidence = useProviderAgreementEvidence(profileId);
   const proofs = useRequirementProofs(profileId);
+  const other = useProviderOtherDocuments(profileId);
   const decisions = useQuery({
     queryKey: ['independent-verifications', profileId],
     ...AGREEMENT_REFRESH_OPTIONS,
@@ -26,7 +28,7 @@ export function ProviderDocumentsByState({ profileId, chartReviewUrl }: { profil
     },
   });
 
-  if (evidence.isLoading || proofs.isLoading || decisions.isLoading) return <p className="text-sm text-muted-foreground">Loading documents…</p>;
+  if (evidence.isLoading || other.isLoading || proofs.isLoading || decisions.isLoading) return <p className="text-sm text-muted-foreground">Loading documents…</p>;
   if (evidence.error) return <p className="text-sm text-destructive">Could not load documents.</p>;
 
   const groups = new Map<string, React.ReactNode[]>();
@@ -35,6 +37,8 @@ export function ProviderDocumentsByState({ profileId, chartReviewUrl }: { profil
     groups.set(key, [...(groups.get(key) ?? []), node]);
   };
   for (const d of evidence.data ?? []) add(d.state, <div key={d.id} className="text-sm"><EvidenceLink reference={d.reference}>{d.label}</EvidenceLink></div>);
+  const shown = new Set((evidence.data ?? []).map(d => d.reference));
+  for (const d of other.data ?? []) if (!shown.has(d.reference)) add(d.state, <div key={d.id} className="text-sm"><EvidenceLink reference={d.reference}>{d.label}</EvidenceLink></div>);
   for (const p of proofs.data ?? []) add(p.state_abbreviation, <ProofEntry key={`r:${p.state_abbreviation}:${p.requirement_key}`} label={REQUIREMENT_LABELS[p.requirement_key] ?? p.requirement_key} proof={p} />);
   for (const d of decisions.data ?? []) add(d.state_abbreviation, <ProofEntry key={`d:${d.state_abbreviation}:${d.decision}`} label={DECISION_PROOF_LABELS[d.decision] ?? 'Collab alternative'} proof={d as any} />);
   if (chartReviewUrl) add(OTHER, (
