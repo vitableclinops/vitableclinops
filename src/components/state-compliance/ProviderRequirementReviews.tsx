@@ -66,7 +66,7 @@ export function ProviderRequirementReviews() {
       </Button></CollapsibleTrigger>
       <CollapsibleContent className="px-4 pb-4 sm:pl-11 space-y-4">
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Link className="text-base font-semibold hover:underline" to={`/providers?search=${encodeURIComponent(r.name)}`}>{r.name}</Link>
+        <Link className="text-base font-semibold hover:underline" to={`/directory?provider=${r.provider.id}`}>{r.name}</Link>
         <Badge variant="secondary" className="font-mono">{r.state}</Badge>
 
         <span className="text-xs text-muted-foreground">{r.activationRequested ? 'Activation requested · ' : ''}{r.activation === 'requested' ? 'Not yet active in EHR' : r.activation === 'not_active' ? 'Not active in the latest EHR snapshot' : `EHR activation unconfirmed · ${r.activationDetail}`}</span>
