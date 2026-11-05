@@ -17,5 +17,8 @@ export async function refreshAgreementViews(queryClient: QueryClient) {
     ['independent-verifications'],
     ['provider-missing-requirements'],
     ['provider-readiness'],
+    ['pcp-coverage-by-id'],
+    ['medallion_directory'],
+    ['provider_directory_state_map'],
   ].map(queryKey => queryClient.invalidateQueries({ queryKey })));
 }
