@@ -1,3 +1,4 @@
+import { stateRequirementSummary } from '@/lib/stateRequirementSummary';
 import { X, CheckCircle2, AlertTriangle, XCircle, Clock, FileText, Users, Shield, Stethoscope, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -203,6 +204,7 @@ export function CellDetailPanel({ cell, provider, state, onClose }: CellDetailPa
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
             State Requirements
           </h4>
+          <p className="text-sm mb-2">{stateRequirementSummary(state.abbreviation)}</p>
           <div className="flex flex-wrap gap-1.5">
             {state.requiresCollaborativeAgreement && (
               <Badge variant="outline" className="text-xs">CA Required</Badge>

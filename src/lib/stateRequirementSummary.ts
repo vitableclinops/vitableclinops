@@ -4,7 +4,7 @@ export function stateRequirementSummary(state: string, collabType?: string | nul
   const s = state.toUpperCase();
   if (SHEET_REQUIREMENTS[s]) return SHEET_REQUIREMENTS[s].label;
   if (s === 'NC') return 'Signed Collab Agreement + Verified NCBON Registration';
-  if (s === 'PA') return 'Collab Agreement + "Rx Authority" License Designation';
+  if (s === 'PA') return 'Collab Agreement + "Rx Authority" License Designation + PALS portal collab confirmed/registration';
   if (s === 'VA') return '"Autonomous Practice" + "Rx Authority" License Designations OR "Rx Authority" License Designation + Collab Agreement';
   if (s === 'NY') return 'Collab Agreement OR Verified Independent Practice (only needed without prescriptive authority)';
   if (s === 'WV' || s === 'OK') return 'Collab Agreement OR Verified Independent Practice';

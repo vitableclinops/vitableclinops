@@ -21,6 +21,6 @@ describe('existing agreement uploads', () => {
     expect(activeStateAgreementFlags(provider, ['PA'], rules, [], [], today)).toHaveLength(1);
     const document = agreementDocumentEvidence('a', 'p', null, [], [{ agreement_id: 'a', task_id: null, file_path: 'existing.pdf' }], []);
     const rxProof = [{ profile_id: 'p', state_abbreviation: 'PA', decision: 'rx_authority_verified', verified_source: 'State board', verified_on: '2026-10-28', verified_attachment_path: 'rx-proof.png' }];
-    expect(activeStateAgreementFlags(provider, ['PA'], rules, [{ profileId: 'p', state: 'PA', status: 'active', document }], rxProof, today)).toEqual([]);
+    expect(activeStateAgreementFlags(provider, ['PA'], rules, [{ profileId: 'p', state: 'PA', status: 'active', document }], rxProof, today, [], [], [{ profile_id: 'p', state_abbreviation: 'PA', requirement_key: 'pals_collab_registration', verified_source: 'PALS', verified_on: '2026-10-28', verified_link: 'https://www.pals.pa.gov/x' }])).toEqual([]);
   });
 });

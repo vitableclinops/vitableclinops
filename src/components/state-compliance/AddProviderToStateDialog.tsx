@@ -1,3 +1,4 @@
+import { stateRequirementSummary } from '@/lib/stateRequirementSummary';
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -20,7 +21,7 @@ export const OTHER_RULES: Record<string, string> = {
   NY: 'Signed Collab Agreement OR verified independent practice',
   OK: 'Signed Collab Agreement OR verified independent practice',
   WV: 'Signed Collab Agreement OR verified independent practice',
-  PA: 'Signed Collab Agreement + "Rx Authority" license designation (file proof)',
+  PA: 'Signed Collab Agreement + "Rx Authority" license designation (file proof) + PALS portal collab confirmed/registration',
   VA: '"Autonomous Practice" + "Rx Authority" License designations OR "Rx Authority" + Signed Collab Agreement',
 };
 
@@ -89,7 +90,8 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
       saved: proofs.some((p) => p.requirement_key === k && validRequirementProof(p)),
     }));
     if ((cfg as any).agreement || OTHER_RULES[stateAbbr]?.includes('Collab')) items.push({ key: 'collab_agreement', label: 'Signed Collab Agreement', saved: false });
-    return { label: cfg.label, items };
+    if (stateAbbr === 'PA') items.push({ key: 'pals_collab_registration', label: REQUIREMENT_LABELS.pals_collab_registration, saved: proofs.some((p) => p.requirement_key === 'pals_collab_registration' && validRequirementProof(p)) });
+    return { label: stateRequirementSummary(stateAbbr), items };
   }, [stateAbbr, proofs]);
 
   const filtered = useMemo(() => {

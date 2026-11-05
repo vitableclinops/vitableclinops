@@ -44,6 +44,7 @@ export const REQUIREMENT_LABELS: Record<string, string> = {
   active_license: 'Active license status', rx_authority: 'Prescriptive authority', board_registration: 'Collab Agreement registered with state board',
   furnishing_license: 'Nurse Practitioner Furnishing license', c_rxn_license: 'C-RXN license', practice_without_collab: 'Practice without collaborative agreement: yes', autonomous_status: 'Autonomous status on license',
   tlht_designation: 'TLHT (Telehealth) designation',
+  pals_collab_registration: 'PALS portal collab confirmed/registration',
   nursing_interstate_telehealth_registration: 'Nursing Interstate Telehealth Registration',
   aprn_telehealth_registration: 'Advanced Practice Registered Nurse - Telehealth Registration',
   aprn_supervision_independent: 'APRN Supervision: Independent status',

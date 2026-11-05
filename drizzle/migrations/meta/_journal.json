@@ -176,6 +176,13 @@
       "when": 1793834666084,
       "tag": "0024_allow_kentucky_independent_ns_proof",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793904158904,
+      "tag": "0025_allow_pa_pals_registration_proof",
+      "breakpoints": true
     }
   ]
 }

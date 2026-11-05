@@ -3,7 +3,7 @@ import { isIndependentPhysician, normalizeRole } from '@/lib/clinicianRoles';
 import { parseLocalDate } from '@/lib/utils';
 import { INDEPENDENT_ALTERNATIVE_STATES, RX_AUTHORITY_REQUIRED_STATES, hasVerifiedIndependentPractice, hasVerifiedRxAuthority, hasVerifiedNcbonRegistration, type CollabDecision } from '@/lib/nyIndependentPractice';
 import { hasPrescriptiveAuthority, type PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
-import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, missingSheetRequirements, type RequirementProof, type SheetLicense } from '@/lib/stateSheetRequirements';
+import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, missingSheetRequirements, validRequirementProof, type RequirementProof, type SheetLicense } from '@/lib/stateSheetRequirements';
 
 export interface StateAgreement {
   profileId: string | null;
@@ -69,15 +69,16 @@ export function activeStateAgreementFlags(
     }
     if (state === 'PA') {
       const rxVerified = hasVerifiedRxAuthority(provider.id, state, decisions);
-      if (agreementOnFile && rxVerified) return [];
-      return [{ state, authorityReview: !rxVerified, independentAlternative: !rxVerified, newlyActive: newlyActiveStates.includes(state),
-        reason: !agreementOnFile && !rxVerified
-          ? 'PA Collab Agreement and verified Rx Authority license designation with an uploaded verification file are missing.'
-          : !agreementOnFile ? 'Missing active linked PA Collab Agreement with its document.'
-          : 'PA Collab Agreement is on file, but the Rx Authority license designation needs an uploaded verification file.',
-        howToFix: !agreementOnFile && rxVerified
-          ? 'Add or link the signed PA Collab Agreement (completed-process option, no emails).'
-          : `${!agreementOnFile ? 'Add or link the signed PA Collab Agreement, then verify' : 'Verify'} the Rx Authority license designation with where and when it was verified and an uploaded screenshot or document. PA requires both; autonomous practice is not an alternative.` }];
+      const palsVerified = requirementProofs.some(p => p.profile_id === provider.id && p.state_abbreviation === 'PA' && p.requirement_key === 'pals_collab_registration' && validRequirementProof(p, day));
+      if (agreementOnFile && rxVerified && palsVerified) return [];
+      const missing = [
+        !agreementOnFile && 'signed PA Collab Agreement',
+        !rxVerified && 'Rx Authority license designation (uploaded file)',
+        !palsVerified && 'PALS portal collab confirmation/registration',
+      ].filter(Boolean) as string[];
+      return [{ state, authorityReview: !rxVerified || !palsVerified, independentAlternative: !rxVerified || !palsVerified, newlyActive: newlyActiveStates.includes(state),
+        reason: `PA requirements missing: ${missing.join(' + ')}.`,
+        howToFix: `${!agreementOnFile ? 'Add or link the signed PA Collab Agreement (completed-process option, no emails). ' : ''}${!rxVerified ? 'Verify the Rx Authority license designation with source, date and an uploaded file. ' : ''}${!palsVerified ? 'Verify the collab is confirmed/registered in the PALS portal with source, date and a file or link. ' : ''}PA requires all three.` }];
     }
     if (agreementOnFile && RX_AUTHORITY_REQUIRED_STATES.has(state)
       && !hasVerifiedRxAuthority(provider.id, state, decisions) && !hasPrescriptiveAuthority(provider.id, state, authorityEvidence, day)) {
