@@ -51,6 +51,7 @@ import {
 import { cn, formatDisplayDate } from '@/lib/utils';
 import type { State, DemandTag, Task, Provider } from '@/types';
 import { toast } from 'sonner';
+import { AddProviderToStateDialog } from '@/components/state-compliance/AddProviderToStateDialog';
 import { ProviderRequirementReviews } from '@/components/state-compliance/ProviderRequirementReviews';
 import { useLicensedStateReadiness } from '@/hooks/useLicensedStateReadiness';
 import { isOffboarded } from '@/lib/employeeVisibility';
@@ -65,6 +66,7 @@ const StateCompliancePage = () => {
   const tabParam = searchParams.get('tab');
   const editParam = searchParams.get('edit');
   
+  const [addProviderOpen, setAddProviderOpen] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState(
     tabParam === 'reviews' ? 'compliance' : tabParam && ['states', 'requirements', 'templates', 'compliance'].includes(tabParam) ? tabParam : 'states'
   );
@@ -262,11 +264,17 @@ const StateCompliancePage = () => {
                   <Download className="h-4 w-4 mr-2" />
                   Export CSV
                 </Button>
-                <Button>
+                <Button onClick={() => setAddProviderOpen(true)}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Add State
+                  Add Provider to State
                 </Button>
               </div>
+
+              <AddProviderToStateDialog
+                open={addProviderOpen}
+                onOpenChange={setAddProviderOpen}
+                states={states.map((s) => ({ abbreviation: s.abbreviation, name: s.name }))}
+              />
 
               <StateImportDialog
                 open={importDialogOpen}
