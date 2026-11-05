@@ -527,6 +527,10 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {isEditing ? (
                 <>
+                  <EditableField label="First Name" value={formData.first_name} field="first_name" onChange={handleChange} />
+                  <EditableField label="Middle Name" value={formData.middle_name} field="middle_name" onChange={handleChange} />
+                  <EditableField label="Last Name" value={formData.last_name} field="last_name" onChange={handleChange} />
+                  <EditableField label="Preferred Name" value={formData.preferred_name} field="preferred_name" onChange={handleChange} />
                   <EditableField label="Email" value={formData.email} field="email" onChange={handleChange} type="email" />
                   <EditableField label="Phone" value={formData.phone_number} field="phone_number" onChange={handleChange} type="tel" />
                   <EditableField label="NPI" value={formData.npi_number} field="npi_number" onChange={handleChange} />
@@ -554,6 +558,8 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                 </>
               ) : (
                 <>
+                  <InfoRow label="Full Legal Name" value={[provider.first_name, provider.middle_name, provider.last_name].filter(Boolean).join(' ') || provider.full_name} />
+                  <InfoRow label="Preferred Name" value={provider.preferred_name} />
                   <InfoRow label="Email" value={provider.email} />
                   <InfoRow label="Phone" value={provider.phone_number} />
                   <InfoRow label="NPI" value={provider.npi_number} />
@@ -645,18 +651,12 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {isEditing ? (
                 <>
-                  <EditableField label="First Name" value={formData.first_name} field="first_name" onChange={handleChange} />
-                  <EditableField label="Middle Name" value={formData.middle_name} field="middle_name" onChange={handleChange} />
-                  <EditableField label="Last Name" value={formData.last_name} field="last_name" onChange={handleChange} />
-                  <EditableField label="Preferred Name" value={formData.preferred_name} field="preferred_name" onChange={handleChange} />
                   <EditableField label="Pronouns" value={formData.pronoun} field="pronoun" onChange={handleChange} />
                   <EditableField label="Birthday" value={formData.birthday} field="birthday" onChange={handleChange} type="date" />
                   <EditableField label="Secondary Email" value={formData.secondary_contact_email} field="secondary_contact_email" onChange={handleChange} type="email" />
                 </>
               ) : (
                 <>
-                  <InfoRow label="Full Legal Name" value={[provider.first_name, provider.middle_name, provider.last_name].filter(Boolean).join(' ') || provider.full_name} />
-                  <InfoRow label="Preferred Name" value={provider.preferred_name} />
                   <InfoRow label="Pronouns" value={provider.pronoun} />
                   <InfoRow label="Birthday" value={formatDate(provider.birthday)} />
                   <InfoRow label="Secondary Email" value={provider.secondary_contact_email} />
