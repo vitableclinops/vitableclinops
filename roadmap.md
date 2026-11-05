@@ -10,4 +10,4 @@
 - [x] Confirm Metabase coverage fetch auto-flags providers newly added to a state so their state-practice requirements are audited — verified: `usePcpCoverage` diffs each snapshot (`addedActiveEhrStates`), feeds `newlyActiveStatesByProfile` into `activeStateAgreementFlags`; 39 tests pass.
 - [x] Exclude MD/DO physicians (Gina Charles, Seth Dinowitz) from NP requirement reviews
 
-- [ ] Make state requirement text consistent on every page/tab (spreadsheet rules + MN/NE/DC)
+- [x] Make state requirement text consistent on every page/tab (spreadsheet rules + MN/NE/DC)
