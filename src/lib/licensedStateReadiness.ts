@@ -1,6 +1,7 @@
 import { sheetLicenseStatus, type SheetLicense } from '@/lib/stateSheetRequirements';
 import { pcpCellFor, isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS, type EhrIdentity } from '@/lib/pcpCoverage';
 import { isOffboarded } from '@/lib/employeeVisibility';
+import { isDirectShiftsAgencyProvider } from '@/lib/directShiftsAgency';
 import { isClinician, isIndependentPhysician, isNonNpBehavioralRole } from '@/lib/clinicianRoles';
 
 export interface ReadinessProfile {
@@ -12,7 +13,7 @@ export interface ReadinessProfile {
 export function licensedStateReadiness<P extends ReadinessProfile>(profiles: P[], licenses: SheetLicense[], coverage: { identities: EhrIdentity[] } | null | undefined, day = new Date()) {
   return profiles.flatMap(provider => {
     // Independent physicians (MD/DO) never need NP requirement reviews.
-    if (!isClinician(provider) || isIndependentPhysician(provider) || isNonNpBehavioralRole(provider) || isOffboarded(provider.employment_status) || isTestAccountDirectoryRecord(provider) || OUT_OF_SCOPE_PROFILE_IDS[provider.id]) return [];
+    if (isDirectShiftsAgencyProvider(provider as { agency_id?: string | null }) || !isClinician(provider) || isIndependentPhysician(provider) || isNonNpBehavioralRole(provider) || isOffboarded(provider.employment_status) || isTestAccountDirectoryRecord(provider) || OUT_OF_SCOPE_PROFILE_IDS[provider.id]) return [];
     const cell = pcpCellFor(provider, coverage);
     const states = [...new Set(licenses.filter(l => l.profileId === provider.id).map(l => l.state))].sort();
     return states.flatMap(state => {
