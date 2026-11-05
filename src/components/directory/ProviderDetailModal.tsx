@@ -523,7 +523,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                 </Button>
               </div>
             )}
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1 pt-2">Professional</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1 pt-2">Personal &amp; Professional</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {isEditing ? (
                 <>
@@ -642,7 +642,6 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                 </>
               )}
             </div>
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1 pt-2">Personal</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {isEditing ? (
                 <>
