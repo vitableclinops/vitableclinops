@@ -119,9 +119,10 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
     });
     queryClient.invalidateQueries();
     const name = provider.full_name;
+    const focus = `${provider.id}:${state.abbreviation}`;
     reset();
     onOpenChange(false);
-    navigate(`/admin/states?tab=compliance&scope=licensed&state=${state.abbreviation}&search=${encodeURIComponent(name)}`);
+    navigate(`/admin/states?tab=compliance&scope=licensed&state=${state.abbreviation}&focus=${encodeURIComponent(focus)}`);
   };
 
   const reset = () => { setProviderId(''); setStateAbbr(defaultState ?? ''); setSearch(''); };

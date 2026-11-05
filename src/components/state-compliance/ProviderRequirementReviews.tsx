@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -21,7 +21,9 @@ export function ProviderRequirementReviews() {
   const [params, setParams] = useSearchParams();
   const state = params.get('state') ?? 'all';
   const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const focus = params.get('focus');
+  const [expanded, setExpanded] = useState<string | null>(focus);
+  useEffect(() => { if (focus) setExpanded(focus); }, [focus]);
   const [verify, setVerify] = useState<{ profileId: string; providerName: string; state: string } | null>(null);
   const [prefill, setPrefill] = useState<{ stateAbbr: string; skipProcess: boolean; provider: { id: string; name: string; email: string; npi?: string } } | null>(null);
   const { flags, loading, error, audit, rows, coverage } = useLicensedStateReadiness();
@@ -41,7 +43,7 @@ export function ProviderRequirementReviews() {
     {loading && <p className="text-muted-foreground">Checking active-state requirements…</p>}
     {error && <p className="text-destructive">Could not load requirement reviews.</p>}
     {!loading && !error && !(scope === 'licensed' ? licensed.length : filtered.length) && <p className="text-muted-foreground">{scope === 'licensed' ? 'No Medallion-licensed providers outside the active EHR list.' : `No requirements need fixing${state !== 'all' ? ` in ${state}` : ''}.`}</p>}
-    {scope === 'licensed' && <div className="divide-y rounded-md border overflow-hidden">{!loading && !error && licensed.map(r => {
+    {scope === 'licensed' && !loading && !error && [{ title: 'Recent activation requests', items: licensed.filter(r => r.activationRequested), accent: true }, { title: 'Licensed in Medallion · not active', items: licensed.filter(r => !r.activationRequested), accent: false }].filter(g => g.items.length).map(g => <div key={g.title} className="space-y-2"><h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{g.title} ({g.items.length})</h3><div className={`divide-y rounded-md border overflow-hidden ${g.accent ? 'border-primary' : ''}`}>{g.items.map(r => {
       const stateRule = audit?.rules.find(rule => rule.state_abbreviation === r.state);
       const savedProofs = (audit?.requirementProofs ?? []).filter(p => p.profile_id === r.provider.id && p.state_abbreviation === r.state);
       const savedDecisions = (audit?.decisions ?? []).filter(d => d.profile_id === r.provider.id && d.state_abbreviation === r.state && d.verified_on);
