@@ -29,11 +29,11 @@ export function ProviderRequirementReviews() {
   const [prefill, setPrefill] = useState<{ stateAbbr: string; skipProcess: boolean; provider: { id: string; name: string; email: string; npi?: string } } | null>(null);
   const { flags, loading, error, audit, rows, coverage } = useLicensedStateReadiness();
   const rawScope = params.get('scope');
-  const scope = rawScope === 'licensed' || rawScope === 'requested' ? rawScope : 'active';
+  const scope = rawScope === 'licensed' || rawScope === 'requested' ? 'licensed' : 'active';
   const scoped = rows.filter(r => (state === 'all' || r.state === state) && r.name.toLowerCase().includes(search.toLowerCase()));
   const requestedRows = scoped.filter(r => r.activationRequested);
-  const licensed = scope === 'requested' ? requestedRows : scoped.filter(r => !r.activationRequested);
-  const licensedOnlyCount = scoped.length - requestedRows.length;
+  const licensed = scoped;
+  const licensedOnlyCount = scoped.length; void requestedRows;
   const filtered = flags.filter(f => (state === 'all' || f.state === state) && f.name.toLowerCase().includes(search.toLowerCase()));
   const rule = audit?.rules.find(r => r.state_abbreviation === state);
   return <section className="space-y-4">
@@ -42,7 +42,7 @@ export function ProviderRequirementReviews() {
         <Select value={state} onValueChange={value => { const next = new URLSearchParams(params); next.set('tab','compliance'); if (value === 'all') next.delete('state'); else next.set('state',value); setParams(next); }}><SelectTrigger className="w-56" aria-label="Review state"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All states</SelectItem>{allUSStates.map(s => <SelectItem key={s.abbreviation} value={s.abbreviation}>{s.name} ({s.abbreviation})</SelectItem>)}</SelectContent></Select>
       </div>
     </div>
-    <Tabs value={scope} onValueChange={value => { const next = new URLSearchParams(params); next.set('scope', value); setExpanded(null); setParams(next); }}><TabsList className="flex flex-wrap h-auto justify-start"><TabsTrigger className="whitespace-normal text-left" value="active">Active · needs review ({filtered.length})</TabsTrigger><TabsTrigger className="whitespace-normal text-left" value="requested">Recent activation requests ({requestedRows.length})</TabsTrigger><TabsTrigger className="whitespace-normal text-left" value="licensed">Licensed · not active ({licensedOnlyCount})</TabsTrigger></TabsList></Tabs>
+    <Tabs value={scope} onValueChange={value => { const next = new URLSearchParams(params); next.set('scope', value); setExpanded(null); setParams(next); }}><TabsList className="flex flex-wrap h-auto justify-start"><TabsTrigger className="whitespace-normal text-left" value="active">Active · needs review ({filtered.length})</TabsTrigger><TabsTrigger className="whitespace-normal text-left" value="licensed">Licensed · not active ({licensedOnlyCount})</TabsTrigger></TabsList></Tabs>
     {scope !== 'active' && <p className="text-xs text-muted-foreground">EHR snapshot fetched: {coverage?.pulledAt ? new Date(coverage.pulledAt).toLocaleString('en-US', {timeZone:'America/New_York'}) + ' ET' : 'Unavailable'}{coverage?.stale ? ' · May be out of date' : ''}</p>}
     {state !== 'all' && <StateRequirementLine state={state} collabType={rule?.collab_requirement_type} caRequired={rule?.ca_required} />}
     {loading && <p className="text-muted-foreground">Checking active-state requirements…</p>}
