@@ -27,23 +27,27 @@ export function ProviderRequirementReviews() {
   const [verify, setVerify] = useState<{ profileId: string; providerName: string; state: string } | null>(null);
   const [prefill, setPrefill] = useState<{ stateAbbr: string; skipProcess: boolean; provider: { id: string; name: string; email: string; npi?: string } } | null>(null);
   const { flags, loading, error, audit, rows, coverage } = useLicensedStateReadiness();
-  const scope = params.get('scope') === 'licensed' ? 'licensed' : 'active';
-  const licensed = rows.filter(r => (state === 'all' || r.state === state) && r.name.toLowerCase().includes(search.toLowerCase()));
+  const rawScope = params.get('scope');
+  const scope = rawScope === 'licensed' || rawScope === 'requested' ? rawScope : 'active';
+  const scoped = rows.filter(r => (state === 'all' || r.state === state) && r.name.toLowerCase().includes(search.toLowerCase()));
+  const requestedRows = scoped.filter(r => r.activationRequested);
+  const licensed = scope === 'requested' ? requestedRows : scoped.filter(r => !r.activationRequested);
+  const licensedOnlyCount = scoped.length - requestedRows.length;
   const filtered = flags.filter(f => (state === 'all' || f.state === state) && f.name.toLowerCase().includes(search.toLowerCase()));
   const rule = audit?.rules.find(r => r.state_abbreviation === state);
   return <section className="space-y-4">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Provider requirements <Badge variant="secondary">{scope === 'licensed' ? licensed.length : filtered.length}</Badge></h2>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Provider requirements <Badge variant="secondary">{scope !== 'active' ? licensed.length : filtered.length}</Badge></h2>
       <div className="flex flex-wrap gap-2 min-w-0"><Input aria-label="Search requirement reviews" placeholder="Search providers…" value={search} onChange={e => setSearch(e.target.value)} className="w-56 max-w-full" />
         <Select value={state} onValueChange={value => { const next = new URLSearchParams(params); next.set('tab','compliance'); if (value === 'all') next.delete('state'); else next.set('state',value); setParams(next); }}><SelectTrigger className="w-56" aria-label="Review state"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All states</SelectItem>{allUSStates.map(s => <SelectItem key={s.abbreviation} value={s.abbreviation}>{s.name} ({s.abbreviation})</SelectItem>)}</SelectContent></Select>
       </div>
     </div>
-    <Tabs value={scope} onValueChange={value => { const next = new URLSearchParams(params); next.set('scope', value); setExpanded(null); setParams(next); }}><TabsList className="flex flex-wrap h-auto justify-start"><TabsTrigger className="whitespace-normal text-left" value="active">Active · needs review ({filtered.length})</TabsTrigger><TabsTrigger className="whitespace-normal text-left" value="licensed">Licensed / requested · not active ({licensed.length})</TabsTrigger></TabsList></Tabs>
-    {scope === 'licensed' && <p className="text-xs text-muted-foreground">EHR snapshot fetched: {coverage?.pulledAt ? new Date(coverage.pulledAt).toLocaleString('en-US', {timeZone:'America/New_York'}) + ' ET' : 'Unavailable'}{coverage?.stale ? ' · May be out of date' : ''}</p>}
+    <Tabs value={scope} onValueChange={value => { const next = new URLSearchParams(params); next.set('scope', value); setExpanded(null); setParams(next); }}><TabsList className="flex flex-wrap h-auto justify-start"><TabsTrigger className="whitespace-normal text-left" value="active">Active · needs review ({filtered.length})</TabsTrigger><TabsTrigger className="whitespace-normal text-left" value="requested">Recent activation requests ({requestedRows.length})</TabsTrigger><TabsTrigger className="whitespace-normal text-left" value="licensed">Licensed · not active ({licensedOnlyCount})</TabsTrigger></TabsList></Tabs>
+    {scope !== 'active' && <p className="text-xs text-muted-foreground">EHR snapshot fetched: {coverage?.pulledAt ? new Date(coverage.pulledAt).toLocaleString('en-US', {timeZone:'America/New_York'}) + ' ET' : 'Unavailable'}{coverage?.stale ? ' · May be out of date' : ''}</p>}
     {state !== 'all' && <StateRequirementLine state={state} collabType={rule?.collab_requirement_type} caRequired={rule?.ca_required} />}
     {loading && <p className="text-muted-foreground">Checking active-state requirements…</p>}
     {error && <p className="text-destructive">Could not load requirement reviews.</p>}
-    {!loading && !error && !(scope === 'licensed' ? licensed.length : filtered.length) && <p className="text-muted-foreground">{scope === 'licensed' ? 'No Medallion-licensed providers outside the active EHR list.' : `No requirements need fixing${state !== 'all' ? ` in ${state}` : ''}.`}</p>}
-    {scope === 'licensed' && !loading && !error && [{ title: 'Recent activation requests', items: licensed.filter(r => r.activationRequested), accent: true }, { title: 'Licensed in Medallion · not active', items: licensed.filter(r => !r.activationRequested), accent: false }].filter(g => g.items.length).map(g => <div key={g.title} className="space-y-2"><h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{g.title} ({g.items.length})</h3><div className={`divide-y rounded-md border overflow-hidden ${g.accent ? 'border-primary' : ''}`}>{g.items.map(r => {
+    {!loading && !error && !(scope !== 'active' ? licensed.length : filtered.length) && <p className="text-muted-foreground">{scope !== 'active' ? '' + (scope === 'requested' ? 'No pending activation requests.' : 'No Medallion-licensed providers outside the active EHR list.') + '' : `No requirements need fixing${state !== 'all' ? ` in ${state}` : ''}.`}</p>}
+    {scope !== 'active' && !loading && !error && [{ title: scope === 'requested' ? 'Recent activation requests' : 'Licensed in Medallion · not active', items: licensed, accent: scope === 'requested' }].filter(g => g.items.length).map(g => <div key={g.title} className="space-y-2"><h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{g.title} ({g.items.length})</h3><div className={`divide-y rounded-md border overflow-hidden ${g.accent ? 'border-primary' : ''}`}>{g.items.map(r => {
       const stateRule = audit?.rules.find(rule => rule.state_abbreviation === r.state);
       const savedProofs = (audit?.requirementProofs ?? []).filter(p => p.profile_id === r.provider.id && p.state_abbreviation === r.state);
       const savedDecisions = (audit?.decisions ?? []).filter(d => d.profile_id === r.provider.id && d.state_abbreviation === r.state && d.verified_on);
