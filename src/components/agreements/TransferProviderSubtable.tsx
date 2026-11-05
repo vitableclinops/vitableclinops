@@ -1,3 +1,4 @@
+import { ProviderNameLink } from '@/components/ProviderNameLink';
 import { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -270,7 +271,7 @@ export function TransferProviderSubtable({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium truncate">
-                        {provider.provider_name}
+                        <ProviderNameLink id={provider.provider_id} name={provider.provider_name} />
                       </span>
                       {getStatusBadge(provider.status, provider.escalated)}
                     </div>

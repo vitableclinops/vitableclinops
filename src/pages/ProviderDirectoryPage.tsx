@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -476,6 +476,33 @@ const ProviderDirectoryPage = () => {
       ? (directoryMedallionConflicts(p.id, medallion?.byProfile.get(p.id)?.conflicts ?? []).map(c => `${c.field.replace(/_/g, ' ')}: ours ${c.local ?? '—'}, Medallion ${c.medallion ?? '—'}`).join('; ') || null)
       : null,
   }));
+
+  // Deep links: ?provider=<profile id> or ?search=<name/email> open that provider's profile.
+  const deepLinkHandled = useRef<string | null>(null);
+  useEffect(() => {
+    const providerParam = searchParams.get('provider');
+    const searchParam = searchParams.get('search');
+    const key = `${providerParam ?? ''}|${searchParam ?? ''}`;
+    if (!providerParam && !searchParam) return;
+    if (deepLinkHandled.current === key || providers.length === 0) return;
+    deepLinkHandled.current = key;
+    let match: FullProvider | undefined;
+    if (providerParam) match = providers.find(p => p.id === providerParam);
+    if (!match && searchParam) {
+      const q = searchParam.trim().toLowerCase();
+      const hits = providers.filter(p =>
+        (p.email || '').toLowerCase() === q ||
+        (p.full_name || '').toLowerCase() === q ||
+        directoryDisplayName(p).toLowerCase() === q);
+      if (hits.length === 1) match = hits[0];
+      else setSearchQuery(searchParam);
+    }
+    if (match) {
+      setSearchQuery(match.full_name || '');
+      if (isOffboarded(match.employment_status) && isAdmin) setActiveTab('offboarded');
+      if (isAdmin) setSelectedProvider(match);
+    }
+  }, [searchParams, providers, isAdmin]);
 
   const handleRowClick = (provider: ProviderTableData) => {
     if (isAdmin) {
