@@ -219,10 +219,6 @@ const StateCompliancePage = () => {
                 <MapPin className="h-4 w-4" />
                 State Directory
               </TabsTrigger>
-              <TabsTrigger value="requirements" className="gap-2">
-                <TableIcon className="h-4 w-4" />
-                Requirements Matrix
-              </TabsTrigger>
               <TabsTrigger value="reviews" className="gap-2">
                 <ShieldCheck className="h-4 w-4" />Provider Requirements
                 {requirementFlagCount > 0 && (
@@ -233,6 +229,10 @@ const StateCompliancePage = () => {
                     {requirementFlagCount}
                   </span>
                 )}
+              </TabsTrigger>
+              <TabsTrigger value="requirements" className="gap-2">
+                <TableIcon className="h-4 w-4" />
+                Requirements Matrix
               </TabsTrigger>
               <TabsTrigger value="templates" className="gap-2">
                 <GraduationCap className="h-4 w-4" />
