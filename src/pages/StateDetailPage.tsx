@@ -836,11 +836,11 @@ export default function StateDetailPage() {
         </div>
       </main>
 
-      <InitiateLicensureDialog
+      <AddProviderToStateDialog
         open={showLicensureDialog}
-        onClose={() => setShowLicensureDialog(false)}
-        onSuccess={refetchLicensure}
-        preselectedState={stateAbbr}
+        onOpenChange={setShowLicensureDialog}
+        states={[{ abbreviation: stateAbbr.toUpperCase(), name: stateCompliance?.state_name || stateAbbr.toUpperCase() }]}
+        defaultState={stateAbbr.toUpperCase()}
       />
     </div>
   );

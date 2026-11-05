@@ -105,7 +105,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
   const ehrActive = !!providerId && !!stateAbbr && !!coverage?.statesByProfile.get(providerId)?.includes(stateAbbr);
   const alreadyActive = ehrActive || existing?.ehr_activation_status === 'active';
 
-  const reset = () => { setProviderId(''); setStateAbbr(''); setSearch(''); };
+  const reset = () => { setProviderId(''); setStateAbbr(defaultState ?? ''); setSearch(''); };
 
   return (
     <>
