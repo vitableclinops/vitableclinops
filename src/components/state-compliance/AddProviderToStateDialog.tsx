@@ -15,7 +15,7 @@ import { isOffboarded } from '@/lib/employeeVisibility';
 import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, validRequirementProof } from '@/lib/stateSheetRequirements';
 import type { EhrActivationStatus } from '@/hooks/useProviderStateStatus';
 
-const OTHER_RULES: Record<string, string> = {
+export const OTHER_RULES: Record<string, string> = {
   NC: 'Signed Collab Agreement + NCBON registration',
   NY: 'Signed Collab Agreement OR verified independent practice',
   OK: 'Signed Collab Agreement OR verified independent practice',

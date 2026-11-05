@@ -20,6 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
+import { OTHER_RULES } from '@/components/state-compliance/AddProviderToStateDialog';
 import { states as initialStates, providers, getAllTasks } from '@/data/mockData';
 import { useAuth } from '@/hooks/useAuth';
 import { useStateCompliance } from '@/hooks/useStateCompliance';
@@ -375,7 +377,7 @@ const StateCompliancePage = () => {
                                 <div>
                                   <CardTitle className="text-lg">{state.name}</CardTitle>
                                   <div className="flex items-center gap-2 mt-1">
-                                    {state.demandTag && <DemandTagBadge tag={state.demandTag} size="sm" />}
+                                    
                                   </div>
                                 </div>
                               </div>
@@ -401,57 +403,9 @@ const StateCompliancePage = () => {
                                 {licensedRows.some(r => r.state === state.abbreviation && r.activation === 'unconfirmed') && <p className="text-xs text-muted-foreground">{licensedRows.filter(r => r.state === state.abbreviation && r.activation === 'unconfirmed').length} licensed · EHR activation unconfirmed</p>}
                               </>}
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                              {(() => {
-                                const dbState = complianceAllData.find(c => c.state_abbreviation === state.abbreviation);
-                                const collabType = dbState?.collab_requirement_type || getCollabRequirementType(state.abbreviation);
-                                switch (collabType) {
-                                  case 'never':
-                                    return (
-                                      <Badge className="text-xs bg-success/10 text-success border-0">
-                                        <Shield className="h-3 w-3 mr-1" />
-                                        FPA Available
-                                      </Badge>
-                                    );
-                                  case 'conditional':
-                                    return (
-                                      <Badge variant="outline" className="text-xs border-warning text-warning">
-                                        <AlertTriangle className="h-3 w-3 mr-1" />
-                                        {getCollabRequirementLabel('conditional', state.abbreviation)}
-                                      </Badge>
-                                    );
-                                  case 'md_only':
-                                    return (
-                                      <Badge variant="secondary" className="text-xs bg-destructive/10 text-destructive border-0">
-                                        <ShieldCheck className="h-3 w-3 mr-1" />
-                                        MD Only
-                                      </Badge>
-                                    );
-                                  default:
-                                    return (
-                                      <Badge variant="secondary" className="text-xs">
-                                        <Users className="h-3 w-3 mr-1" />
-                                        Collaboration Required
-                                      </Badge>
-                                    );
-                                }
-                              })()}
-                              {state.requiresPrescriptiveAuthority && (
-                                <Badge variant="outline" className="text-xs">
-                                  <Pill className="h-3 w-3 mr-1" />
-                                  Separate Rx Authority
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                              <div className="flex items-center gap-2 text-muted-foreground">
-                                <DollarSign className="h-4 w-4" />
-                                <span>${state.applicationFeeRange.min} - ${state.applicationFeeRange.max}</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-muted-foreground">
-                                <Clock className="h-4 w-4" />
-                                <span>{state.processingTimeWeeks.min}-{state.processingTimeWeeks.max} weeks</span>
-                              </div>
+                            <div className="rounded-md bg-muted/50 p-2 text-xs">
+                              <p className="font-medium text-foreground mb-0.5">Requirements</p>
+                              <p className="text-muted-foreground">{stateRequirementSummary(state.abbreviation)}</p>
                             </div>
                           </CardContent>
                         </Card>
@@ -752,5 +706,11 @@ const StateCompliancePage = () => {
     </div>
   );
 };
+
+const NP_PROHIBITED = ['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA'];
+function stateRequirementSummary(abbr: string): string {
+  if (NP_PROHIBITED.includes(abbr)) return 'NP practice not permitted (MD/DO only)';
+  return SHEET_REQUIREMENTS[abbr]?.label ?? OTHER_RULES[abbr] ?? 'Active license only';
+}
 
 export default StateCompliancePage;
