@@ -108,7 +108,7 @@ export function ProviderRequirementReviews() {
         <p className="text-sm text-destructive">{f.reason}</p>
         <p className="text-sm text-muted-foreground">{f.howToFix}</p>
       </div>
-      {expanded === rowKey && missingDoc?.agreementId && !SHEET_REQUIREMENTS[f.state]?.documentExempt && <InlineAgreementDocBox agreementId={missingDoc.agreementId} state={f.state} />}
+      {expanded === rowKey && missingDoc?.agreementId && <InlineAgreementDocBox agreementId={missingDoc.agreementId} state={f.state} />}
       {(SHEET_REQUIREMENTS[f.state] || f.sheetReview || f.registrationReview || f.independentAlternative) && expanded === rowKey && <InlineDialogProvider><IndependentPracticeVerifyDialog open onOpenChange={() => {}} profileId={f.provider.id} providerName={f.name} state={f.state} /></InlineDialogProvider>}
       <div className="flex flex-wrap gap-2">
         {existing?.agreementId ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.agreementId}`}>Open agreement</Link></Button> : (!SHEET_REQUIREMENTS[f.state] || SHEET_REQUIREMENTS[f.state].agreement) && <Button size="sm" onClick={() => setPrefill({stateAbbr:f.state,skipProcess:true,provider:{id:f.provider.id,name:f.name,email:f.provider.email,npi:f.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}
