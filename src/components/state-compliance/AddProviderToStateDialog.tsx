@@ -35,7 +35,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
         .select('id, full_name, profession, employment_status, activation_status')
         .order('full_name');
       if (error) throw error;
-      return (data ?? []).filter((p: any) => p.full_name && !isOffboarded(p as any));
+      return (data ?? []).filter((p: any) => p.full_name && !isOffboarded(p.employment_status));
     },
   });
 
