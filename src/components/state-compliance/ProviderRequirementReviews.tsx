@@ -54,7 +54,7 @@ export function ProviderRequirementReviews() {
         {expanded === rowKey ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
         <span className="min-w-0 flex-1 font-semibold break-words">{r.name}</span>
         <Badge variant="secondary">{r.state}</Badge>
-        {r.activationRequested && <Badge variant="outline">Requested</Badge>}
+        {r.activationRequested && <Badge variant="outline">Requested{r.requestedAt ? ` · ${new Date(r.requestedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })}` : ''}</Badge>}
         <span className={r.reviews.length ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>{r.reviews.length ? `${r.reviews.length} to verify` : 'Requirements met'}</span>
       </Button></CollapsibleTrigger>
       <CollapsibleContent className="px-4 pb-4 sm:pl-11 space-y-4">
@@ -76,7 +76,7 @@ export function ProviderRequirementReviews() {
         {savedDecisions.map((d, i) => <p key={`decision-${i}`} className="text-sm text-muted-foreground">{d.decision === 'ncbon_registered' ? 'NCBON registration' : d.decision === 'independent_verified' ? 'Independent practice' : 'Prescriptive authority'} · {d.verified_on} {d.verified_attachment_path && <EvidenceLink reference={d.verified_attachment_path}>{d.verified_attachment_name ?? 'View file'}</EvidenceLink>} {d.verified_link && <EvidenceLink reference={d.verified_link}>Open link</EvidenceLink>} · {d.verified_source}</p>)}
         {savedAgreements.map((a, i) => a.document ? <p key={i} className="text-sm">Collab Agreement · <EvidenceLink reference={a.document}>View document</EvidenceLink></p> : null)}
       </div>}
-      </CollapsibleContent></Collapsible>;})}</div>}
+      </CollapsibleContent></Collapsible>;})}</div></div>)}
     <div className="divide-y rounded-md border overflow-hidden">{scope === 'active' && filtered.map(f => {
       const existing = audit?.agreements.find(a => a.profileId === f.provider.id && a.state === f.state && a.agreementId && ['active','fully_executed'].includes(a.status ?? ''));
       const rowKey = `${f.provider.id}:${f.state}`;
