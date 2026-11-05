@@ -16,6 +16,7 @@ import { allUSStates } from '@/data/allStates';
 import { useLicensedStateReadiness } from '@/hooks/useLicensedStateReadiness';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { InlineDialogProvider } from '@/components/agreements/inlineableDialog';
+import { InlineAgreementDocBox } from './InlineAgreementDocBox';
 import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 import { REQUIREMENT_LABELS } from '@/lib/stateSheetRequirements';
 
@@ -87,6 +88,8 @@ export function ProviderRequirementReviews() {
     <div className="divide-y rounded-md border overflow-hidden">{scope === 'active' && filtered.map(f => {
       const existing = audit?.agreements.find(a => a.profileId === f.provider.id && a.state === f.state && a.agreementId && ['active','fully_executed'].includes(a.status ?? ''));
       const rowKey = `${f.provider.id}:${f.state}`;
+      const providerAgreements = (audit?.agreements ?? []).filter(a => a.profileId === f.provider.id && a.state === f.state && a.agreementId && !['terminated','cancelled','archived'].includes(a.status ?? ''));
+      const missingDoc = providerAgreements.some(a => a.document || a.documentExempt) ? undefined : providerAgreements[0];
       return <Collapsible key={rowKey} open={expanded === rowKey} onOpenChange={open => setExpanded(open ? rowKey : null)}>
       <CollapsibleTrigger asChild><Button variant="ghost" className="h-auto w-full rounded-none px-4 py-3 justify-start gap-3 text-left whitespace-normal">
         {expanded === rowKey ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
@@ -105,7 +108,8 @@ export function ProviderRequirementReviews() {
         <p className="text-sm text-destructive">{f.reason}</p>
         <p className="text-sm text-muted-foreground">{f.howToFix}</p>
       </div>
-      {(f.sheetReview || f.registrationReview || f.independentAlternative) && expanded === rowKey && <InlineDialogProvider><IndependentPracticeVerifyDialog open onOpenChange={() => {}} profileId={f.provider.id} providerName={f.name} state={f.state} /></InlineDialogProvider>}
+      {expanded === rowKey && missingDoc?.agreementId && <InlineAgreementDocBox agreementId={missingDoc.agreementId} state={f.state} />}
+      {(SHEET_REQUIREMENTS[f.state] || f.sheetReview || f.registrationReview || f.independentAlternative) && expanded === rowKey && <InlineDialogProvider><IndependentPracticeVerifyDialog open onOpenChange={() => {}} profileId={f.provider.id} providerName={f.name} state={f.state} /></InlineDialogProvider>}
       <div className="flex flex-wrap gap-2">
         {existing?.agreementId ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.agreementId}`}>Open agreement</Link></Button> : (!SHEET_REQUIREMENTS[f.state] || SHEET_REQUIREMENTS[f.state].agreement) && <Button size="sm" onClick={() => setPrefill({stateAbbr:f.state,skipProcess:true,provider:{id:f.provider.id,name:f.name,email:f.provider.email,npi:f.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}
       </div></CollapsibleContent></Collapsible>;
