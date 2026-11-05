@@ -1,3 +1,4 @@
+import { ProofEntry, DECISION_PROOF_LABELS } from '@/components/agreements/ProofEntry';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Paperclip } from 'lucide-react';
@@ -186,19 +187,7 @@ export function IndependentVerificationList({ profileId }: { profileId: string }
       <p className="text-sm font-medium">Saved requirement verifications</p>
       {data.map(d => (
         <div key={d.state_abbreviation} className="rounded-md border p-2 text-sm space-y-1">
-          <p><span className="font-medium">{d.state_abbreviation}</span>{d.decision === 'ncbon_registered' ? ' (NCBON registration)' : d.decision === 'rx_authority_verified' ? ' (Rx authority)' : ''} — {d.verified_source} ({d.verified_on})</p>
-          <div className="flex flex-wrap gap-3">
-            {d.verified_link && (
-              <a href={d.verified_link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary underline break-all">
-                {d.verified_link}<ExternalLink className="h-3 w-3 shrink-0" />
-              </a>
-            )}
-            {d.verified_attachment_path && (
-              <EvidenceLink reference={d.verified_attachment_path}>
-                <Paperclip className="h-3 w-3" />{d.verified_attachment_name ?? 'Attachment'}
-              </EvidenceLink>
-            )}
-          </div>
+          <ProofEntry label={`${d.state_abbreviation} · ${DECISION_PROOF_LABELS[d.decision] ?? 'Collab alternative'}`} proof={d} />
         </div>
       ))}
     </div>

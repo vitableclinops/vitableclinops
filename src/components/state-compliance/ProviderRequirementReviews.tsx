@@ -1,3 +1,4 @@
+import { ProofEntry, DECISION_PROOF_LABELS } from '@/components/agreements/ProofEntry';
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -76,8 +77,8 @@ export function ProviderRequirementReviews() {
       <div className="flex flex-wrap gap-2">{r.reviews.some(f => f.sheetReview || f.registrationReview || f.independentAlternative) && <Button size="sm" variant="outline" onClick={() => setVerify({profileId:r.provider.id,providerName:r.name,state:r.state})}>Verify state requirements</Button>}{r.reviews.length > 0 && (!SHEET_REQUIREMENTS[r.state] || SHEET_REQUIREMENTS[r.state].agreement || SHEET_REQUIREMENTS[r.state].agreementSubstitute) && <Button size="sm" variant="outline" onClick={() => setPrefill({stateAbbr:r.state,skipProcess:true,provider:{id:r.provider.id,name:r.name,email:r.provider.email,npi:r.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}</div>
       {(savedProofs.length > 0 || savedDecisions.length > 0 || savedAgreements.length > 0) && <div className="space-y-2 border-t pt-3 break-words">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved proof</p>
-        {savedProofs.map(p => <p key={p.requirement_key} className="text-sm text-muted-foreground">{REQUIREMENT_LABELS[p.requirement_key]} · {p.verified_on} {p.verified_attachment_path && <EvidenceLink reference={p.verified_attachment_path}>{p.verified_attachment_name ?? 'View file'}</EvidenceLink>} {p.verified_link && <EvidenceLink reference={p.verified_link}>Open link</EvidenceLink>} · {p.verified_source}</p>)}
-        {savedDecisions.map((d, i) => <p key={`decision-${i}`} className="text-sm text-muted-foreground">{d.decision === 'ncbon_registered' ? 'NCBON registration' : d.decision === 'independent_verified' ? 'Independent practice' : 'Prescriptive authority'} · {d.verified_on} {d.verified_attachment_path && <EvidenceLink reference={d.verified_attachment_path}>{d.verified_attachment_name ?? 'View file'}</EvidenceLink>} {d.verified_link && <EvidenceLink reference={d.verified_link}>Open link</EvidenceLink>} · {d.verified_source}</p>)}
+        {savedProofs.map(p => <ProofEntry key={p.requirement_key} label={REQUIREMENT_LABELS[p.requirement_key]} proof={p} />)}
+        {savedDecisions.map((d, i) => <ProofEntry key={`decision-${i}`} label={DECISION_PROOF_LABELS[d.decision] ?? 'Prescriptive authority'} proof={d} />)}
         {savedAgreements.map((a, i) => a.document ? <p key={i} className="text-sm">Collab Agreement · <EvidenceLink reference={a.document}>View document</EvidenceLink></p> : null)}
       </div>}
       </CollapsibleContent></Collapsible>;})}</div></div>)}
