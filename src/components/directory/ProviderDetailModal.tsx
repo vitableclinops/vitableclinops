@@ -31,6 +31,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { CURRENT_EMPLOYEE_FILTER, isOffboarded } from '@/lib/employeeVisibility';
 import { isIndependentPhysician } from '@/lib/clinicianRoles';
 import { useDirectoryProfileWarnings } from '@/hooks/useDirectoryProfileWarnings';
+import { ProviderStateSummary } from './ProviderStateSummary';
 
 const PROFESSION_OPTIONS = [
   'NP',
@@ -677,7 +678,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
               </>
             ) : (
               <>
-                {/* Licensed states now derived from provider_state_status */}
+                <ProviderStateSummary provider={provider as any} />
                 {provider.chart_review_folder_url && (
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">Chart Reviews:</span>
@@ -694,9 +695,6 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                   </div>
                 )}
                 <IndependentVerificationList profileId={provider.id} />
-                <p className="text-sm text-muted-foreground">
-                  View the Licenses tab on the provider's profile for detailed license information.
-                </p>
               </>
             )}
           </TabsContent>
