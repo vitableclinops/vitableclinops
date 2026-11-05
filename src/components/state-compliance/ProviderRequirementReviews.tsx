@@ -15,6 +15,7 @@ import { StateRequirementLine } from '@/components/states/StateRequirementLine';
 import { allUSStates } from '@/data/allStates';
 import { useLicensedStateReadiness } from '@/hooks/useLicensedStateReadiness';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { InlineDialogProvider } from '@/components/agreements/inlineableDialog';
 import { EvidenceLink } from '@/components/agreements/EvidenceLink';
 import { REQUIREMENT_LABELS } from '@/lib/stateSheetRequirements';
 
@@ -74,7 +75,8 @@ export function ProviderRequirementReviews() {
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Needs verification ({r.reviews.length})</p>
         <ul className="list-disc pl-5 space-y-1">{r.reviews.map((review, index) => <li key={index} className="text-sm text-destructive">{review.reason}</li>)}</ul>
       </div>}
-      <div className="flex flex-wrap gap-2">{r.reviews.length > 0 && <Button size="sm" variant="outline" onClick={() => setVerify({profileId:r.provider.id,providerName:r.name,state:r.state})}>Upload / verify requirements</Button>}{r.reviews.length > 0 && (!SHEET_REQUIREMENTS[r.state] || SHEET_REQUIREMENTS[r.state].agreement || SHEET_REQUIREMENTS[r.state].agreementSubstitute) && <Button size="sm" variant="outline" onClick={() => setPrefill({stateAbbr:r.state,skipProcess:true,provider:{id:r.provider.id,name:r.name,email:r.provider.email,npi:r.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}</div>
+      {r.reviews.length > 0 && expanded === rowKey && <InlineDialogProvider><IndependentPracticeVerifyDialog open onOpenChange={() => {}} profileId={r.provider.id} providerName={r.name} state={r.state} /></InlineDialogProvider>}
+      <div className="flex flex-wrap gap-2">{r.reviews.length > 0 && (!SHEET_REQUIREMENTS[r.state] || SHEET_REQUIREMENTS[r.state].agreement || SHEET_REQUIREMENTS[r.state].agreementSubstitute) && <Button size="sm" variant="outline" onClick={() => setPrefill({stateAbbr:r.state,skipProcess:true,provider:{id:r.provider.id,name:r.name,email:r.provider.email,npi:r.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}</div>
       {(savedProofs.length > 0 || savedDecisions.length > 0 || savedAgreements.length > 0) && <div className="space-y-2 border-t pt-3 break-words">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved proof</p>
         {savedProofs.map(p => <ProofEntry key={p.requirement_key} label={REQUIREMENT_LABELS[p.requirement_key]} proof={p} />)}
@@ -103,8 +105,8 @@ export function ProviderRequirementReviews() {
         <p className="text-sm text-destructive">{f.reason}</p>
         <p className="text-sm text-muted-foreground">{f.howToFix}</p>
       </div>
+      {(f.sheetReview || f.registrationReview || f.independentAlternative) && expanded === rowKey && <InlineDialogProvider><IndependentPracticeVerifyDialog open onOpenChange={() => {}} profileId={f.provider.id} providerName={f.name} state={f.state} /></InlineDialogProvider>}
       <div className="flex flex-wrap gap-2">
-        {(f.sheetReview || f.registrationReview || f.independentAlternative) && <Button size="sm" variant="outline" onClick={() => setVerify({ profileId:f.provider.id,providerName:f.name,state:f.state })}>{f.registrationReview ? 'Verify NCBON registration' : f.sheetReview ? 'Verify state requirements' : ['PA','VA'].includes(f.state) ? 'Verify license designations' : 'Verify independent practice'}</Button>}
         {existing?.agreementId ? <Button size="sm" variant="outline" asChild><Link to={`/admin/agreements/${existing.agreementId}`}>Open agreement</Link></Button> : (!SHEET_REQUIREMENTS[f.state] || SHEET_REQUIREMENTS[f.state].agreement) && <Button size="sm" onClick={() => setPrefill({stateAbbr:f.state,skipProcess:true,provider:{id:f.provider.id,name:f.name,email:f.provider.email,npi:f.provider.npi_number ?? undefined}})}>Add / link agreement</Button>}
       </div></CollapsibleContent></Collapsible>;
     })}</div>
