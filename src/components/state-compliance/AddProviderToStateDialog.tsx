@@ -231,7 +231,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
           <p className="text-xs text-muted-foreground">This request is now listed on the Compliance tab under "Licensed / requested · not active".</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSubmitted(null)}>Close</Button>
-            <Button onClick={() => { const s = submitted!; setSubmitted(null); navigate(`/admin/states?tab=compliance&scope=requested&state=${s.state}`); }}>
+            <Button onClick={() => { const s = submitted!; setSubmitted(null); navigate(`/admin/states?tab=compliance&scope=licensed&state=${s.state}`); }}>
               Open in Compliance
             </Button>
           </DialogFooter>
