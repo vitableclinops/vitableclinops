@@ -4,6 +4,7 @@ import { useRequiredAgreementFlags } from '@/hooks/useRequiredAgreementFlags';
 import { licensedStateReadiness } from '@/lib/licensedStateReadiness';
 import { activeStateAgreementFlags } from '@/lib/activeStateAgreementFlags';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
+import { isNonNpBehavioralRole } from '@/lib/clinicianRoles';
 
 export function useLicensedStateReadiness() {
   const current = useRequiredAgreementFlags(true);
@@ -20,7 +21,7 @@ export function useLicensedStateReadiness() {
     queryKey: ['directory-collaboration', 'activation-requested-states'],
     refetchOnWindowFocus: true, refetchInterval: 60_000,
     queryFn: async () => {
-      const result = await supabase.from('provider_state_status').select('provider_id, state_abbreviation').eq('ehr_activation_status', 'activation_requested');
+      const result = await supabase.from('provider_state_status').select('provider_id, state_abbreviation, updated_at').eq('ehr_activation_status', 'activation_requested');
       if (result.error) throw result.error;
       return result.data ?? [];
     },
@@ -31,15 +32,16 @@ export function useLicensedStateReadiness() {
   const requestedRows = (requested.data ?? []).flatMap(req => {
     const provider = current.profiles.find((p: any) => p.id === req.provider_id);
     const key = `${req.provider_id}:${req.state_abbreviation}`;
-    if (!provider || seen.has(key) || current.coverage?.statesByProfile.get(req.provider_id)?.includes(req.state_abbreviation)) return [];
+    if (!provider || isNonNpBehavioralRole(provider) || seen.has(key) || current.coverage?.statesByProfile.get(req.provider_id)?.includes(req.state_abbreviation)) return [];
     seen.add(key);
     return [{ provider, state: req.state_abbreviation, activation: 'requested' as const, activationDetail: 'Activation requested' }];
   });
-  const requestedKeys = new Set((requested.data ?? []).map(r => `${r.provider_id}:${r.state_abbreviation}`));
+  const requestedAt = new Map((requested.data ?? []).map((r: any) => [`${r.provider_id}:${r.state_abbreviation}`, r.updated_at ?? '']));
+  const requestedKeys = new Set(requestedAt.keys());
   const rows = [...base, ...requestedRows].map(row => ({
-    ...row, activationRequested: requestedKeys.has(`${row.provider.id}:${row.state}`),
+    ...row, activationRequested: requestedKeys.has(`${row.provider.id}:${row.state}`), requestedAt: requestedAt.get(`${row.provider.id}:${row.state}`) ?? '',
     name: directoryDisplayName(row.provider),
     reviews: audit ? activeStateAgreementFlags(row.provider, [row.state], audit.rules, audit.agreements, audit.decisions, new Date(), audit.authorityEvidence, [], audit.requirementProofs, [...audit.sheetLicenses, ...(licenses.data ?? [])]) : [],
-  })).sort((a, b) => a.name.localeCompare(b.name) || a.state.localeCompare(b.state));
+  })).sort((a, b) => (b.requestedAt || '').localeCompare(a.requestedAt || '') || a.name.localeCompare(b.name) || a.state.localeCompare(b.state));
   return { ...current, rows, loading: current.loading || licenses.isLoading || requested.isLoading, error: current.error || licenses.error };
 }
