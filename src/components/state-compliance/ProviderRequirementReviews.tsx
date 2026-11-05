@@ -28,11 +28,11 @@ export function ProviderRequirementReviews() {
   const rule = audit?.rules.find(r => r.state_abbreviation === state);
   return <section className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Provider requirement reviews <Badge variant="secondary">{scope === 'licensed' ? licensed.length : filtered.length}</Badge></h2>
-      <div className="flex flex-wrap gap-2"><Input aria-label="Search requirement reviews" placeholder="Search providers…" value={search} onChange={e => setSearch(e.target.value)} className="w-56" />
+      <div className="flex flex-wrap gap-2 min-w-0"><Input aria-label="Search requirement reviews" placeholder="Search providers…" value={search} onChange={e => setSearch(e.target.value)} className="w-56 max-w-full" />
         <Select value={state} onValueChange={value => { const next = new URLSearchParams(params); next.set('tab','reviews'); if (value === 'all') next.delete('state'); else next.set('state',value); setParams(next); }}><SelectTrigger className="w-56" aria-label="Review state"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All states</SelectItem>{allUSStates.map(s => <SelectItem key={s.abbreviation} value={s.abbreviation}>{s.name} ({s.abbreviation})</SelectItem>)}</SelectContent></Select>
       </div>
     </div>
-    <Tabs value={scope} onValueChange={value => { const next = new URLSearchParams(params); next.set('scope', value); setParams(next); }}><TabsList className="flex flex-wrap h-auto justify-start"><TabsTrigger value="active">Active in EHR · needs review ({filtered.length})</TabsTrigger><TabsTrigger value="licensed">Medallion licensed · advance review ({licensed.length})</TabsTrigger></TabsList></Tabs>
+    <Tabs value={scope} onValueChange={value => { const next = new URLSearchParams(params); next.set('scope', value); setParams(next); }}><TabsList className="flex flex-wrap h-auto justify-start"><TabsTrigger className="whitespace-normal text-left" value="active">Active in EHR · needs review ({filtered.length})</TabsTrigger><TabsTrigger className="whitespace-normal text-left" value="licensed">Medallion licensed · advance review ({licensed.length})</TabsTrigger></TabsList></Tabs>
     {scope === 'licensed' && <p className="text-xs text-muted-foreground">EHR snapshot fetched: {coverage?.pulledAt ? new Date(coverage.pulledAt).toLocaleString('en-US', {timeZone:'America/New_York'}) + ' ET' : 'Unavailable'}{coverage?.stale ? ' · May be out of date' : ''}</p>}
     {state !== 'all' && <StateRequirementLine state={state} collabType={rule?.collab_requirement_type} caRequired={rule?.ca_required} />}
     {loading && <p className="text-muted-foreground">Checking active-state requirements…</p>}

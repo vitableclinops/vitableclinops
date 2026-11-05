@@ -196,7 +196,7 @@ const StateCompliancePage = () => {
         userAvatarUrl={profile?.avatar_url || undefined}
       />
       
-      <main className="ml-16 lg:ml-64 transition-all duration-300 min-w-0">
+      <main className="ml-0 sm:ml-16 lg:ml-64 transition-all duration-300 min-w-0">
         <div className="p-4 md:p-6 lg:p-8">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
