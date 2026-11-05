@@ -1,3 +1,4 @@
+import { ProofEntry } from '@/components/agreements/ProofEntry';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -46,7 +47,7 @@ export function StateRequirementVerifyDialog({ open, onOpenChange, profileId, pr
     </>}
     {!loading && !loadError && <p className="text-sm font-medium">{pending.length ? `Still to verify: ${pending.map(k => REQUIREMENT_LABELS[k]).join(config?.anyDesignation ? ' OR ' : ' + ')}` : 'No outstanding designation or registration verifications.'}</p>}
     {data.filter(p => p.state_abbreviation === state).map(p => <div key={p.requirement_key} className="text-sm border-b pb-2">
-      <p>{REQUIREMENT_LABELS[p.requirement_key]} · {validRequirementProof(p) ? 'Verified' : 'Needs review'} {p.verified_on} {p.verified_attachment_path && <EvidenceLink reference={p.verified_attachment_path}>{p.verified_attachment_name ?? 'View file'}</EvidenceLink>} {p.verified_link && <EvidenceLink reference={p.verified_link}>Open link</EvidenceLink>}</p><p className="text-muted-foreground">{p.verified_source}</p>
+      <ProofEntry label={REQUIREMENT_LABELS[p.requirement_key]} status={validRequirementProof(p) ? 'Verified' : 'Needs review'} proof={p} />
     </div>)}
     {!loading && !loadError && key && <>
     <Label>Requirement to verify</Label><Select value={key} onValueChange={value => { setKey(value); setSource(''); setDate(''); setLink(''); setFile(null); setExpiration(''); }}><SelectTrigger aria-label="Requirement to verify"><SelectValue /></SelectTrigger><SelectContent>{pending.map(k => <SelectItem key={k} value={k}>{REQUIREMENT_LABELS[k]}</SelectItem>)}</SelectContent></Select>
@@ -66,5 +67,5 @@ export function StateRequirementVerifyDialog({ open, onOpenChange, profileId, pr
 }
 export function StateRequirementProofList({ profileId }: { profileId: string }) {
   const { data = [] } = useRequirementProofs(profileId);
-  return <div className="space-y-2">{data.map(p => <div key={`${p.state_abbreviation}:${p.requirement_key}`} className="text-sm"><span>{p.state_abbreviation} · {REQUIREMENT_LABELS[p.requirement_key]} · Verified {p.verified_on} </span>{p.verified_attachment_path && <EvidenceLink reference={p.verified_attachment_path}>{p.verified_attachment_name ?? 'View file'}</EvidenceLink>} {p.verified_link && <EvidenceLink reference={p.verified_link}>Open link</EvidenceLink>}<p className="text-muted-foreground">{p.verified_source}</p></div>)}</div>;
+  return <div className="space-y-2">{data.map(p => <div key={`${p.state_abbreviation}:${p.requirement_key}`} className="text-sm"><ProofEntry label={`${p.state_abbreviation} · ${REQUIREMENT_LABELS[p.requirement_key]}`} proof={p} /></div>)}</div>;
 }

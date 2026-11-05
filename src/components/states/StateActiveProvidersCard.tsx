@@ -1,3 +1,4 @@
+import { ProofEntry } from '@/components/agreements/ProofEntry';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -69,7 +70,7 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
                 {(state === 'AK' || state === 'AZ') && <span>Active license: {sheetLicenseStatus(p.id, state, audit?.sheetLicenses ?? [], audit?.requirementProofs ?? []) === 'unknown' ? 'Not confirmed in saved sources (no additional requirements)' : sheetLicenseStatus(p.id, state, audit?.sheetLicenses ?? [], audit?.requirementProofs ?? [])}</span>}
-                {SHEET_REQUIREMENTS[state] && (audit?.requirementProofs ?? []).filter(d => d.profile_id === p.id && d.state_abbreviation === state).map(d => <span key={d.requirement_key} className="inline-flex flex-wrap items-center gap-1 text-muted-foreground"><ShieldCheck className="h-3 w-3" />{REQUIREMENT_LABELS[d.requirement_key]} · {validRequirementProof(d) ? 'Verified' : 'Needs review'} {d.verified_on} {d.verified_attachment_path && <EvidenceLink reference={d.verified_attachment_path}>{d.verified_attachment_name ?? 'View file'}</EvidenceLink>} {d.verified_link && <EvidenceLink reference={d.verified_link}>Open link</EvidenceLink>} · {d.verified_source}</span>)}
+                {SHEET_REQUIREMENTS[state] && (audit?.requirementProofs ?? []).filter(d => d.profile_id === p.id && d.state_abbreviation === state).map(d => <div key={d.requirement_key} className="w-full"><ProofEntry compact label={REQUIREMENT_LABELS[d.requirement_key]} status={validRequirementProof(d) ? 'Verified' : 'Needs review'} proof={d} /></div>)}
                 {agreements.map((a, i) => (
                   <span key={i} className="inline-flex items-center gap-2">
                     <span className="inline-flex items-center gap-1 text-muted-foreground"><FileText className="h-3 w-3" />Collab Agreement{a.documentExempt ? ' (Direct Shifts)' : ''}</span>
@@ -79,15 +80,7 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
                   </span>
                 ))}
                 {decisions.map((d, i) => (
-                  <span key={`d${i}`} className="inline-flex flex-wrap items-center gap-1 text-muted-foreground">
-                    <ShieldCheck className="h-3 w-3" />{DECISION_LABEL[d.decision]}
-                    <span className="whitespace-nowrap">
-                      {d.verified_on ? `· Verified ${d.verified_on}` : ''}
-                      {d.verified_attachment_path && <> <EvidenceLink reference={d.verified_attachment_path} className="text-primary hover:underline">· {d.verified_attachment_name ?? 'Attachment'}</EvidenceLink></>}
-                      {d.verified_link && <> <EvidenceLink reference={d.verified_link} className="text-primary hover:underline">· Open link</EvidenceLink></>}
-                    </span>
-                    {d.verified_source ? <span>· {d.verified_source}</span> : null}
-                  </span>
+                  <div key={`d${i}`} className="w-full"><ProofEntry compact label={DECISION_LABEL[d.decision]} proof={d} /></div>
                 ))}
               </div>
               {providerFlags.map((f, i) => (
