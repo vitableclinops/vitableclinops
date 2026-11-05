@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ActivationActionDialog } from '@/components/activation/ActivationActionDialog';
+import { useUpdateActivationStatus } from '@/hooks/useProviderStateStatus';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { isOffboarded } from '@/lib/employeeVisibility';
 import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, validRequirementProof } from '@/lib/stateSheetRequirements';
@@ -105,6 +105,23 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
   const ehrActive = !!providerId && !!stateAbbr && !!coverage?.statesByProfile.get(providerId)?.includes(stateAbbr);
   const alreadyActive = ehrActive || existing?.ehr_activation_status === 'active';
 
+  const updateMutation = useUpdateActivationStatus();
+  const submitRequest = async () => {
+    if (!provider || !state) return;
+    const missing = requirementQueue?.items.filter((i) => !i.saved).map((i) => i.label).join('; ');
+    await updateMutation.mutateAsync({
+      providerId: provider.id,
+      stateAbbreviation: state.abbreviation,
+      newStatus: 'activation_requested' as EhrActivationStatus,
+      notes: `Added to ${state.abbreviation}. Requirements to verify: ${missing || requirementQueue?.label || 'none saved'}`,
+    });
+    queryClient.invalidateQueries();
+    const name = provider.full_name;
+    reset();
+    onOpenChange(false);
+    navigate(`/admin/states?tab=compliance&scope=licensed&state=${state.abbreviation}&search=${encodeURIComponent(name)}`);
+  };
+
   const reset = () => { setProviderId(''); setStateAbbr(defaultState ?? ''); setSearch(''); };
 
   return (
@@ -179,37 +196,13 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>Cancel</Button>
-            <Button disabled={!providerId || !stateAbbr || alreadyActive} onClick={() => setActivationOpen(true)}>
-              Start activation
+            <Button disabled={!providerId || !stateAbbr || alreadyActive || updateMutation.isPending} onClick={submitRequest}>
+              {updateMutation.isPending ? 'Submitting…' : 'Request to add'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {provider && state && (
-        <ActivationActionDialog
-          open={activationOpen}
-          onOpenChange={(o) => {
-            setActivationOpen(o);
-            if (!o) { reset(); onOpenChange(false); }
-          }}
-          onSubmitted={() => {
-            queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
-            queryClient.invalidateQueries();
-            navigate(`/admin/states?tab=compliance&scope=licensed&state=${state.abbreviation}&search=${encodeURIComponent(provider.full_name)}`);
-          }}
-          providerId={provider.id}
-          providerName={provider.full_name}
-          stateAbbreviation={state.abbreviation}
-          stateName={state.name}
-          currentStatus={(existing?.ehr_activation_status as EhrActivationStatus) || 'inactive'}
-          readinessStatus={existing?.readiness_status || 'not_ready'}
-          readinessReason={requirementQueue
-            ? `Requirements to complete for ${state.abbreviation}: ${requirementQueue.items.filter((i) => !i.saved).map((i) => i.label).join('; ') || requirementQueue.label}`
-            : existing?.readiness_reason || 'Requirements for this state have not been reviewed yet'}
-          actionType="request_activation"
-        />
-      )}
       <Dialog open={!!submitted} onOpenChange={(o) => { if (!o) setSubmitted(null); }}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
