@@ -29,6 +29,7 @@ import { ProviderAgreementEvidence } from '@/components/directory/ProviderAgreem
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { CURRENT_EMPLOYEE_FILTER, isOffboarded } from '@/lib/employeeVisibility';
+import { directoryDisplayName } from '@/lib/directoryDisplayName';
 import { isIndependentPhysician } from '@/lib/clinicianRoles';
 import { useDirectoryProfileWarnings } from '@/hooks/useDirectoryProfileWarnings';
 import { ProviderStateSummary } from './ProviderStateSummary';
@@ -409,12 +410,18 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
             </Avatar>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-xl">{provider.preferred_name || provider.full_name}</span>
+                <span className="text-xl">{directoryDisplayName(provider)}</span>
                 {provider.credentials && (
                   <Badge variant="outline">{provider.credentials}</Badge>
                 )}
                 {getStatusBadge(provider.employment_status)}
               </div>
+              {provider.full_name &&
+                directoryDisplayName(provider).toLowerCase() !== provider.full_name.toLowerCase() && (
+                  <p className="text-xs text-muted-foreground">
+                    Legal name: {provider.full_name}
+                  </p>
+                )}
               {provider.primary_specialty && (
                 <p className="text-sm text-muted-foreground">{provider.primary_specialty}</p>
               )}
