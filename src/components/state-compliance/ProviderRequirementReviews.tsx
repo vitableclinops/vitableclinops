@@ -99,7 +99,7 @@ export function ProviderRequirementReviews() {
       </Button></CollapsibleTrigger>
       <CollapsibleContent className="px-4 pb-4 sm:pl-11 space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Link className="text-base font-semibold hover:underline" to={`/providers?search=${encodeURIComponent(f.name)}`}>{f.name}</Link>
+        <Link className="text-base font-semibold hover:underline" to={`/directory?provider=${f.provider.id}`}>{f.name}</Link>
         <Badge variant="secondary" className="font-mono">{f.state}</Badge>
         {f.newlyActive && <Badge variant="outline">Newly active in EHR</Badge>}
       </div>
