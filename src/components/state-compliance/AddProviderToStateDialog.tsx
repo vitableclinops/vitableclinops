@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -36,6 +37,9 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
   const [stateAbbr, setStateAbbr] = useState('');
   const [search, setSearch] = useState('');
   const [activationOpen, setActivationOpen] = useState(false);
+  const [submitted, setSubmitted] = useState<null | { name: string; state: string; stateName: string; queue: { label: string; items: { key: string; label: string; saved: boolean }[] } | null }>(null);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: providers = [] } = useQuery({
     queryKey: ['add-provider-to-state-profiles'],
@@ -188,6 +192,10 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
             setActivationOpen(o);
             if (!o) { reset(); onOpenChange(false); }
           }}
+          onSubmitted={() => {
+            setSubmitted({ name: provider.full_name, state: state.abbreviation, stateName: state.name, queue: requirementQueue });
+            queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
+          }}
           providerId={provider.id}
           providerName={provider.full_name}
           stateAbbreviation={state.abbreviation}
@@ -200,6 +208,38 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
           actionType="request_activation"
         />
       )}
+      <Dialog open={!!submitted} onOpenChange={(o) => { if (!o) setSubmitted(null); }}>
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Requirements to satisfy</DialogTitle>
+            <DialogDescription>
+              Activation requested for {submitted?.name} in {submitted?.stateName}. Complete these before activating in the EHR.
+            </DialogDescription>
+          </DialogHeader>
+          {submitted?.queue ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">{submitted.queue.label}</p>
+              <ul className="space-y-1 text-sm">
+                {submitted.queue.items.map((i) => (
+                  <li key={i.key} className="flex items-start gap-2">
+                    <span className={i.saved ? 'text-primary' : 'text-destructive'}>{i.saved ? '✓' : '•'}</span>
+                    <span>{i.label}{i.saved ? ' (proof saved)' : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No saved requirements for this state.</p>
+          )}
+          <p className="text-xs text-muted-foreground">This request is now listed on the Compliance tab under "Licensed / requested · not active".</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubmitted(null)}>Close</Button>
+            <Button onClick={() => { const s = submitted!; setSubmitted(null); navigate(`/admin/states?tab=compliance&scope=licensed&state=${s.state}`); }}>
+              Open in Compliance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
