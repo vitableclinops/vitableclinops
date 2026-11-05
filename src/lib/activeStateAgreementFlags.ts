@@ -1,6 +1,5 @@
 import { getCollabRequirementType } from '@/constants/stateRestrictions';
 import { isIndependentPhysician, isNonNpBehavioralRole, normalizeRole } from '@/lib/clinicianRoles';
-import { isDirectShiftsAgencyProvider } from '@/lib/directShiftsAgency';
 import { parseLocalDate } from '@/lib/utils';
 import { INDEPENDENT_ALTERNATIVE_STATES, RX_AUTHORITY_REQUIRED_STATES, hasVerifiedIndependentPractice, hasVerifiedRxAuthority, hasVerifiedNcbonRegistration, type CollabDecision } from '@/lib/nyIndependentPractice';
 import { hasPrescriptiveAuthority, type PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
@@ -23,7 +22,7 @@ export interface CollaborationRule { state_abbreviation: string; collab_requirem
 
 /** Audit only identity-resolved EHR states; license lists never imply activation. */
 export function activeStateAgreementFlags(
-  provider: { id: string; profession?: string | null; credentials?: string | null; agency_id?: string | null },
+  provider: { id: string; profession?: string | null; credentials?: string | null },
   states: string[], rules: CollaborationRule[], agreements: StateAgreement[],
   decisions: CollabDecision[],
   today = new Date(),
@@ -32,8 +31,6 @@ export function activeStateAgreementFlags(
   requirementProofs: RequirementProof[] = [],
   sheetLicenses: SheetLicense[] = [],
 ): AgreementReview[] {
-  // DirectShifts providers: requirements verified via the DirectShifts licensed-states spreadsheet.
-  if (isDirectShiftsAgencyProvider(provider)) return [];
   if (isIndependentPhysician(provider) || isNonNpBehavioralRole(provider)) return [];
   const role = normalizeRole(provider.profession);
   const np = ['np', 'apn', 'aprn', 'npp', 'nurse practitioner', 'nurse practitioner, certified'].includes(role)
