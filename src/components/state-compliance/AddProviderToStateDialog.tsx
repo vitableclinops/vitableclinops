@@ -14,6 +14,7 @@ import { useUpdateActivationStatus } from '@/hooks/useProviderStateStatus';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { isOffboarded } from '@/lib/employeeVisibility';
 import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, validRequirementProof } from '@/lib/stateSheetRequirements';
+import { IndependentPracticeVerifyDialog } from '@/components/agreements/IndependentPracticeVerifyDialog';
 import type { EhrActivationStatus } from '@/hooks/useProviderStateStatus';
 
 export const OTHER_RULES: Record<string, string> = {
@@ -39,6 +40,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
   const [stateAbbr, setStateAbbr] = useState(defaultState ?? '');
   const [search, setSearch] = useState('');
   const [activationOpen, setActivationOpen] = useState(false);
+  const [verifyTarget, setVerifyTarget] = useState<null | { profileId: string; providerName: string; state: string }>(null);
   const [submitted, setSubmitted] = useState<null | { name: string; state: string; stateName: string; queue: { label: string; items: { key: string; label: string; saved: boolean }[] } | null }>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -118,18 +120,15 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
       notes: `Added to ${state.abbreviation}. Requirements to verify: ${missing || requirementQueue?.label || 'none saved'}`,
     });
     queryClient.invalidateQueries();
-    const name = provider.full_name;
-    const focus = `${provider.id}:${state.abbreviation}`;
-    reset();
-    onOpenChange(false);
-    navigate(`/admin/states?tab=compliance&scope=requested&state=${state.abbreviation}&focus=${encodeURIComponent(focus)}`);
+    setVerifyTarget({ profileId: provider.id, providerName: provider.full_name, state: state.abbreviation });
   };
 
   const reset = () => { setProviderId(''); setStateAbbr(defaultState ?? ''); setSearch(''); };
 
   return (
     <>
-      <Dialog open={open && !activationOpen} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
+      {verifyTarget && <IndependentPracticeVerifyDialog open {...verifyTarget} onOpenChange={o => { if (!o) { setVerifyTarget(null); reset(); onOpenChange(false); } }} />}
+      <Dialog open={open && !activationOpen && !verifyTarget} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Provider to State</DialogTitle>
@@ -188,7 +187,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
                     ))}
                   </ul>
                 )}
-                <p className="text-xs text-muted-foreground">These are added to the activation request. Anything still missing is flagged on the Compliance tab.</p>
+                <p className="text-xs text-muted-foreground">These are added to the activation request. After you request, the upload window opens right away for anything still missing.</p>
               </div>
             )}
             {existing?.ehr_activation_status && !alreadyActive && (
@@ -232,7 +231,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
           <p className="text-xs text-muted-foreground">This request is now listed on the Compliance tab under "Licensed / requested · not active".</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSubmitted(null)}>Close</Button>
-            <Button onClick={() => { const s = submitted!; setSubmitted(null); navigate(`/admin/states?tab=compliance&scope=requested&state=${s.state}`); }}>
+            <Button onClick={() => { const s = submitted!; setSubmitted(null); navigate(`/admin/states?tab=compliance&scope=licensed&state=${s.state}`); }}>
               Open in Compliance
             </Button>
           </DialogFooter>
