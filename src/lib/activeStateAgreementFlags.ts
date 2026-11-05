@@ -1,5 +1,5 @@
 import { getCollabRequirementType } from '@/constants/stateRestrictions';
-import { isIndependentPhysician, normalizeRole } from '@/lib/clinicianRoles';
+import { isIndependentPhysician, isNonNpBehavioralRole, normalizeRole } from '@/lib/clinicianRoles';
 import { parseLocalDate } from '@/lib/utils';
 import { INDEPENDENT_ALTERNATIVE_STATES, RX_AUTHORITY_REQUIRED_STATES, hasVerifiedIndependentPractice, hasVerifiedRxAuthority, hasVerifiedNcbonRegistration, type CollabDecision } from '@/lib/nyIndependentPractice';
 import { hasPrescriptiveAuthority, type PrescriptiveAuthorityEvidence } from '@/lib/prescriptiveAuthorityEvidence';
@@ -31,7 +31,7 @@ export function activeStateAgreementFlags(
   requirementProofs: RequirementProof[] = [],
   sheetLicenses: SheetLicense[] = [],
 ): AgreementReview[] {
-  if (isIndependentPhysician(provider)) return [];
+  if (isIndependentPhysician(provider) || isNonNpBehavioralRole(provider)) return [];
   const role = normalizeRole(provider.profession);
   const np = ['np', 'apn', 'aprn', 'npp', 'nurse practitioner', 'nurse practitioner, certified'].includes(role)
     || (!role && /\b(np|aprn|fnp|agpcnp)\b/i.test(provider.credentials ?? ''));

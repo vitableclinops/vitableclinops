@@ -81,3 +81,10 @@ export function isClinician(record: ClinicianIdentifiable | null | undefined): b
 export function directoryScopeLabel(showEveryone: boolean): string {
   return showEveryone ? 'everyone' : 'clinicians';
 }
+
+/** Therapy, social work and coaching roles never carry NP state requirements. */
+export function isNonNpBehavioralRole(record: ClinicianIdentifiable | null | undefined): boolean {
+  if (!record) return false;
+  const text = `${normalizeRole(record.profession)} ${normalizeRole(record.credentials)}`;
+  return /\b(msw|lcsw|licsw|lsw|lpc|lmft|mft|lmhc|lfcs|psyd|therapist|therapy|counselor|social worker|coach)\b/.test(text);
+}
