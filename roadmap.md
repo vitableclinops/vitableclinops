@@ -1,5 +1,7 @@
 # Roadmap
 
+- [x] Simplify provider requirement reviews into compact expandable rows for both active and licensed providers.
+
 - [x] Add Medallion-licensed, not-EHR-active provider lists and advance requirement review to States & Compliance, with state-card summaries.
 
 - [x] Add red open-task count badge to the Tasks tab on the Agreements page (mirror States & Compliance Provider Requirements badge).
