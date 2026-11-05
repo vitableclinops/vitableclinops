@@ -477,6 +477,33 @@ const ProviderDirectoryPage = () => {
       : null,
   }));
 
+  // Deep links: ?provider=<profile id> or ?search=<name/email> open that provider's profile.
+  const deepLinkHandled = useRef<string | null>(null);
+  useEffect(() => {
+    const providerParam = searchParams.get('provider');
+    const searchParam = searchParams.get('search');
+    const key = `${providerParam ?? ''}|${searchParam ?? ''}`;
+    if (!providerParam && !searchParam) return;
+    if (deepLinkHandled.current === key || providers.length === 0) return;
+    deepLinkHandled.current = key;
+    let match: FullProvider | undefined;
+    if (providerParam) match = providers.find(p => p.id === providerParam);
+    if (!match && searchParam) {
+      const q = searchParam.trim().toLowerCase();
+      const hits = providers.filter(p =>
+        (p.email || '').toLowerCase() === q ||
+        (p.full_name || '').toLowerCase() === q ||
+        directoryDisplayName(p).toLowerCase() === q);
+      if (hits.length === 1) match = hits[0];
+      else setSearchQuery(searchParam);
+    }
+    if (match) {
+      setSearchQuery(match.full_name || '');
+      if (isOffboarded(match.employment_status) && isAdmin) setActiveTab('offboarded');
+      if (isAdmin) setSelectedProvider(match);
+    }
+  }, [searchParams, providers, isAdmin]);
+
   const handleRowClick = (provider: ProviderTableData) => {
     if (isAdmin) {
       const fullProvider = providers.find(p => p.id === provider.id);
