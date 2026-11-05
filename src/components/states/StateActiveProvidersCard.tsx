@@ -1,3 +1,4 @@
+import { ProviderNameLink } from '@/components/ProviderNameLink';
 import { ProofEntry } from '@/components/agreements/ProofEntry';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -61,7 +62,7 @@ export function StateActiveProvidersCard({ state }: { state: string }) {
             <div key={p.id} className="rounded-md border p-3 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Link to={`/directory?provider=${p.id}`} className="font-medium hover:underline">{name}</Link>
+                  <ProviderNameLink id={p.id} name={name} className="font-medium" />
                   {p.profession && p.profession !== '-' && <span className="text-xs text-muted-foreground">{p.profession}</span>}
                 </div>
                 {providerFlags.length
