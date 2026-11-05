@@ -32,6 +32,7 @@ import { CURRENT_EMPLOYEE_FILTER, isOffboarded } from '@/lib/employeeVisibility'
 import { isIndependentPhysician } from '@/lib/clinicianRoles';
 import { useDirectoryProfileWarnings } from '@/hooks/useDirectoryProfileWarnings';
 import { ProviderStateSummary } from './ProviderStateSummary';
+import { ProviderDocumentsByState } from './ProviderDocumentsByState';
 
 const PROFESSION_OPTIONS = [
   'NP',
@@ -502,8 +503,7 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
             <MedallionProviderSection profileId={provider.id} medallionId={provider.medallion_id} suppressFlags={isOffboarded(provider.employment_status)} />
           </TabsContent>
           <TabsContent value="documents" className="mt-4 space-y-5">
-            <ProviderAgreementEvidence profileId={provider.id} />
-            <IndependentVerificationList profileId={provider.id} />
+            <ProviderDocumentsByState profileId={provider.id} chartReviewUrl={provider.chart_review_folder_url} />
           </TabsContent>
 
           {/* Professional Tab */}
@@ -679,22 +679,6 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
             ) : (
               <>
                 <ProviderStateSummary provider={provider as any} />
-                {provider.chart_review_folder_url && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-muted-foreground">Chart Reviews:</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => window.open(provider.chart_review_folder_url!, '_blank')}
-                    >
-                      <FileText className="h-4 w-4" />
-                      Open Folder
-                      <ExternalLink className="h-3 w-3" />
-                    </Button>
-                  </div>
-                )}
-                <IndependentVerificationList profileId={provider.id} />
               </>
             )}
           </TabsContent>
