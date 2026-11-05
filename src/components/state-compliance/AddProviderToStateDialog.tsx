@@ -193,8 +193,9 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
             if (!o) { reset(); onOpenChange(false); }
           }}
           onSubmitted={() => {
-            setSubmitted({ name: provider.full_name, state: state.abbreviation, stateName: state.name, queue: requirementQueue });
             queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] });
+            queryClient.invalidateQueries();
+            navigate(`/admin/states?tab=compliance&scope=licensed&state=${state.abbreviation}&search=${encodeURIComponent(provider.full_name)}`);
           }}
           providerId={provider.id}
           providerName={provider.full_name}
