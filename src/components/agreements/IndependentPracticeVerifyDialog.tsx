@@ -14,7 +14,8 @@ import { EvidenceLink } from './EvidenceLink';
 import { RX_AUTHORITY_REQUIRED_STATES, hasVerificationLink } from '@/lib/nyIndependentPractice';
 import { refreshAgreementViews } from '@/lib/agreementRefresh';
 import { SHEET_REQUIREMENTS } from '@/lib/stateSheetRequirements';
-import { saveRequirementProof } from '@/hooks/useRequirementProofs';
+import { saveRequirementProof, useRequirementProofs } from '@/hooks/useRequirementProofs';
+import { validRequirementProof } from '@/lib/stateSheetRequirements';
 import { StateRequirementVerifyDialog, StateRequirementProofList, RequirementProofSection, emptyDraft, draftStarted, draftComplete, type ProofDraft } from './StateRequirementVerifyDialog';
 
 /** Save a verified independent-practice status for one provider/state. */
@@ -172,7 +173,15 @@ function PaVerifyDialog({ open, onOpenChange, profileId, providerName }: { open:
   const [rx, setRx] = useState<ProofDraft>(emptyDraft());
   const [pals, setPals] = useState<ProofDraft>(emptyDraft());
   const [saving, setSaving] = useState(false);
-  const rxOn = draftStarted(rx), palsOn = draftStarted(pals);
+  const proofs = useRequirementProofs(profileId);
+  const decision = useQuery({ queryKey: ['independent-verifications', 'pa-rx', profileId], enabled: open, queryFn: async () => {
+    const { data, error } = await supabase.from('provider_state_collab_decisions').select('decision, verified_source, verified_on, verified_attachment_path')
+      .eq('profile_id', profileId).eq('state_abbreviation', 'PA').maybeSingle();
+    if (error) throw error; return data; } });
+  const rxDone = decision.data?.decision === 'rx_authority_verified' && !!decision.data.verified_source && !!decision.data.verified_on && !!decision.data.verified_attachment_path;
+  const palsDone = (proofs.data ?? []).some(p => p.state_abbreviation === 'PA' && p.requirement_key === 'pals_collab_registration' && validRequirementProof(p));
+  const loading = proofs.isLoading || decision.isLoading;
+  const rxOn = !rxDone && draftStarted(rx), palsOn = !palsDone && draftStarted(pals);
   const canSave = (rxOn || palsOn) && (!rxOn || draftComplete(rx, true)) && (!palsOn || draftComplete(pals));
   const save = async () => {
     setSaving(true);
@@ -187,9 +196,13 @@ function PaVerifyDialog({ open, onOpenChange, profileId, providerName }: { open:
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
     <DialogHeader><DialogTitle>Verify state requirements — PA</DialogTitle><DialogDescription>{providerName} needs a signed Collab Agreement AND Rx Authority license designation AND PALS portal collab confirmation/registration. Fill in any or all below.</DialogDescription></DialogHeader>
     <p className="text-sm text-muted-foreground">Collab Agreement is added/linked through the Agreements flow.</p>
-    <RequirementProofSection id="pa-rx" label={'"Rx Authority" license designation'} draft={rx} onChange={setRx} fileOnly showExpiration={false} />
-    <RequirementProofSection id="pa-pals" label="PALS portal collab confirmed/registration" draft={pals} onChange={setPals} />
-    <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={saving || !canSave} onClick={save}>{saving ? 'Saving…' : 'Save verifications'}</Button></DialogFooter>
+    {loading && <p className="text-sm text-muted-foreground">Checking saved proof…</p>}
+    {!loading && (rxDone ? <p className="text-sm">"Rx Authority" license designation: <span className="font-medium text-primary">already verified</span></p>
+      : <RequirementProofSection id="pa-rx" label={'"Rx Authority" license designation'} draft={rx} onChange={setRx} fileOnly showExpiration={false} />)}
+    {!loading && (palsDone ? <p className="text-sm">PALS portal collab confirmed/registration: <span className="font-medium text-primary">already verified</span></p>
+      : <RequirementProofSection id="pa-pals" label="PALS portal collab confirmed/registration" draft={pals} onChange={setPals} />)}
+    {!loading && rxDone && palsDone && <p className="text-sm font-medium">No outstanding PA verifications.</p>}
+    <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>{rxDone && palsDone ? 'Close' : 'Cancel'}</Button>{!(rxDone && palsDone) && <Button disabled={saving || !canSave} onClick={save}>{saving ? 'Saving…' : 'Save verifications'}</Button>}</DialogFooter>
   </DialogContent></Dialog>;
 }
 

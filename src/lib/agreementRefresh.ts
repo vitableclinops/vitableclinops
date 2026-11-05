@@ -14,5 +14,8 @@ export async function refreshAgreementViews(queryClient: QueryClient) {
     ['local-supervision-agreements'],
     ['provider-agreements-count'],
     ['provider-missing-doc-agreements'],
+    ['independent-verifications'],
+    ['provider-missing-requirements'],
+    ['provider-readiness'],
   ].map(queryKey => queryClient.invalidateQueries({ queryKey })));
 }
