@@ -1,3 +1,4 @@
+import { ProviderNameLink } from '@/components/ProviderNameLink';
 import { isDocumentExemptPhysician, stripDrPrefix } from '@/lib/directShiftsPhysicians';
 import { useEffect, useState } from 'react';
 import { AGREEMENT_REFRESH_OPTIONS, refreshAgreementViews } from '@/lib/agreementRefresh';
@@ -1231,7 +1232,7 @@ const CollaborativeAgreementsPage = () => {
                                     {agreement.providerName.split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('')}
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{agreement.providerName}</p>
+                                    <p className="font-medium text-sm truncate group-hover:text-primary transition-colors"><ProviderNameLink name={agreement.providerName} /></p>
                                     <div className="flex items-center gap-2">
                                       {!hasDocument && agreement.isActive && !isDocumentExemptPhysician(agreement.physicianName) && (
                                         <Badge variant="outline" className="text-[10px] px-1 py-0 text-warning border-warning/30">No Doc</Badge>
@@ -1714,7 +1715,7 @@ const CollaborativeAgreementsPage = () => {
                                         {item.providerName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                                       </div>
                                       <div>
-                                        <p className="text-sm font-medium">{item.providerName}</p>
+                                        <p className="text-sm font-medium"><ProviderNameLink name={item.providerName} /></p>
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                           <Badge variant={item.caRequired ? "default" : "outline"} className="text-[10px] px-1.5 py-0">
                                             {item.stateAbbreviation}
@@ -1759,7 +1760,7 @@ const CollaborativeAgreementsPage = () => {
                                         {item.providerName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                                       </div>
                                       <div>
-                                        <p className="text-sm font-medium">{item.providerName}</p>
+                                        <p className="text-sm font-medium"><ProviderNameLink name={item.providerName} /></p>
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                           <Badge variant={item.caRequired ? "default" : "outline"} className="text-[10px] px-1.5 py-0">
                                             {item.stateAbbreviation}

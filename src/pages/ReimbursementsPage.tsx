@@ -1,3 +1,4 @@
+import { ProviderNameLink } from '@/components/ProviderNameLink';
 import { useState, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useReimbursements, ReimbursementRequest } from '@/hooks/useReimbursements';
@@ -257,7 +258,7 @@ const ReimbursementsPage = () => {
                   <TableBody>
                     {filteredRequests.map(req => (
                       <TableRow key={req.id}>
-                        {isAdmin && <TableCell className="font-medium">{req.provider_name}</TableCell>}
+                        {isAdmin && <TableCell className="font-medium"><ProviderNameLink id={req.provider_id} name={req.provider_name} /></TableCell>}
                         <TableCell>{req.state_abbreviation}</TableCell>
                         <TableCell>${(req.application_fee_amount || 0).toFixed(2)}</TableCell>
                         <TableCell>{req.admin_hours_spent || 0}h</TableCell>
