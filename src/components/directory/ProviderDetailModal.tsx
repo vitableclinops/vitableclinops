@@ -523,35 +523,58 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                 </Button>
               </div>
             )}
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1 pt-2">Personal</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <InfoRow label="Activation Status" value={(() => {
-                if (isOffboarded(provider.employment_status)) return 'Offboarded';
-                const s = activationOverride ?? provider.activation_status;
-                return s === 'ready' ? 'Ready' :
-                  s === 'pending_onboarding' ? 'Pending Onboarding' :
-                  s === 'pending_agreements' ? 'Pending Agreements' :
-                  s || 'Not Set';
-              })()} />
-              <InfoRow label="Collaborative Physician" value={null} />
-              <InfoRow label="Renewal Handling" value={
-                provider.renewal_handling === 'self' ? 'Self-Managed' :
-                provider.renewal_handling === 'medallion' ? 'Medallion-Managed' :
-                provider.renewal_handling === 'internal' ? 'Internal Admin' :
-                provider.renewal_handling || 'Not Set'
-              } />
-              <InfoRow label="Languages" value={provider.languages} />
-              <InfoRow label="Licensed States" value={medallionStates.length ? medallionStates.join(', ') : null} />
-              <InfoRow label="Home State" value={provider.address_state} />
+              {isEditing ? (
+                <>
+                  <EditableField label="First Name" value={formData.first_name} field="first_name" onChange={handleChange} />
+                  <EditableField label="Middle Name" value={formData.middle_name} field="middle_name" onChange={handleChange} />
+                  <EditableField label="Last Name" value={formData.last_name} field="last_name" onChange={handleChange} />
+                  <EditableField label="Preferred Name" value={formData.preferred_name} field="preferred_name" onChange={handleChange} />
+                  <EditableField label="Pronouns" value={formData.pronoun} field="pronoun" onChange={handleChange} />
+                  <EditableField label="Birthday" value={formData.birthday} field="birthday" onChange={handleChange} type="date" />
+                  <EditableField label="Secondary Email" value={formData.secondary_contact_email} field="secondary_contact_email" onChange={handleChange} type="email" />
+                </>
+              ) : (
+                <>
+                  <InfoRow label="Full Legal Name" value={[provider.first_name, provider.middle_name, provider.last_name].filter(Boolean).join(' ') || provider.full_name} />
+                  <InfoRow label="Preferred Name" value={provider.preferred_name} />
+                  <InfoRow label="Pronouns" value={provider.pronoun} />
+                  <InfoRow label="Birthday" value={formatDate(provider.birthday)} />
+                  <InfoRow label="Secondary Email" value={provider.secondary_contact_email} />
+                </>
+              )}
             </div>
-            {provider.bio && (
-              <>
-                <Separator />
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Bio</p>
-                  <p className="text-sm">{provider.bio}</p>
-                </div>
-              </>
+            
+            <Separator />
+            
+            {isEditing ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <EditableField label="Address Line 1" value={formData.address_line_1} field="address_line_1" onChange={handleChange} />
+                <EditableField label="Address Line 2" value={formData.address_line_2} field="address_line_2" onChange={handleChange} />
+                <EditableField label="City" value={formData.address_city} field="address_city" onChange={handleChange} />
+                <EditableField label="State" value={formData.address_state} field="address_state" onChange={handleChange} />
+                <EditableField label="Postal Code" value={formData.postal_code} field="postal_code" onChange={handleChange} />
+              </div>
+            ) : (
+              <InfoRow label="Home Address" value={fullAddress} />
             )}
+            
+            <Separator />
+            
+            <div className="grid grid-cols-2 gap-4">
+              {isEditing ? (
+                <>
+                  <EditableField label="Emergency Contact" value={formData.emergency_contact_name} field="emergency_contact_name" onChange={handleChange} />
+                  <EditableField label="Emergency Phone" value={formData.emergency_contact_phone} field="emergency_contact_phone" onChange={handleChange} type="tel" />
+                </>
+              ) : (
+                <>
+                  <InfoRow label="Emergency Contact" value={provider.emergency_contact_name} />
+                  <InfoRow label="Emergency Phone" value={provider.emergency_contact_phone} />
+                </>
+              )}
+            </div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1 pt-2">Professional</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {isEditing ? (
@@ -668,58 +691,6 @@ export const ProviderDetailModal = ({ provider, onClose, onSaved }: ProviderDeta
                     </Badge>
                     <span className="text-sm text-muted-foreground">Auto-Renew</span>
                   </div>
-                </>
-              )}
-            </div>
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1 pt-2">Personal</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {isEditing ? (
-                <>
-                  <EditableField label="First Name" value={formData.first_name} field="first_name" onChange={handleChange} />
-                  <EditableField label="Middle Name" value={formData.middle_name} field="middle_name" onChange={handleChange} />
-                  <EditableField label="Last Name" value={formData.last_name} field="last_name" onChange={handleChange} />
-                  <EditableField label="Preferred Name" value={formData.preferred_name} field="preferred_name" onChange={handleChange} />
-                  <EditableField label="Pronouns" value={formData.pronoun} field="pronoun" onChange={handleChange} />
-                  <EditableField label="Birthday" value={formData.birthday} field="birthday" onChange={handleChange} type="date" />
-                  <EditableField label="Secondary Email" value={formData.secondary_contact_email} field="secondary_contact_email" onChange={handleChange} type="email" />
-                </>
-              ) : (
-                <>
-                  <InfoRow label="Full Legal Name" value={[provider.first_name, provider.middle_name, provider.last_name].filter(Boolean).join(' ') || provider.full_name} />
-                  <InfoRow label="Preferred Name" value={provider.preferred_name} />
-                  <InfoRow label="Pronouns" value={provider.pronoun} />
-                  <InfoRow label="Birthday" value={formatDate(provider.birthday)} />
-                  <InfoRow label="Secondary Email" value={provider.secondary_contact_email} />
-                </>
-              )}
-            </div>
-            
-            <Separator />
-            
-            {isEditing ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <EditableField label="Address Line 1" value={formData.address_line_1} field="address_line_1" onChange={handleChange} />
-                <EditableField label="Address Line 2" value={formData.address_line_2} field="address_line_2" onChange={handleChange} />
-                <EditableField label="City" value={formData.address_city} field="address_city" onChange={handleChange} />
-                <EditableField label="State" value={formData.address_state} field="address_state" onChange={handleChange} />
-                <EditableField label="Postal Code" value={formData.postal_code} field="postal_code" onChange={handleChange} />
-              </div>
-            ) : (
-              <InfoRow label="Home Address" value={fullAddress} />
-            )}
-            
-            <Separator />
-            
-            <div className="grid grid-cols-2 gap-4">
-              {isEditing ? (
-                <>
-                  <EditableField label="Emergency Contact" value={formData.emergency_contact_name} field="emergency_contact_name" onChange={handleChange} />
-                  <EditableField label="Emergency Phone" value={formData.emergency_contact_phone} field="emergency_contact_phone" onChange={handleChange} type="tel" />
-                </>
-              ) : (
-                <>
-                  <InfoRow label="Emergency Contact" value={provider.emergency_contact_name} />
-                  <InfoRow label="Emergency Phone" value={provider.emergency_contact_phone} />
                 </>
               )}
             </div>
