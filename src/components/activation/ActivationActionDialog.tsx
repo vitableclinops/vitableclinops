@@ -30,6 +30,7 @@ interface ActivationActionDialogProps {
   readinessStatus: string;
   readinessReason?: string | null;
   actionType: 'activate' | 'deactivate' | 'request_activation' | 'request_deactivation';
+  onSubmitted?: () => void;
 }
 
 const actionConfig = {
@@ -74,6 +75,7 @@ export function ActivationActionDialog({
   readinessStatus,
   readinessReason,
   actionType,
+  onSubmitted,
 }: ActivationActionDialogProps) {
   const [notes, setNotes] = useState('');
   const [effectiveDate, setEffectiveDate] = useState('');
@@ -141,6 +143,7 @@ export function ActivationActionDialog({
     setEffectiveDate('');
     setEvidenceLink('');
     setOverrideReason('');
+    onSubmitted?.();
     onOpenChange(false);
   };
 

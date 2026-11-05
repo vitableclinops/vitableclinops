@@ -35,7 +35,7 @@ export function ProviderRequirementReviews() {
         <Select value={state} onValueChange={value => { const next = new URLSearchParams(params); next.set('tab','compliance'); if (value === 'all') next.delete('state'); else next.set('state',value); setParams(next); }}><SelectTrigger className="w-56" aria-label="Review state"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All states</SelectItem>{allUSStates.map(s => <SelectItem key={s.abbreviation} value={s.abbreviation}>{s.name} ({s.abbreviation})</SelectItem>)}</SelectContent></Select>
       </div>
     </div>
-    <Tabs value={scope} onValueChange={value => { const next = new URLSearchParams(params); next.set('scope', value); setExpanded(null); setParams(next); }}><TabsList className="flex flex-wrap h-auto justify-start"><TabsTrigger className="whitespace-normal text-left" value="active">Active · needs review ({filtered.length})</TabsTrigger><TabsTrigger className="whitespace-normal text-left" value="licensed">Licensed · not active ({licensed.length})</TabsTrigger></TabsList></Tabs>
+    <Tabs value={scope} onValueChange={value => { const next = new URLSearchParams(params); next.set('scope', value); setExpanded(null); setParams(next); }}><TabsList className="flex flex-wrap h-auto justify-start"><TabsTrigger className="whitespace-normal text-left" value="active">Active · needs review ({filtered.length})</TabsTrigger><TabsTrigger className="whitespace-normal text-left" value="licensed">Licensed / requested · not active ({licensed.length})</TabsTrigger></TabsList></Tabs>
     {scope === 'licensed' && <p className="text-xs text-muted-foreground">EHR snapshot fetched: {coverage?.pulledAt ? new Date(coverage.pulledAt).toLocaleString('en-US', {timeZone:'America/New_York'}) + ' ET' : 'Unavailable'}{coverage?.stale ? ' · May be out of date' : ''}</p>}
     {state !== 'all' && <StateRequirementLine state={state} collabType={rule?.collab_requirement_type} caRequired={rule?.ca_required} />}
     {loading && <p className="text-muted-foreground">Checking active-state requirements…</p>}
@@ -52,6 +52,7 @@ export function ProviderRequirementReviews() {
         {expanded === rowKey ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
         <span className="min-w-0 flex-1 font-semibold break-words">{r.name}</span>
         <Badge variant="secondary">{r.state}</Badge>
+        {r.activationRequested && <Badge variant="outline">Requested</Badge>}
         <span className={r.reviews.length ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>{r.reviews.length ? `${r.reviews.length} to verify` : 'Requirements met'}</span>
       </Button></CollapsibleTrigger>
       <CollapsibleContent className="px-4 pb-4 sm:pl-11 space-y-4">
@@ -59,7 +60,7 @@ export function ProviderRequirementReviews() {
         <Link className="text-base font-semibold hover:underline" to={`/providers?search=${encodeURIComponent(r.name)}`}>{r.name}</Link>
         <Badge variant="secondary" className="font-mono">{r.state}</Badge>
 
-        <span className="text-xs text-muted-foreground">{r.activation === 'not_active' ? 'Not active in the latest EHR snapshot' : `EHR activation unconfirmed · ${r.activationDetail}`}</span>
+        <span className="text-xs text-muted-foreground">{r.activationRequested ? 'Activation requested · ' : ''}{r.activation === 'requested' ? 'Not yet active in EHR' : r.activation === 'not_active' ? 'Not active in the latest EHR snapshot' : `EHR activation unconfirmed · ${r.activationDetail}`}</span>
       </div>
       {state === 'all' && <StateRequirementLine state={r.state} collabType={stateRule?.collab_requirement_type} caRequired={stateRule?.ca_required} />}
       {r.reviews.length > 0 && <div className="space-y-2 border-l-2 border-destructive pl-3">
