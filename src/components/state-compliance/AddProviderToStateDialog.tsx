@@ -77,17 +77,27 @@ export function AddProviderToStateDialog({ open, onOpenChange, states }: Props) 
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Provider</Label>
-              <Input placeholder="Search providers…" value={search} onChange={(e) => setSearch(e.target.value)} />
-              <Select value={providerId} onValueChange={setProviderId}>
-                <SelectTrigger><SelectValue placeholder="Select provider" /></SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {filtered.map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>
+              <Input
+                placeholder="Start typing a provider name…"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setProviderId(''); }}
+              />
+              {search.trim() && !providerId && (
+                <div className="max-h-56 overflow-y-auto rounded-md border bg-popover">
+                  {filtered.length === 0 ? (
+                    <p className="p-2 text-sm text-muted-foreground">No matching providers</p>
+                  ) : filtered.slice(0, 50).map((p: any) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="block w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                      onClick={() => { setProviderId(p.id); setSearch(p.full_name); }}
+                    >
                       {p.full_name}{p.profession && p.profession !== '-' ? ` · ${p.profession}` : ''}
-                    </SelectItem>
+                    </button>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label>State</Label>
