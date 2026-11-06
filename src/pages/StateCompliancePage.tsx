@@ -1,4 +1,5 @@
 import { stateRequirementSummary } from '@/lib/stateRequirementSummary';
+import { unparse } from 'papaparse';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AppSidebar } from '@/components/AppSidebar';
@@ -105,7 +106,7 @@ const StateCompliancePage = () => {
   // Compliance tab; this reuses the same cached audit queries.
   const { flags: requirementFlags, rows: licensedRows, coverage, profiles: currentProfiles, loading: rosterLoading, error: rosterError } = useLicensedStateReadiness();
   const requirementFlagCount = requirementFlags.length;
-  const { allData: complianceAllData, loading: complianceLoading, refetch: refetchCompliance } = useStateCompliance();
+  const { allData: complianceAllData, loading: complianceLoading, error: complianceError, refetch: refetchCompliance } = useStateCompliance();
   // A user may hold several roles; admin takes precedence so edit access
   // doesn't depend on the order roles come back from the database.
   const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'admin');
@@ -136,30 +137,35 @@ const StateCompliancePage = () => {
   };
 
   const exportToCSV = () => {
-    const headers = [
-      'State', 'Abbreviation', 'Demand Tag', 'Has FPA', 'Requires Collaborative Agreement',
-      'Meeting Cadence', 'Chart Review Required', 'Requires Prescriptive Authority',
-      'Min Application Fee', 'Max Application Fee', 'Min Processing Weeks', 'Max Processing Weeks'
-    ];
-
-    const rows = filteredStates.map(state => [
-      state.name, state.abbreviation, state.demandTag || '',
-      state.hasFPA ? 'Yes' : 'No', state.requiresCollaborativeAgreement ? 'Yes' : 'No',
-      state.collaborativeAgreementRequirements?.meetingCadence || '',
-      state.collaborativeAgreementRequirements?.chartReviewRequired ? 'Yes' : 'No',
-      state.requiresPrescriptiveAuthority ? 'Yes' : 'No',
-      state.applicationFeeRange.min, state.applicationFeeRange.max,
-      state.processingTimeWeeks.min, state.processingTimeWeeks.max
-    ]);
-
-    const csvContent = [headers.join(','), ...rows.map(row => row.map(cell => `"${cell}"`).join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    if (complianceLoading || complianceError || !complianceAllData.length) {
+      toast.error('State requirements are unavailable. Please refresh and try again.');
+      return;
+    }
+    const rows = filteredStates.map(state => {
+      const saved = complianceAllData.find(item => item.state_abbreviation === state.abbreviation);
+      return {
+        State: saved?.state_name || state.name,
+        Abbreviation: state.abbreviation,
+        'NP State Requirements': stateRequirementSummary(
+          state.abbreviation,
+          saved?.collab_requirement_type ?? getCollabRequirementType(state.abbreviation),
+          saved?.ca_required,
+        ),
+        'License Details': saved?.licenses ?? '',
+        'Eligibility Notes': saved?.steps_to_confirm_eligibility ?? '',
+        'Physician Supervision Limit': saved ? saved.np_md_ratio_limit ?? 'Unlimited' : '',
+      };
+    });
+    const csvContent = unparse(rows, { escapeFormulae: true });
+    const blob = new Blob(['\uFEFF', csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    link.setAttribute('href', URL.createObjectURL(blob));
-    link.setAttribute('download', `state-compliance-data-${new Date().toISOString().split('T')[0]}.csv`);
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `state-requirements-${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
   };
 
   const handleImport = (importedStates: Partial<State>[]) => {
@@ -261,7 +267,7 @@ const StateCompliancePage = () => {
                   <Upload className="h-4 w-4 mr-2" />
                   Import CSV
                 </Button>
-                <Button variant="outline" onClick={exportToCSV}>
+                <Button variant="outline" onClick={exportToCSV} disabled={complianceLoading || !!complianceError}>
                   <Download className="h-4 w-4 mr-2" />
                   Export CSV
                 </Button>
