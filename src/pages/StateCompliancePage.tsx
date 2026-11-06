@@ -141,19 +141,15 @@ const StateCompliancePage = () => {
       toast.error('State requirements are unavailable. Please refresh and try again.');
       return;
     }
-    const rows = filteredStates.map(state => {
+    const rows = [...states].sort((a, b) => a.name.localeCompare(b.name)).map(state => {
       const saved = complianceAllData.find(item => item.state_abbreviation === state.abbreviation);
       return {
         State: saved?.state_name || state.name,
-        Abbreviation: state.abbreviation,
-        'NP State Requirements': stateRequirementSummary(
+        Requirements: stateRequirementSummary(
           state.abbreviation,
           saved?.collab_requirement_type ?? getCollabRequirementType(state.abbreviation),
           saved?.ca_required,
         ),
-        'License Details': saved?.licenses ?? '',
-        'Eligibility Notes': saved?.steps_to_confirm_eligibility ?? '',
-        'Physician Supervision Limit': saved ? saved.np_md_ratio_limit ?? 'Unlimited' : '',
       };
     });
     const csvContent = unparse(rows, { escapeFormulae: true });
