@@ -65,55 +65,57 @@ export function ProviderFlagAlerts({
         </Button>
       </AlertTitle>
       <AlertDescription>
-        {flagCount > 0 && (
+        {flagCount > 0 && !expanded && (
           <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview || p.sourceIdentityReviews?.length ? ['Identity needs review'] : []), ...(p.agreementReviews?.length ? [`Collaboration review (${p.agreementReviews.map(r => r.state).join(', ')})`] : []), ...(p.profileReviews ?? []).map(r => r.label), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
         )}
         {coverage && <p className="mt-1 break-words text-muted-foreground">{coverage.summary}</p>}
         {coverage?.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
         {expanded && (
-          <div id="provider-flag-details" className="mt-3 max-h-80 overflow-y-auto divide-y divide-border">
+          <div id="provider-flag-details" className="mt-4 max-h-[60vh] overflow-y-auto rounded-md border border-warning/40 bg-card text-card-foreground leading-relaxed">
             {providers.map(provider => (
-              <section key={provider.id} className="py-3 first:pt-0">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-semibold">{provider.name}</h3>
+              <section key={provider.id} className="border-b-2 border-warning/40 last:border-b-0">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted px-4 py-3">
+                  <h3 className="break-words text-base font-semibold">{provider.name}</h3>
                   <Button size="sm" variant="outline" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>
                     {provider.profileId ? 'Open profile' : 'Find provider profile'}<ArrowRight className="ml-1 h-3 w-3" />
                   </Button>
                 </div>
+                <div className="divide-y divide-border px-4 [&>div]:space-y-2 [&>div]:break-words [&>div]:py-4 [&_p]:max-w-prose">
                 {provider.identityReview && (
-                  <div className="mt-2 space-y-1">
+                  <div>
                     <p><strong>Identity needs review:</strong> {provider.identityReview.reason}</p>
                     <p className="text-muted-foreground"><strong>How to fix:</strong> {provider.identityReview.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>Correct profile</Button></p>
                   </div>
                 )}
                 {provider.sourceIdentityReviews?.map((review, index) => (
-                  <div key={index} className="mt-2 space-y-1">
+                  <div key={index}>
                     <p><strong>Identity needs review:</strong> {review.reason}</p>
                     <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>{provider.profileId ? 'Correct profile' : 'Find provider profile'}</Button></p>
                   </div>
                 ))}
                 {provider.conflicts.map((conflict, index) => (
-                  <div key={`${conflict.field}-${index}`} className="mt-2 space-y-1">
+                  <div key={`${conflict.field}-${index}`}>
                     <p><strong>{labels[conflict.field] ?? conflict.field.replace(/_/g, ' ')}</strong>: Directory says “{conflict.local ?? 'Not supplied'}”; Medallion says “{conflict.medallion ?? 'Not supplied'}”.</p>
                     <p className="text-muted-foreground"><strong>How to fix:</strong> {correction(conflict.field)} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => { if (provider.profileId) onReview(provider.profileId); else onFindProfile(); }}>Correct profile</Button></p>
                   </div>
                 ))}
                 {provider.agreementReviews?.map(review => (
-                  <div key={review.state} className="mt-2 space-y-1">
+                  <div key={review.state}>
                     <p><strong>{review.state} {review.authorityReview ? 'authority / collaboration' : 'collaboration'}:</strong> {review.newlyActive && 'Newly active in EHR. '}{review.reason}</p>
                     <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => navigate(`/admin/states?tab=compliance&state=${review.state}`)}>Review state requirements</Button></p>
                   </div>
                 ))}
                 {provider.profileReviews?.map(review => (
-                  <div key={review.id} className="mt-2 space-y-1">
+                  <div key={review.id}>
                     <p><strong>{review.label}:</strong> {review.reason}</p>
                     <p className="text-muted-foreground"><strong>How to fix:</strong> {review.howToFix} <Button variant="link" size="sm" className="h-auto p-0" onClick={() => { if (provider.profileId) onReview(provider.profileId); }}>Review profile</Button></p>
                   </div>
                 ))}
+                </div>
               </section>
             ))}
             {coverage && (
-              <section className="py-3">
+              <section className="border-t border-border px-4 py-4">
                 <h3 className="font-semibold">Active states in EHR — data freshness</h3>
                 <p className="mt-1 break-words">{coverage.summary}</p>
                 {coverage.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
@@ -123,7 +125,7 @@ export function ProviderFlagAlerts({
                 </p>
               </section>
             )}
-            <p className="pt-3 text-xs text-muted-foreground">Medallion differences are rechecked after the next successful directory sync.</p>
+            <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">Medallion differences are rechecked after the next successful directory sync.</p>
           </div>
         )}
       </AlertDescription>
