@@ -721,7 +721,7 @@ const ProviderDirectoryPage = () => {
                                 {isAdmin && getStatusBadge(provider.employment_status)}
                               </div>
                               {(provider.profession || provider.credentials) && (
-                                <p className="text-sm text-muted-foreground">{provider.profession || provider.credentials}</p>
+                                <p className="text-sm text-muted-foreground">{professionDisplayLabel(canonicalProfessionKey(provider))}</p>
                               )}
                               {provider.primary_specialty && (
                                 <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>
@@ -835,7 +835,7 @@ const ProviderDirectoryPage = () => {
                               {directoryDisplayName(provider)}
                             </h3>
                             {(provider.profession || provider.credentials) && (
-                              <p className="text-sm text-muted-foreground">{provider.profession || provider.credentials}</p>
+                               <p className="text-sm text-muted-foreground">{professionDisplayLabel(canonicalProfessionKey(provider))}</p>
                             )}
                             {provider.primary_specialty && (
                               <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>
