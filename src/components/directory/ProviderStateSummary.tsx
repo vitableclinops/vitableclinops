@@ -12,7 +12,7 @@ import { useActiveStateAgreementAudit } from '@/hooks/useActiveStateAgreementAud
 import { providerStateExportRows } from '@/lib/providerStateExport';
 import * as XLSX from 'xlsx';
 
-type Profile = Parameters<typeof pcpCellFor>[0];
+type Profile = Parameters<typeof pcpCellFor>[0] & { full_name?: string | null };
 
 /** Licenses-tab summary: EHR-active states vs licensed-but-not-active, from the same live sources as States & Compliance. */
 export function ProviderStateSummary({ provider }: { provider: Profile }) {
