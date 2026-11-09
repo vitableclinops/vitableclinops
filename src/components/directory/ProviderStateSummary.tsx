@@ -40,18 +40,18 @@ export function ProviderStateSummary({ provider }: { provider: Profile }) {
 
   const exportStates = () => {
     if (!audit.data) return;
-    const rows = providerStateExportRows(provider, licensed, active, coverageKnown, audit.data);
+    const rows = providerStateStatusRows(provider, [...licensed, ...active], audit.data.agreements);
     if (!rows.length) return;
     const sheet = XLSX.utils.json_to_sheet(rows);
-    sheet['!cols'] = [{ wch: 28 }, { wch: 8 }, { wch: 34 }, { wch: 65 }, { wch: 65 }, { wch: 65 }];
+    sheet['!cols'] = [{ wch: 8 }, { wch: 24 }];
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, 'States and requirements');
+    XLSX.utils.book_append_sheet(workbook, sheet, 'States');
     const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${(provider.full_name || 'provider').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}-states-and-requirements.xlsx`;
+    link.download = `${(provider.full_name || 'provider').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}-states.xlsx`;
     document.body.appendChild(link);
     link.click();
     link.remove();

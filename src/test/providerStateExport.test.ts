@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { providerStateExportRows, type ProviderStateExportEvidence } from '@/lib/providerStateExport';
+import { providerStateExportRows, providerStateStatusRows, type ProviderStateExportEvidence } from '@/lib/providerStateExport';
 
 const day = new Date(2026, 10, 9);
 const provider = { id: 'np', full_name: 'Example Provider', profession: 'NP' };
