@@ -51,7 +51,7 @@ describe('Provider state status export', () => {
       { profileId: 'np', state: 'AR', status: 'active', document: 'https://example.org/agreement' },
       { profileId: 'np', state: 'PA', status: 'terminated', document: 'https://example.org/old' },
       { profileId: 'other', state: 'NC', status: 'active', document: '' },
-    ], day);
+    ], ['PA', 'AR', 'NC'], day);
     expect(rows).toEqual([
       { State: 'AR', Status: 'Collaborative Agreement' },
       { State: 'NC', Status: 'Independent' },
@@ -61,16 +61,26 @@ describe('Provider state status export', () => {
   it('ignores agreements outside their dates', () => {
     const rows = providerStateStatusRows(provider, ['AR'], [
       { profileId: 'np', state: 'AR', status: 'active', start: '2027-01-01', document: '' },
-    ], day);
+    ], ['AR'], day);
     expect(rows).toEqual([{ State: 'AR', Status: 'Independent' }]);
   });
   it('marks NP-prohibited states MD/DO Only for NPs but not for physicians', () => {
-    expect(providerStateStatusRows(provider, ['AL', 'GA', 'AR'], [], day)).toEqual([
+    expect(providerStateStatusRows(provider, ['AL', 'GA', 'AR'], [], ['AL', 'GA', 'AR'], day)).toEqual([
       { State: 'AL', Status: 'MD/DO Only' },
       { State: 'AR', Status: 'Independent' },
       { State: 'GA', Status: 'MD/DO Only' },
     ]);
-    expect(providerStateStatusRows({ ...provider, profession: 'DO' }, ['AL'], [], day))
+    expect(providerStateStatusRows({ ...provider, profession: 'DO' }, ['AL'], [], ['AL'], day))
       .toEqual([{ State: 'AL', Status: 'Independent' }]);
+  });
+  it('marks licensed states without EHR activity Not active in EHR', () => {
+    const rows = providerStateStatusRows(provider, ['PA', 'AR', 'NC'], [
+      { profileId: 'np', state: 'NC', status: 'active', document: 'https://example.org/agreement' },
+    ], ['PA'], day);
+    expect(rows).toEqual([
+      { State: 'AR', Status: 'Not active in EHR' },
+      { State: 'NC', Status: 'Collaborative Agreement' },
+      { State: 'PA', Status: 'Independent' },
+    ]);
   });
 });

@@ -40,7 +40,7 @@ export function ProviderStateSummary({ provider }: { provider: Profile }) {
 
   const exportStates = () => {
     if (!audit.data) return;
-    const rows = providerStateStatusRows(provider, [...licensed, ...active], audit.data.agreements);
+    const rows = providerStateStatusRows(provider, [...licensed, ...active], audit.data.agreements, active);
     if (!rows.length) return;
     const sheet = XLSX.utils.json_to_sheet(rows);
     sheet['!cols'] = [{ wch: 8 }, { wch: 24 }];
