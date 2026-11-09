@@ -44,3 +44,24 @@ describe('Provider Licenses export', () => {
     expect(rows[0]['Outstanding requirements']).toBe('License status unconfirmed');
   });
 });
+
+describe('Provider state status export', () => {
+  it('marks states with a current agreement Collaborative Agreement and all others Independent', () => {
+    const rows = providerStateStatusRows(provider, ['PA', 'AR', 'NC'], [
+      { profileId: 'np', state: 'AR', status: 'active', document: 'https://example.org/agreement' },
+      { profileId: 'np', state: 'PA', status: 'terminated', document: 'https://example.org/old' },
+      { profileId: 'other', state: 'NC', status: 'active' },
+    ], day);
+    expect(rows).toEqual([
+      { State: 'AR', Status: 'Collaborative Agreement' },
+      { State: 'NC', Status: 'Independent' },
+      { State: 'PA', Status: 'Independent' },
+    ]);
+  });
+  it('ignores agreements outside their dates', () => {
+    const rows = providerStateStatusRows(provider, ['AR'], [
+      { profileId: 'np', state: 'AR', status: 'active', start: '2027-01-01' },
+    ], day);
+    expect(rows).toEqual([{ State: 'AR', Status: 'Independent' }]);
+  });
+});
