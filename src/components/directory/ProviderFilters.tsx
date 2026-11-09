@@ -81,14 +81,9 @@ export const ProviderFilters = ({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Professions</SelectItem>
-          <SelectItem value="physician">Physician (MD/DO)</SelectItem>
-          <SelectItem value="np">Nurse Practitioner (NP/APN)</SelectItem>
-          <SelectItem value="lpc">Therapist (LPC/LCSW)</SelectItem>
-          {availableProfessions
-            .filter(prof => !['MD', 'DO', 'NP', 'APN', 'LPC', 'LCSW'].includes(prof.toUpperCase()))
-            .map(prof => (
-              <SelectItem key={prof} value={prof}>{prof}</SelectItem>
-            ))}
+          {availableProfessions.map(key => (
+            <SelectItem key={key} value={key}>{professionDisplayLabel(key)}</SelectItem>
+          ))}
         </SelectContent>
       </Select>
 
