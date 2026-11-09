@@ -1,0 +1,1 @@
+- Provider Licenses exports use providerStateExportRows with the shared Compliance audit and directory state sources; only saved valid evidence is fulfilled and unresolved EHR identity remains explicit. Why: activation must not be inferred as proof or unresolved coverage as inactivity.
