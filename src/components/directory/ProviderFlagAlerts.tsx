@@ -115,11 +115,10 @@ export function ProviderFlagAlerts({
               </section>
             ))}
             {coverage && (
-              <section className="border-t border-border px-4 py-4">
-                <h3 className="font-semibold">Active states in EHR — data freshness</h3>
-                <p className="mt-1 break-words">{coverage.summary}</p>
+              <section className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
+                <p className="break-words"><span className="font-medium">Active states in EHR — data freshness:</span> {coverage.summary}</p>
                 {coverage.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1">
                   Source: Metabase (current records returned by our read-only query, explicit exclusions applied).
                   Warehouse refresh time: not verified. The source’s is_active flag meaning is pending data-owner confirmation.
                 </p>
