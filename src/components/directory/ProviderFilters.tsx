@@ -2,6 +2,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Search, X } from 'lucide-react';
+import { professionDisplayLabel } from '@/lib/clinicianRoles';
 
 interface AgencyOption {
   id: string;
