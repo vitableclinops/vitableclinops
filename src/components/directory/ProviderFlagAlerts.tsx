@@ -73,7 +73,6 @@ export function ProviderFlagAlerts({
           {flagCount
             ? `Provider flagged · ${flagCount} provider${flagCount === 1 ? ' needs' : 's need'} review`
             : 'No provider flags'}
-          {coverage ? ` · ${coverage.label}` : ''}
         </span>
         <Button size="sm" variant="ghost" aria-expanded={expanded} aria-controls="provider-flag-details" onClick={() => setExpanded(value => !value)}>
           {expanded ? 'Hide details' : 'Review flags'}
@@ -84,8 +83,6 @@ export function ProviderFlagAlerts({
         {flagCount > 0 && !expanded && (
           <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview || p.sourceIdentityReviews?.length ? ['Identity needs review'] : []), ...(p.agreementReviews?.length ? [`Collaboration review (${p.agreementReviews.map(r => r.state).join(', ')})`] : []), ...(p.profileReviews ?? []).map(r => r.label), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
         )}
-        {coverage && <p className="mt-1 break-words text-muted-foreground">{coverage.summary}</p>}
-        {coverage?.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
         {expanded && (
           <div id="provider-flag-details" className="mt-4 max-h-[60vh] overflow-y-auto rounded-md border border-warning/40 bg-card text-card-foreground leading-relaxed">
             {providers.map(provider => (
