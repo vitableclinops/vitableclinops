@@ -154,7 +154,7 @@ export const ProviderTable = ({
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
-            <SortHeader column="full_name" label="Provider" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
+            <SortHeader column="full_name" label={`Provider (${providers.length})`} currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <SortHeader column="profession" label="Type" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
             <TableHead>NPI</TableHead>
             <SortHeader column="employment_type" label="Employment" currentSort={sortColumn} direction={sortDirection} onSort={onSort} />
