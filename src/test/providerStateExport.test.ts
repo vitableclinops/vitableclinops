@@ -64,4 +64,13 @@ describe('Provider state status export', () => {
     ], day);
     expect(rows).toEqual([{ State: 'AR', Status: 'Independent' }]);
   });
+  it('marks NP-prohibited states MD/DO Only for NPs but not for physicians', () => {
+    expect(providerStateStatusRows(provider, ['AL', 'GA', 'AR'], [], day)).toEqual([
+      { State: 'AL', Status: 'MD/DO Only' },
+      { State: 'AR', Status: 'Independent' },
+      { State: 'GA', Status: 'MD/DO Only' },
+    ]);
+    expect(providerStateStatusRows({ ...provider, profession: 'DO' }, ['AL'], [], day))
+      .toEqual([{ State: 'AL', Status: 'Independent' }]);
+  });
 });
