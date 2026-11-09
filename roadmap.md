@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Add and verify a per-provider Licenses export with EHR state groups and fulfilled requirements.
+- [x] Add and verify a per-provider Licenses export with EHR state groups and fulfilled requirements.
 
 - [x] Move provider requirement reviews and their missing-requirements badge into Compliance; update correction links and preserve existing tracking and proof.
 
