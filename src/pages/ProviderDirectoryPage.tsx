@@ -35,7 +35,7 @@ import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor, isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
 import { mergeProviderFlags } from '@/lib/providerFlagSummary';
 import { employeeVisibleIn, isOffboarded } from '@/lib/employeeVisibility';
-import { isClinician } from '@/lib/clinicianRoles';
+import { canonicalProfessionKey, isClinician, professionDisplayLabel } from '@/lib/clinicianRoles';
 import { FlagProfileLookup } from '@/components/directory/FlagProfileLookup';
 import { licensedNotActiveLabel } from '@/lib/licensedNotActiveStates';
 import { directoryDisplayName } from '@/lib/directoryDisplayName';
@@ -270,8 +270,8 @@ const ProviderDirectoryPage = () => {
     }
 
     data.forEach(p => {
-      const prof = p.profession || p.credentials;
-      if (prof) professions.add(prof);
+      const key = canonicalProfessionKey(p);
+      if (key !== 'admin') professions.add(key);
     });
 
     return {
@@ -309,18 +309,9 @@ const ProviderDirectoryPage = () => {
         }
       }
 
-      // Profession filter
+      // Profession filter — canonical keys merge stored variants (e.g. "MH Coach" and "mental_health_coach")
       if (professionFilter !== 'all') {
-        const prof = (p.profession || p.credentials || '').toUpperCase();
-        if (professionFilter === 'physician') {
-          if (prof !== 'MD' && prof !== 'DO') return false;
-        } else if (professionFilter === 'np') {
-          if (prof !== 'NP' && prof !== 'APN') return false;
-        } else if (professionFilter === 'lpc') {
-          if (prof !== 'LPC' && prof !== 'LCSW') return false;
-        } else {
-          if (prof !== professionFilter.toUpperCase()) return false;
-        }
+        if (canonicalProfessionKey(p) !== professionFilter) return false;
       }
 
       // Status filter (admin only)
@@ -730,7 +721,7 @@ const ProviderDirectoryPage = () => {
                                 {isAdmin && getStatusBadge(provider.employment_status)}
                               </div>
                               {(provider.profession || provider.credentials) && (
-                                <p className="text-sm text-muted-foreground">{provider.profession || provider.credentials}</p>
+                                <p className="text-sm text-muted-foreground">{professionDisplayLabel(canonicalProfessionKey(provider))}</p>
                               )}
                               {provider.primary_specialty && (
                                 <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>
@@ -844,7 +835,7 @@ const ProviderDirectoryPage = () => {
                               {directoryDisplayName(provider)}
                             </h3>
                             {(provider.profession || provider.credentials) && (
-                              <p className="text-sm text-muted-foreground">{provider.profession || provider.credentials}</p>
+                               <p className="text-sm text-muted-foreground">{professionDisplayLabel(canonicalProfessionKey(provider))}</p>
                             )}
                             {provider.primary_specialty && (
                               <p className="text-xs text-muted-foreground">{provider.primary_specialty}</p>

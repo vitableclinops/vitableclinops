@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ProviderClassificationBadge } from '@/components/ProviderClassificationBadge';
+import { canonicalProfessionKey, professionDisplayLabel } from '@/lib/clinicianRoles';
 
 export interface ProviderTableData {
   id: string;
@@ -209,7 +210,7 @@ export const ProviderTable = ({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline">{(provider.profession || provider.credentials || '').trim() === '-' ? 'Admin' : (provider.profession || provider.credentials || '').trim() || 'Admin'}</Badge>
+                  <Badge variant="outline">{professionDisplayLabel(canonicalProfessionKey(provider))}</Badge>
                 </TableCell>
                 <TableCell className="font-mono text-sm">
                   <span className="flex items-center gap-1">
