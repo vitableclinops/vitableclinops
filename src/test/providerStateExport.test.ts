@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { providerStateExportRows, type ProviderStateExportEvidence } from '@/lib/providerStateExport';
+import { providerStateExportRows, providerStateStatusRows, type ProviderStateExportEvidence } from '@/lib/providerStateExport';
 
 const day = new Date(2026, 10, 9);
 const provider = { id: 'np', full_name: 'Example Provider', profession: 'NP' };
@@ -42,5 +42,26 @@ describe('Provider Licenses export', () => {
     const rows = providerStateExportRows({ ...provider, profession: 'DO' }, ['AR'], ['AR'], true, empty, day);
     expect(rows[0]['State requirements']).toContain('NP requirements not applicable');
     expect(rows[0]['Outstanding requirements']).toBe('License status unconfirmed');
+  });
+});
+
+describe('Provider state status export', () => {
+  it('marks states with a current agreement Collaborative Agreement and all others Independent', () => {
+    const rows = providerStateStatusRows(provider, ['PA', 'AR', 'NC'], [
+      { profileId: 'np', state: 'AR', status: 'active', document: 'https://example.org/agreement' },
+      { profileId: 'np', state: 'PA', status: 'terminated', document: 'https://example.org/old' },
+      { profileId: 'other', state: 'NC', status: 'active', document: '' },
+    ], day);
+    expect(rows).toEqual([
+      { State: 'AR', Status: 'Collaborative Agreement' },
+      { State: 'NC', Status: 'Independent' },
+      { State: 'PA', Status: 'Independent' },
+    ]);
+  });
+  it('ignores agreements outside their dates', () => {
+    const rows = providerStateStatusRows(provider, ['AR'], [
+      { profileId: 'np', state: 'AR', status: 'active', start: '2027-01-01', document: '' },
+    ], day);
+    expect(rows).toEqual([{ State: 'AR', Status: 'Independent' }]);
   });
 });

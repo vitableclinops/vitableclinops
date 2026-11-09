@@ -62,3 +62,16 @@ export function providerStateExportRows(
     };
   });
 }
+
+/** Two-column export: states with a current collaborative agreement are Collaborative Agreement; all others Independent. */
+export function providerStateStatusRows(
+  provider: { id: string }, states: string[], agreements: StateAgreement[], today = new Date(),
+) {
+  const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return [...new Set(states)].sort().map(state => {
+    const collaborative = agreements.some(a => a.profileId === provider.id && a.state === state
+      && ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase())
+      && (!a.start || parseLocalDate(a.start.slice(0, 10)) <= day) && (!a.end || parseLocalDate(a.end.slice(0, 10)) >= day));
+    return { State: state, Status: collaborative ? 'Collaborative Agreement' : 'Independent' };
+  });
+}
