@@ -1,5 +1,8 @@
 # Roadmap
 
+- [x] Show the last successful Medallion directory update time and add a working Refresh now button beside it.
+- [x] Remove the Active states in EHR data freshness section from the flagged-provider dropdown.
+
 - [x] Add and verify a per-provider Licenses export with EHR state groups and fulfilled requirements.
 
 - [x] Move provider requirement reviews and their missing-requirements badge into Compliance; update correction links and preserve existing tracking and proof.

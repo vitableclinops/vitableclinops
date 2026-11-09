@@ -6,6 +6,9 @@ import { AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
 import { IndependentPracticeVerifyDialog } from '@/components/agreements/IndependentPracticeVerifyDialog';
 import type { CoverageAlertSummary } from '@/lib/coverageAlertSummary';
 import type { FlaggedProvider } from '@/lib/providerFlagSummary';
+import { computeEntityHealth, useMedallionDirectoryData, useRunMedallionSync } from '@/hooks/useMedallionDirectory';
+import { useToast } from '@/hooks/use-toast';
+import { RefreshCw } from 'lucide-react';
 export type { FlaggedProvider } from '@/lib/providerFlagSummary';
 
 function correction(field: string) {
@@ -46,6 +49,19 @@ export function ProviderFlagAlerts({
   const [expanded, setExpanded] = useState(false);
   const [verify, setVerify] = useState<{ profileId: string; name: string; state: string } | null>(null);
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const medallion = useMedallionDirectoryData(true);
+  const refresh = useRunMedallionSync();
+  const lastSuccess = computeEntityHealth(medallion.data?.runs ?? [])
+    .find(h => h.entity === 'providers')?.lastSuccess;
+  const lastFetch = lastSuccess?.finished_at ?? lastSuccess?.started_at;
+  const refreshNow = () => refresh.mutate({ mode: 'apply', scope: 'full' }, {
+    onSuccess: result => toast({
+      title: result.ok ? 'Directory refreshed from Medallion' : 'Refresh finished with problems',
+      variant: result.ok ? undefined : 'destructive',
+    }),
+    onError: (error: Error) => toast({ title: 'Refresh failed', description: error.message, variant: 'destructive' }),
+  });
   const flagCount = providers.length;
   if (!flagCount) return null;
 
@@ -57,7 +73,6 @@ export function ProviderFlagAlerts({
           {flagCount
             ? `Provider flagged · ${flagCount} provider${flagCount === 1 ? ' needs' : 's need'} review`
             : 'No provider flags'}
-          {coverage ? ` · ${coverage.label}` : ''}
         </span>
         <Button size="sm" variant="ghost" aria-expanded={expanded} aria-controls="provider-flag-details" onClick={() => setExpanded(value => !value)}>
           {expanded ? 'Hide details' : 'Review flags'}
@@ -68,8 +83,6 @@ export function ProviderFlagAlerts({
         {flagCount > 0 && !expanded && (
           <p className="break-words">{providers.map(p => `${p.name}: ${[...(p.identityReview || p.sourceIdentityReviews?.length ? ['Identity needs review'] : []), ...(p.agreementReviews?.length ? [`Collaboration review (${p.agreementReviews.map(r => r.state).join(', ')})`] : []), ...(p.profileReviews ?? []).map(r => r.label), ...p.conflicts.map(c => labels[c.field] ?? c.field.replace(/_/g, ' '))].join(', ')}`).join(' · ')}</p>
         )}
-        {coverage && <p className="mt-1 break-words text-muted-foreground">{coverage.summary}</p>}
-        {coverage?.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
         {expanded && (
           <div id="provider-flag-details" className="mt-4 max-h-[60vh] overflow-y-auto rounded-md border border-warning/40 bg-card text-card-foreground leading-relaxed">
             {providers.map(provider => (
@@ -114,17 +127,15 @@ export function ProviderFlagAlerts({
                 </div>
               </section>
             ))}
-            {coverage && (
-              <section className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
-                <p className="break-words"><span className="font-medium">Active states in EHR — data freshness:</span> {coverage.summary}</p>
-                {coverage.failure && <p className="mt-1 break-words text-destructive">{coverage.failure}</p>}
-                <p className="mt-1">
-                  Source: Metabase (current records returned by our read-only query, explicit exclusions applied).
-                  Warehouse refresh time: not verified. The source’s is_active flag meaning is pending data-owner confirmation.
-                </p>
-              </section>
-            )}
-            <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">last Medallion Fetch:</p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-4 py-3 text-xs text-muted-foreground">
+              <p>last Medallion Fetch: {lastFetch
+                ? new Date(lastFetch).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' }) + ' ET'
+                : medallion.isLoading ? 'Loading…' : medallion.isError ? 'Unavailable' : 'Not yet fetched'}</p>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={refresh.isPending} onClick={refreshNow}>
+                <RefreshCw className={`mr-1.5 h-3 w-3 ${refresh.isPending ? 'animate-spin' : ''}`} />
+                {refresh.isPending ? 'Refreshing…' : 'Refresh now'}
+              </Button>
+            </div>
           </div>
         )}
       </AlertDescription>
