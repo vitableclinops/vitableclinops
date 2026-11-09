@@ -82,6 +82,42 @@ export function directoryScopeLabel(showEveryone: boolean): string {
   return showEveryone ? 'everyone' : 'clinicians';
 }
 
+/**
+ * Canonical profession keys for filtering and display. Stored values vary
+ * ("MH Coach" vs "mental_health_coach", "NP" vs "nurse_practitioner"); the
+ * directory treats each group as one profession.
+ */
+export function canonicalProfessionKey(record: ClinicianIdentifiable | null | undefined): string {
+  if (!record) return 'admin';
+  const role = normalizeRole(record.profession);
+  const creds = normalizeRole(record.credentials);
+  const text = role || creds;
+  if (!text || NON_CLINICIAN_ROLES.has(text)) return 'admin';
+  if (isIndependentPhysician(record)) return 'physician';
+  if (['np', 'apn', 'aprn', 'npp', 'nurse practitioner', 'nurse practitioner, certified'].includes(text)
+    || (!role && /\b(np|aprn|fnp|agpcnp)\b/i.test(record.credentials ?? ''))) return 'np';
+  if (['lpc', 'lcsw', 'licsw', 'lmft', 'mft', 'lmhc', 'lfcs', 'psyd', 'phd', 'therapist',
+    'licensed professional counselor', 'licensed clinical social worker'].includes(text)) return 'therapist';
+  if (['mental health coach', 'mh coach'].includes(text)) return 'mh_coach';
+  if (text === 'health coach') return 'health_coach';
+  if (['rn', 'registered nurse'].includes(text)) return 'rn';
+  return text.replace(/\s+/g, '_');
+}
+
+/** Display label for a canonical profession key. */
+export function professionDisplayLabel(key: string): string {
+  switch (key) {
+    case 'physician': return 'Physician (MD/DO)';
+    case 'np': return 'Nurse Practitioner (NP/APN)';
+    case 'therapist': return 'Therapist (LPC/LCSW)';
+    case 'mh_coach': return 'MH Coach';
+    case 'health_coach': return 'Health Coach';
+    case 'rn': return 'RN';
+    case 'admin': return 'Admin';
+    default: return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+}
+
 /** Therapy, social work and coaching roles never carry NP state requirements. */
 export function isNonNpBehavioralRole(record: ClinicianIdentifiable | null | undefined): boolean {
   if (!record) return false;
