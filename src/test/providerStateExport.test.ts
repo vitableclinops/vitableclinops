@@ -51,7 +51,7 @@ describe('Provider state status export', () => {
       { profileId: 'np', state: 'AR', status: 'active', document: 'https://example.org/agreement' },
       { profileId: 'np', state: 'PA', status: 'terminated', document: 'https://example.org/old' },
       { profileId: 'other', state: 'NC', status: 'active', document: '' },
-    ], day);
+    ], ['PA', 'AR', 'NC'], day);
     expect(rows).toEqual([
       { State: 'AR', Status: 'Collaborative Agreement' },
       { State: 'NC', Status: 'Independent' },
@@ -61,7 +61,7 @@ describe('Provider state status export', () => {
   it('ignores agreements outside their dates', () => {
     const rows = providerStateStatusRows(provider, ['AR'], [
       { profileId: 'np', state: 'AR', status: 'active', start: '2027-01-01', document: '' },
-    ], day);
+    ], ['AR'], day);
     expect(rows).toEqual([{ State: 'AR', Status: 'Independent' }]);
   });
   it('marks NP-prohibited states MD/DO Only for NPs but not for physicians', () => {
