@@ -63,12 +63,21 @@ export function providerStateExportRows(
   });
 }
 
-/** Two-column export: states with a current collaborative agreement are Collaborative Agreement; all others Independent. */
+/** States where NP practice is prohibited; physicians practice independently there. */
+const MD_DO_ONLY_STATES = new Set(['AL', 'GA', 'IN', 'MO', 'MS', 'SC', 'TN', 'LA']);
+
+/** Two-column export: MD/DO-only states for NPs, states with a current collaborative agreement are Collaborative Agreement; all others Independent. */
 export function providerStateStatusRows(
-  provider: { id: string }, states: string[], agreements: StateAgreement[], today = new Date(),
+  provider: { id: string; profession?: string | null; credentials?: string | null },
+  states: string[], agreements: StateAgreement[], today = new Date(),
 ) {
+  const role = normalizeRole(provider.profession);
+  const np = !isIndependentPhysician(provider) && !isNonNpBehavioralRole(provider)
+    && (['np', 'apn', 'aprn', 'npp', 'nurse practitioner', 'nurse practitioner, certified'].includes(role)
+      || (!role && /\b(np|aprn|fnp|agpcnp)\b/i.test(provider.credentials ?? '')));
   const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   return [...new Set(states)].sort().map(state => {
+    if (np && MD_DO_ONLY_STATES.has(state)) return { State: state, Status: 'MD/DO Only' };
     const collaborative = agreements.some(a => a.profileId === provider.id && a.state === state
       && ['active', 'fully_executed'].includes((a.status ?? '').toLowerCase())
       && (!a.start || parseLocalDate(a.start.slice(0, 10)) <= day) && (!a.end || parseLocalDate(a.end.slice(0, 10)) >= day));
