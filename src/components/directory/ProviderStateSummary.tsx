@@ -9,7 +9,7 @@ import { CopyValueButton } from './CopyValueButton';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
 import { useActiveStateAgreementAudit } from '@/hooks/useActiveStateAgreementAudit';
-import { providerStateExportRows } from '@/lib/providerStateExport';
+import { providerStateStatusRows } from '@/lib/providerStateExport';
 import * as XLSX from 'xlsx';
 
 type Profile = Parameters<typeof pcpCellFor>[0] & { full_name?: string | null };
