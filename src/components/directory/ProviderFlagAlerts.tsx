@@ -124,7 +124,7 @@ export function ProviderFlagAlerts({
                 </p>
               </section>
             )}
-            <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">Medallion differences are rechecked after the next successful directory sync.</p>
+            <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">last Medallion Fetch:</p>
           </div>
         )}
       </AlertDescription>
