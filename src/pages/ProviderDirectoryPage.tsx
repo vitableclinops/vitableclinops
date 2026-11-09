@@ -270,8 +270,8 @@ const ProviderDirectoryPage = () => {
     }
 
     data.forEach(p => {
-      const prof = p.profession || p.credentials;
-      if (prof) professions.add(prof);
+      const key = canonicalProfessionKey(p);
+      if (key !== 'admin') professions.add(key);
     });
 
     return {
@@ -309,18 +309,9 @@ const ProviderDirectoryPage = () => {
         }
       }
 
-      // Profession filter
+      // Profession filter — canonical keys merge stored variants (e.g. "MH Coach" and "mental_health_coach")
       if (professionFilter !== 'all') {
-        const prof = (p.profession || p.credentials || '').toUpperCase();
-        if (professionFilter === 'physician') {
-          if (prof !== 'MD' && prof !== 'DO') return false;
-        } else if (professionFilter === 'np') {
-          if (prof !== 'NP' && prof !== 'APN') return false;
-        } else if (professionFilter === 'lpc') {
-          if (prof !== 'LPC' && prof !== 'LCSW') return false;
-        } else {
-          if (prof !== professionFilter.toUpperCase()) return false;
-        }
+        if (canonicalProfessionKey(p) !== professionFilter) return false;
       }
 
       // Status filter (admin only)
