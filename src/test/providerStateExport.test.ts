@@ -50,7 +50,7 @@ describe('Provider state status export', () => {
     const rows = providerStateStatusRows(provider, ['PA', 'AR', 'NC'], [
       { profileId: 'np', state: 'AR', status: 'active', document: 'https://example.org/agreement' },
       { profileId: 'np', state: 'PA', status: 'terminated', document: 'https://example.org/old' },
-      { profileId: 'other', state: 'NC', status: 'active' },
+      { profileId: 'other', state: 'NC', status: 'active', document: '' },
     ], day);
     expect(rows).toEqual([
       { State: 'AR', Status: 'Collaborative Agreement' },
@@ -60,7 +60,7 @@ describe('Provider state status export', () => {
   });
   it('ignores agreements outside their dates', () => {
     const rows = providerStateStatusRows(provider, ['AR'], [
-      { profileId: 'np', state: 'AR', status: 'active', start: '2027-01-01' },
+      { profileId: 'np', state: 'AR', status: 'active', start: '2027-01-01', document: '' },
     ], day);
     expect(rows).toEqual([{ State: 'AR', Status: 'Independent' }]);
   });
