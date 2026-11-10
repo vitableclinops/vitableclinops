@@ -229,7 +229,32 @@ const ProviderDirectoryPage = () => {
       window.clearInterval(timer);
       window.removeEventListener('focus', refresh);
     };
-  }, [isAdmin]);
+  }, [isAdmin, refreshKey]);
+
+  // Pull fresh snapshots from every directory source (Metabase active states,
+  // Medallion directory) then reload the views that read them. Admin-only.
+  const handleRefreshSources = async () => {
+    setSyncingSources(true);
+    toast({ title: 'Refreshing directory sources…', description: 'Pulling the latest active-states and Medallion snapshots.' });
+    try {
+      const { error: coverageError } = await supabase.functions.invoke('sync-pcp-coverage', { body: { mode: 'refresh' } });
+      if (coverageError) throw coverageError;
+      await runMedallionSync.mutateAsync({ mode: 'apply', scope: 'full' });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['pcp-coverage-by-id'] }),
+        queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] }),
+        queryClient.invalidateQueries({ queryKey: ['medallion_directory'] }),
+        queryClient.invalidateQueries({ queryKey: ['external-directory'] }),
+        queryClient.invalidateQueries({ queryKey: ['provider_directory_state_map'] }),
+      ]);
+      setRefreshKey(k => k + 1);
+      toast({ title: 'Directory sources refreshed', description: 'Active states and Medallion data are up to date.' });
+    } catch (err: any) {
+      toast({ title: 'Could not refresh sources', description: err?.message ?? 'Please try again shortly.', variant: 'destructive' });
+    } finally {
+      setSyncingSources(false);
+    }
+  };
 
   // Provider → set of licensed state abbreviations, derived from
   // provider_state_status (the source of truth that replaced the old
