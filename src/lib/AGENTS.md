@@ -1,1 +1,2 @@
 - Provider Licenses exports use providerStateExportRows with the shared Compliance audit and directory state sources; only saved valid evidence is fulfilled and unresolved EHR identity remains explicit. Why: activation must not be inferred as proof or unresolved coverage as inactivity.
+- Confirmed recurring date exceptions are saved as excluded_recurring_dates on the submission and honored by both submissionTimeline copies; one-off shifts remain intact. Why: provider comments must not leave unwanted recurring shifts beside replacement availability.
