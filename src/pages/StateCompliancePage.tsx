@@ -291,6 +291,17 @@ const StateCompliancePage = () => {
             <TabsContent value="states" className="space-y-6">
               {/* Actions */}
               <div className="flex items-center justify-end gap-3">
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    onClick={handleRefreshSources}
+                    disabled={syncingSources}
+                    title="Refresh Metabase active states and Medallion directory data"
+                  >
+                    <RefreshCw className={cn('h-4 w-4 mr-2', syncingSources && 'animate-spin')} />
+                    {syncingSources ? 'Refreshing…' : 'Refresh sources'}
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
                   <Upload className="h-4 w-4 mr-2" />
                   Import CSV
