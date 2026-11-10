@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { REQUIREMENT_LABELS, SHEET_REQUIREMENTS, validRequirementProof, remainingVerificationKeys } from '@/lib/stateSheetRequirements';
+import { REQUIREMENT_LABELS, REQUIREMENT_HELP_LINKS, SHEET_REQUIREMENTS, validRequirementProof, remainingVerificationKeys } from '@/lib/stateSheetRequirements';
 import { useActiveStateAgreementAudit } from '@/hooks/useActiveStateAgreementAudit';
 import { parseLocalDate } from '@/lib/utils';
 import { hasVerificationLink } from '@/lib/nyIndependentPractice';
@@ -80,6 +80,7 @@ export function StateRequirementVerifyDialog({ open, onOpenChange, profileId, pr
     {!loading && !loadError && <p className="text-sm font-medium">{pending.length ? `Fill in any requirements below — each has its own proof. ${pending.length > 1 ? `(${joiner})` : ''}` : 'No outstanding designation or registration verifications.'}</p>}
     {!loading && !loadError && pending.map((k, i) => <div key={k} className="space-y-2">
       {i > 0 && <p className="text-center text-xs font-semibold text-muted-foreground">{joiner}</p>}
+      {REQUIREMENT_HELP_LINKS[k] && <p className="text-xs"><a href={REQUIREMENT_HELP_LINKS[k].url} target="_blank" rel="noreferrer" className="text-primary underline">{REQUIREMENT_HELP_LINKS[k].label}</a></p>}
       <RequirementProofSection id={`req-${k}`} label={REQUIREMENT_LABELS[k] ?? k} draft={draftFor(k)} onChange={d => setDrafts(prev => ({ ...prev, [k]: d }))} />
     </div>)}
     {data.filter(p => p.state_abbreviation === state).length > 0 && <div className="space-y-2"><p className="text-sm font-medium">Already saved</p>{data.filter(p => p.state_abbreviation === state).map(p => <div key={p.requirement_key} className="text-sm border-b pb-2">
