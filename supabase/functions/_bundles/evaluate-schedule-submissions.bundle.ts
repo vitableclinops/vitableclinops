@@ -1368,6 +1368,11 @@ export type ShiftType = 'virtual_recurring' | 'virtual_oneoff' | 'in_home_clinic
 export const LONG_SHIFT_BREAK_POLICY = 'mandatory_1_hour_break_for_12h_shift';
 export const PROVIDER_MEETING_BLACKOUT_WINDOW =
   '2026-06-24T12:00:00-05:00/2026-06-24T13:00:00-05:00';
+/** Days the business is fully closed: no shifts of any kind are scheduled.
+ *  Dec 25, 2026 - Christmas (requested by ClinOps). */
+export const BUSINESS_CLOSED_DATES: ReadonlySet<string> = new Set(['2026-12-25']);
+const isOpenDay = (slot: { date: string }) => !BUSINESS_CLOSED_DATES.has(slot.date);
+
 const LONG_SHIFT_BREAK_MINUTES = 60;
 const LONG_SHIFT_BREAK_THRESHOLD_MINUTES = 12 * 60;
 const PROVIDER_MEETING_BLACKOUT_DATE = '2026-06-24';
@@ -1489,8 +1494,8 @@ export function buildSubmissionTimeline(
 
   const forecastSet = new Set(forecastKinds);
   const result = normalizeProviderAvailability(input);
-  const adjusted = applySchedulingRules(result.timeline);
-  const editedTimeline = applyPerDateShiftEdits(adjusted.timeline, identity);
+  const adjusted = applySchedulingRules(result.timeline.filter(isOpenDay));
+  const editedTimeline = applyPerDateShiftEdits(adjusted.timeline, identity).filter(isOpenDay);
   const summary = {
     ...result.summary,
     total_normalized_timeline_hours: roundSubmission2(sumHours(editedTimeline)),
@@ -1507,10 +1512,10 @@ export function buildSubmissionTimeline(
   };
   const forecastTimeline = editedTimeline.filter(s => forecastSet.has(s.source.kind));
   const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
-    forecastSet.has(s.source.kind),
+    isOpenDay(s) && forecastSet.has(s.source.kind),
   );
   const forecastPolicyCutTimeline = result.policyCutTimeline.filter(s =>
-    forecastSet.has(s.source.kind),
+    isOpenDay(s) && forecastSet.has(s.source.kind),
   );
   return {
     ...result,
@@ -1749,6 +1754,14 @@ function snapToOperationalWindow(
   return { startMin: snappedStart, endMin: snappedEnd };
 }
 
+/** Monday (YYYY-MM-DD) of the week containing dateIso. */
+export function weekStartIso(dateIso: string): string {
+  const [y, m, d] = dateIso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7));
+  return dt.toISOString().slice(0, 10);
+}
+
 function dayOfWeekUtc(dateIso: string): number {
   const [y, m, d] = dateIso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
@@ -1758,7 +1771,7 @@ function dayOfWeekUtc(dateIso: string): number {
  * Cut/publish row generator shared by evaluator and emitter.
  *
  * Forecast slots (recurring_virtual / virtual_oneoff) participate in the
- * cut budget: latest-first, cut until `declinedHours` is approximately
+ * cut budget: week-balanced (fullest week first, latest slot within it), cut until `declinedHours` is approximately
  * satisfied using 30-minute operational boundaries. Protected forecast slots
  * are skipped by monthly oversupply trims, which lets the evaluator preserve
  * scarce coverage windows before cutting less useful hours. In-home/clinic
@@ -1785,13 +1798,39 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
   const cutCandidates = args.declineAll
     ? args.forecastTimeline
     : args.forecastTimeline.filter(slot => !protectedForecastSlots.has(slot));
-  const sortedDesc = [...cutCandidates].sort((a, b) =>
-    b.date.localeCompare(a.date) || b.startMin - a.startMin,
-  );
+  // Week-balanced trim (Oct 2026): instead of cutting strictly latest-first
+  // (which emptied the back half of the month for heavily oversubmitted
+  // providers), each cut comes from the week that currently keeps the most
+  // forecast hours; within that week the latest slot is cut first. Ties go to
+  // the later week, so single-week inputs behave exactly like latest-first.
   const cutTailMinutes = new Map<ExpandedSlot, number>();
   let remainingCutMinutes = Math.max(0, Math.round(cutBudgetTotal * 60));
-  for (const slot of sortedDesc) {
-    if (remainingCutMinutes <= 0) break;
+  const weekKept = new Map<string, number>();
+  for (const slot of args.forecastTimeline) {
+    const wk = weekStartIso(slot.date);
+    weekKept.set(wk, (weekKept.get(wk) ?? 0) + Math.max(0, slot.endMin - slot.startMin));
+  }
+  const queues = new Map<string, ExpandedSlot[]>();
+  for (const slot of cutCandidates) {
+    const wk = weekStartIso(slot.date);
+    if (!queues.has(wk)) queues.set(wk, []);
+    queues.get(wk)!.push(slot);
+  }
+  for (const q of queues.values()) {
+    q.sort((a, b) => b.date.localeCompare(a.date) || b.startMin - a.startMin);
+  }
+  while (remainingCutMinutes > 0) {
+    let bestWeek: string | null = null;
+    for (const [wk, q] of queues) {
+      if (q.length === 0) continue;
+      if (
+        bestWeek === null ||
+        (weekKept.get(wk) ?? 0) > (weekKept.get(bestWeek) ?? 0) ||
+        ((weekKept.get(wk) ?? 0) === (weekKept.get(bestWeek) ?? 0) && wk > bestWeek)
+      ) bestWeek = wk;
+    }
+    if (bestWeek === null) break;
+    const slot = queues.get(bestWeek)!.shift()!;
     const slotMinutes = Math.max(0, slot.endMin - slot.startMin);
     const cutMinutes = roundCutMinutesToOperationalBlock(
       Math.min(slotMinutes, remainingCutMinutes),
@@ -1800,6 +1839,7 @@ export function buildShiftRecommendationRows(args: BuildShiftRecommendationsArgs
     if (cutMinutes > 0) {
       cutTailMinutes.set(slot, cutMinutes);
       remainingCutMinutes -= cutMinutes;
+      weekKept.set(bestWeek, (weekKept.get(bestWeek) ?? 0) - cutMinutes);
     }
   }
 
@@ -2413,6 +2453,8 @@ export type SchedulingEquityCandidate = {
   floorHours: number;
   directShiftsNp?: boolean;
   submittedOnTime?: boolean;
+  /** Per-provider override of the submitted-hours soft cap share (1 = no cap). */
+  softCapShare?: number;
   eligibleStates: SchedulingEquityState[];
 };
 
@@ -2502,7 +2544,7 @@ export function allocateSchedulingEquity({
       allocations: [],
       providerAcceptancePct: 0,
       equityFloor: candidate.floorHours > 0 ? 'unmet_no_gap' : 'unmet_no_valid_shift',
-      softCapHours: equityRound2(candidate.effectiveHours * softCapShare),
+      softCapHours: equityRound2(candidate.effectiveHours * (candidate.softCapShare ?? softCapShare)),
       softCapExceeded: false,
       directshiftsTargetShare: equityRound2(directshiftsTargetShare * 100),
       directshiftsShareAfter: 0,
@@ -3265,32 +3307,32 @@ const OCTOBER_2026_ENTRIES: MonthlyHourPlanEntry[] = [
   { name: 'Van Tu', tier: 'Tier 1 - Other', designation: 'NP', minHoursPerWeek: 30, maxHoursPerWeek: 40, targetHours: 130, notes: 'At stated min. Thursdays off' },
   { name: 'Kimberly Truong', tier: 'Tier 1 - Other', designation: 'MD', minHoursPerWeek: 15, maxHoursPerWeek: 15, targetHours: 65, notes: "Mon/Wed only. Confirmed returning from leave in October; directory status still 'On Leave'" },
   { name: 'Jarrod Nero', tier: 'Tier 1 - Other', designation: 'NP - DS', minHoursPerWeek: 12, maxHoursPerWeek: 20, targetHours: 52, notes: 'At stated min. DirectShifts' },
-  { name: 'Risheet Patel', tier: 'Tier 1 - Other', designation: 'MD', minHoursPerWeek: 10, maxHoursPerWeek: 20, targetHours: 43, notes: 'At stated min. Schedule varies week to week' },
+  { name: 'Risheet Patel', tier: 'Tier 1 - Other', designation: 'MD', minHoursPerWeek: 10, maxHoursPerWeek: 20, targetHours: 50, notes: 'Raised for October fill; capped by submitted availability' },
   { name: 'Andrea Shepherd', tier: 'Tier 1 - Other', designation: 'NP', minHoursPerWeek: 10, maxHoursPerWeek: 10, targetHours: 43, notes: 'Newly licensed DE DC WA OK VT CT; NC & AZ pending' },
 
   { name: 'Desire Brown', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 48, notes: '72% July fill - strong performer' },
-  { name: 'Sara Hammond', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 47, notes: '' },
+  { name: 'Sara Hammond', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 30, notes: 'Raised for October fill' },
   { name: 'Nicole Shiko', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 44, notes: '69% July fill - strong performer' },
   { name: 'Steve Rutagarama', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 43, notes: '' },
-  { name: 'Brittney Afram', tier: 'Tier 2', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 40, notes: '74% July fill' },
+  { name: 'Brittney Afram', tier: 'Tier 2', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 80, notes: '74% July fill. Raised — 50-state provider, large submitted availability' },
   { name: 'Teika Takedai', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 37, notes: '' },
   { name: 'Khanh Hoang Tran', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 25, notes: 'Reduced from 43. 27% July fill. Raise mid-month if routing diagnosis resolves' },
-  { name: 'Shadae McMillan', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 25, notes: 'Reduced from 40, held at 25/mo floor. Has PA license but no collab physician assigned' },
+  { name: 'Shadae McMillan', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 45, notes: 'Raised for October fill. Has PA license but no collab physician assigned' },
   { name: 'Daniyel Barton', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 24, notes: '' },
   { name: 'Ramon Taguba Trinidad', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 23, notes: '' },
-  { name: 'Gina Charles', tier: 'Tier 2', designation: 'MD', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 21, notes: '' },
+  { name: 'Gina Charles', tier: 'Tier 2', designation: 'MD', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 50, notes: 'Raised for October fill' },
   { name: 'Rickeena Free', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 21, notes: '' },
   { name: 'Kelsie Hardy', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 20, notes: '' },
   { name: 'Tylene Williams', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 9, notes: '' },
   { name: 'Bee Chang', tier: 'Tier 2', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 0, notes: 'Offboarded' },
 
-  { name: 'Stephanie Lumsden', tier: 'Tier 3 (ad hoc pool)', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 15, notes: 'Kept per DirectShifts contract' },
+  { name: 'Stephanie Lumsden', tier: 'Tier 3 (ad hoc pool)', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 0, notes: 'Offboarded' },
   { name: 'Anabel Garcia Gomez', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
   { name: 'Jacqueline Veress', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
   { name: 'Nora Lueth', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
-  { name: 'Moensania Phillips', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
+  { name: 'Moensania Phillips', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 20, notes: 'Ad hoc pool, raised for October fill' },
   { name: 'Elizabeth Davis', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours' },
-  { name: 'Akosua Norgbey', tier: 'Tier 3 (ad hoc pool)', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 11, notes: 'Not guaranteed hours. DirectShifts' },
+  { name: 'Akosua Norgbey', tier: 'Tier 3 (ad hoc pool)', designation: 'NP - DS', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 24, notes: 'Ad hoc pool, raised for October fill. DirectShifts' },
   { name: 'Whitney Gibbs', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 10, notes: 'Not guaranteed hours. Flagged for review' },
   { name: 'Matia Kilgore', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 0, notes: 'Offboarded' },
   { name: 'Laura Maleknia', tier: 'Tier 3 (ad hoc pool)', designation: 'CONFIRM', minHoursPerWeek: null, maxHoursPerWeek: null, targetHours: 0, notes: 'Offboarded' },
@@ -3303,8 +3345,61 @@ export const OCTOBER_2026_HOUR_PLAN: MonthlyHourPlan = {
   entries: OCTOBER_2026_ENTRIES,
 };
 
+
+/**
+ * November 2026: same tiers as October. ClinOps asked to raise every
+ * provider's cap so the network can reach the full 1,690h telehealth target;
+ * targets are lifted 3x so state demand and submitted hours become the limit.
+ * Stated weekly max stays a hard bound. Providers out for November get 0.
+ */
+const NOVEMBER_2026_OUT = new Set(['kimberly truong', 'anabel gomez', 'anabel garcia gomez', 'daniyel barton', 'ramon trinidad', 'margo mulgrew', 'margaret mulgrew']);
+
+export const NOVEMBER_2026_HOUR_PLAN: MonthlyHourPlan = {
+  month: '2026-11-01',
+  totalTargetHours: 1690,
+  policyVersion: 'tier_model_2026_11_raised',
+  entries: OCTOBER_2026_ENTRIES.map(e => {
+    const out = NOVEMBER_2026_OUT.has(canonicalName(e.name)) || NOVEMBER_2026_OUT.has(e.name.toLowerCase());
+    if (e.name === 'Sara Hammond') {
+      // ClinOps set Sara to exactly 40h for November.
+      return { ...e, targetHours: 40, minHoursPerWeek: 40 / WEEKS_PER_MONTH, maxHoursPerWeek: 40 / WEEKS_PER_MONTH, notes: 'Nov: set to 40h by ClinOps' };
+    }
+    return out
+      ? { ...e, targetHours: 0, notes: 'Not providing November hours' }
+      : { ...e, targetHours: Math.max(e.targetHours * 3, 40), notes: `${e.notes} | Nov: cap raised to fill 1,690h` };
+  }),
+};
+
+/**
+ * December 2026: ClinOps asked to keep November's tier allocations unchanged
+ * (same tiers, caps and weekly bounds). Exceptions: offboarded providers get 0,
+ * and providers who sat November out but submitted December availability
+ * (Daniyel Barton) return at the same raised tier cap November used.
+ */
+const DECEMBER_2026_OFFBOARDED = new Set(['bee chang', 'stephanie lumsden', 'matia kilgore', 'laura maleknia', 'ramon trinidad', 'ramon taguba trinidad']);
+const DECEMBER_2026_RETURNING = new Set(['daniyel barton']);
+
+export const DECEMBER_2026_HOUR_PLAN: MonthlyHourPlan = {
+  month: '2026-12-01',
+  totalTargetHours: 1800,
+  policyVersion: 'tier_model_2026_12_same_as_nov',
+  entries: NOVEMBER_2026_HOUR_PLAN.entries.map((e, i) => {
+    const key = canonicalName(e.name);
+    if (DECEMBER_2026_OFFBOARDED.has(key) || DECEMBER_2026_OFFBOARDED.has(e.name.toLowerCase())) {
+      return { ...e, targetHours: 0, notes: 'Offboarded' };
+    }
+    if (DECEMBER_2026_RETURNING.has(key) || DECEMBER_2026_RETURNING.has(e.name.toLowerCase())) {
+      const oct = OCTOBER_2026_ENTRIES[i];
+      return { ...e, targetHours: Math.max(oct.targetHours * 3, 40), notes: `${oct.notes} | Dec: returning, November tier cap` };
+    }
+    return { ...e, notes: `${e.notes} | Dec: same as November` };
+  }),
+};
+
 const PLANS_BY_MONTH = new Map<string, MonthlyHourPlan>([
   [OCTOBER_2026_HOUR_PLAN.month, OCTOBER_2026_HOUR_PLAN],
+  [NOVEMBER_2026_HOUR_PLAN.month, NOVEMBER_2026_HOUR_PLAN],
+  [DECEMBER_2026_HOUR_PLAN.month, DECEMBER_2026_HOUR_PLAN],
 ]);
 
 const normalizeMonth = (month: string) =>
@@ -3362,12 +3457,20 @@ export type PlanClampResult = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const roundQuarter = (n: number) => Math.round(n * 4) / 4;
 
-/** Snap to the 0.25h scheduling grid without ever crossing the hard cap. */
+/**
+ * Plan caps are SOFT: when demand remains and the provider actually submitted
+ * the hours, we allow the allocator to exceed the plan target by up to this
+ * multiplier. Hard ceilings still apply (submitted hours, state demand).
+ */
+export const PLAN_SOFT_CAP_MULTIPLIER = 1.25;
+
+/** Snap to the 0.25h scheduling grid without ever crossing the ceiling. */
 const quantizeToQuarter = (value: number, cap: number) => {
   const q = roundQuarter(value);
   if (q > cap) return Math.max(0, Math.floor(cap * 4) / 4);
   return Math.max(0, q);
 };
+
 
 export function monthlyCapFor(entry: MonthlyHourPlanEntry): number {
   const surveyMax = entry.maxHoursPerWeek == null
@@ -3376,6 +3479,18 @@ export function monthlyCapFor(entry: MonthlyHourPlanEntry): number {
   return round2(Math.min(entry.targetHours, surveyMax));
 }
 
+/**
+ * Soft ceiling: the plan target may stretch by PLAN_SOFT_CAP_MULTIPLIER, but
+ * the provider's own stated weekly maximum stays a hard limit.
+ */
+export function monthlySoftCeilingFor(entry: MonthlyHourPlanEntry): number {
+  const surveyMax = entry.maxHoursPerWeek == null
+    ? Number.POSITIVE_INFINITY
+    : entry.maxHoursPerWeek * WEEKS_PER_MONTH;
+  return round2(Math.min(entry.targetHours * PLAN_SOFT_CAP_MULTIPLIER, surveyMax));
+}
+
+
 export function monthlyFloorFor(entry: MonthlyHourPlanEntry): number {
   if (entry.minHoursPerWeek == null) return 0;
   return round2(entry.minHoursPerWeek * WEEKS_PER_MONTH);
@@ -3383,9 +3498,11 @@ export function monthlyFloorFor(entry: MonthlyHourPlanEntry): number {
 
 /**
  * Clamp an equity-allocator result to the provider's plan row.
- * The cap is hard; the floor is applied only up to the cap and the hours the
- * provider actually submitted, and any shortfall is flagged rather than
- * silently invented.
+ * The plan cap is SOFT: the allocator may go up to PLAN_SOFT_CAP_MULTIPLIER x
+ * the plan target as long as the provider submitted those hours and demand
+ * remains. The floor is applied only up to that ceiling and the hours the
+ * provider actually submitted; any shortfall is flagged rather than silently
+ * invented.
  */
 export function clampToHourPlan(
   entry: MonthlyHourPlanEntry,
@@ -3403,17 +3520,21 @@ export function clampToHourPlan(
   }
 
   const submitted = Math.max(0, round2(input.effectiveHours));
-  const effectiveCap = round2(Math.min(cap, submitted));
+  const planCap = round2(Math.min(cap, submitted));
+  // Soft ceiling: plan target may stretch, but never past submitted hours.
+  const ceiling = round2(Math.min(monthlySoftCeilingFor(entry), submitted));
   if (statedFloor > 0 && submitted < statedFloor) {
     flags.push('submitted_below_survey_min');
   }
 
-  const floor = round2(Math.min(statedFloor, effectiveCap));
+  const floor = round2(Math.min(statedFloor, ceiling));
   const before = round2(Math.max(0, input.allocatedHours));
   let accepted = before;
-  if (accepted > effectiveCap) accepted = effectiveCap;
+  if (accepted > ceiling) accepted = ceiling;
   if (accepted < floor) accepted = floor;
-  accepted = quantizeToQuarter(Math.max(0, accepted), effectiveCap);
+  accepted = quantizeToQuarter(Math.max(0, accepted), ceiling);
+
+  if (accepted > planCap + 0.001) flags.push('plan_soft_cap_exceeded');
 
   let adjustment: PlanClampResult['adjustment'] = 'none';
   if (accepted < before - 0.001) adjustment = 'capped';
@@ -3422,12 +3543,13 @@ export function clampToHourPlan(
   return {
     acceptedHours: accepted,
     allocations: rebalanceAllocations(input.allocations, accepted, input.stateGaps ?? []),
-    capHours: effectiveCap,
+    capHours: planCap,
     floorHours: floor,
     adjustment,
     flags,
   };
 }
+
 
 /** Scale a per-state allocation list to a new total, respecting remaining demand. */
 export function rebalanceAllocations(
@@ -3585,6 +3707,15 @@ function settleRounding(rows: PlanStateAllocation[], target: number): PlanStateA
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// ClinOps-approved per-provider lifts of the 75% submitted-hours soft cap.
+const SOFT_CAP_LIFTS: Record<string, string[]> = {
+  '2026-11': ['brittney afram', 'risheet patel'],
+};
+function softCapLiftedFor(month: string | null | undefined, name: string | null | undefined): boolean {
+  if (!month || !name) return false;
+  const n = name.toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  return (SOFT_CAP_LIFTS[month.slice(0, 7)] ?? []).some(x => n.includes(x.split(' ')[0]) && n.includes(x.split(' ').slice(-1)[0]));
+}
 // Supabase's generated client generics collapse table writes to `never`
 // without an explicit broad schema here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -4309,6 +4440,7 @@ Deno.serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const monthFilter = url.searchParams.get('target_month');
+  const forceLocked = url.searchParams.get('force_locked') === '1';
   const providerFilter = url.searchParams.get('provider_id');
   const useUtilizationTieBreak = parseBooleanFlag(
     url.searchParams.get('use_utilization') ??
@@ -4335,6 +4467,10 @@ Deno.serve(async (req: Request) => {
   const decisions: Array<Record<string, unknown>> = [];
 
   try {
+    const lockedMonths = forceLocked ? new Set<string>() : await loadLockedMonths(supabase);
+    if (monthFilter && lockedMonths.has(monthFilter.slice(0, 10))) {
+      return new Response(JSON.stringify({ ok: false, locked: true, message: `Schedule for ${monthFilter} is locked; pass force_locked=1 to override.` }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     // ── Find groups (provider, target_month) that need work ─────────────
     let pendingQuery = supabase
       .from('schedule_submissions')
@@ -4366,6 +4502,7 @@ Deno.serve(async (req: Request) => {
     const groupKeys = new Set<string>();
     for (const r of pendingRows ?? []) {
       if (!r.provider_id || !r.target_month) continue;
+      if (lockedMonths.has(String(r.target_month).slice(0, 10))) continue;
       if (!monthFilter && !providerFilter && r.target_month < currentMonth) continue;
       groupKeys.add(`${r.provider_id}|${r.target_month}`);
     }
@@ -5452,6 +5589,7 @@ Deno.serve(async (req: Request) => {
         floorHours: candidate.allocationPolicy === 'august_2026' ? 0 : candidate.equityFloorHours,
         directShiftsNp: candidate.isAugustDirectShiftsNp,
         submittedOnTime: candidate.submittedOnTimeForAugust,
+        softCapShare: softCapLiftedFor(targetMonth, candidate.latest.provider_name) ? 1 : undefined,
         eligibleStates: candidate.gapByState
           .filter(gap => !gap.missingDemand)
           .map(gap => ({

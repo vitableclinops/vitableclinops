@@ -57,6 +57,11 @@ export type ShiftType = 'virtual_recurring' | 'virtual_oneoff' | 'in_home_clinic
 export const LONG_SHIFT_BREAK_POLICY = 'mandatory_1_hour_break_for_12h_shift';
 export const PROVIDER_MEETING_BLACKOUT_WINDOW =
   '2026-06-24T12:00:00-05:00/2026-06-24T13:00:00-05:00';
+/** Days the business is fully closed: no shifts of any kind are scheduled.
+ *  Dec 25, 2026 - Christmas (requested by ClinOps). */
+export const BUSINESS_CLOSED_DATES: ReadonlySet<string> = new Set(['2026-12-25']);
+const isOpenDay = (slot: { date: string }) => !BUSINESS_CLOSED_DATES.has(slot.date);
+
 const LONG_SHIFT_BREAK_MINUTES = 60;
 const LONG_SHIFT_BREAK_THRESHOLD_MINUTES = 12 * 60;
 const PROVIDER_MEETING_BLACKOUT_DATE = '2026-06-24';
@@ -178,8 +183,8 @@ export function buildSubmissionTimeline(
 
   const forecastSet = new Set(forecastKinds);
   const result = normalizeProviderAvailability(input);
-  const adjusted = applySchedulingRules(result.timeline);
-  const editedTimeline = applyPerDateShiftEdits(adjusted.timeline, identity);
+  const adjusted = applySchedulingRules(result.timeline.filter(isOpenDay));
+  const editedTimeline = applyPerDateShiftEdits(adjusted.timeline, identity).filter(isOpenDay);
   const summary = {
     ...result.summary,
     total_normalized_timeline_hours: roundSubmission2(sumHours(editedTimeline)),
@@ -196,10 +201,10 @@ export function buildSubmissionTimeline(
   };
   const forecastTimeline = editedTimeline.filter(s => forecastSet.has(s.source.kind));
   const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
-    forecastSet.has(s.source.kind),
+    isOpenDay(s) && forecastSet.has(s.source.kind),
   );
   const forecastPolicyCutTimeline = result.policyCutTimeline.filter(s =>
-    forecastSet.has(s.source.kind),
+    isOpenDay(s) && forecastSet.has(s.source.kind),
   );
   return {
     ...result,
