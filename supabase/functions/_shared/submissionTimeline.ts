@@ -184,7 +184,7 @@ export function buildSubmissionTimeline(
   const forecastSet = new Set(forecastKinds);
   const result = normalizeProviderAvailability(input);
   const adjusted = applySchedulingRules(result.timeline.filter(isOpenDay));
-  const editedTimeline = applyPerDateShiftEdits(adjusted.timeline, identity);
+  const editedTimeline = applyPerDateShiftEdits(adjusted.timeline, identity).filter(isOpenDay);
   const summary = {
     ...result.summary,
     total_normalized_timeline_hours: roundSubmission2(sumHours(editedTimeline)),
