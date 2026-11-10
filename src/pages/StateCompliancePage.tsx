@@ -116,6 +116,34 @@ const StateCompliancePage = () => {
   const userRole = roles.includes('admin') ? 'admin' : (roles[0] || 'admin');
   const userName = profile?.full_name || profile?.email || 'Admin User';
   const userEmail = profile?.email || '';
+  const isAdmin = roles.includes('admin');
+
+  // Pull fresh snapshots from every source (Metabase active states, Medallion
+  // directory) then reload the compliance views that read them. Admin-only.
+  const queryClient = useQueryClient();
+  const runMedallionSync = useRunMedallionSync();
+  const [syncingSources, setSyncingSources] = useState(false);
+  const handleRefreshSources = async () => {
+    setSyncingSources(true);
+    toast.info('Refreshing sources…', { description: 'Pulling the latest active-states and Medallion snapshots.' });
+    try {
+      const { error: coverageError } = await supabase.functions.invoke('sync-pcp-coverage', { body: { mode: 'refresh' } });
+      if (coverageError) throw coverageError;
+      await runMedallionSync.mutateAsync({ mode: 'apply', scope: 'full' });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['pcp-coverage-by-id'] }),
+        queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] }),
+        queryClient.invalidateQueries({ queryKey: ['medallion_directory'] }),
+        queryClient.invalidateQueries({ queryKey: ['provider_directory_state_map'] }),
+      ]);
+      await refetchCompliance();
+      toast.success('Sources refreshed', { description: 'Active states and Medallion data are up to date.' });
+    } catch (err: any) {
+      toast.error('Could not refresh sources', { description: err?.message ?? 'Please try again shortly.' });
+    } finally {
+      setSyncingSources(false);
+    }
+  };
 
   // ========== State Directory Logic ==========
   const filteredStates = states.filter(state => {
