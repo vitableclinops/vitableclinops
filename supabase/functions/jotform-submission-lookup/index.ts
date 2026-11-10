@@ -16,6 +16,6 @@ Deno.serve(async req => {
   const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
   const url = Deno.env.get('CLINOPS_SUPABASE_URL');
   if (!key || !url) return respond({ error: 'Scheduling source unavailable' }, 503);
-  const response = await fetch(`${url}/functions/v1/sync-jotform-submissions?preview_email=${encodeURIComponent(email)}&since=2026-09-01`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, apikey: key, 'Content-Type': 'application/json' }, body: '{}' });
+  const response = await fetch(`${url}/functions/v1/sync-jotform-submissions?preview_email=${encodeURIComponent(email)}&since=2026-09-01`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, apikey: key, 'x-source-lookup-key': key, 'Content-Type': 'application/json' }, body: '{}' });
   return new Response(await response.text(), { headers, status: response.status });
 });

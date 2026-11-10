@@ -69,7 +69,7 @@ Deno.serve(async (req: Request) => {
 
   // Targeted source inspection never imports, re-parses, or changes saved rows.
   if (url.searchParams.get('preview_email')) {
-    if (req.headers.get('Authorization') !== `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`) {
+    if (req.headers.get('x-source-lookup-key') !== Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
       return json({ error: 'Authorized source lookup required' }, 403);
     }
     const email = (url.searchParams.get('preview_email') ?? '').trim().toLowerCase();
