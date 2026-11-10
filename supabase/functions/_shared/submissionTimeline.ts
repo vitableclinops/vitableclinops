@@ -34,6 +34,8 @@ export interface ParsedShiftsBlob {
   one_off_virtual?: unknown;
   in_home_clinic?: unknown;
   unavailable_dates?: unknown;
+  /** Confirmed date exceptions: suppress recurrence only, retaining one-off availability. */
+  excluded_recurring_dates?: string[];
   email?: string;
   [k: string]: unknown;
 }
@@ -183,7 +185,10 @@ export function buildSubmissionTimeline(
 
   const forecastSet = new Set(forecastKinds);
   const result = normalizeProviderAvailability(input);
-  const adjusted = applySchedulingRules(result.timeline.filter(isOpenDay));
+  const exclusions = new Map(ordered.map(s => [s.id, new Set(s.parsed_shifts?.excluded_recurring_dates ?? [])]));
+  const isRequestedDay = (slot: ExpandedSlot) => isOpenDay(slot) &&
+    !(slot.source.kind === 'recurring' && exclusions.get(slot.source.submissionId ?? '')?.has(slot.date));
+  const adjusted = applySchedulingRules(result.timeline.filter(isRequestedDay));
   const editedTimeline = applyPerDateShiftEdits(adjusted.timeline, identity).filter(isOpenDay);
   const summary = {
     ...result.summary,
@@ -201,10 +206,10 @@ export function buildSubmissionTimeline(
   };
   const forecastTimeline = editedTimeline.filter(s => forecastSet.has(s.source.kind));
   const forecastOutOfHoursTimeline = result.outOfHoursTimeline.filter(s =>
-    isOpenDay(s) && forecastSet.has(s.source.kind),
+    isRequestedDay(s) && forecastSet.has(s.source.kind),
   );
   const forecastPolicyCutTimeline = result.policyCutTimeline.filter(s =>
-    isOpenDay(s) && forecastSet.has(s.source.kind),
+    isRequestedDay(s) && forecastSet.has(s.source.kind),
   );
   return {
     ...result,
