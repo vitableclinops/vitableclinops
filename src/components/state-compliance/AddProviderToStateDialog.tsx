@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useUpdateActivationStatus } from '@/hooks/useProviderStateStatus';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { isOffboarded } from '@/lib/employeeVisibility';
-import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, REQUIREMENT_HELP_LINKS, validRequirementProof } from '@/lib/stateSheetRequirements';
+import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, validRequirementProof } from '@/lib/stateSheetRequirements';
+import { RequirementInfoNote } from '@/components/agreements/StateRequirementVerifyDialog';
 import { IndependentPracticeVerifyDialog } from '@/components/agreements/IndependentPracticeVerifyDialog';
 import type { EhrActivationStatus } from '@/hooks/useProviderStateStatus';
 
@@ -182,7 +183,7 @@ export function AddProviderToStateDialog({ open, onOpenChange, states, defaultSt
                     {requirementQueue.items.map((i) => (
                       <li key={i.key} className="flex items-start gap-2">
                         <span className={i.saved ? 'text-primary' : 'text-destructive'}>{i.saved ? '✓' : '•'}</span>
-                        <span>{i.label}{i.saved ? ' (proof saved)' : ''}{REQUIREMENT_HELP_LINKS[i.key] && <> — <a href={REQUIREMENT_HELP_LINKS[i.key].url} target="_blank" rel="noreferrer" className="text-primary underline">{REQUIREMENT_HELP_LINKS[i.key].label}</a></>}</span>
+                        <span>{i.label}{i.saved ? ' (proof saved)' : ''}<span className="ml-1"><RequirementInfoNote state={stateAbbr} requirementKey={i.key} /></span></span>
                       </li>
                     ))}
                   </ul>

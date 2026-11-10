@@ -36,7 +36,7 @@ export const SHEET_REQUIREMENTS: Record<string, { label: string; keys: string[];
   ND: { label: '"Prescriptive Authority: YES" on License', keys: ['rx_authority'] },
   OH: { label: 'Signed Collab Agreement', keys: [], agreement: true },
   SD: { label: '"Full Practice Authority/Prescriptive Authority: YES" Status', keys: ['full_practice_authority'] },
-  TX: { label: 'Signed Collab Agreement + Filed with State Board + TMB search shows APRN in "Advanced Practice Nurse Delegation"', keys: ['board_registration', 'tmb_delegation_confirmed'], agreement: true },
+  TX: { label: 'Signed Collab Agreement + Filed with State Board', keys: ['board_registration'], agreement: true },
   VT: { label: '"Independent Practice, Prescriptive Authority" on License OR Signed Collab Agreement OR Advanced Practice Registered Nurse - Telehealth Registration', keys: ['independent_practice', 'aprn_telehealth_registration'], agreement: true, alternative: true, anyDesignation: true },
   WI: { label: 'Signed Collab Agreement OR Independent Practice Designation on License', keys: ['independent_practice'], agreement: true, alternative: true },
 };
@@ -54,11 +54,14 @@ export const REQUIREMENT_LABELS: Record<string, string> = {
   capa_ns: 'CAPA-NS designation on license (Collaborative Agreement for Prescriptive Authority for Non-Scheduled Drugs)',
   independent_ns_rx_authority: 'Independent NS prescriptive authority',
   active_prescribing_cii: 'Active Prescribing - CII license status', independent_practice: 'Independent practice designation on license',
-  tmb_delegation_confirmed: 'Physician TMB search shows the APRN in the "Advanced Practice Nurse Delegation" section',
 };
-/** Helper links shown next to a requirement wherever it is listed or verified. */
-export const REQUIREMENT_HELP_LINKS: Record<string, { url: string; label: string }> = {
-  tmb_delegation_confirmed: { url: 'https://public.tmb.state.tx.us/HCP_Search/searchinput.aspx', label: 'Open TMB license search' },
+/** Info-icon notes shown next to a requirement, keyed `STATE:requirementKey`. */
+export const REQUIREMENT_INFO_NOTES: Record<string, { text: string; url?: string; urlLabel?: string }> = {
+  'TX:board_registration': {
+    text: 'Confirm the physician\'s TMB license search shows the APRN in the "Advanced Practice Nurse Delegation" section.',
+    url: 'https://public.tmb.state.tx.us/HCP_Search/searchinput.aspx',
+    urlLabel: 'Open TMB license search',
+  },
 };
 export interface RequirementProof {
   profile_id: string; state_abbreviation: string; requirement_key: string; verified_source: string; verified_on: string;
