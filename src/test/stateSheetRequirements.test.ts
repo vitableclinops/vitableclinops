@@ -157,6 +157,6 @@ describe('Remaining sheet states', () => {
       expect(missing('KY',true,[{...proof('KY','capa_ns'),...change}])).toEqual([]);
     }
   });
-  it('TX needs agreement AND board filing', () => { expect(missing('TX')).toEqual(['board_registration','collab_agreement']); expect(missing('TX',true,[proof('TX','board_registration')])).toEqual([]); });
+  it('TX needs agreement AND board filing AND TMB delegation confirmation', () => { expect(missing('TX')).toEqual(['board_registration','tmb_delegation_confirmed','collab_agreement']); expect(missing('TX',true,[proof('TX','board_registration'),proof('TX','tmb_delegation_confirmed')])).toEqual([]); });
   it.each(['NJ','OH'])('%s needs agreement only', s => { expect(missing(s)).toEqual(['collab_agreement']); expect(missing(s,true)).toEqual([]); });
 });

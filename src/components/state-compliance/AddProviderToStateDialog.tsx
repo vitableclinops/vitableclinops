@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useUpdateActivationStatus } from '@/hooks/useProviderStateStatus';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { isOffboarded } from '@/lib/employeeVisibility';
-import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, validRequirementProof } from '@/lib/stateSheetRequirements';
+import { SHEET_REQUIREMENTS, REQUIREMENT_LABELS, REQUIREMENT_HELP_LINKS, validRequirementProof } from '@/lib/stateSheetRequirements';
 import { IndependentPracticeVerifyDialog } from '@/components/agreements/IndependentPracticeVerifyDialog';
 import type { EhrActivationStatus } from '@/hooks/useProviderStateStatus';
 

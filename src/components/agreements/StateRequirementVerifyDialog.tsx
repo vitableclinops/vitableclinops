@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { REQUIREMENT_LABELS, SHEET_REQUIREMENTS, validRequirementProof, remainingVerificationKeys } from '@/lib/stateSheetRequirements';
+import { REQUIREMENT_LABELS, REQUIREMENT_HELP_LINKS, SHEET_REQUIREMENTS, validRequirementProof, remainingVerificationKeys } from '@/lib/stateSheetRequirements';
 import { useActiveStateAgreementAudit } from '@/hooks/useActiveStateAgreementAudit';
 import { parseLocalDate } from '@/lib/utils';
 import { hasVerificationLink } from '@/lib/nyIndependentPractice';
