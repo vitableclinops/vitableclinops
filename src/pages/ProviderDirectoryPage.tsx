@@ -44,6 +44,7 @@ import { directoryIdentityAlert } from '@/lib/directoryIdentityAlerts';
 import { ProviderFlagAlerts } from '@/components/directory/ProviderFlagAlerts';
 import { coverageAlertSummary } from '@/lib/coverageAlertSummary';
 import { useToast } from '@/hooks/use-toast';
+import { useDisplayedSourcesRefreshed, formatEasternDateTime } from '@/hooks/useSourcesLastRefreshed';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { Provider } from '@/types';
@@ -141,6 +142,7 @@ const ProviderDirectoryPage = () => {
   const runMedallionSync = useRunMedallionSync();
   const [syncingSources, setSyncingSources] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { lastRefreshedAt, markRefreshed } = useDisplayedSourcesRefreshed();
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -248,6 +250,7 @@ const ProviderDirectoryPage = () => {
         queryClient.invalidateQueries({ queryKey: ['provider_directory_state_map'] }),
       ]);
       setRefreshKey(k => k + 1);
+      markRefreshed();
       toast({ title: 'Directory sources refreshed', description: 'Active states and Medallion data are up to date.' });
     } catch (err: any) {
       toast({ title: 'Could not refresh sources', description: err?.message ?? 'Please try again shortly.', variant: 'destructive' });
@@ -655,16 +658,21 @@ const ProviderDirectoryPage = () => {
                     {pcpCoverage && coverageAlertSummary(pcpCoverage).failure ? ' · Latest refresh failed; showing last successful snapshot' : ''}
                   </p>
                   {isAdmin && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRefreshSources}
-                      disabled={syncingSources}
-                      title="Refresh Metabase active states and Medallion directory data"
-                    >
-                      <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', syncingSources && 'animate-spin')} />
-                      {syncingSources ? 'Refreshing…' : 'Refresh sources'}
-                    </Button>
+                    <div className="flex flex-col items-end gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefreshSources}
+                        disabled={syncingSources}
+                        title="Refresh Metabase active states and Medallion directory data"
+                      >
+                        <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', syncingSources && 'animate-spin')} />
+                        {syncingSources ? 'Refreshing…' : 'Refresh sources'}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        Last Refreshed: {lastRefreshedAt ? formatEasternDateTime(lastRefreshedAt) : 'Not yet'}
+                      </p>
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center justify-between">
