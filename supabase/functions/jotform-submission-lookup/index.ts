@@ -1,0 +1,54 @@
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { buildSubmissionTimeline } from '../_shared/submissionTimeline.ts';
+
+const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Content-Type': 'application/json' };
+Deno.serve(async req => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers });
+  const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { headers, status });
+  const admin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+  const token = req.headers.get('Authorization')?.replace(/^Bearer /, '');
+  if (!token) return respond({ error: 'Sign in required' }, 401);
+  const { data, error } = await admin.auth.getUser(token);
+  if (error || !data.user) return respond({ error: 'Sign in required' }, 401);
+  const { data: roles } = await admin.from('user_roles').select('role').eq('user_id', data.user.id);
+  if (!roles?.some(row => ['admin', 'scheduling'].includes(row.role))) return respond({ error: 'Scheduling access required' }, 403);
+  const { email, action } = await req.json();
+  if (!['sara.hammond@vitablehealth.com', 'andrea.leffet@vitablehealth.com'].includes(email)) return respond({ error: 'Unsupported source lookup' }, 400);
+  const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
+  const url = Deno.env.get('CLINOPS_SUPABASE_URL');
+  if (!key || !url) return respond({ error: 'Scheduling source unavailable' }, 503);
+  const response = await fetch(`${url}/functions/v1/sync-jotform-submissions?preview_email=${encodeURIComponent(email)}&since=2026-09-01`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, apikey: key, 'x-source-lookup-key': key, 'Content-Type': 'application/json' }, body: '{}' });
+  if (action === 'add_sara_december') {
+    if (email !== 'sara.hammond@vitablehealth.com' || !response.ok) return respond({ error: 'Verified December source required' }, 400);
+    const source = await response.json();
+    const submission = source.submissions.find((row: { parsed: { targetMonth: string }; id: string }) => row.parsed.targetMonth === '2026-12-01' && row.id === '6701438434914671780');
+    if (!submission) return respond({ error: 'Sara December form not found' }, 404);
+    const db = createClient(url, key);
+    const { data: provider, error: providerError } = await db.from('providers').select('id,name,email').eq('email', email).single();
+    if (providerError || !provider) return respond({ error: 'Exact provider identity required' }, 409);
+    const { data: workflow, error: workflowError } = await db.from('scheduling_month_workflows').select('active_build_id,locked_build_id,current_stage').eq('target_month', '2026-12-01').single();
+    if (workflowError || !workflow?.locked_build_id) return respond({ error: 'Locked December build required' }, 409);
+    const buildId = workflow.locked_build_id;
+    const { data: existing, error: existingError } = await db.from('schedule_build_rows').select('id').eq('build_id', buildId).eq('provider_id', provider.id);
+    if (existingError) return respond({ error: existingError.message }, 500);
+    if (existing?.length) return respond({ ok: true, already_added: true, rows: existing.length });
+    const parsed = submission.parsed;
+    const blob = { recurring_virtual: parsed.recurringVirtual, one_off_virtual: parsed.oneOffVirtual, in_home_clinic: parsed.inHomeClinic, unavailable_dates: parsed.unavailableDates, email, requested_hours_total: parsed.totalHours, shift_types: parsed.shiftTypes, target_month_source: parsed.targetMonthSource, target_month_dropdown: parsed.dropdownMonth, match_confidence: 'email', comments: parsed.comments };
+    const id = crypto.randomUUID();
+    const timeline = buildSubmissionTimeline([{ id, submitted_at: submission.submitted_at, parsed_shifts: blob }], { providerId: provider.id, name: provider.name, email }, '2026-12-01');
+    const hours = timeline.summary.final_approvable_hours;
+    if (hours !== 84 || timeline.timeline.length !== 14 || timeline.timeline.some(row => row.date === '2026-12-25')) return respond({ error: 'Source validation mismatch', hours, rows: timeline.timeline.length }, 409);
+    const note = 'Maddi Swanagan approved adding Sara Hammond December form (84h) without reallocating or changing any existing provider shifts. Source form submitted Nov 10 at 18:17 UTC; missed by prior import.';
+    const { data: saved, error: saveError } = await db.from('schedule_submissions').upsert({ jotform_submission_id: submission.id, provider_id: provider.id, provider_name: provider.name, target_month: '2026-12-01', submitted_at: submission.submitted_at, raw_answers: submission.raw_answers, parsed_shifts: blob, decision_status: 'accepted', accepted_hours: hours, declined_hours: 0, effective_hours_used_for_forecast: hours, normalized_requested_hours: hours, raw_requested_hours: hours, decision_notes: note, decided_at: new Date().toISOString() }, { onConflict: 'jotform_submission_id' }).select('id').single();
+    if (saveError || !saved) return respond({ error: saveError?.message ?? 'Unable to save form' }, 500);
+    const rows = timeline.timeline.map(row => ({ submission_id: saved.id, provider_id: provider.id, provider_name: provider.name, target_month: '2026-12-01', shift_date: row.date, start_min: row.startMin, end_min: row.endMin, hours: (row.endMin - row.startMin) / 60, shift_type: 'virtual_recurring', assigned_state: null, recommendation: 'publish', recommendation_reason: note, publish_status: 'pending' }));
+    const { error: rowsError } = await db.from('schedule_build_rows').insert(rows.map(row => ({ ...row, build_id: buildId, source_publish_status: 'pending' })));
+    if (rowsError) return respond({ error: rowsError.message, submission_saved: true }, 500);
+    const { error: recError } = await db.from('shift_recommendations').insert(rows);
+    if (recError) return respond({ error: recError.message, build_rows_added: true }, 500);
+    const { error: auditError } = await db.from('schedule_amendment_requests').insert({ target_month: '2026-12-01', build_id: buildId, submission_id: saved.id, provider_id: provider.id, provider_name: provider.name, request_type: 'resubmission', status: 'applied', summary: 'Added verified December availability: 84h', notes: note, requested_by_label: 'Maddi Swanagan', resolved_by_label: 'Maddi Swanagan', resolved_at: new Date().toISOString() });
+    if (auditError) return respond({ error: auditError.message, hours_added: hours }, 500);
+    return respond({ ok: true, hours_added: hours, rows_added: rows.length, other_providers_changed: false });
+  }
+  return new Response(await response.text(), { headers, status: response.status });
+});

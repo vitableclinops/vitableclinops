@@ -67,6 +67,42 @@ Deno.serve(async (req: Request) => {
   const discover = url.searchParams.get('discover') === '1';
   const sinceParam = url.searchParams.get('since');
 
+  // Targeted source inspection never imports, re-parses, or changes saved rows.
+  if (url.searchParams.get('preview_email')) {
+    const sourceKey = req.headers.get('x-source-lookup-key') ?? '';
+    let authorized = Boolean(sourceKey && sourceKey === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+    if (!authorized && sourceKey) {
+      try {
+        const payload = JSON.parse(atob(sourceKey.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        if (payload.role === 'service_role') {
+          const verification = await fetch(`${Deno.env.get('SUPABASE_URL')}/rest/v1/sync_runs?select=id&limit=1`, { headers: { apikey: sourceKey, Authorization: `Bearer ${sourceKey}` } });
+          authorized = verification.ok;
+        }
+      } catch { authorized = false; }
+    }
+    if (!authorized) {
+      return json({ error: 'Authorized source lookup required' }, 403);
+    }
+    const email = (url.searchParams.get('preview_email') ?? '').trim().toLowerCase();
+    const matches = [];
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const filter = encodeURIComponent(JSON.stringify({ 'created_at:gt': sinceParam ?? '2026-09-01' }));
+      const response = await fetch(`${JOTFORM_BASE}/form/${FORM_ID}/submissions?apiKey=${apiKey}&limit=${PAGE_SIZE}&offset=${offset}&filter=${filter}`);
+      if (!response.ok) return json({ error: 'Source lookup failed', status: response.status }, 502);
+      const source = await response.json();
+      const submissions: JotformSubmission[] = source.content ?? [];
+      for (const submission of submissions) {
+        const submittedAt = jotformDateToIso(submission.created_at);
+        const parsed = parseSubmission(submission, new Date(submittedAt));
+        if (parsed.email?.trim().toLowerCase() === email) {
+          matches.push({ id: submission.id, submitted_at: submittedAt, status: submission.status, parsed, raw_answers: submission.answers });
+        }
+      }
+      if (submissions.length < PAGE_SIZE) break;
+    }
+    return json({ ok: true, read_only: true, submissions: matches });
+  }
+
   // ── Discover mode ──────────────────────────────────────────────────────
   if (discover) {
     const qRes = await fetch(`${JOTFORM_BASE}/form/${FORM_ID}/questions?apiKey=${apiKey}`);
