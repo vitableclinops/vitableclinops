@@ -1,7 +1,7 @@
 # Roadmap
 
-- [ ] Correct Desire Brown’s December 22–31 Wednesday/Friday shifts from her one-off availability, preserving Monday/Thursday recurrence.
-- [ ] Restore Michelle Diederich’s correct December shifts and verify both corrections without reallocating other providers.
+- [x] Correct Desire Brown’s December 22–31 Wednesday/Friday shifts from her one-off availability, preserving Monday/Thursday recurrence.
+- [x] Restore Michelle Diederich’s correct December shifts and verify both corrections without reallocating other providers; Michelle has 14 shifts/79h, Desire has 19 shifts/85h; amendments pending posting, 64 regression tests passed.
 
 - [x] Show the last successful Medallion directory update time and add a working Refresh now button beside it.
 - [x] Remove the Active states in EHR data freshness section from the flagged-provider dropdown.
