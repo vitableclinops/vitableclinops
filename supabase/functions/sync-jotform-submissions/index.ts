@@ -69,7 +69,18 @@ Deno.serve(async (req: Request) => {
 
   // Targeted source inspection never imports, re-parses, or changes saved rows.
   if (url.searchParams.get('preview_email')) {
-    if (req.headers.get('x-source-lookup-key') !== Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+    const sourceKey = req.headers.get('x-source-lookup-key') ?? '';
+    let authorized = Boolean(sourceKey && sourceKey === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+    if (!authorized && sourceKey) {
+      try {
+        const payload = JSON.parse(atob(sourceKey.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        if (payload.role === 'service_role') {
+          const verification = await fetch(`${Deno.env.get('SUPABASE_URL')}/rest/v1/sync_runs?select=id&limit=1`, { headers: { apikey: sourceKey, Authorization: `Bearer ${sourceKey}` } });
+          authorized = verification.ok;
+        }
+      } catch { authorized = false; }
+    }
+    if (!authorized) {
       return json({ error: 'Authorized source lookup required' }, 403);
     }
     const email = (url.searchParams.get('preview_email') ?? '').trim().toLowerCase();
