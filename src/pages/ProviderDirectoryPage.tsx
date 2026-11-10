@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, Upload } from 'lucide-react';
+import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, Upload, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ import { useDirectoryProfileWarnings } from '@/hooks/useDirectoryProfileWarnings
 import { activeStateAgreementFlags } from '@/lib/activeStateAgreementFlags';
 import { summarizeLicenses } from '@/lib/externalImport';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
-import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
+import { activeLicensedStates, useMedallionDirectoryData, useRunMedallionSync } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor, isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
 import { mergeProviderFlags } from '@/lib/providerFlagSummary';
@@ -136,6 +136,11 @@ const ProviderDirectoryPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<FullProvider | null>(null);
   const [flagLookupOpen, setFlagLookupOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const runMedallionSync = useRunMedallionSync();
+  const [syncingSources, setSyncingSources] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -224,7 +229,32 @@ const ProviderDirectoryPage = () => {
       window.clearInterval(timer);
       window.removeEventListener('focus', refresh);
     };
-  }, [isAdmin]);
+  }, [isAdmin, refreshKey]);
+
+  // Pull fresh snapshots from every directory source (Metabase active states,
+  // Medallion directory) then reload the views that read them. Admin-only.
+  const handleRefreshSources = async () => {
+    setSyncingSources(true);
+    toast({ title: 'Refreshing directory sources…', description: 'Pulling the latest active-states and Medallion snapshots.' });
+    try {
+      const { error: coverageError } = await supabase.functions.invoke('sync-pcp-coverage', { body: { mode: 'refresh' } });
+      if (coverageError) throw coverageError;
+      await runMedallionSync.mutateAsync({ mode: 'apply', scope: 'full' });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['pcp-coverage-by-id'] }),
+        queryClient.invalidateQueries({ queryKey: ['directory-collaboration'] }),
+        queryClient.invalidateQueries({ queryKey: ['medallion_directory'] }),
+        queryClient.invalidateQueries({ queryKey: ['external-directory'] }),
+        queryClient.invalidateQueries({ queryKey: ['provider_directory_state_map'] }),
+      ]);
+      setRefreshKey(k => k + 1);
+      toast({ title: 'Directory sources refreshed', description: 'Active states and Medallion data are up to date.' });
+    } catch (err: any) {
+      toast({ title: 'Could not refresh sources', description: err?.message ?? 'Please try again shortly.', variant: 'destructive' });
+    } finally {
+      setSyncingSources(false);
+    }
+  };
 
   // Provider → set of licensed state abbreviations, derived from
   // provider_state_status (the source of truth that replaced the old
@@ -616,13 +646,27 @@ const ProviderDirectoryPage = () => {
 
               {/* Directory Tab - Contact/Profile focused view */}
               <TabsContent value={activeTab === 'offboarded' ? 'offboarded' : 'directory'} className="space-y-6">
-                <p className="text-xs text-muted-foreground">
-                  Active states in EHR · Last successful fetch: {pcpCoverage?.pulledAt
-                    ? new Date(pcpCoverage.pulledAt).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' }) + ' ET'
-                    : pcpCoverageLoading ? 'Loading…' : 'Not available'}
-                  {pcpCoverage?.stale ? ' · Stale snapshot' : ''}
-                  {pcpCoverage && coverageAlertSummary(pcpCoverage).failure ? ' · Latest refresh failed; showing last successful snapshot' : ''}
-                </p>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-xs text-muted-foreground">
+                    Active states in EHR · Last successful fetch: {pcpCoverage?.pulledAt
+                      ? new Date(pcpCoverage.pulledAt).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' }) + ' ET'
+                      : pcpCoverageLoading ? 'Loading…' : 'Not available'}
+                    {pcpCoverage?.stale ? ' · Stale snapshot' : ''}
+                    {pcpCoverage && coverageAlertSummary(pcpCoverage).failure ? ' · Latest refresh failed; showing last successful snapshot' : ''}
+                  </p>
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefreshSources}
+                      disabled={syncingSources}
+                      title="Refresh Metabase active states and Medallion directory data"
+                    >
+                      <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', syncingSources && 'animate-spin')} />
+                      {syncingSources ? 'Refreshing…' : 'Refresh sources'}
+                    </Button>
+                  )}
+                </div>
                 <div className="flex items-center justify-between">
                   <ProviderFilters
                     searchQuery={searchQuery}
