@@ -62,6 +62,7 @@ import { isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pc
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRunMedallionSync } from '@/hooks/useMedallionDirectory';
+import { useDisplayedSourcesRefreshed, formatEasternDateTime } from '@/hooks/useSourcesLastRefreshed';
 
 type FPAFilter = 'all' | 'fpa' | 'no-fpa';
 type CAFilter = 'all' | 'ca-required' | 'no-ca';
@@ -123,6 +124,7 @@ const StateCompliancePage = () => {
   const queryClient = useQueryClient();
   const runMedallionSync = useRunMedallionSync();
   const [syncingSources, setSyncingSources] = useState(false);
+  const { lastRefreshedAt, markRefreshed } = useDisplayedSourcesRefreshed();
   const handleRefreshSources = async () => {
     setSyncingSources(true);
     toast.info('Refreshing sources…', { description: 'Pulling the latest active-states and Medallion snapshots.' });
@@ -137,6 +139,7 @@ const StateCompliancePage = () => {
         queryClient.invalidateQueries({ queryKey: ['provider_directory_state_map'] }),
       ]);
       await refetchCompliance();
+      markRefreshed();
       toast.success('Sources refreshed', { description: 'Active states and Medallion data are up to date.' });
     } catch (err: any) {
       toast.error('Could not refresh sources', { description: err?.message ?? 'Please try again shortly.' });
@@ -292,15 +295,20 @@ const StateCompliancePage = () => {
               {/* Actions */}
               <div className="flex items-center justify-end gap-3">
                 {isAdmin && (
-                  <Button
-                    variant="outline"
-                    onClick={handleRefreshSources}
-                    disabled={syncingSources}
-                    title="Refresh Metabase active states and Medallion directory data"
-                  >
-                    <RefreshCw className={cn('h-4 w-4 mr-2', syncingSources && 'animate-spin')} />
-                    {syncingSources ? 'Refreshing…' : 'Refresh sources'}
-                  </Button>
+                  <div className="flex flex-col items-end gap-1">
+                    <Button
+                      variant="outline"
+                      onClick={handleRefreshSources}
+                      disabled={syncingSources}
+                      title="Refresh Metabase active states and Medallion directory data"
+                    >
+                      <RefreshCw className={cn('h-4 w-4 mr-2', syncingSources && 'animate-spin')} />
+                      {syncingSources ? 'Refreshing…' : 'Refresh sources'}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Last Refreshed: {lastRefreshedAt ? formatEasternDateTime(lastRefreshedAt) : 'Not yet'}
+                    </p>
+                  </div>
                 )}
                 <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
                   <Upload className="h-4 w-4 mr-2" />
