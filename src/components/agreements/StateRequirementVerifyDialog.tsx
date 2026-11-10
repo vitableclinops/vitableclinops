@@ -6,7 +6,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { REQUIREMENT_LABELS, REQUIREMENT_HELP_LINKS, SHEET_REQUIREMENTS, validRequirementProof, remainingVerificationKeys } from '@/lib/stateSheetRequirements';
+import { REQUIREMENT_LABELS, REQUIREMENT_INFO_NOTES, SHEET_REQUIREMENTS, validRequirementProof, remainingVerificationKeys } from '@/lib/stateSheetRequirements';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Info } from 'lucide-react';
+
+/** Small info icon with a hover note, shown next to a requirement label. */
+export function RequirementInfoNote({ state, requirementKey }: { state: string; requirementKey: string }) {
+  const note = REQUIREMENT_INFO_NOTES[`${state}:${requirementKey}`];
+  if (!note) return null;
+  return <TooltipProvider><Tooltip><TooltipTrigger asChild>
+    <button type="button" aria-label="Requirement info" className="inline-flex align-middle text-muted-foreground hover:text-foreground"><Info className="h-3.5 w-3.5" /></button>
+  </TooltipTrigger><TooltipContent className="max-w-xs text-xs">
+    <p>{note.text}</p>
+    {note.url && <a href={note.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-primary underline">{note.urlLabel ?? note.url}</a>}
+  </TooltipContent></Tooltip></TooltipProvider>;
+}
 import { useActiveStateAgreementAudit } from '@/hooks/useActiveStateAgreementAudit';
 import { parseLocalDate } from '@/lib/utils';
 import { hasVerificationLink } from '@/lib/nyIndependentPractice';
@@ -20,10 +34,10 @@ export const draftStarted = (d: ProofDraft) => !!(d.source.trim() || d.date || d
 export const draftComplete = (d: ProofDraft, fileOnly = false) => !!d.source.trim() && !!d.date && (fileOnly ? !!d.file : (!!d.file || hasVerificationLink(d.link)));
 
 /** One requirement's verification fields (source, date, link OR file). */
-export function RequirementProofSection({ id, label, draft, onChange, fileOnly = false, showExpiration = true }: { id: string; label: string; draft: ProofDraft; onChange: (d: ProofDraft) => void; fileOnly?: boolean; showExpiration?: boolean }) {
+export function RequirementProofSection({ id, label, draft, onChange, fileOnly = false, showExpiration = true, info }: { id: string; label: string; draft: ProofDraft; onChange: (d: ProofDraft) => void; fileOnly?: boolean; showExpiration?: boolean; info?: React.ReactNode }) {
   const set = (v: Partial<ProofDraft>) => onChange({ ...draft, ...v });
   return <div className="space-y-2 rounded-md border p-3">
-    <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">{label}</p>{draftComplete(draft, fileOnly) ? <span className="text-xs text-primary">Ready to save</span> : draftStarted(draft) ? <span className="text-xs text-destructive">Incomplete</span> : null}</div>
+    <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">{label}{info && <span className="ml-1.5">{info}</span>}</p>{draftComplete(draft, fileOnly) ? <span className="text-xs text-primary">Ready to save</span> : draftStarted(draft) ? <span className="text-xs text-destructive">Incomplete</span> : null}</div>
     <div className="grid gap-2 sm:grid-cols-2">
       <div className="space-y-1"><Label htmlFor={`${id}-source`}>Where verified?<span className="text-destructive" aria-hidden="true"> *</span></Label><Input id={`${id}-source`} placeholder="State board, DS spreadsheet…" value={draft.source} onChange={e => set({ source: e.target.value })} /></div>
       <div className="space-y-1"><Label htmlFor={`${id}-date`}>When verified?<span className="text-destructive" aria-hidden="true"> *</span></Label><Input id={`${id}-date`} type="date" max={new Date().toISOString().slice(0,10)} value={draft.date} onChange={e => set({ date: e.target.value })} /></div>
@@ -80,8 +94,7 @@ export function StateRequirementVerifyDialog({ open, onOpenChange, profileId, pr
     {!loading && !loadError && <p className="text-sm font-medium">{pending.length ? `Fill in any requirements below — each has its own proof. ${pending.length > 1 ? `(${joiner})` : ''}` : 'No outstanding designation or registration verifications.'}</p>}
     {!loading && !loadError && pending.map((k, i) => <div key={k} className="space-y-2">
       {i > 0 && <p className="text-center text-xs font-semibold text-muted-foreground">{joiner}</p>}
-      {REQUIREMENT_HELP_LINKS[k] && <p className="text-xs"><a href={REQUIREMENT_HELP_LINKS[k].url} target="_blank" rel="noreferrer" className="text-primary underline">{REQUIREMENT_HELP_LINKS[k].label}</a></p>}
-      <RequirementProofSection id={`req-${k}`} label={REQUIREMENT_LABELS[k] ?? k} draft={draftFor(k)} onChange={d => setDrafts(prev => ({ ...prev, [k]: d }))} />
+      <RequirementProofSection id={`req-${k}`} label={REQUIREMENT_LABELS[k] ?? k} info={<RequirementInfoNote state={state} requirementKey={k} />} draft={draftFor(k)} onChange={d => setDrafts(prev => ({ ...prev, [k]: d }))} />
     </div>)}
     {data.filter(p => p.state_abbreviation === state).length > 0 && <div className="space-y-2"><p className="text-sm font-medium">Already saved</p>{data.filter(p => p.state_abbreviation === state).map(p => <div key={p.requirement_key} className="text-sm border-b pb-2">
       <ProofEntry label={REQUIREMENT_LABELS[p.requirement_key]} status={validRequirementProof(p) ? 'Verified' : 'Needs review'} proof={p} />
