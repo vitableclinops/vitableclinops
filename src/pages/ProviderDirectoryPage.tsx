@@ -646,13 +646,27 @@ const ProviderDirectoryPage = () => {
 
               {/* Directory Tab - Contact/Profile focused view */}
               <TabsContent value={activeTab === 'offboarded' ? 'offboarded' : 'directory'} className="space-y-6">
-                <p className="text-xs text-muted-foreground">
-                  Active states in EHR · Last successful fetch: {pcpCoverage?.pulledAt
-                    ? new Date(pcpCoverage.pulledAt).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' }) + ' ET'
-                    : pcpCoverageLoading ? 'Loading…' : 'Not available'}
-                  {pcpCoverage?.stale ? ' · Stale snapshot' : ''}
-                  {pcpCoverage && coverageAlertSummary(pcpCoverage).failure ? ' · Latest refresh failed; showing last successful snapshot' : ''}
-                </p>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-xs text-muted-foreground">
+                    Active states in EHR · Last successful fetch: {pcpCoverage?.pulledAt
+                      ? new Date(pcpCoverage.pulledAt).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' }) + ' ET'
+                      : pcpCoverageLoading ? 'Loading…' : 'Not available'}
+                    {pcpCoverage?.stale ? ' · Stale snapshot' : ''}
+                    {pcpCoverage && coverageAlertSummary(pcpCoverage).failure ? ' · Latest refresh failed; showing last successful snapshot' : ''}
+                  </p>
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefreshSources}
+                      disabled={syncingSources}
+                      title="Refresh Metabase active states and Medallion directory data"
+                    >
+                      <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', syncingSources && 'animate-spin')} />
+                      {syncingSources ? 'Refreshing…' : 'Refresh sources'}
+                    </Button>
+                  )}
+                </div>
                 <div className="flex items-center justify-between">
                   <ProviderFilters
                     searchQuery={searchQuery}
