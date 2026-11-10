@@ -142,6 +142,9 @@ export const NOVEMBER_2026_HOUR_PLAN: MonthlyHourPlan = {
  */
 const DECEMBER_2026_OFFBOARDED = new Set(['bee chang', 'stephanie lumsden', 'matia kilgore', 'laura maleknia', 'ramon trinidad', 'ramon taguba trinidad']);
 const DECEMBER_2026_RETURNING = new Set(['daniyel barton']);
+/** Dec: ClinOps (Nov 10) - telehealth is short of target and Tier 1 is fully
+ *  accepted, so these lower-tier providers get all submitted December hours. */
+const DECEMBER_2026_FULL_HOURS = new Set(['brittney afram', 'risheet patel', 'gina charles']);
 
 export const DECEMBER_2026_HOUR_PLAN: MonthlyHourPlan = {
   month: '2026-12-01',
@@ -151,6 +154,9 @@ export const DECEMBER_2026_HOUR_PLAN: MonthlyHourPlan = {
     const key = canonicalName(e.name);
     if (DECEMBER_2026_OFFBOARDED.has(key) || DECEMBER_2026_OFFBOARDED.has(e.name.toLowerCase())) {
       return { ...e, targetHours: 0, notes: 'Offboarded' };
+    }
+    if (DECEMBER_2026_FULL_HOURS.has(key) || DECEMBER_2026_FULL_HOURS.has(e.name.toLowerCase())) {
+      return { ...e, targetHours: 1000, minHoursPerWeek: null, maxHoursPerWeek: null, notes: `${e.notes} | Dec: all submitted hours (network short)` };
     }
     if (DECEMBER_2026_RETURNING.has(key) || DECEMBER_2026_RETURNING.has(e.name.toLowerCase())) {
       const oct = OCTOBER_2026_ENTRIES[i];
