@@ -35,7 +35,7 @@ Deno.serve(async req => {
     const parsed = submission.parsed;
     const blob = { recurring_virtual: parsed.recurringVirtual, one_off_virtual: parsed.oneOffVirtual, in_home_clinic: parsed.inHomeClinic, unavailable_dates: parsed.unavailableDates, email, requested_hours_total: parsed.totalHours, shift_types: parsed.shiftTypes, target_month_source: parsed.targetMonthSource, target_month_dropdown: parsed.dropdownMonth, match_confidence: 'email', comments: parsed.comments };
     const id = crypto.randomUUID();
-    const timeline = buildSubmissionTimeline([{ id, submitted_at: submission.submitted_at, parsed_shifts: blob }], { providerId: provider.id, providerName: provider.name, email }, '2026-12-01');
+    const timeline = buildSubmissionTimeline([{ id, submitted_at: submission.submitted_at, parsed_shifts: blob }], { providerId: provider.id, name: provider.name, email }, '2026-12-01');
     const hours = timeline.summary.final_approvable_hours;
     if (hours !== 84 || timeline.timeline.length !== 14 || timeline.timeline.some(row => row.date === '2026-12-25')) return respond({ error: 'Source validation mismatch', hours, rows: timeline.timeline.length }, 409);
     const note = 'Maddi Swanagan approved adding Sara Hammond December form (84h) without reallocating or changing any existing provider shifts. Source form submitted Nov 10 at 18:17 UTC; missed by prior import.';
