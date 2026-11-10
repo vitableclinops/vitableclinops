@@ -16,3 +16,4 @@
 - [x] Exclude MD/DO physicians (Gina Charles, Seth Dinowitz) from NP requirement reviews
 
 - [x] Make state requirement text consistent on every page/tab (spreadsheet rules + MN/NE/DC)
+- [x] Show a Last Refreshed date/time under the Refresh sources button on States & Compliance and the Provider Directory; verified it updates after a refresh and persists across reloads.
