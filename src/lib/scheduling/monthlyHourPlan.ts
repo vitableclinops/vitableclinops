@@ -134,9 +134,36 @@ export const NOVEMBER_2026_HOUR_PLAN: MonthlyHourPlan = {
   }),
 };
 
+/**
+ * December 2026: ClinOps asked to keep November's tier allocations unchanged
+ * (same tiers, caps and weekly bounds). Exceptions: offboarded providers get 0,
+ * and providers who sat November out but submitted December availability
+ * (Daniyel Barton) return at the same raised tier cap November used.
+ */
+const DECEMBER_2026_OFFBOARDED = new Set(['bee chang', 'stephanie lumsden', 'matia kilgore', 'laura maleknia', 'ramon trinidad', 'ramon taguba trinidad']);
+const DECEMBER_2026_RETURNING = new Set(['daniyel barton']);
+
+export const DECEMBER_2026_HOUR_PLAN: MonthlyHourPlan = {
+  month: '2026-12-01',
+  totalTargetHours: 1800,
+  policyVersion: 'tier_model_2026_12_same_as_nov',
+  entries: NOVEMBER_2026_HOUR_PLAN.entries.map((e, i) => {
+    const key = canonicalName(e.name);
+    if (DECEMBER_2026_OFFBOARDED.has(key) || DECEMBER_2026_OFFBOARDED.has(e.name.toLowerCase())) {
+      return { ...e, targetHours: 0, notes: 'Offboarded' };
+    }
+    if (DECEMBER_2026_RETURNING.has(key) || DECEMBER_2026_RETURNING.has(e.name.toLowerCase())) {
+      const oct = OCTOBER_2026_ENTRIES[i];
+      return { ...e, targetHours: Math.max(oct.targetHours * 3, 40), notes: `${oct.notes} | Dec: returning, November tier cap` };
+    }
+    return { ...e, notes: `${e.notes} | Dec: same as November` };
+  }),
+};
+
 const PLANS_BY_MONTH = new Map<string, MonthlyHourPlan>([
   [OCTOBER_2026_HOUR_PLAN.month, OCTOBER_2026_HOUR_PLAN],
   [NOVEMBER_2026_HOUR_PLAN.month, NOVEMBER_2026_HOUR_PLAN],
+  [DECEMBER_2026_HOUR_PLAN.month, DECEMBER_2026_HOUR_PLAN],
 ]);
 
 const normalizeMonth = (month: string) =>
