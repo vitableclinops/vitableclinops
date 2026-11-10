@@ -183,6 +183,13 @@
       "when": 1793904158904,
       "tag": "0025_allow_pa_pals_registration_proof",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794270197870,
+      "tag": "0026_add_tmb_delegation_requirement_key",
+      "breakpoints": true
     }
   ]
 }
