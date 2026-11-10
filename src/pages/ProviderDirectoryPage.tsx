@@ -136,6 +136,11 @@ const ProviderDirectoryPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<FullProvider | null>(null);
   const [flagLookupOpen, setFlagLookupOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const runMedallionSync = useRunMedallionSync();
+  const [syncingSources, setSyncingSources] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
