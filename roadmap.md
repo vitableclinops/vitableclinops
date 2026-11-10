@@ -18,4 +18,4 @@
 - [x] Make state requirement text consistent on every page/tab (spreadsheet rules + MN/NE/DC)
 - [x] Show a Last Refreshed date/time under the Refresh sources button on States & Compliance and the Provider Directory; verified it updates after a refresh and persists across reloads.
 - [x] Add Sara Hammond’s verified 84-hour December form to the locked draft without changing existing shift dates, times or hours.
-- [ ] Add Andrea Leffet’s December hours — waiting for her December form or confirmation; the original Jotform lookup returned only October and November submissions.
+- [x] Leave Andrea Leffet out of December scheduling; Maddi confirmed she is on leave and no hours should be added.
