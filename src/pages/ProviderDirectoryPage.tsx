@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppSidebar } from '@/components/AppSidebar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, Upload } from 'lucide-react';
+import { Users, Grid3X3, List, MapPin, Shield, AlertTriangle, Clock, UserPlus, MoreHorizontal, Edit, Eye, ChevronRight, Search, CheckCircle2, Activity, Upload, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ import { useDirectoryProfileWarnings } from '@/hooks/useDirectoryProfileWarnings
 import { activeStateAgreementFlags } from '@/lib/activeStateAgreementFlags';
 import { summarizeLicenses } from '@/lib/externalImport';
 import { MedallionSyncPanel } from '@/components/directory/MedallionSyncPanel';
-import { activeLicensedStates, useMedallionDirectoryData } from '@/hooks/useMedallionDirectory';
+import { activeLicensedStates, useMedallionDirectoryData, useRunMedallionSync } from '@/hooks/useMedallionDirectory';
 import { usePcpCoverage } from '@/hooks/usePcpCoverage';
 import { pcpCellFor, isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
 import { mergeProviderFlags } from '@/lib/providerFlagSummary';
