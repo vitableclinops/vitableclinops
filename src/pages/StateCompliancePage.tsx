@@ -48,7 +48,8 @@ import {
   Upload,
   ShieldCheck,
   TableIcon,
-  GraduationCap
+  GraduationCap,
+  RefreshCw
 } from 'lucide-react';
 import { cn, formatDisplayDate } from '@/lib/utils';
 import type { State, DemandTag, Task, Provider } from '@/types';
@@ -58,6 +59,9 @@ import { ProviderRequirementReviews } from '@/components/state-compliance/Provid
 import { useLicensedStateReadiness } from '@/hooks/useLicensedStateReadiness';
 import { isOffboarded } from '@/lib/employeeVisibility';
 import { isTestAccountDirectoryRecord, OUT_OF_SCOPE_PROFILE_IDS } from '@/lib/pcpCoverage';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { useRunMedallionSync } from '@/hooks/useMedallionDirectory';
 
 type FPAFilter = 'all' | 'fpa' | 'no-fpa';
 type CAFilter = 'all' | 'ca-required' | 'no-ca';
