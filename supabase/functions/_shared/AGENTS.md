@@ -1,0 +1,1 @@
+- Closed days: BUSINESS_CLOSED_DATES in both submissionTimeline copies drops all shifts; give them zero demand_forecast rows. Why: closures must never be scheduled.

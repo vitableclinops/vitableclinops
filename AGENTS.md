@@ -36,4 +36,3 @@
 - Await refreshAgreementViews after agreement, verification and document saves; refetch visible summaries each minute and on focus. Why: uploads and DirectShifts selections must refresh directory flags and supervision before save success.
 - Agreement license invalidation uses _shared/agreementLicenseEvidence: absent or pending records are unknown, not invalid; any valid local/Medallion renewal wins. Why: external licenses may be untracked while known expirations still matter.
 - Gap Finder (src/lib/gapFinder.ts) measures whole-network telemedicine coverage: scheduling-backend homebase_shifts vs summed state_demand_targets split by trailing-12-week weekday shares; never per state. Why: Homebase shifts carry no state.
-- Closed days: BUSINESS_CLOSED_DATES in both submissionTimeline copies drops all shifts; give them zero demand_forecast rows. Why: closures must never be scheduled.
