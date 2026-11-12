@@ -197,6 +197,13 @@
       "when": 1794270417489,
       "tag": "0027_revert_tmb_delegation_requirement_key",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794510766831,
+      "tag": "0028_scope_staff_read_policies",
+      "breakpoints": true
     }
   ]
 }

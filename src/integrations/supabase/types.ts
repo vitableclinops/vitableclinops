@@ -6094,6 +6094,11 @@ export type Database = {
         Args: { _agreement_id: string; _user_id: string }
         Returns: boolean
       }
+      is_ops_staff: { Args: { _user_id: string }; Returns: boolean }
+      is_own_profile: {
+        Args: { _profile_id: string; _user_id: string }
+        Returns: boolean
+      }
       sync_vault_metabase_secret: {
         Args: { p_value: string }
         Returns: undefined
