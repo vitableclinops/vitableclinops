@@ -13,6 +13,33 @@ Deno.serve(async req => {
   const { data: roles } = await admin.from('user_roles').select('role').eq('user_id', data.user.id);
   if (!roles?.some(row => ['admin', 'scheduling'].includes(row.role))) return respond({ error: 'Scheduling access required' }, 403);
   const { email, action } = await req.json();
+  if (action === 'add_andrea_shepherd_december') {
+    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
+    const url = Deno.env.get('CLINOPS_SUPABASE_URL');
+    if (!key || !url) return respond({ error: 'Scheduling source unavailable' }, 503);
+    const db = createClient(url, key);
+    const providerId = 'f99b23db-78f0-4151-8737-44bc48a50ea0';
+    const { data: sub, error: subError } = await db.from('schedule_submissions').select('id,provider_id,provider_name,submitted_at,parsed_shifts').eq('id', 'd3bcecb5-3bfe-447e-a6dd-5b4c21532d50').single();
+    if (subError || !sub || sub.provider_id !== providerId) return respond({ error: 'Andrea December form not found' }, 404);
+    const { data: workflow } = await db.from('scheduling_month_workflows').select('locked_build_id').eq('target_month', '2026-12-01').single();
+    if (!workflow?.locked_build_id) return respond({ error: 'Locked December build required' }, 409);
+    const buildId = workflow.locked_build_id;
+    const { data: existing } = await db.from('schedule_build_rows').select('id').eq('build_id', buildId).eq('provider_id', providerId);
+    if (existing?.length) return respond({ ok: true, already_added: true, rows: existing.length });
+    const timeline = buildSubmissionTimeline([{ id: sub.id, submitted_at: sub.submitted_at, parsed_shifts: sub.parsed_shifts }], { providerId, name: sub.provider_name, email: 'andrea.shepherd@vitablehealth.com' }, '2026-12-01');
+    const hours = timeline.summary.final_approvable_hours;
+    if (hours !== 37 || timeline.timeline.length !== 14 || timeline.timeline.some(row => row.date === '2026-12-25')) return respond({ error: 'Source validation mismatch', hours, rows: timeline.timeline.length }, 409);
+    const note = 'Maddi Swanagan approved adding all of Andrea Shepherd December form (37h) after lock, without reallocating or changing any other provider shifts. Form submitted Nov 11 after the Nov 10 lock.';
+    const { error: upErr } = await db.from('schedule_submissions').update({ decision_status: 'accepted', accepted_hours: hours, declined_hours: 0, effective_hours_used_for_forecast: hours, decision_notes: note, decided_at: new Date().toISOString() }).eq('id', sub.id);
+    if (upErr) return respond({ error: upErr.message }, 500);
+    const rows = timeline.timeline.map(row => ({ submission_id: sub.id, provider_id: providerId, provider_name: sub.provider_name, target_month: '2026-12-01', shift_date: row.date, start_min: row.startMin, end_min: row.endMin, hours: (row.endMin - row.startMin) / 60, shift_type: 'virtual_oneoff', assigned_state: null, recommendation: 'publish', recommendation_reason: note, publish_status: 'pending' }));
+    const { error: rowsError } = await db.from('schedule_build_rows').insert(rows.map(row => ({ ...row, build_id: buildId, source_publish_status: 'pending' })));
+    if (rowsError) return respond({ error: rowsError.message }, 500);
+    const { error: recError } = await db.from('shift_recommendations').insert(rows);
+    if (recError) return respond({ error: recError.message, build_rows_added: true }, 500);
+    await db.from('schedule_amendment_requests').insert({ target_month: '2026-12-01', build_id: buildId, submission_id: sub.id, provider_id: providerId, provider_name: sub.provider_name, request_type: 'resubmission', status: 'applied', summary: 'Added late December availability: 37h', notes: note, requested_by_label: 'Maddi Swanagan', resolved_by_label: 'Maddi Swanagan', resolved_at: new Date().toISOString() });
+    return respond({ ok: true, hours_added: hours, rows_added: rows.length });
+  }
   if (!['sara.hammond@vitablehealth.com', 'andrea.leffet@vitablehealth.com'].includes(email)) return respond({ error: 'Unsupported source lookup' }, 400);
   const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
   const url = Deno.env.get('CLINOPS_SUPABASE_URL');
