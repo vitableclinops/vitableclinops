@@ -25,7 +25,9 @@ Deno.serve(async req => {
     if (!workflow?.locked_build_id) return respond({ error: 'Locked December build required' }, 409);
     const buildId = workflow.locked_build_id;
     const { data: existing } = await db.from('schedule_build_rows').select('id').eq('build_id', buildId).eq('provider_id', providerId);
-    if (existing?.length) return respond({ ok: true, already_added: true, rows: existing.length });
+    const { data: build } = await db.from('schedule_builds').select('source_decision_run_id').eq('id', buildId).single();
+    const { data: recsExisting } = await db.from('shift_recommendations').select('id').eq('provider_id', providerId).eq('target_month', '2026-12-01');
+    if (existing?.length && recsExisting?.length) return respond({ ok: true, already_added: true, rows: existing.length });
     const timeline = buildSubmissionTimeline([{ id: sub.id, submitted_at: sub.submitted_at, parsed_shifts: sub.parsed_shifts }], { providerId, name: sub.provider_name, email: 'andrea.shepherd@vitablehealth.com' }, '2026-12-01');
     const hours = timeline.summary.final_approvable_hours;
     if (hours !== 37 || timeline.timeline.length !== 14 || timeline.timeline.some(row => row.date === '2026-12-25')) return respond({ error: 'Source validation mismatch', hours, rows: timeline.timeline.length }, 409);
@@ -33,9 +35,11 @@ Deno.serve(async req => {
     const { error: upErr } = await db.from('schedule_submissions').update({ decision_status: 'accepted', accepted_hours: hours, declined_hours: 0, effective_hours_used_for_forecast: hours, decision_notes: note, decided_at: new Date().toISOString() }).eq('id', sub.id);
     if (upErr) return respond({ error: upErr.message }, 500);
     const rows = timeline.timeline.map(row => ({ submission_id: sub.id, provider_id: providerId, provider_name: sub.provider_name, target_month: '2026-12-01', shift_date: row.date, start_min: row.startMin, end_min: row.endMin, hours: (row.endMin - row.startMin) / 60, shift_type: 'virtual_oneoff', assigned_state: null, recommendation: 'publish', recommendation_reason: note, publish_status: 'pending' }));
-    const { error: rowsError } = await db.from('schedule_build_rows').insert(rows.map(row => ({ ...row, build_id: buildId, source_publish_status: 'pending' })));
-    if (rowsError) return respond({ error: rowsError.message }, 500);
-    const { error: recError } = await db.from('shift_recommendations').insert(rows);
+    if (!existing?.length) {
+      const { error: rowsError } = await db.from('schedule_build_rows').insert(rows.map(row => ({ ...row, build_id: buildId, source_publish_status: 'pending' })));
+      if (rowsError) return respond({ error: rowsError.message }, 500);
+    }
+    const { error: recError } = await db.from('shift_recommendations').insert(rows.map(row => ({ ...row, decision_run_id: build?.source_decision_run_id })));
     if (recError) return respond({ error: recError.message, build_rows_added: true }, 500);
     await db.from('schedule_amendment_requests').insert({ target_month: '2026-12-01', build_id: buildId, submission_id: sub.id, provider_id: providerId, provider_name: sub.provider_name, request_type: 'resubmission', status: 'applied', summary: 'Added late December availability: 37h', notes: note, requested_by_label: 'Maddi Swanagan', resolved_by_label: 'Maddi Swanagan', resolved_at: new Date().toISOString() });
     return respond({ ok: true, hours_added: hours, rows_added: rows.length });
