@@ -13,6 +13,22 @@ Deno.serve(async req => {
   const { data: roles } = await admin.from('user_roles').select('role').eq('user_id', data.user.id);
   if (!roles?.some(row => ['admin', 'scheduling'].includes(row.role))) return respond({ error: 'Scheduling access required' }, 403);
   const { email, action, name } = await req.json();
+  if (action === 'december_hours_by_provider') {
+    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
+    const url = Deno.env.get('CLINOPS_SUPABASE_URL');
+    if (!key || !url) return respond({ error: 'Scheduling source unavailable' }, 503);
+    const db = createClient(url, key);
+    const { data: workflow } = await db.from('scheduling_month_workflows').select('locked_build_id,active_build_id').eq('target_month', '2026-12-01').single();
+    const buildId = workflow?.locked_build_id ?? workflow?.active_build_id;
+    const totals: Record<string, number> = {};
+    for (let from = 0; ; from += 1000) {
+      const { data: rows, error: rErr } = await db.from('schedule_build_rows').select('provider_name,hours,recommendation').eq('build_id', buildId).range(from, from + 999);
+      if (rErr) return respond({ error: rErr.message }, 500);
+      for (const r of rows ?? []) { const k = `${r.provider_name}|${r.recommendation}`; totals[k] = (totals[k] ?? 0) + Number(r.hours); }
+      if (!rows || rows.length < 1000) break;
+    }
+    return respond({ buildId, totals });
+  }
   if (action === 'add_nancy_distefano_december') {
     const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
     const url = Deno.env.get('CLINOPS_SUPABASE_URL');
