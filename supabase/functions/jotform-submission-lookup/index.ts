@@ -13,6 +13,21 @@ Deno.serve(async req => {
   const { data: roles } = await admin.from('user_roles').select('role').eq('user_id', data.user.id);
   if (!roles?.some(row => ['admin', 'scheduling'].includes(row.role))) return respond({ error: 'Scheduling access required' }, 403);
   const { email, action } = await req.json();
+  if (action === 'inspect_provider_december') {
+    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
+    const url = Deno.env.get('CLINOPS_SUPABASE_URL');
+    if (!key || !url) return respond({ error: 'Scheduling source unavailable' }, 503);
+    const db = createClient(url, key);
+    const { name } = await req.clone().json().catch(() => ({ name: '' }));
+    const { data: subs } = await db.from('schedule_submissions').select('id,provider_id,provider_name,submitted_at,decision_status,accepted_hours,declined_hours,decision_notes,parsed_shifts').ilike('provider_name', `%${name}%`).order('submitted_at', { ascending: false }).limit(5);
+    const { data: workflow } = await db.from('scheduling_month_workflows').select('locked_build_id,stage').eq('target_month', '2026-12-01').single();
+    const pid = subs?.[0]?.provider_id;
+    const { data: recs } = pid ? await db.from('shift_recommendations').select('shift_date,start_min,end_min,hours,recommendation,recommendation_reason,publish_status').eq('provider_id', pid).eq('target_month', '2026-12-01') : { data: [] };
+    const { data: allRows } = workflow?.locked_build_id ? await db.from('schedule_build_rows').select('provider_id,provider_name,shift_date,start_min,end_min,hours,recommendation,shift_type').eq('build_id', workflow.locked_build_id).limit(5000) : { data: [] };
+    const timelines = (subs ?? []).filter(s => s.provider_id === pid).map(s => ({ id: s.id, submitted_at: s.submitted_at, parsed_shifts: s.parsed_shifts }));
+    const timeline = pid ? buildSubmissionTimeline(timelines, { providerId: pid, name: subs![0].provider_name, email: '' }, '2026-12-01') : null;
+    return respond({ subs: subs?.map(s => ({ ...s, parsed_shifts: undefined, month: (s.parsed_shifts as any)?.target_month ?? null, notes: (s.parsed_shifts as any)?.notes ?? (s.parsed_shifts as any)?.comments ?? null })), workflow, recs, timeline, rows: allRows });
+  }
   if (action === 'add_andrea_shepherd_december') {
     const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
     const url = Deno.env.get('CLINOPS_SUPABASE_URL');
