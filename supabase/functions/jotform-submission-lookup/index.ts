@@ -24,7 +24,7 @@ Deno.serve(async req => {
     for (let from = 0; ; from += 1000) {
       const { data: rows, error: rErr } = await db.from('schedule_build_rows').select('provider_name,hours,recommendation').eq('build_id', buildId).range(from, from + 999);
       if (rErr) return respond({ error: rErr.message }, 500);
-      for (const r of rows ?? []) if (r.recommendation === 'publish' || r.recommendation === 'trim') totals[r.provider_name] = (totals[r.provider_name] ?? 0) + Number(r.hours);
+      for (const r of rows ?? []) { const k = `${r.provider_name}|${r.recommendation}`; totals[k] = (totals[k] ?? 0) + Number(r.hours); }
       if (!rows || rows.length < 1000) break;
     }
     return respond({ buildId, totals });
