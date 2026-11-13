@@ -56,7 +56,7 @@ Deno.serve(async req => {
     if (existing?.length) return respond({ ok: true, already_added: true, rows: existing.length });
     const timeline = buildSubmissionTimeline([{ id: sub.id, submitted_at: sub.submitted_at, parsed_shifts: sub.parsed_shifts }], { providerId: provider.id, name: provider.name, email }, '2026-12-01');
     const hours = timeline.summary.final_approvable_hours;
-    if (Math.abs(hours - 29.75) > 0.01 || timeline.timeline.length !== 30 || timeline.timeline.some(r => ['2026-12-02','2026-12-23','2026-12-24','2026-12-25'].includes(r.date))) return respond({ error: 'Source validation mismatch', hours, rows: timeline.timeline.length }, 409);
+    if (Math.abs(hours - 29.75) > 0.01 || timeline.timeline.length !== 30 || timeline.timeline.some(r => ['2026-12-02','2026-12-23','2026-12-24','2026-12-25'].includes(r.date))) return respond({ error: 'Source validation mismatch', hours, rows: timeline.timeline.length, timeline: timeline.timeline.map(r => [r.date, r.startMin, r.endMin]), summary: timeline.summary, parsed: sub.parsed_shifts }, 409);
     const note = 'Maddi Swanagan approved adding all of Nancy DiStefano (therapist) December form (29.75h) after lock; therapy was short of its 66h target. No other provider shifts changed.';
     const { error: upErr } = await db.from('schedule_submissions').update({ provider_id: provider.id, provider_name: provider.name, decision_status: 'accepted', accepted_hours: hours, declined_hours: 0, effective_hours_used_for_forecast: hours, decision_notes: note, decided_at: new Date().toISOString() }).eq('id', sub.id);
     if (upErr) return respond({ error: upErr.message }, 500);
