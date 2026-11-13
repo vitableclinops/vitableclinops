@@ -35,7 +35,13 @@ Deno.serve(async req => {
     if (!key || !url) return respond({ error: 'Scheduling source unavailable' }, 503);
     const db = createClient(url, key);
     const email = 'nancy.distefano@vitablehealth.com';
-    const { data: provider, error: pErr } = await db.from('providers').select('id,name,email').ilike('email', email).single();
+    let { data: provider, error: pErr } = await db.from('providers').select('id,name,email').ilike('email', email).maybeSingle();
+    if (!provider) {
+      const { data: similar } = await db.from('providers').select('id,name,email').or('name.ilike.%stefano%,email.ilike.%stefano%');
+      if (similar?.length) return respond({ error: 'Possible existing record; not creating a duplicate', similar }, 409);
+      const created = await db.from('providers').insert({ name: 'Nancy DiStefano', email, profession: 'THERAPIST', active: true }).select('id,name,email').single();
+      provider = created.data; pErr = created.error;
+    }
     if (pErr || !provider) {
       const { data: candidates } = await db.from('providers').select('id,name,email,profession,active').or('name.ilike.%stefano%,email.ilike.%stefano%');
       return respond({ error: 'Exact provider identity required', detail: pErr?.message, candidates }, 409);
