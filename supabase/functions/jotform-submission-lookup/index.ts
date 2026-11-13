@@ -35,7 +35,13 @@ Deno.serve(async req => {
     if (!key || !url) return respond({ error: 'Scheduling source unavailable' }, 503);
     const db = createClient(url, key);
     const email = 'nancy.distefano@vitablehealth.com';
-    const { data: provider, error: pErr } = await db.from('providers').select('id,name,email').ilike('email', email).single();
+    let { data: provider, error: pErr } = await db.from('providers').select('id,name,email').ilike('email', email).maybeSingle();
+    if (!provider) {
+      const { data: similar } = await db.from('providers').select('id,name,email').or('name.ilike.%stefano%,email.ilike.%stefano%');
+      if (similar?.length) return respond({ error: 'Possible existing record; not creating a duplicate', similar }, 409);
+      const created = await db.from('providers').insert({ name: 'Nancy DiStefano', email, profession: 'THERAPIST', active: true }).select('id,name,email').single();
+      provider = created.data; pErr = created.error;
+    }
     if (pErr || !provider) {
       const { data: candidates } = await db.from('providers').select('id,name,email,profession,active').or('name.ilike.%stefano%,email.ilike.%stefano%');
       return respond({ error: 'Exact provider identity required', detail: pErr?.message, candidates }, 409);
@@ -50,8 +56,8 @@ Deno.serve(async req => {
     if (existing?.length) return respond({ ok: true, already_added: true, rows: existing.length });
     const timeline = buildSubmissionTimeline([{ id: sub.id, submitted_at: sub.submitted_at, parsed_shifts: sub.parsed_shifts }], { providerId: provider.id, name: provider.name, email }, '2026-12-01');
     const hours = timeline.summary.final_approvable_hours;
-    if (Math.abs(hours - 29.75) > 0.01 || timeline.timeline.length !== 30 || timeline.timeline.some(r => ['2026-12-02','2026-12-23','2026-12-24','2026-12-25'].includes(r.date))) return respond({ error: 'Source validation mismatch', hours, rows: timeline.timeline.length }, 409);
-    const note = 'Maddi Swanagan approved adding all of Nancy DiStefano (therapist) December form (29.75h) after lock; therapy was short of its 66h target. No other provider shifts changed.';
+    if (Math.abs(hours - 26.75) > 0.01 || timeline.timeline.length !== 26 || timeline.timeline.some(r => ['2026-12-02','2026-12-23','2026-12-24','2026-12-25'].includes(r.date))) return respond({ error: 'Source validation mismatch', hours, rows: timeline.timeline.length, timeline: timeline.timeline.map(r => [r.date, r.startMin, r.endMin]), summary: timeline.summary, parsed: sub.parsed_shifts }, 409);
+    const note = 'Maddi Swanagan approved adding all of Nancy DiStefano (therapist) December form (26.75h; Saturday shifts outside operating hours) after lock; therapy was short of its 66h target. No other provider shifts changed.';
     const { error: upErr } = await db.from('schedule_submissions').update({ provider_id: provider.id, provider_name: provider.name, decision_status: 'accepted', accepted_hours: hours, declined_hours: 0, effective_hours_used_for_forecast: hours, decision_notes: note, decided_at: new Date().toISOString() }).eq('id', sub.id);
     if (upErr) return respond({ error: upErr.message }, 500);
     const rows = timeline.timeline.map(r => ({ submission_id: sub.id, provider_id: provider.id, provider_name: provider.name, target_month: '2026-12-01', shift_date: r.date, start_min: r.startMin, end_min: r.endMin, hours: (r.endMin - r.startMin) / 60, shift_type: ['2026-12-09','2026-12-17'].includes(r.date) && r.startMin === 600 ? 'virtual_oneoff' : 'virtual_recurring', assigned_state: null, recommendation: 'publish', recommendation_reason: note, publish_status: 'pending' }));
@@ -59,7 +65,7 @@ Deno.serve(async req => {
     if (rowsError) return respond({ error: rowsError.message }, 500);
     const { error: recError } = await db.from('shift_recommendations').insert(rows.map(r => ({ ...r, decision_run_id: build?.source_decision_run_id })));
     if (recError) return respond({ error: recError.message, build_rows_added: true }, 500);
-    await db.from('schedule_amendment_requests').insert({ target_month: '2026-12-01', build_id: buildId, submission_id: sub.id, provider_id: provider.id, provider_name: provider.name, request_type: 'resubmission', status: 'applied', summary: 'Added late December therapy availability: 29.75h', notes: note, requested_by_label: 'Maddi Swanagan', resolved_by_label: 'Maddi Swanagan', resolved_at: new Date().toISOString() });
+    await db.from('schedule_amendment_requests').insert({ target_month: '2026-12-01', build_id: buildId, submission_id: sub.id, provider_id: provider.id, provider_name: provider.name, request_type: 'resubmission', status: 'applied', summary: 'Added late December therapy availability: 26.75h', notes: note, requested_by_label: 'Maddi Swanagan', resolved_by_label: 'Maddi Swanagan', resolved_at: new Date().toISOString() });
     return respond({ ok: true, hours_added: hours, rows_added: rows.length });
   }
   if (action === 'inspect_provider_december') {
