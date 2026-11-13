@@ -20,7 +20,10 @@ Deno.serve(async req => {
     const db = createClient(url, key);
     const email = 'nancy.distefano@vitablehealth.com';
     const { data: provider, error: pErr } = await db.from('providers').select('id,name,email').ilike('email', email).single();
-    if (pErr || !provider) return respond({ error: 'Exact provider identity required', detail: pErr?.message }, 409);
+    if (pErr || !provider) {
+      const { data: candidates } = await db.from('providers').select('id,name,email,profession,active').or('name.ilike.%stefano%,email.ilike.%stefano%');
+      return respond({ error: 'Exact provider identity required', detail: pErr?.message, candidates }, 409);
+    }
     const { data: sub } = await db.from('schedule_submissions').select('id,submitted_at,parsed_shifts').eq('id', 'b8e40926-1851-4cd7-b441-d43d7c1a1e12').single();
     if (!sub || (sub.parsed_shifts as any)?.email !== email) return respond({ error: 'Nancy December form not found' }, 404);
     const { data: workflow } = await db.from('scheduling_month_workflows').select('locked_build_id').eq('target_month', '2026-12-01').single();
