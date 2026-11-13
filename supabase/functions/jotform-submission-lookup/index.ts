@@ -13,6 +13,36 @@ Deno.serve(async req => {
   const { data: roles } = await admin.from('user_roles').select('role').eq('user_id', data.user.id);
   if (!roles?.some(row => ['admin', 'scheduling'].includes(row.role))) return respond({ error: 'Scheduling access required' }, 403);
   const { email, action, name } = await req.json();
+  if (action === 'add_nancy_distefano_december') {
+    const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
+    const url = Deno.env.get('CLINOPS_SUPABASE_URL');
+    if (!key || !url) return respond({ error: 'Scheduling source unavailable' }, 503);
+    const db = createClient(url, key);
+    const email = 'nancy.distefano@vitablehealth.com';
+    const { data: provider, error: pErr } = await db.from('providers').select('id,name,email').ilike('email', email).single();
+    if (pErr || !provider) return respond({ error: 'Exact provider identity required', detail: pErr?.message }, 409);
+    const { data: sub } = await db.from('schedule_submissions').select('id,submitted_at,parsed_shifts').eq('id', 'b8e40926-1851-4cd7-b441-d43d7c1a1e12').single();
+    if (!sub || (sub.parsed_shifts as any)?.email !== email) return respond({ error: 'Nancy December form not found' }, 404);
+    const { data: workflow } = await db.from('scheduling_month_workflows').select('locked_build_id').eq('target_month', '2026-12-01').single();
+    const buildId = workflow?.locked_build_id;
+    if (!buildId) return respond({ error: 'Locked December build required' }, 409);
+    const { data: build } = await db.from('schedule_builds').select('source_decision_run_id').eq('id', buildId).single();
+    const { data: existing } = await db.from('schedule_build_rows').select('id').eq('build_id', buildId).eq('provider_id', provider.id);
+    if (existing?.length) return respond({ ok: true, already_added: true, rows: existing.length });
+    const timeline = buildSubmissionTimeline([{ id: sub.id, submitted_at: sub.submitted_at, parsed_shifts: sub.parsed_shifts }], { providerId: provider.id, name: provider.name, email }, '2026-12-01');
+    const hours = timeline.summary.final_approvable_hours;
+    if (Math.abs(hours - 29.75) > 0.01 || timeline.timeline.length !== 30 || timeline.timeline.some(r => ['2026-12-02','2026-12-23','2026-12-24','2026-12-25'].includes(r.date))) return respond({ error: 'Source validation mismatch', hours, rows: timeline.timeline.length }, 409);
+    const note = 'Maddi Swanagan approved adding all of Nancy DiStefano (therapist) December form (29.75h) after lock; therapy was short of its 66h target. No other provider shifts changed.';
+    const { error: upErr } = await db.from('schedule_submissions').update({ provider_id: provider.id, provider_name: provider.name, decision_status: 'accepted', accepted_hours: hours, declined_hours: 0, effective_hours_used_for_forecast: hours, decision_notes: note, decided_at: new Date().toISOString() }).eq('id', sub.id);
+    if (upErr) return respond({ error: upErr.message }, 500);
+    const rows = timeline.timeline.map(r => ({ submission_id: sub.id, provider_id: provider.id, provider_name: provider.name, target_month: '2026-12-01', shift_date: r.date, start_min: r.startMin, end_min: r.endMin, hours: (r.endMin - r.startMin) / 60, shift_type: ['2026-12-09','2026-12-17'].includes(r.date) && r.startMin === 600 ? 'virtual_oneoff' : 'virtual_recurring', assigned_state: null, recommendation: 'publish', recommendation_reason: note, publish_status: 'pending' }));
+    const { error: rowsError } = await db.from('schedule_build_rows').insert(rows.map(r => ({ ...r, build_id: buildId, source_publish_status: 'pending' })));
+    if (rowsError) return respond({ error: rowsError.message }, 500);
+    const { error: recError } = await db.from('shift_recommendations').insert(rows.map(r => ({ ...r, decision_run_id: build?.source_decision_run_id })));
+    if (recError) return respond({ error: recError.message, build_rows_added: true }, 500);
+    await db.from('schedule_amendment_requests').insert({ target_month: '2026-12-01', build_id: buildId, submission_id: sub.id, provider_id: provider.id, provider_name: provider.name, request_type: 'resubmission', status: 'applied', summary: 'Added late December therapy availability: 29.75h', notes: note, requested_by_label: 'Maddi Swanagan', resolved_by_label: 'Maddi Swanagan', resolved_at: new Date().toISOString() });
+    return respond({ ok: true, hours_added: hours, rows_added: rows.length });
+  }
   if (action === 'inspect_provider_december') {
     const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
     const url = Deno.env.get('CLINOPS_SUPABASE_URL');
