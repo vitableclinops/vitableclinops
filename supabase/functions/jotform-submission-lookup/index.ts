@@ -12,13 +12,12 @@ Deno.serve(async req => {
   if (error || !data.user) return respond({ error: 'Sign in required' }, 401);
   const { data: roles } = await admin.from('user_roles').select('role').eq('user_id', data.user.id);
   if (!roles?.some(row => ['admin', 'scheduling'].includes(row.role))) return respond({ error: 'Scheduling access required' }, 403);
-  const { email, action } = await req.json();
+  const { email, action, name } = await req.json();
   if (action === 'inspect_provider_december') {
     const key = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
     const url = Deno.env.get('CLINOPS_SUPABASE_URL');
     if (!key || !url) return respond({ error: 'Scheduling source unavailable' }, 503);
     const db = createClient(url, key);
-    const { name } = await req.clone().json().catch(() => ({ name: '' }));
     const { data: subs } = await db.from('schedule_submissions').select('id,provider_id,provider_name,submitted_at,decision_status,accepted_hours,declined_hours,decision_notes,parsed_shifts').ilike('provider_name', `%${name}%`).order('submitted_at', { ascending: false }).limit(5);
     const { data: workflow } = await db.from('scheduling_month_workflows').select('locked_build_id,stage').eq('target_month', '2026-12-01').single();
     const pid = subs?.[0]?.provider_id;
