@@ -14,12 +14,9 @@
  *                                    Falls back to body.channel or #ops-alerts.
  */
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
+import { MUTED_SYNC_FUNCTION, shouldSendSyncAlert } from './alertPolicy.ts';
 
 const GATEWAY_URL = 'https://connector-gateway.lovable.dev/slack/api';
 
@@ -47,10 +44,11 @@ Deno.serve(async (req: Request) => {
 
   // Fetch un-alerted failures from the last 24h
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data: rows, error } = await supabase
+  const { data: fetchedRows, error } = await supabase
     .from('sync_runs')
     .select('id, function_name, status, finished_at, duration_ms, error_message, rows_processed, details')
     .in('status', ['error', 'partial'])
+    .neq('function_name', MUTED_SYNC_FUNCTION)
     .is('last_alerted_at', null)
     .gte('started_at', since)
     .order('finished_at', { ascending: false })
@@ -62,7 +60,8 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  if (!rows || rows.length === 0) {
+  const rows = (fetchedRows ?? []).filter(shouldSendSyncAlert);
+  if (rows.length === 0) {
     return new Response(JSON.stringify({ ok: true, alerted: 0, message: 'No new failures' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
