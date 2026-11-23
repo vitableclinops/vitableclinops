@@ -1,6 +1,6 @@
 # Roadmap
 
-- [x] Report the five corrected Homebase rates and Michelle’s newly added rate; existing rate check now runs Mondays at 14:20 UTC, with the saved cadence verified by a passing database assertion.
+- [x] Report the five corrected Homebase rates and Michelle’s newly added rate; existing rate check runs hourly at 20 minutes past the hour, with the saved cadence verified by a passing database assertion.
 
 - [x] Connect safe Homebase hourly-rate syncing to scheduling; five rates updated and Michelle’s rate added, agency/manual/salary records preserved, hourly refresh enabled, and saved results verified through Cost audit.
 
