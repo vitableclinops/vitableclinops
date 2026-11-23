@@ -1,347 +1,152 @@
-/**
- * sync-homebase-rates
- *
- * Pulls Homebase employees, matches them to active rows in `providers`
- * (by email, then by canonical name with manual overrides), and writes
- * the telehealth hourly rate from `job.roles[]` into `provider_pay_rates`.
- *
- * Scope: only providers whose profession is NP / Physician / MD / DO.
- *
- * Role selection (per matched, in-scope provider):
- *   1. Drop roles named "collaborating" or "supervising" (kills MD review fees).
- *   2. Keep roles whose name matches the profession AND contains "tele".
- *   3. Among those, prefer roles whose name contains "telemedicine" or
- *      "telehealth". Falls back to the first remaining match.
- *   4. If no telehealth role found, fall back to the JOB-level wage_rate
- *      (`emp.job.wage_rate`). In-home and training role rates are never
- *      used as a fallback. Job-level fallback handling:
- *        - rate <= 0                                             -> no_rate
- *        - default_role contains "collaborating"/"supervising"    -> collaborating_default
- *        - 0 < rate <= MAX_REASONABLE_HOURLY                      -> hourly (role='job_default')
- *        - MAX_REASONABLE_HOURLY < rate < MAX_REASONABLE_SALARY   -> annual salary,
- *          divided by SALARY_HOURS_PER_YEAR (2080) to get hourly  (role='job_default')
- *        - rate >= MAX_REASONABLE_SALARY                          -> rate_too_high
- *   5. Providers matched but with no usable rate land in `unrated_matches`
- *      with a `rejected_reason` for manual review.
- *
- * DB source values written to provider_pay_rates.source:
- *   - 'homebase'              : matched a telehealth role
- *   - 'homebase_job_hourly'   : matched job-level hourly wage_rate
- *   - 'homebase_salary_2080'  : converted annual salary (wage_rate / 2080)
- *
- * Rate write logic (per provider+role):
- *   - existing open row, same rate -> no-op
- *   - existing open row, new rate  -> close old (effective_to = yesterday), insert new
- *   - no existing open row         -> insert new
- *
- * Also backfills `providers.homebase_employee_id` when blank.
- *
- * Required secret: HOMEBASE_API_KEY
- *
- * Invoke:  POST /functions/v1/sync-homebase-rates
- *          POST /functions/v1/sync-homebase-rates?dry_run=1   (no writes; preview only)
- */
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
+import { HomebaseClient } from '../_shared/homebaseClient.ts';
+import { canonical, isAgency, isProtectedRate, pickRate, uniqueMatch } from './ratePolicy.ts';
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { HomebaseClient, HBEmployee } from '../_shared/homebaseClient.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-const IN_SCOPE_PROFESSIONS = new Set(['NP', 'PHYSICIAN', 'MD', 'DO']);
-
-// Homebase employee name -> provider name in `providers` table.
-// Both sides are matched after canonicalization.
-const HB_NAME_OVERRIDES: Record<string, string> = {
-  'Abiah Grant': 'Abby Grant',
-  'Samuel Elias-Ausi': 'Dr. Samuel Elias-Ausi',
-  'Nana-Aishatu Adamu': 'Dr. Nana-Aishatu Adamu',
-  'Dorcas Omari': 'Dr. Dorcas Omari',
-  'Johnathan Hinds': 'Jonathan Hinds',
-  'Steve Rutagamara': 'Steve Rutagarama',
-  'Ramon Trinidad': 'Ramon Trinidad III',
-  'Rickeena Free': 'Rickeenna Free',
+const STATUS_KEY = 'latest';
+const aliases: Record<string, string> = {
+  'Abiah Grant': 'Abby Grant', 'Samuel Elias-Ausi': 'Dr. Samuel Elias-Ausi',
+  'Nana-Aishatu Adamu': 'Dr. Nana-Aishatu Adamu', 'Dorcas Omari': 'Dr. Dorcas Omari',
+  'Johnathan Hinds': 'Jonathan Hinds', 'Steve Rutagamara': 'Steve Rutagarama',
+  'Ramon Trinidad': 'Ramon Trinidad III', 'Rickeena Free': 'Rickeenna Free',
   'Van Tu, CRNP': 'Van Tu',
-  'Rachel McLeod': 'Rachel McLeod',
-  'Kimberly Truong': 'Kimberly Truong',
 };
+const overrides = new Map(Object.entries(aliases).map(([from, to]) => [canonical(from), canonical(to)]));
+const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+});
+type Provider = { id: string; name: string; email: string | null; profession: string | null; homebase_employee_id: string | null; source: string | null; employment_type: string | null; employment_status: string | null };
+type Rate = { id: string; provider_id: string; hourly_rate: number; role: string | null; source: string; effective_from: string; effective_to: string | null };
+type Review = { provider_id: string; provider: string; role: string | null; previous_rate: number | null; homebase_rate: number | null; status: string; reason: string };
 
-const canon = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-const MAX_REASONABLE_HOURLY = 500;
-const MAX_REASONABLE_SALARY = 500_000;
-const SALARY_HOURS_PER_YEAR = 2080;
-
-type RateSource = 'role' | 'job_hourly' | 'job_salary_converted';
-type RejectReason = 'no_rate' | 'rate_too_high' | 'collaborating_default';
-
-type PickOk = {
-  ok: true;
-  role: string;
-  rate: number;
-  source: RateSource;
-  source_amount?: number; // raw annual salary when source='job_salary_converted'
-};
-type PickResult = PickOk | { ok: false; reason: RejectReason };
-
-const DB_SOURCE: Record<RateSource, string> = {
-  role: 'homebase',
-  job_hourly: 'homebase_job_hourly',
-  job_salary_converted: 'homebase_salary_2080',
-};
-
-function pickRate(emp: HBEmployee, profession: string | null): PickResult {
-  const roles = emp.job?.roles ?? [];
-  const prof = (profession ?? '').toUpperCase();
-  const isNP = prof === 'NP';
-  const isMD = prof === 'MD' || prof === 'DO' || prof === 'PHYSICIAN';
-  if (!isNP && !isMD) return { ok: false, reason: 'no_rate' };
-
-  const isExcluded = (n: string) => /collaborating|supervising/i.test(n);
-  const isProfMatch = (n: string) => {
-    if (isNP) return /\bnp\b/i.test(n) || /nurse practitioner/i.test(n);
-    return /\b(md|do|physician)\b/i.test(n);
-  };
-
-  const candidates = roles.filter((r) =>
-    Number(r.wage_rate) > 0 &&
-    !isExcluded(r.name) &&
-    isProfMatch(r.name) &&
-    /tele/i.test(r.name)
-  );
-  if (candidates.length > 0) {
-    const preferred = candidates.find((r) => /telemedicine|telehealth/i.test(r.name));
-    const chosen = preferred ?? candidates[0];
-    return { ok: true, role: chosen.name, rate: Number(chosen.wage_rate), source: 'role' };
-  }
-
-  const jobWage = Number(emp.job?.wage_rate ?? 0);
-  const defaultRole = emp.job?.default_role ?? '';
-  if (jobWage <= 0) return { ok: false, reason: 'no_rate' };
-  if (isExcluded(defaultRole)) return { ok: false, reason: 'collaborating_default' };
-  if (jobWage <= MAX_REASONABLE_HOURLY) {
-    return { ok: true, role: 'job_default', rate: jobWage, source: 'job_hourly' };
-  }
-  if (jobWage < MAX_REASONABLE_SALARY) {
-    const hourly = Math.round((jobWage / SALARY_HOURS_PER_YEAR) * 100) / 100;
-    return {
-      ok: true,
-      role: 'job_default',
-      rate: hourly,
-      source: 'job_salary_converted',
-      source_amount: jobWage,
-    };
-  }
-  return { ok: false, reason: 'rate_too_high' };
-}
-
-Deno.serve(async (req: Request) => {
+Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
-
+  if (!['GET', 'POST'].includes(req.method)) return reply({ error: 'Use GET or POST' }, 405);
+  const admin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+  const syncSecret = Deno.env.get('SYNC_SECRET');
+  let trustedJob = Boolean(syncSecret && req.headers.get('x-sync-secret') === syncSecret);
+  const jobToken = req.headers.get('x-rate-sync-token');
+  if (!trustedJob && jobToken && /^[0-9a-f-]{36}$/i.test(jobToken)) {
+    const { data } = await admin.from('homebase_rate_sync_state').select('key').eq('key', STATUS_KEY).eq('cron_token', jobToken).maybeSingle();
+    trustedJob = Boolean(data);
+  }
+  if (!trustedJob) {
+    const token = req.headers.get('Authorization')?.replace(/^Bearer /, '');
+    if (!token) return reply({ error: 'Sign in required' }, 401);
+    const { data, error } = await admin.auth.getUser(token);
+    if (error || !data.user) return reply({ error: 'Sign in required' }, 401);
+    const { data: roles, error: roleError } = await admin.from('user_roles').select('role').eq('user_id', data.user.id);
+    if (roleError || !roles?.some(row => row.role === 'admin')) return reply({ error: 'Rate management access required' }, 403);
+  }
+  if (req.method === 'GET') {
+    const { data, error } = await admin.from('homebase_rate_sync_state').select('value').eq('key', STATUS_KEY).maybeSingle();
+    return error ? reply({ error: error.message }, 500) : reply({ rows: [], synced_at: null, ...data?.value });
+  }
+  const url = new URL(req.url);
+  if ([...url.searchParams.keys()].some(key => key !== 'dry_run') || (url.searchParams.has('dry_run') && !['0', '1'].includes(url.searchParams.get('dry_run') ?? ''))) return reply({ error: 'dry_run must be 0 or 1' }, 400);
+  let body: unknown;
+  try { body = await req.json(); } catch { return reply({ error: 'A JSON object is required' }, 400); }
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length) return reply({ error: 'Send an empty JSON object' }, 400);
+  const dryRun = url.searchParams.get('dry_run') === '1';
   const apiKey = Deno.env.get('HOMEBASE_API_KEY');
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'HOMEBASE_API_KEY not set' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  const dryRun = new URL(req.url).searchParams.get('dry_run') === '1';
-
-  const { data: providers, error: provErr } = await supabase
-    .from('providers')
-    .select('id, name, email, profession, homebase_employee_id')
-    .eq('active', true);
-  if (provErr) {
-    return new Response(JSON.stringify({ error: provErr.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  type Provider = NonNullable<typeof providers>[number];
-  const byEmail = new Map<string, Provider>();
-  const byName = new Map<string, Provider>();
-  for (const p of providers ?? []) {
-    if (p.email) byEmail.set(p.email.toLowerCase(), p);
-    byName.set(canon(p.name), p);
-  }
-
-  const overrideMap = new Map<string, string>();
-  for (const [hb, prov] of Object.entries(HB_NAME_OVERRIDES)) {
-    overrideMap.set(canon(hb), canon(prov));
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-
-  const counters = {
-    locations: 0,
-    employees_seen: 0,
-    matched: 0,
-    out_of_scope: 0,
-    rates_inserted: 0,
-    rates_unchanged: 0,
-    rates_closed: 0,
-    homebase_id_backfilled: 0,
-    no_rate_found: 0,
-  };
-  const unmatched: { homebase_id: number; name: string; email: string }[] = [];
-  const unratedMatches: {
-    provider: string;
-    profession: string | null;
-    rejected_reason: RejectReason;
-    job_wage_rate: number;
-    job_wage_type: string | null;
-    job_default_role: string | null;
-    available_roles: { name: string; wage_rate: number }[];
-  }[] = [];
-  const ratesPreview: {
-    provider: string;
-    profession: string | null;
-    role: string;
-    rate: number;
-    source: RateSource;
-    source_amount: number | null;
-    job_default_role: string | null;
-  }[] = [];
-
-  const seenEmployees = new Set<number>();
-  const seenProviders = new Set<string>();
-
+  const schedulingUrl = Deno.env.get('CLINOPS_SUPABASE_URL');
+  const schedulingKey = Deno.env.get('CLINOPS_SERVICE_ROLE_KEY');
+  if (!apiKey || !schedulingUrl || !schedulingKey) return reply({ error: 'Homebase or scheduling connection unavailable' }, 503);
+  const db = createClient(schedulingUrl, schedulingKey);
+  const rows: Review[] = [];
+  const counters = { matched: 0, updated: 0, inserted: 0, unchanged: 0, preserved: 0, unmatched: 0, failed: 0 };
   try {
+    const [providerResult, rateResult, mappingResult] = await Promise.all([
+      db.from('providers').select('id,name,email,profession,homebase_employee_id,source,employment_type,employment_status').eq('active', true),
+      db.from('provider_pay_rates').select('id,provider_id,hourly_rate,role,source,effective_from,effective_to').is('effective_to', null),
+      db.from('provider_name_mappings').select('homebase_name,profile_id'),
+    ]);
+    if (providerResult.error) throw providerResult.error;
+    if (rateResult.error) throw rateResult.error;
+    if (mappingResult.error) throw mappingResult.error;
+    const providers = (providerResult.data as Provider[]).filter(p => !/^(termed|terminated|offboarded)$/i.test(p.employment_status ?? ''));
+    const rates = rateResult.data as Rate[];
+    const mappings = mappingResult.data ?? [];
     const hb = new HomebaseClient(apiKey);
-    const locations = await hb.listLocations();
-
-    for (const loc of locations) {
-      counters.locations++;
-      for await (const emp of hb.iterateEmployees(loc.uuid)) {
-        if (seenEmployees.has(emp.id)) continue;
-        seenEmployees.add(emp.id);
-        counters.employees_seen++;
-
-        const hbCanon = canon(`${emp.first_name} ${emp.last_name}`);
-        const lookupCanon = overrideMap.get(hbCanon) ?? hbCanon;
-
-        const provider =
-          (emp.email && byEmail.get(emp.email.toLowerCase())) ||
-          byName.get(lookupCanon);
-
-        if (!provider) {
-          if (unmatched.length < 50) {
-            unmatched.push({
-              homebase_id: emp.id,
-              name: `${emp.first_name} ${emp.last_name}`,
-              email: emp.email || '',
-            });
-          }
-          continue;
-        }
-
-        if (seenProviders.has(provider.id)) continue;
-        seenProviders.add(provider.id);
-
-        if (!IN_SCOPE_PROFESSIONS.has((provider.profession ?? '').toUpperCase())) {
-          counters.out_of_scope++;
-          continue;
-        }
-
-        counters.matched++;
-
-        const pick = pickRate(emp, provider.profession);
-        if (!pick.ok) {
-          counters.no_rate_found++;
-          unratedMatches.push({
-            provider: provider.name,
-            profession: provider.profession,
-            rejected_reason: pick.reason,
-            job_wage_rate: Number(emp.job?.wage_rate ?? 0),
-            job_wage_type: emp.job?.wage_type ?? null,
-            job_default_role: emp.job?.default_role ?? null,
-            available_roles: (emp.job?.roles ?? []).map((r) => ({
-              name: r.name,
-              wage_rate: Number(r.wage_rate),
-            })),
-          });
-          continue;
-        }
-
-        ratesPreview.push({
-          provider: provider.name,
-          profession: provider.profession,
-          role: pick.role,
-          rate: pick.rate,
-          source: pick.source,
-          source_amount: pick.source_amount ?? null,
-          job_default_role: emp.job?.default_role ?? null,
-        });
-
-        if (dryRun) continue;
-
-        if (!provider.homebase_employee_id) {
-          await supabase
-            .from('providers')
-            .update({ homebase_employee_id: String(emp.id) })
-            .eq('id', provider.id);
-          counters.homebase_id_backfilled++;
-        }
-
-        const { data: openRows } = await supabase
-          .from('provider_pay_rates')
-          .select('id, hourly_rate')
-          .eq('provider_id', provider.id)
-          .eq('role', pick.role)
-          .is('effective_to', null);
-
-        const open = openRows?.[0];
-        if (open && Number(open.hourly_rate) === pick.rate) {
-          counters.rates_unchanged++;
-          continue;
-        }
-
-        if (open) {
-          await supabase
-            .from('provider_pay_rates')
-            .update({ effective_to: yesterday })
-            .eq('id', open.id);
-          counters.rates_closed++;
-        }
-
-        const { error: insErr } = await supabase.from('provider_pay_rates').insert({
-          provider_id: provider.id,
-          hourly_rate: pick.rate,
-          role: pick.role,
-          effective_from: today,
-          source: DB_SOURCE[pick.source],
-        });
-        if (insErr) throw insErr;
-        counters.rates_inserted++;
-      }
+    const employees = [];
+    for (const location of await hb.listLocations()) {
+      for await (const employee of hb.iterateEmployees(location.uuid)) employees.push(employee);
     }
-
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        dry_run: dryRun,
-        counters,
-        unmatched,
-        unrated_matches: unratedMatches,
-        rates_preview: ratesPreview,
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return new Response(JSON.stringify({ error: message, counters }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    const seen = new Set<string>();
+    const today = new Date().toISOString().slice(0, 10);
+    for (const employee of employees) {
+      if (employee.job?.archived_at) continue;
+      const name = canonical(`${employee.first_name} ${employee.last_name}`);
+      const idMatches = providers.filter(p => p.homebase_employee_id === String(employee.id));
+      const emailMatches = employee.email ? providers.filter(p => p.email?.toLowerCase() === employee.email.toLowerCase()) : [];
+      const mapMatches = mappings.filter(m => canonical(m.homebase_name) === name);
+      if (idMatches.length > 1 || emailMatches.length > 1 || mapMatches.length > 1 || (idMatches[0] && emailMatches[0] && idMatches[0].id !== emailMatches[0].id)) {
+        counters.unmatched++; continue;
+      }
+      const mapped = uniqueMatch(mappings, m => canonical(m.homebase_name) === name);
+      const provider = uniqueMatch(providers, p => p.homebase_employee_id === String(employee.id))
+        ?? (employee.email ? uniqueMatch(providers, p => p.email?.toLowerCase() === employee.email.toLowerCase()) : undefined)
+        ?? (mapped ? providers.find(p => p.id === mapped.profile_id) : undefined)
+        ?? uniqueMatch(providers, p => canonical(p.name) === (overrides.get(name) ?? name));
+      if (!provider) { counters.unmatched++; continue; }
+      if (provider.homebase_employee_id && provider.homebase_employee_id !== String(employee.id)) { counters.unmatched++; continue; }
+      // Conflicting locations are not resolved by encounter order.
+      const variants = employees.filter(e => e.id === employee.id && !e.job?.archived_at).map(e => pickRate(e, provider.profession));
+      const validRates = new Set(variants.filter(p => p.ok).map(p => p.ok ? p.rate : null));
+      if (seen.has(provider.id)) continue;
+      seen.add(provider.id);
+      counters.matched++;
+      const open = rates.filter(r => r.provider_id === provider.id);
+      const old = open[0];
+      const pick = pickRate(employee, provider.profession);
+      const row: Review = { provider_id: provider.id, provider: provider.name, role: pick.ok ? pick.role : null, previous_rate: old ? Number(old.hourly_rate) : null, homebase_rate: pick.ok ? pick.rate : null, status: 'preserved', reason: '' };
+      rows.push(row);
+      if (isAgency(provider) || open.some(r => isProtectedRate(r.source))) {
+        row.reason = isAgency(provider) ? 'Agency rate retained' : 'Manual rate or salary equivalent retained';
+        counters.preserved++; continue;
+      }
+      if (validRates.size > 1 || open.length > 1) {
+        row.reason = 'Multiple rates require review'; counters.preserved++; continue;
+      }
+      if (!pick.ok) { row.reason = pick.reason; counters.preserved++; continue; }
+      if (old && old.effective_from > today) { row.reason = 'Future-dated rate retained'; counters.preserved++; continue; }
+      if (old && Number(old.hourly_rate) === pick.rate) {
+        row.status = 'unchanged'; row.reason = 'Matches Homebase'; counters.unchanged++; continue;
+      }
+      row.status = old ? 'updated' : 'inserted';
+      row.reason = dryRun ? 'Pending sync' : 'Synced from Homebase';
+      if (!dryRun) {
+        // Preserve historical rows. Same-day corrections update that day's row.
+        if (old && old.effective_from === today) {
+          const { error } = await db.from('provider_pay_rates').update({ hourly_rate: pick.rate, source: pick.source }).eq('id', old.id).is('effective_to', null);
+          if (error) throw error;
+        } else {
+          if (old) {
+            const { data: closed, error } = await db.from('provider_pay_rates').update({ effective_to: today }).eq('id', old.id).is('effective_to', null).select('id');
+            if (error) throw error;
+            if (!closed?.length) throw new Error('Rate changed during sync; refresh and try again');
+          }
+          const { error } = await db.from('provider_pay_rates').insert({ provider_id: provider.id, hourly_rate: pick.rate, role: old?.role ?? pick.role, effective_from: today, source: pick.source });
+          if (error) {
+            if (old) {
+              const restored = await db.from('provider_pay_rates').update({ effective_to: null }).eq('id', old.id).eq('effective_to', today);
+              if (restored.error) throw new Error(`${error.message}; restoring prior rate failed: ${restored.error.message}`);
+            }
+            throw error;
+          }
+        }
+      }
+      if (old) counters.updated++; else counters.inserted++;
+    }
+    const result = { ok: true, dry_run: dryRun, synced_at: new Date().toISOString(), counters, rows };
+    if (!dryRun) {
+      const { error } = await admin.from('homebase_rate_sync_state').update({ value: result, updated_at: result.synced_at }).eq('key', STATUS_KEY);
+      if (error) throw error;
+    }
+    return reply(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String((error as { message?: string }).message ?? error);
+    console.error('Homebase rate sync failed:', message);
+    return reply({ error: message, counters, rows }, 500);
   }
 });

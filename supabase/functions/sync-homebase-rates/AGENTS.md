@@ -1,0 +1,3 @@
+- Sync clinical hourly wages into the scheduling backend using exact saved employee IDs, email or explicit name mappings; never fuzzy-match pay records. Why: compensation must belong to the correct person.
+- Preserve agency/manual rates and salary equivalents; choose profession-matching clinical roles, never training, admin, in-home or collaboration fees. Why: different pay bases are not interchangeable.
+- A dedicated hourly job syncs rates; admins can sync and review results in Cost audit. Why: rates stay current without reallocating locked schedules.

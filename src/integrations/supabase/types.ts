@@ -2423,6 +2423,27 @@ export type Database = {
         }
         Relationships: []
       }
+      homebase_rate_sync_state: {
+        Row: {
+          cron_token: string
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          cron_token?: string
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          cron_token?: string
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       homebase_shifts: {
         Row: {
           created_at: string

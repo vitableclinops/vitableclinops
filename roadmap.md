@@ -1,5 +1,7 @@
 # Roadmap
 
+- [x] Connect safe Homebase hourly-rate syncing to scheduling; five rates updated and Michelle’s rate added, agency/manual/salary records preserved, hourly refresh enabled, and saved results verified through Cost audit.
+
 - [x] Correct Desire Brown’s December 22–31 Wednesday/Friday shifts from her one-off availability, preserving Monday/Thursday recurrence.
 - [x] Restore Michelle Diederich’s correct December shifts and verify both corrections without reallocating other providers; Michelle has 14 shifts/79h, Desire has 19 shifts/85h; amendments pending posting, 64 regression tests passed.
 

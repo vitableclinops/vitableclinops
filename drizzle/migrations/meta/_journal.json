@@ -204,6 +204,20 @@
       "when": 1794510766831,
       "tag": "0028_scope_staff_read_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1795445218620,
+      "tag": "0029_homebase_rate_sync_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1795445332499,
+      "tag": "0030_restrict_homebase_sync_token",
+      "breakpoints": true
     }
   ]
 }
